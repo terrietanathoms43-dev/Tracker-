@@ -1,3 +1,3 @@
-import type { Metadata } from "next";import "./globals.css";
+import type { Metadata } from "next";import "./globals.css";import ConnectionStatus from "./connection-status";
 export const metadata:Metadata={title:"Trackwise | Team Leadership",description:"Lead teams with clarity and accountability"};
-export default function RootLayout({children}:{children:React.ReactNode}){return <html lang="en"><body>{children}</body></html>}
+export default function RootLayout({children}:{children:React.ReactNode}){return <html lang="en"><body><ConnectionStatus/>{children}</body></html>}
