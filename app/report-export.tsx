@@ -76,7 +76,13 @@ export default function ReportExport({tasks,projects,teams,directory,organizatio
   return projects.map(p=>({name:p.name,items:scoped.filter(t=>t.project_id===p.id)}))
    .concat([{name:"No project",items:scoped.filter(t=>!t.project_id)}]).filter(row=>row.items.length);
  };
- const safeFileName="trackwise-"+scope+"-"+scopeName.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40)+"-"+new Date().toISOString().slice(0,10);
+ const teamGroups=teams.map(team=>({name:team.name,items:scoped.filter(t=>t.project_id&&projectById.get(t.project_id)?.team_id===team.id)})).filter(group=>group.items.length);
+ const unlinkedTeams=scoped.filter(t=>!t.project_id||!projectById.get(t.project_id)?.team_id);
+ if(unlinkedTeams.length)teamGroups.push({name:"No linked team",items:unlinkedTeams});
+ const peopleGroups=directory.map(person=>({name:person.display_name,items:scoped.filter(t=>t.owner_id===person.user_id)})).filter(group=>group.items.length);
+ const unassignedPeople=scoped.filter(t=>!t.owner_id);
+ if(unassignedPeople.length)peopleGroups.push({name:"Unassigned",items:unassignedPeople});
+ const safeFileName="trackwise-"+scope"-"+scopeName.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40)+"-"+new Date().toISOString().slice(0,10);
  function metaRows(){
   return [
    ["TRACKWISE | WORK REPORT"],
@@ -108,6 +114,14 @@ export default function ReportExport({tasks,projects,teams,directory,organizatio
     const n=group.items.length,d=group.items.filter(t=>t.status==="completed").length;
     rows.push([group.name,String(n),String(d),percent(d,n)+"%",String(group.items.filter(t=>overdue(t,now)).length),String(group.items.filter(t=>t.status==="blocked").length),String(group.items.filter(t=>t.status==="awaiting_approval").length)]);
    }
+   rows.push([],["DELIVERY BY TEAM"],["Team","Tasks","Completed","Completion rate","Overdue","Blocked"]);
+   for(const group of teamGroups){const total=group.items.length,completed=group.items.filter(t=>t.status==="completed").length;
+    rows.push([group.name,String(total),String(completed),percent(completed,total)+"%",String(group.items.filter(t=>overdue(t,now)).length),String(group.items.filter(t=>t.status==="blocked").length)]);
+   }
+   rows.push([],["WORKLOAD BY INDIVIDUAL"],["Person","Tasks assigned","Completed","Completion rate","Overdue","Awaiting approval"]);
+   for(const group of peopleGroups){const total=group.items.length,completed=group.items.filter(t=>t.status==="completed").length;
+    rows.push([group.name,String(total),String(completed),percent(completed,total)+"%",String(group.items.filter(t=>overdue(t,now)).length),String(group.items.filter(t=>t.status==="awaiting_approval").length)]);
+   }
    rows.push([],["TASKS REQUIRING ATTENTION"],["Task","Project","Owner","Status","Due date"]);
    for(const t of attention)rows.push([t.title,projectName(t),ownerName(t),overdue(t,now)?"Overdue":friendly(t.status),dateText(t.due_at)]);
   }else{
@@ -125,6 +139,7 @@ export default function ReportExport({tasks,projects,teams,directory,organizatio
   win.opener=null;
   const cells=(values:unknown[],tag:"th"|"td"="td")=>"<tr>"+values.map(v=>"<"+tag+">"+htmlEscape(v)+"</"+tag+">").join("")+"</tr>";
   const rows=summaryGroups().map(group=>cells([group.name,group.items.length,group.items.filter(t=>t.status==="completed").length,percent(group.items.filter(t=>t.status==="completed").length,group.items.length)+"%",group.items.filter(t=>overdue(t,now)).length,group.items.filter(t=>t.status==="blocked").length])).join("");
+  const groupCells=(groups:{name:string;items:Task[]}[])=>groups.map(group=>cells([group.name,group.items.length,group.items.filter(t=>t.status==="completed").length,percent(group.items.filter(t=>t.status==="completed").length,group.items.length)+"%",group.items.filter(t=>overdue(t,now)).length,group.items.filter(t=>t.status==="blocked").length])).join("");
   const attentionRows=attention.slice(0,40).map(t=>cells([t.title,projectName(t),ownerName(t),overdue(t,now)?"Overdue":friendly(t.status),dateText(t.due_at)])).join("");
   const allRows=scoped.slice(0,100).map(t=>cells([t.title,projectName(t),ownerName(t),friendly(t.status),friendly(t.priority),dateText(t.due_at)])).join("");
   const kpis=[["Tasks",count],["Completed",done],["Completion rate",percent(done,count)+"%"],["In progress",inProgress],["Overdue",late],["Blocked",blocked],["Awaiting approval",awaiting]].map(k=>'<div class="metric"><span>'+htmlEscape(k[0])+'</span><strong>'+htmlEscape(k[1])+'</strong></div>').join("");
@@ -136,6 +151,8 @@ export default function ReportExport({tasks,projects,teams,directory,organizatio
   const documentContent='<!doctype html><html><head><meta charset="utf-8"><title>'+htmlEscape(scopeName)+' — Trackwise Report</title>'+style+'</head><body>'+head+meta+'<div class="kpis">'+kpis+'</div>'+
    (warning?'<p class="notice">'+htmlEscape("Data may be incomplete: "+warning)+'</p>':"")+
    section("Delivery by project",["Project","Tasks","Completed","Completion","Overdue","Blocked"],rows,"No matching projects")+
+   section("Delivery by team",["Team","Tasks","Completed","Completion","Overdue","Blocked"],groupCells(teamGroups),"No linked team work")+
+   section("Workload by individual",["Person","Tasks","Completed","Completion","Overdue","Blocked"],groupCells(peopleGroups),"No assigned tasks")+
    section("Items requiring attention"+(attention.length>40?" (first 40)":""),
     ["Task","Project","Owner","Status","Due"],attentionRows,"No overdue, blocked or approval-pending tasks")+
    section("Detailed task register"+(scoped.length>100?" (first 100)":""),
