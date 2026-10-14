@@ -10,3 +10,65 @@ textarea{width:100%;padding:12px 13px;border:1px solid #dbe3ef;border-radius:10p
 .handoverForm{padding:18px;margin:16px 0 24px;border:1px solid #e2e8f2;background:#f8faff;border-radius:12px}.handoverForm h3{margin-top:0}.reportStats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:18px 0}.reportMetric{display:flex;flex-direction:column;gap:10px}.reportMetric span{font-size:12px;color:#697891}.reportMetric strong{font-size:30px;color:#183c8b}.reportBig{font-size:48px;font-weight:800;color:#234fb2;margin:14px 0}.reportBar{height:12px;background:#e8edf6;border-radius:20px;overflow:hidden}.reportBar span{display:block;height:100%;background:#4276e5;border-radius:20px}.reportRow{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid #e9eef5}.reportRow strong{font-size:13px;text-align:right}@media(max-width:900px){.reportStats{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:550px){.reportStats{grid-template-columns:repeat(2,minmax(0,1fr))}.reportRow{flex-wrap:wrap}}
 
 .operations .card{margin-bottom:18px}.operations form{display:grid;gap:9px;margin-top:18px}.operations form button{justify-self:start}.messageFeed{max-height:500px;overflow:auto;margin-top:20px}.messageItem{padding:14px 16px;border:1px solid #e6edf6;border-radius:12px;margin-bottom:10px;background:#f9fbff}.messageItem p{white-space:pre-wrap;margin:0 0 8px}.messageItem small{color:#667790}.operations .reportMetric strong{font-size:clamp(17px,2.2vw,28px)}
+
+
+/* Mobile-first application navigation and comfortable touch layout */
+.mobileTopbar,.mobileBottomNav,.mobileBackdrop,.mobileTaskList{display:none}
+@media(max-width:760px){
+ :root{font-size:15px}
+ body{background:#f5f7fb}
+ .appShell{display:block;min-height:100dvh;padding-top:66px;padding-bottom:calc(78px + env(safe-area-inset-bottom))}
+ .mobileTopbar{display:flex;align-items:center;justify-content:space-between;position:fixed;z-index:80;inset:0 0 auto;height:66px;padding:10px 17px;background:#fff;border-bottom:1px solid #e8edf5;box-shadow:0 2px 14px #1b2f5110}
+ .mobileTopbar .logo{font-size:21px}
+ .mobileTopbar .mark{width:34px;height:34px}
+ .mobileMenuToggle{display:flex;align-items:center;gap:7px;border:1px solid #e0e7f2;border-radius:11px;background:#f5f7fc;padding:10px 13px;color:#1e396f;font-weight:700;min-height:44px}
+ .mobileBackdrop{display:block;position:fixed;inset:66px 0 0;z-index:89;background:#12213a82;border:0;width:100%}
+ .sidebar{position:fixed;display:flex;flex-direction:column;top:66px;bottom:0;left:0;z-index:90;width:min(85vw,330px);height:auto;overflow-y:auto;transform:translateX(-110%);transition:transform .22s ease;padding:19px 15px 26px;box-shadow:14px 0 30px #152c4930}
+ .sidebar.mobileOpen{transform:translateX(0)}
+ .sidebar .logo{padding:0 9px 18px}
+ .sideLabel{display:block}
+ .orgSelect{display:block;margin-bottom:18px;min-height:46px}
+ .sidebar nav{display:grid;overflow:visible;gap:4px}
+ .navItem{width:100%;min-height:46px;white-space:normal;padding:11px 13px;font-size:14px}
+ .sideFoot{display:flex;margin-top:22px}
+ .mobileBottomNav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;z-index:85;inset:auto 0 0;background:#fff;border-top:1px solid #e2e8f3;padding:7px 6px calc(7px + env(safe-area-inset-bottom));box-shadow:0 -4px 20px #1224480d}
+ .mobileBottomNav button{border:0;background:transparent;color:#74829b;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:3px;border-radius:11px;min-height:53px;font-weight:700}
+ .mobileBottomNav button.active{background:#edf3ff;color:#315cce}
+ .mobileBottomNav button span{font-size:22px;line-height:1}
+ .mobileBottomNav button small{font-size:10px}
+ .appHeader{padding:23px 17px 12px}
+ .appHeader h1{font-size:clamp(23px,5.5vw,30px);letter-spacing:-.7px}
+ .appHeader .eyebrow{font-size:10px}
+ .content{padding:8px 15px 30px}
+ .card{border-radius:15px;padding:18px;margin-bottom:14px}
+ .welcome{padding:22px;border-radius:15px}
+ .welcome h2{font-size:22px}
+ .stats{gap:10px}
+ .stat{padding:17px}
+ .twoCol{gap:0}
+ .formGrid{grid-template-columns:1fr;gap:0}
+ .span2{grid-column:auto}
+ .formAction{padding-top:10px}
+ .sectionHead{align-items:flex-start;flex-wrap:wrap}
+ .tablewrap{display:none}
+ .mobileTaskList{display:grid;gap:12px}
+ .mobileTaskCard{background:#fff;border:1px solid #e5ebf4;border-radius:16px;padding:17px;box-shadow:0 5px 16px #1a356a08;min-width:0}
+ .mobileTaskTop{display:flex;align-items:center;justify-content:space-between;gap:12px}
+ .mobileTaskDate{color:#7c879a;font-size:12px}
+ .mobileTaskTitle{display:flex;align-items:center;justify-content:space-between;gap:8px;border:0;background:transparent;padding:14px 0 9px;text-align:left;font-size:16px;font-weight:800;color:#172a4d;width:100%;line-height:1.35;overflow-wrap:anywhere}
+ .mobileTaskTitle span{color:#436bd0}
+ .mobileTaskMeta{font-size:12px;color:#65758e;padding-bottom:12px}
+ .mobileTaskStatus{border-top:1px solid #edf0f6;padding-top:12px}
+ .mobileTaskStatus select{min-height:44px;background:#f8faff}
+ .filterBar{gap:10px}
+ .filterBar select,.filterBar input{min-height:46px;min-width:0}
+ input,select,textarea{font-size:16px;min-height:44px}
+ button{touch-action:manipulation}
+ .reportRow{overflow-wrap:anywhere}
+ .reportRow strong{text-align:left}
+ .reportStats{gap:10px}
+ .authSide{padding:22px}
+ .mobileLogo{margin-bottom:30px}
+}
+@media(max-width:390px){.content{padding-inline:12px}.appHeader{padding-inline:14px}.stat{padding:13px}.stat strong{font-size:25px}.reportStats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){.sidebar{transition:none}}
