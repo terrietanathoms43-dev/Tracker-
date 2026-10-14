@@ -82,7 +82,7 @@ export default function ReportExport({tasks,projects,teams,directory,organizatio
  const peopleGroups=directory.map(person=>({name:person.display_name,items:scoped.filter(t=>t.owner_id===person.user_id)})).filter(group=>group.items.length);
  const unassignedPeople=scoped.filter(t=>!t.owner_id);
  if(unassignedPeople.length)peopleGroups.push({name:"Unassigned",items:unassignedPeople});
- const safeFileName="trackwise-"+scope"-"+scopeName.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40)+"-"+new Date().toISOString().slice(0,10);
+ const safeFileName="trackwise-"+scope+"-"+scopeName.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40)+"-"+new Date().toISOString().slice(0,10);
  function metaRows(){
   return [
    ["TRACKWISE | WORK REPORT"],
