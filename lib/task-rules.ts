@@ -15,6 +15,10 @@ export function canSubmitForApproval(
  return role==="member"&&!!userId&&!!ownerId&&ownerId===userId
   &&status!=="completed"&&status!=="awaiting_approval";
 }
+/** Only roles that may update assigned work can own a task. */
+export function canOwnTask(role:TrackwiseRole):boolean{
+ return role==="admin"||role==="leader"||role==="member";
+}
 export function canCompleteTask(role:TrackwiseRole):boolean{
  return canManageOrganization(role);
 }
