@@ -85,7 +85,7 @@ export function prepareSuggestions(raw:unknown,source:string,existing:ExistingWo
   const description=textLimit(item.description,3500);
   const best=closestExisting(title,existing);
   let existingId=typeof item.existing_id==="string"?item.existing_id:null;
-  let matchedType=item.matched_type==="project"||item.matched_type==="goal"||item.matched_type==="task"?item.matched_type:null;
+  let matchedType:"task"|"project"|"goal"|null=(item.matched_type==="project"||item.matched_type==="goal"||item.matched_type==="task")?item.matched_type:null;
   if(kind==="update_task"){
    if(!existingId||!tasks.has(existingId))continue;
    matchedType="task";
