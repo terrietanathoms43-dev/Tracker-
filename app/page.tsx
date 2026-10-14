@@ -136,8 +136,9 @@ export default function Home(){
    void loadWorkspace(selected);
   };
   window.addEventListener("focus",checkForUpdates);
+  window.addEventListener("online",checkForUpdates);
   document.addEventListener("visibilitychange",checkForUpdates);
-  return()=>{window.removeEventListener("focus",checkForUpdates);document.removeEventListener("visibilitychange",checkForUpdates)};
+  return()=>{window.removeEventListener("focus",checkForUpdates);window.removeEventListener("online",checkForUpdates);document.removeEventListener("visibilitychange",checkForUpdates)};
  },[selected,user?.id,loadWorkspace]);
 
  const active=orgs.find(o=>o.id===selected),role=members.find(m=>m.user_id===user?.id)?.role,manager=canManageOrganization(role);
