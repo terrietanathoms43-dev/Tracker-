@@ -250,3 +250,15 @@ button:active:not(:disabled){transform:scale(.99)}
  .guideFooter{text-align:left}
 }
 @media(max-width:380px){.headerControls{max-width:55%}.mainCreateButton{padding:9px}.headerHelp{width:40px}.setupStep{min-height:65px}}
+
+/* Editing is optional: reveal only when requested */
+.taskEditToggle{display:flex;justify-content:flex-end;margin:8px 0}
+.taskEditToggle .textAction{min-height:40px;padding:8px 10px}
+.taskEditForm,.projectEditForm{border:1px solid #d5e3fa;border-radius:13px;background:#f8faff;padding:16px;margin:10px 0 18px}
+.taskEditForm>div:last-child,.projectEditForm>div:last-child{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.taskEditForm>div:last-child button,.projectEditForm>div:last-child button{padding:10px 15px;border-radius:9px;min-height:43px;font-weight:800}
+.taskEditForm>div:last-child button:not(.primary),.projectEditForm>div:last-child button:not(.primary){background:white;border:1px solid #dce5f4;color:#526886}
+.projectEditForm{margin-top:14px}
+.projectEditForm h3{font-size:15px;margin:0 0 7px;color:#294472}
+.projectEditForm label,.taskEditForm label{margin-top:8px}
+@media(max-width:760px){.taskEditForm,.projectEditForm{padding:13px}.projectActions button{min-width:72px}.taskEditForm>div:last-child button,.projectEditForm>div:last-child button{flex:1}}
