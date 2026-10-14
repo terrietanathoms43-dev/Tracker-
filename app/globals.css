@@ -397,3 +397,21 @@ button:active:not(:disabled){transform:scale(.99)}
 .teamMemberRow small{font-size:11px;color:#7787a2}
 .teamMemberRow button{min-height:36px;font-size:12px;flex-shrink:0}
 @media(max-width:760px){.teamMemberRow button{min-height:44px}}
+
+/* Fast workspace search */
+.headerSearch{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:44px;padding:10px 13px;border:1px solid #dfe6f2;border-radius:10px;background:#fff;color:#365077;font-weight:800}
+.headerSearch:hover{background:#f3f7ff}
+.searchOverlay{position:fixed;inset:0;z-index:170;display:flex;align-items:flex-start;justify-content:center;padding:clamp(22px,7vh,80px) 16px 16px;background:#172843aa;overflow:auto}
+.searchPanel{width:min(640px,100%);max-height:calc(100dvh - 50px);overflow:auto;background:#fff;border-radius:19px;border:1px solid #dbe5f6;box-shadow:0 26px 80px #0c1a3240;padding:20px}
+.searchTop{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}
+.searchTop label{font-size:17px;font-weight:800;color:#243859}
+.searchPanel input[type="search"]{width:100%;min-height:51px;border:1px solid #cddbf5;border-radius:11px;padding:12px 15px;font-size:16px;margin-bottom:15px}
+.searchResults{display:grid;gap:16px}
+.searchResults h3{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:#687b9c;margin:0 0 8px}
+.searchResults>div{display:grid;gap:4px}
+.searchResults button{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 13px;min-height:48px;background:#f8faff;border:1px solid transparent;border-radius:10px;text-align:left}
+.searchResults button:hover{background:#edf3ff;border-color:#d0def8}
+.searchResults strong{font-size:13px;color:#243b65;line-height:1.35;overflow-wrap:anywhere}
+.searchResults small{font-size:11px;color:#71829f;white-space:nowrap}
+.searchFoot{border-top:1px solid #edf1f7;margin:17px 0 0;padding-top:13px;font-size:11px}
+@media(max-width:760px){.headerSearch{width:44px;padding:0}.headerSearch span{display:none}.searchOverlay{padding:14px}.searchPanel{padding:17px;border-radius:15px;max-height:calc(100dvh - 28px)}.searchResults button{min-height:53px}}
