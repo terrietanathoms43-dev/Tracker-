@@ -3,9 +3,10 @@ import {useCallback,useEffect,useMemo,useRef,useState,type FormEvent} from "reac
 import type {User} from "@supabase/supabase-js";
 import Reports from "./reports";
 import Operations from "./operations";
-import TaskExtras from "./task-extras";
-import TaskCalendar from "./task-calendar";
-import RecurringSchedules from "./recurring-schedules";
+import dynamic from "next/dynamic";
+const TaskExtras=dynamic(()=>import("./task-extras"),{ssr:false,loading:()=>null});
+const TaskCalendar=dynamic(()=>import("./task-calendar"),{ssr:false,loading:()=><p className="muted">Opening calendar…</p>});
+const RecurringSchedules=dynamic(()=>import("./recurring-schedules"),{ssr:false,loading:()=>null});
 import {supabase as makeClient} from "../lib/supabase";
 const ready=Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 const db=ready?makeClient():null;
