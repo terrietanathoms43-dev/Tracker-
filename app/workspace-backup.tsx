@@ -74,7 +74,7 @@ export default function WorkspaceBackup({organizationId,organizationName,userId}
     if(table==="tw_organizations")query=query.eq("id",organizationId);
     else query=query.eq("organization_id",organizationId);
     if(table==="tw_notifications")query=query.eq("user_id",userId);
-    const {data,error:queryError}=await query.order("id",{ascending:true}).range(offset,offset+BATCH_SIZE-1);
+    const {data,error:queryError}=await query.order(table==="tw_memberships"?"user_id":"id",{ascending:true}).range(offset,offset+BATCH_SIZE-1);
     if(queryError)throw new Error("Couldn't read "+table+": "+queryError.message);
     const batch=(data??[]) as TableRow[];
     all.push(...batch);
