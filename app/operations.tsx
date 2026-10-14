@@ -14,7 +14,8 @@ export default function Operations({organizationId,userId,tasks,teams,projects,m
  const [notes,setNotes]=useState<Note[]>([]),[messages,setMessages]=useState<Message[]>([]),[budgets,setBudgets]=useState<Budget[]>([]),[deps,setDeps]=useState<Dep[]>([]);
  const [channel,setChannel]=useState("all"),[message,setMessage]=useState(""),[task,setTask]=useState(""),[prerequisite,setPrerequisite]=useState("");
  const [label,setLabel]=useState(""),[planned,setPlanned]=useState(""),[spent,setSpent]=useState(""),[project,setProject]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
- const [loading,setLoading]=useState(true);
+ useEffect(()=>{if(channel!=="all"&&!teams.some(t=>t.id===channel))setChannel("all")},[channel,teams]);
+  const [loading,setLoading]=useState(true);
  const refresh=useCallback(async()=>{
   const [n,m,b,d]=await Promise.all([
    section==="notifications"
@@ -53,7 +54,21 @@ export default function Operations({organizationId,userId,tasks,teams,projects,m
    document.removeEventListener("visibilitychange",refreshWhenVisible);
   };
  },[refresh]);
- async function send(e:FormEvent){e.preventDefault();setBusy(true);setError("");const {error}=await supabase.from("tw_messages").insert({organization_id:organizationId,team_id:channel==="all"?null:channel,author_id:userId,body:message.trim()});if(error)setError(error.message);else{setMessage("");setNotice("Message sent.");await refresh()}setBusy(false)}
+ async function send(e:FormEvent){
+  e.preventDefault();
+  if(!message.trim())return;
+  if(channel!=="all"&&!teams.some(t=>t.id===channel)){
+   setError("You no longer belong to this team. Please select another channel.");
+   setChannel("all");return;
+  }
+  setBusy(true);setError("");setNotice("");
+  try{
+   const {error}=await supabase.from("tw_messages").insert({organization_id:organizationId,team_id:channel==="all"?null:channel,author_id:userId,body:message.trim()});
+   if(error)throw error;
+   setMessage("");setNotice("Message sent.");await refresh();
+  }catch(err){setError(err instanceof Error?err.message:"Could not send message. Please retry.")}
+  finally{setBusy(false)}
+ }
  async function addBudget(e:FormEvent){e.preventDefault();setBusy(true);setError("");const {error}=await supabase.from("tw_budget_items").insert({organization_id:organizationId,created_by:userId,label:label.trim(),planned:Number(planned),spent:Number(spent||0),project_id:project||null,currency:"JMD"});if(error)setError(error.message);else{setLabel("");setPlanned("");setSpent("");setProject("");setNotice("Budget item added.");await refresh()}setBusy(false)}
  async function addDependency(e:FormEvent){e.preventDefault();setBusy(true);setError("");const {error}=await supabase.rpc("tw_add_dependency",{target_task:task,prerequisite});if(error)setError(error.message);else{setTask("");setPrerequisite("");setNotice("Dependency linked.");await refresh()}setBusy(false)}
  async function readNote(id:string){const {error}=await supabase.rpc("tw_mark_notification_read",{notification_id:id});if(error)setError(error.message);else{await refresh();window.dispatchEvent(new Event("tw-notifications-updated"))}}
