@@ -28,6 +28,20 @@ const displayError=(cause:unknown,fallback:string)=>{
  return fallback;
 };
 const actionStatusLabel=(status:string)=>status==="awaiting_approval"?"Submit for approval":statusLabel(status);
+type View="overview"|"tasks"|"teams"|"people"|"planning"|"projects"|"requests"|"activity"|"reports"|"collaboration"|"resources"|"notifications"|"settings";
+type NavGroup={id:string;label:string;icon:string;defaultView:View;items:{view:View;label:string}[]};
+const NAV_GROUPS:NavGroup[]=[
+ {id:"home",label:"Home",icon:"⌂",defaultView:"overview",items:[{view:"overview",label:"Overview"}]},
+ {id:"tasks",label:"Tasks",icon:"☑",defaultView:"tasks",items:[{view:"tasks",label:"All tasks"}]},
+ {id:"projects",label:"Projects",icon:"▧",defaultView:"projects",items:[{view:"projects",label:"Projects"},{view:"planning",label:"Goals & planning"}]},
+ {id:"people",label:"People",icon:"♙",defaultView:"people",items:[{view:"people",label:"Members"},{view:"teams",label:"Teams"}]},
+ {id:"inbox",label:"Inbox",icon:"◉",defaultView:"notifications",items:[{view:"notifications",label:"Notifications"},{view:"collaboration",label:"Team messages"},{view:"requests",label:"Requests & approvals"}]},
+ {id:"more",label:"More",icon:"⚙",defaultView:"settings",items:[{view:"settings",label:"Settings"},{view:"reports",label:"Reports"},{view:"resources",label:"Budgets"},{view:"activity",label:"Activity history"}]}
+];
+const taskLabel=(status:string)=>({
+ not_started:"To do",underway:"In progress",awaiting_approval:"For review",
+ blocked:"Blocked",rejected:"Needs changes",completed:"Completed"
+} as Record<string,string>)[status]??statusLabel(status);
 export default function Home(){
  const [handovers,setHandovers]=useState<Handover[]>([]),[handoverOwner,setHandoverOwner]=useState(""),[handoverNote,setHandoverNote]=useState("");
  const [inviteShareEmail,setInviteShareEmail]=useState(""),[inviteShareReady,setInviteShareReady]=useState(false),[inviteShareId,setInviteShareId]=useState("");
@@ -44,7 +58,8 @@ export default function Home(){
  const [myTasksOnly,setMyTasksOnly]=useState(false),[workspaceLoading,setWorkspaceLoading]=useState(false);
  const workspaceRequest=useRef(0);
  const [mobileMenu,setMobileMenu]=useState(false),[showTaskForm,setShowTaskForm]=useState(false),[showTaskHandover,setShowTaskHandover]=useState(false);
- const [view,setView]=useState<"overview"|"tasks"|"teams"|"planning"|"projects"|"requests"|"activity"|"reports"|"collaboration"|"resources"|"notifications"|"settings">("overview"),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const [view,setView]=useState<View>("overview"),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const [createMenu,setCreateMenu]=useState(false),[showGuide,setShowGuide]=useState(false),[hideChecklist,setHideChecklist]=useState(false);
  useEffect(()=>{setProfileName(String(user?.user_metadata?.display_name??""))},[user?.id]);
  const clear=()=>{setError("");setNotice("")};
  const loadOrgs=useCallback(async()=>{if(!db)return;const {data,error}=await db.from("tw_organizations").select("id,name,created_at").order("created_at",{ascending:false});if(error)setError(error.message);else {setOrgs(data??[]);setSelected(old=>(data??[]).some(o=>o.id===old)?old:(data?.[0]?.id??""))}},[]);
@@ -129,6 +144,34 @@ export default function Home(){
  },[selected,user?.id,loadWorkspace]);
 
  const active=orgs.find(o=>o.id===selected),role=members.find(m=>m.user_id===user?.id)?.role,manager=role==="admin"||role==="leader";
+ const activeNav=NAV_GROUPS.find(group=>group.items.some(item=>item.view===view))??NAV_GROUPS[0];
+ function navigate(to:View){setView(to);setMobileMenu(false);setCreateMenu(false);clear();}
+ function launchCreate(kind:"task"|"project"|"team"|"invite"|"request"){
+  const target:View=kind==="task"?"tasks":kind==="project"?"projects":kind==="team"?"teams":kind==="invite"?"settings":"requests";
+  if(kind==="task")setShowTaskForm(true);
+  navigate(target);
+  const element=kind==="task"?"taskComposer":kind==="project"?"projectCreator":kind==="team"?"createTeam":kind==="invite"?"inviteMembers":"submitRequest";
+  window.setTimeout(()=>document.getElementById(element)?.scrollIntoView({behavior:"smooth",block:"start"}),120);
+ }
+ function closeGuide(){
+  if(user&&selected&&typeof window!=="undefined")window.localStorage.setItem("tw-onboarding-v2:"+user.id+":"+selected,"seen");
+  setShowGuide(false);
+ }
+ useEffect(()=>{
+  if(!user||!selected||!role||workspaceLoading||typeof window==="undefined")return;
+  const key="tw-onboarding-v2:"+user.id+":"+selected;
+  if(!window.localStorage.getItem(key))setShowGuide(true);
+  setHideChecklist(window.localStorage.getItem("tw-setup-hidden:"+user.id+":"+selected)==="yes");
+ },[user?.id,selected,role,workspaceLoading]);
+ useEffect(()=>{
+  if(!createMenu&&!showGuide)return;
+  function onEscape(event:KeyboardEvent){
+   if(event.key==="Escape"){setCreateMenu(false);if(showGuide)closeGuide()}
+  }
+  window.addEventListener("keydown",onEscape);
+  return()=>window.removeEventListener("keydown",onEscape);
+ },[createMenu,showGuide,user?.id,selected]);
+
  const counts=useMemo(()=>({total:tasks.length,active:tasks.filter(t=>t.status==="underway").length,blocked:tasks.filter(t=>t.status==="blocked").length,done:tasks.filter(t=>t.status==="completed").length,overdue:tasks.filter(t=>t.due_at&&new Date(t.due_at)<new Date()&&t.status!=="completed").length}),[tasks]);
  async function auth(e:FormEvent){e.preventDefault();if(!db)return;setWorking(true);clear();try{if(mode==="reset"){const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});if(error)throw error;setNotice("Password reset email sent. Check your inbox.");return}const result=mode==="signin"?await db.auth.signInWithPassword({email,password}):await db.auth.signUp({email,password,options:{emailRedirectTo:window.location.origin}});if(result.error)throw result.error;if(mode==="signup")setNotice(result.data.session?"Your account is ready.":"Check your email to confirm your account.");}catch(e){setError(e instanceof Error?e.message:"Unable to authenticate")}finally{setWorking(false)}}
  async function saveProfile(e:FormEvent){e.preventDefault();if(!db)return;setProfileSaving(true);clear();try{const name=profileName.trim();if(name.length<2||name.length>80)throw new Error("Display name must be between 2 and 80 characters.");const {error}=await db.auth.updateUser({data:{display_name:name}});if(error)throw error;setNotice("Profile updated.");await loadWorkspace(selected)}catch(e){setError(e instanceof Error?e.message:"Unable to update profile")}finally{setProfileSaving(false)}}
