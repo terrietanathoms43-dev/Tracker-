@@ -28,5 +28,7 @@ jobs:
         run: npm run lint
       - name: Run automated tests
         run: npm test
+      - name: Validate backup helper syntax
+        run: bash -n scripts/backup-trackwise.sh
       - name: Build Next.js application
         run: npm run build
