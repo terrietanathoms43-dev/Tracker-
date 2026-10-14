@@ -1,5 +1,5 @@
 /** Shared task and role rules. Keep all clients consistent with server-side policies. */
-export type TrackwiseRole="admin"|"leader"|"member"|"stakeholder"|"observer"|null|undefined;
+export type TrackwiseRole=string|null|undefined;
 
 export function canManageOrganization(role:TrackwiseRole):boolean{
  return role==="admin"||role==="leader";
