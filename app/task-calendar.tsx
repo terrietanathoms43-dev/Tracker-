@@ -49,12 +49,12 @@ export default function TaskCalendar({tasks,projects,onOpenTask}:Props){
     <button type="button" aria-label="Next month" onClick={()=>shiftMonth(1)}>›</button>
     <button type="button" className="calendarToday" onClick={()=>{setMonth(new Date(today.getFullYear(),today.getMonth(),1));setSelected(today)}}>Today</button>
    </div>
-   <div className="calendarGrid" role="grid" aria-label="Task deadlines">
-    {weekdayNames.map(day=><div role="columnheader" className="calendarWeekday" key={day}>{day}</div>)}
+   <div className="calendarGrid" role="group" aria-label="Task deadlines">
+    {weekdayNames.map(day=><div aria-hidden="true" className="calendarWeekday" key={day}>{day}</div>)}
     {days.map(day=>{
      const key=makeKey(day),events=byDay[key]??[],inMonth=day.getMonth()===month.getMonth(),isSelected=sameDay(day,selected),isToday=sameDay(day,today);
-     return <button type="button" role="gridcell" key={key} onClick={()=>{setSelected(day);if(!inMonth)setMonth(new Date(day.getFullYear(),day.getMonth(),1))}}
-      aria-label={formatDay(day)+", "+events.length+" tasks due"} aria-selected={isSelected}
+     return <button type="button" key={key} onClick={()=>{setSelected(day);if(!inMonth)setMonth(new Date(day.getFullYear(),day.getMonth(),1))}}
+      aria-label={formatDay(day)+", "+events.length+" tasks due"} aria-pressed={isSelected}
       className={"calendarCell "+(!inMonth?"outside ":"")+(isSelected?"selected ":"")+(isToday?"today":"")}>
       <span className="calendarDate">{day.getDate()}</span>
       {events.length>0&&<><span className="calendarCount">{events.length} {events.length===1?"task":"tasks"}</span><span className="calendarDots" aria-hidden="true">{events.slice(0,3).map(event=><span className={"calendarDot "+event.status} key={event.id}/>)}</span></>}
