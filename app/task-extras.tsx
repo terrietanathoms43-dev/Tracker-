@@ -13,6 +13,13 @@ const ALLOWED=new Set([
  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
  "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 ]);
+const MIME_BY_EXTENSION:Record<string,string>={
+ jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",webp:"image/webp",
+ pdf:"application/pdf",txt:"text/plain",doc:"application/msword",xls:"application/vnd.ms-excel",
+ docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+ xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+ pptx:"application/vnd.openxmlformats-officedocument.presentationml.presentation"
+};
 type Member={user_id:string;display_name:string};
 type Comment={id:string;body:string;author_id:string;created_at:string};
 type Attachment={id:string;file_name:string;storage_path:string;file_size:number;mime_type:string;uploaded_by:string;created_at:string};
@@ -68,18 +75,20 @@ export default function TaskExtras({organizationId,taskId,userId,manager,canComm
   event.preventDefault();
   if(!canComment||!file||busy)return;
   if(file.size<1||file.size>MAX_SIZE){setError("Choose a file smaller than 10 MB.");return}
-  if(!ALLOWED.has(file.type)){setError("Choose a PDF, photo, text, Word, Excel, or PowerPoint file.");return}
+  const extension=file.name.split(".").pop()?.toLowerCase()??"";
+  const mime=ALLOWED.has(file.type)?file.type:MIME_BY_EXTENSION[extension];
+  if(!mime||!ALLOWED.has(mime)){setError("Choose a PDF, photo, text, Word, Excel, or PowerPoint file.");return}
   setBusy(true);setError("");setNotice("");
   const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"_").slice(-120)||"attachment";
   const path=organizationId+"/"+taskId+"/"+crypto.randomUUID()+"-"+safeName;
   let uploaded=false;
   try{
-   const {error:uploadError}=await db.storage.from(BUCKET).upload(path,file,{upsert:false,contentType:file.type});
+   const {error:uploadError}=await db.storage.from(BUCKET).upload(path,file,{upsert:false,contentType:mime});
    if(uploadError)throw uploadError;
    uploaded=true;
    const {error:saveError}=await db.from("tw_task_attachments").insert({
     organization_id:organizationId,task_id:taskId,uploaded_by:userId,
-    file_name:file.name.slice(0,180),storage_path:path,mime_type:file.type,file_size:file.size
+    file_name:file.name.slice(0,180),storage_path:path,mime_type:mime,file_size:file.size
    });
    if(saveError)throw saveError;
    setFile(null);if(fileInput.current)fileInput.current.value="";
