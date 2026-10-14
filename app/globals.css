@@ -72,3 +72,49 @@ textarea{width:100%;padding:12px 13px;border:1px solid #dbe3ef;border-radius:10p
 }
 @media(max-width:390px){.content{padding-inline:12px}.appHeader{padding-inline:14px}.stat{padding:13px}.stat strong{font-size:25px}.reportStats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(prefers-reduced-motion:reduce){.sidebar{transition:none}}
+
+
+/* Consistent visual hierarchy, readable content width and task-focused navigation */
+:root{--brand:#315cce;--ink:#1b2944;--muted:#66768e;--surface:#fff;--line:#e4eaf3}
+.contentWidth{max-width:1360px;margin-inline:auto}
+.workspace{background:linear-gradient(180deg,#f8faff 0,#f5f7fb 460px)}
+.appHeader{max-width:1476px;margin-inline:auto}
+.appHeader h1{font-size:clamp(25px,2.5vw,34px);letter-spacing:-.85px}
+.appHeader p{max-width:620px}
+.card,.stat,.mobileTaskCard{box-shadow:0 5px 20px rgba(29,54,96,.045)}
+.card h2{line-height:1.35}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #9bb7ff;outline-offset:3px}
+button:not(:disabled){transition:background-color .16s ease,transform .16s ease}
+button:active:not(:disabled){transform:scale(.99)}
+.quickActions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-bottom:21px}
+.quickActions button{display:flex;align-items:center;gap:13px;text-align:left;background:#fff;border:1px solid #e4eaf3;border-radius:15px;padding:16px;min-width:0;box-shadow:0 4px 18px #203b6808}
+.quickActions button:hover{background:#f1f5ff;border-color:#cddbf8}
+.quickActions button strong,.quickActions button small{display:block}
+.quickActions button strong{font-size:14px;color:#1b2944}
+.quickActions button small{font-size:11px;color:#73829a;margin-top:4px}
+.quickIcon{display:grid;place-items:center;flex-shrink:0;width:43px;height:43px;border-radius:12px;background:#edf3ff;color:#315cce;font-size:24px;font-weight:800}
+.headerActions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.headerActions .primary{padding:10px 14px;font-size:12px}
+.taskComposer{border-color:#cddbf8;box-shadow:0 8px 30px #315cce10}
+.detailAction{display:flex;justify-content:flex-end;padding:0 0 12px}
+.detailDisclosure{border:1px solid #e4eaf3;border-radius:12px;padding:13px 15px;margin-bottom:20px}
+.detailDisclosure summary{cursor:pointer;font-weight:700;color:#315cce}
+.detailDisclosure .taskLine:first-of-type{margin-top:12px}
+@media(max-width:1100px){.quickActions{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){
+ .contentWidth{width:100%}
+ .appHeader{padding-bottom:16px}
+ .appHeader p{font-size:13px;line-height:1.5}
+ .quickActions{gap:10px;margin-bottom:16px}
+ .quickActions button{padding:13px;gap:10px;min-height:72px}
+ .quickIcon{width:37px;height:37px;font-size:21px}
+ .quickActions button strong{font-size:13px}
+ .quickActions button small{font-size:10px}
+ .welcome{margin-bottom:14px}
+ .welcome button{min-height:44px}
+ .sectionHead h2{font-size:18px}
+ .taskComposer{scroll-margin-top:80px}
+ .headerActions{width:100%;justify-content:space-between}
+ .headerActions .primary{min-height:44px}
+}
+@media(max-width:360px){.quickActions button{padding:10px;gap:7px}.quickIcon{width:31px;height:31px}.quickActions button small{display:none}}
