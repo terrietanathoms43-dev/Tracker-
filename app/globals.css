@@ -262,3 +262,9 @@ button:active:not(:disabled){transform:scale(.99)}
 .projectEditForm h3{font-size:15px;margin:0 0 7px;color:#294472}
 .projectEditForm label,.taskEditForm label{margin-top:8px}
 @media(max-width:760px){.taskEditForm,.projectEditForm{padding:13px}.projectActions button{min-width:72px}.taskEditForm>div:last-child button,.projectEditForm>div:last-child button{flex:1}}
+
+.workflowHelp{border:1px solid #dfe8f8;background:#f8faff;border-radius:11px;padding:11px 15px;margin:5px 0 17px;color:#465d83;font-size:12px;line-height:1.55}
+.workflowHelp summary{cursor:pointer;font-weight:800;color:#315cce;min-height:24px}
+.workflowHelp p{margin:10px 0 0}
+.workflowHelp p:last-child{margin-bottom:5px}
+@media(max-width:760px){.workflowHelp{margin-bottom:14px}}
