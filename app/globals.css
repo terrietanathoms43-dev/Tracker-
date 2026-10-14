@@ -363,3 +363,9 @@ button:active:not(:disabled){transform:scale(.99)}
  .calendarCell{min-height:55px}
  .calendarToday{font-size:11px}
 }
+
+.taskCollaboration{border:1px solid #d6e2f7;border-radius:13px;padding:15px 17px;margin:17px 0;background:#f8faff}
+.taskCollaboration summary{font-weight:800;color:#315cce;cursor:pointer;min-height:29px;list-style-position:inside}
+.taskCollaboration>p{font-size:12px;margin:9px 0;line-height:1.55}
+.taskCollaboration .taskExtras{margin-top:12px;padding-top:0;border:0}
+@media(max-width:760px){.taskCollaboration{padding:13px;margin:14px 0}}
