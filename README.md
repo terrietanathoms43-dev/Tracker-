@@ -26,3 +26,6 @@ The active Trackwise repository is `terrietanathoms43-dev/Tracker-`. The previou
 
 ## Database
 Uses the existing Supabase project `lyxozmoqkljaflofupcs`. Switching GitHub repositories does **not** require creating or replacing database tables. Apply only migrations not yet present in the project.
+
+## Production reliability
+The automated quality workflow runs TypeScript checks, tests, and a production build on every push. See [Production operations and recovery](docs/PRODUCTION_RUNBOOK.md) for authentication redirects, incident handling, and a free manual backup procedure (database dumps do not include uploaded Storage file contents).
