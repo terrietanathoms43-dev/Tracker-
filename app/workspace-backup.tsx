@@ -167,13 +167,36 @@ export default function WorkspaceBackup({organizationId,organizationName,userId}
    setError("Sharing wasn't completed. Download the file and upload it in Google Drive.");
   }
  }
+ function chooseBackupFile(file:File|null){
+  setVerified("");setError("");setVerifyFile(null);
+  if(!file)return;
+  if(!file.name.toLowerCase().endsWith(".twbackup")){
+   setError("Wrong file type: choose your Trackwise .twbackup file from Files → Downloads, not a photograph, screenshot, or PDF.");
+   return;
+  }
+  setVerifyFile(file);
+ }
  async function checkBackup(){
-  if(!verifyFile){setError("Choose an encrypted .twbackup file to verify.");return}
+  if(!verifyFile){setError("Choose the encrypted trackwise-YYYY-MM-DD.twbackup file from your Downloads folder.");return}
+  if(!verifyFile.name.toLowerCase().endsWith(".twbackup")){
+   setError("This isn't a Trackwise backup. Choose a file ending in .twbackup from your Downloads folder.");return;
+  }
   if(!verifyPassword){setError("Enter the backup's passphrase to verify it.");return}
   setVerifying(true);setError("");setVerified("");
   try{
    if(verifyFile.size>80*1024*1024)throw new Error("This file is too large to verify on a mobile device.");
-   const sealed:unknown=JSON.parse(await verifyFile.text());
+   if(verifyFile.size===0)throw new Error("This backup file is empty. Download it again and retry.");
+   const sample=new Uint8Array(await verifyFile.slice(0,16).arrayBuffer());
+   if((sample[0]===0xff&&sample[1]===0xd8&&sample[2]===0xff)||
+      (sample[0]===0x89&&sample[1]===0x50&&sample[2]===0x4e&&sample[3]===0x47)||
+      (sample[0]===0x25&&sample[1]===0x50&&sample[2]===0x44&&sample[3]===0x46)){
+    throw new Error("You selected an image or PDF, not an encrypted Trackwise backup. Open Files → Downloads and select trackwise-YYYY-MM-DD.twbackup.");
+   }
+   let sealed:unknown;
+   try{sealed=JSON.parse(await verifyFile.text())}
+   catch{
+    throw new Error("This file is not a valid encrypted Trackwise backup. Select your downloaded .twbackup file, not an image or another document.");
+   }
    const data=await decryptWorkspaceData(sealed,verifyPassword);
    if(!data||typeof data!=="object")throw new Error("Backup contents were not recognized.");
    const record=data as {format?:string;organizationName?:string;exportedAt?:string;tableRows?:Record<string,unknown[]>;storageFiles?:unknown[]};
@@ -202,8 +225,9 @@ export default function WorkspaceBackup({organizationId,organizationName,userId}
    <div className="backupButtons"><button type="button" className="primary" onClick={()=>{saveToDevice(archive);setNotice("Encrypted backup downloaded. Check your device's Downloads folder.")}}>2. Save on my device ↓</button><button type="button" onClick={()=>void shareArchive()}>3. Share to Google Drive ↗</button></div>
   </div>}
   <details className="backupVerify"><summary>Verify an encrypted backup</summary>
-   <p className="muted">Choose the saved file and enter your backup passphrase. Trackwise checks the file on this device without uploading it.</p>
-   <label htmlFor="backupVerifyFile">Encrypted backup file (.twbackup)</label><input id="backupVerifyFile" type="file" accept=".twbackup,application/json" onChange={e=>{setVerifyFile(e.target.files?.[0]??null);setVerified("")}}/>
+   <p className="muted">Open <strong>Files → Downloads</strong> on your phone and choose the file named <strong>trackwise-YYYY-MM-DD.twbackup</strong>. Do not choose a photo, screenshot, or PDF. Enter the backup passphrase below. This check stays on your device.</p>
+   <label htmlFor="backupVerifyFile">Select your downloaded .twbackup file</label><input id="backupVerifyFile" type="file" accept=".twbackup" onChange={e=>chooseBackupFile(e.target.files?.[0]??null)}/>
+   {verifyFile&&<p className="muted">Selected: <strong>{verifyFile.name}</strong> ({Math.round(verifyFile.size/1024)} KB)</p>}
    <label htmlFor="backupVerifyPassphrase">Backup passphrase</label><input id="backupVerifyPassphrase" type="password" value={verifyPassword} onChange={e=>setVerifyPassword(e.target.value)} autoComplete="off"/>
    <button type="button" disabled={verifying||!verifyFile||!verifyPassword} onClick={()=>void checkBackup()}>{verifying?"Checking…":"Verify backup locally"}</button>
   </details>
