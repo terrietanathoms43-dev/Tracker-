@@ -1577,3 +1577,100 @@ body{font-size:16px;line-height:1.56}
  .reportDataTable th,.reportDataTable td{padding:5px;font-size:10px}
  .reportTrack>span{background:#345bba!important;print-color-adjust:exact}
 }
+
+
+/* Trackwise creation and leadership-report experience */
+.quickCreateStep{display:flex;align-items:center;flex-wrap:wrap;gap:10px;color:#233d71}
+.quickCreateStep>span{display:grid;place-items:center;width:27px;height:27px;flex:none;border-radius:50%;background:#2e5bcc;color:#fff;font-weight:900}
+.quickCreateStep strong{font-size:14px}
+.quickCreateStep small{font-size:12px;color:#687b98;line-height:1.5}
+.quickCreateIdeas{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.quickCreateIdeas button{background:#f0f5ff;border:1px solid #d4e1f8;color:#2b559f;border-radius:99px;min-height:36px;padding:7px 12px;font-size:12px;font-weight:750;text-align:left}
+.quickCreateIdeas button:hover{background:#e5edff;border-color:#a8c3f3}
+.quickCreateTaskPlan{display:grid;gap:15px}
+.quickCreateAssignee{display:grid;gap:10px}
+.quickCreateAssigneeLabel{color:#304466;font-size:14px;font-weight:850}
+.quickCreateAssigneeChoices{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
+.quickCreateAssigneeChoices button{min-height:42px;background:#f8faff;border:1px solid #dce6f7;border-radius:11px;padding:10px 13px;color:#47628f;font-size:13px;font-weight:750}
+.quickCreateAssigneeChoices button.chosen{background:#e9f1ff;border-color:#7c9fe7;color:#204aa7;box-shadow:inset 0 0 0 1px #a9c5fa}
+.quickCreateAssigneeChoices button:hover{background:#e9f1ff}
+.quickCreateContext{margin:0;padding:10px 13px;border:1px solid #e4ebf8;border-radius:11px;background:#f8fbff;color:#4e6589;font-size:13px}
+.quickCreateContext strong{color:#204783}
+.quickCreatePlanToggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:15px;text-align:left;background:#f6f9ff;border:1px solid #d6e3f8;border-radius:12px;padding:13px 15px;color:#244d9d}
+.quickCreatePlanToggle span{display:grid;gap:3px}
+.quickCreatePlanToggle strong{font-size:13px}
+.quickCreatePlanToggle small{color:#687a98;font-size:12px}
+.quickCreatePlanToggle svg{transition:transform .2s ease;flex:none}
+.quickCreatePlanToggle svg.rotated{transform:rotate(180deg)}
+.quickCreatePlanFields{display:grid;gap:13px;padding:15px;background:#fcfdff;border:1px solid #e1e9f7;border-radius:12px}
+.quickCreatePlanFields .quickCreateField label{margin-top:0}
+.quickCreateFooterHelp{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:650;color:#65806e;margin-right:auto}
+.quickCreateFooterHelp svg{color:#238664;flex:none}
+.reportExportOverlay{position:fixed;inset:0;z-index:390;display:grid;place-items:center;background:#07162dc7;padding:20px}
+.reportExportDialog{width:min(730px,100%);max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain;background:#fff;border-radius:21px;box-shadow:0 26px 95px #050d2666}
+.reportExportTop{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(125deg,#13264d,#214788);padding:20px 25px;color:#fff;gap:20px}
+.reportExportBrand{display:flex;align-items:center;gap:11px}
+.reportExportMark{display:grid;place-items:center;width:43px;height:43px;background:linear-gradient(145deg,#fce4b0,#ebba62);color:#1a3059;border-radius:12px;font-weight:900;font-size:26px}
+.reportExportBrand strong,.reportExportBrand small{display:block}
+.reportExportBrand strong{font-size:22px;letter-spacing:-.7px}
+.reportExportBrand small{font-size:10px;letter-spacing:1.7px;color:#f8d69b;font-weight:850}
+.reportExportClose{width:44px;height:44px;display:grid;place-items:center;background:#ffffff18;border:1px solid #ffffff35;border-radius:11px;color:#fff}
+.reportExportBody{padding:24px;display:grid;gap:18px}
+.reportExportIntro h2{font-size:22px;margin:0 0 7px;color:#172c51}
+.reportExportIntro h3{font-size:18px;margin:0 0 6px;color:#172c51}
+.reportExportIntro p{font-size:13px;color:#687990;margin:0;line-height:1.6}
+.reportExportIntro.second{border-top:1px solid #e4eaf4;padding-top:18px}
+.reportScopeGrid,.reportFormatList{border:0;padding:0;margin:0;min-width:0}
+.reportScopeGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}
+.reportScopeOption{position:relative;display:grid;align-content:start;gap:8px;min-width:0;min-height:135px;padding:15px;background:#f9fbff;border:2px solid #e1e9f6;border-radius:14px;margin:0;cursor:pointer}
+.reportScopeOption.chosen{background:#edf4ff;border-color:#527bda}
+.reportScopeOption>input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.reportScopeOption:focus-within,.reportFormatOption:focus-within{outline:3px solid #94b2f8;outline-offset:2px}
+.reportScopeOption svg{color:#3962c0}
+.reportScopeOption strong{font-size:14px;color:#233c6b}
+.reportScopeOption small{font-size:12px;line-height:1.4;color:#6c7d99}
+.reportExportSelectors{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.reportExportSelectors label{font-size:13px;font-weight:800;margin:0;color:#304765}
+.reportExportSelectors select{display:block;min-width:0;width:100%;margin:7px 0 0;padding:12px;font-size:14px}
+.reportExportSelectors small{display:block;font-weight:500;margin-top:6px;color:#6a7c95;line-height:1.5}
+.reportFormatList{display:grid;gap:9px}
+.reportFormatOption{display:flex;align-items:center;gap:13px;min-height:76px;margin:0;padding:13px 16px;background:#fff;border:2px solid #e1e9f6;border-radius:13px;cursor:pointer}
+.reportFormatOption.chosen{border-color:#527bda;background:#f1f6ff}
+.reportFormatOption>input{width:19px;height:19px;flex:none;accent-color:#315dc6}
+.reportFormatOption svg{color:#3c66b7;flex:none}
+.reportFormatOption span{display:grid;gap:4px}
+.reportFormatOption strong{font-size:14px;color:#243b65}
+.reportFormatOption small{font-size:12px;color:#687995;line-height:1.5}
+.reportExportPreview{display:flex;align-items:flex-start;gap:11px;padding:15px 17px;border-radius:13px;background:#edf4ff;border:1px solid #d0e0fc}
+.reportExportPreview svg{color:#3761ba;flex:none}
+.reportExportPreview div{display:grid;gap:4px;min-width:0}
+.reportExportPreview strong{font-size:14px;color:#234786;overflow-wrap:anywhere}
+.reportExportPreview span{font-size:12px;color:#526b94;line-height:1.5}
+.reportExportHint,.reportExportWarning{border-left:3px solid #b78e3c;padding:11px 13px;margin:0;background:#fff8e8;color:#725c32;font-size:12px;line-height:1.55}
+.reportExportWarning{background:#fff3ef;color:#8a4238;border-left-color:#bf6a55}
+.reportExportFooter{position:sticky;bottom:-24px;display:flex;justify-content:flex-end;align-items:center;gap:10px;background:#fff;border-top:1px solid #e2e9f4;margin:1px -24px -24px;padding:15px 24px;box-shadow:0 -8px 18px #1d38600d}
+.reportExportFooter button{min-height:47px;border-radius:10px;padding:10px 18px;font-weight:800}
+.reportExportFooter button:not(.primary){background:#fff;border:1px solid #d8e2f1;color:#395579}
+@media(max-width:760px){
+ .quickCreateStep{gap:8px}
+ .quickCreateStep small{width:100%;padding-left:36px}
+ .quickCreateIdeas button{font-size:12px}
+ .quickCreateAssigneeChoices button{flex:1;min-width:calc(50% - 8px)}
+ .quickCreateFooterHelp{display:none}
+ .reportExportOverlay{padding:0;align-items:end}
+ .reportExportDialog{height:auto;max-height:100dvh;width:100%;border-radius:21px 21px 0 0}
+ .reportExportTop{padding:17px}
+ .reportExportBody{padding:17px;gap:15px}
+ .reportExportIntro h2{font-size:20px}
+ .reportScopeGrid{gap:7px}
+ .reportScopeOption{padding:11px 8px;min-height:124px}
+ .reportScopeOption strong{font-size:12px;line-height:1.3}
+ .reportScopeOption small{font-size:11px}
+ .reportScopeOption svg{width:19px;height:19px}
+ .reportExportSelectors{grid-template-columns:1fr}
+ .reportFormatOption{min-height:70px;padding:11px;gap:9px}
+ .reportExportFooter{margin:1px -17px -17px;bottom:-17px;padding:13px 17px calc(14px + env(safe-area-inset-bottom))}
+ .reportExportFooter button{flex:1}
+ .reportExportFooter button.primary{flex:1.7}
+}
+@media(prefers-reduced-motion:reduce){.quickCreatePlanToggle svg{transition:none}}
