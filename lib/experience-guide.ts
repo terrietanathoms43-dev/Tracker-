@@ -1,7 +1,7 @@
 /** Product glossary and tour content used in Trackwise guided onboarding. */
 export type GuideView="overview"|"tasks"|"calendar"|"projects"|"planning"|"people"|"teams"|"notifications"|"collaboration"|"requests"|"reports"|"resources"|"meeting_ai"|"activity"|"settings";
 export type GuideAction="navigate"|"task"|"project"|"team"|"invite"|"request";
-export type GuideRole="leader"|"member";
+export type GuideRole="leader"|"member"|"new";
 export type GuideStep={
  id:string;eyebrow:string;title:string;summary:string;icon:string;
  points:[string,string,string];
@@ -12,6 +12,13 @@ export type FeatureGuide={
  icon:string;name:string;purpose:string;how:string;view:GuideView;
  leaderOnly?:boolean;
 };
+const newSteps:GuideStep[]=[
+ {id:"welcome",eyebrow:"WELCOME · START HERE",title:"Welcome to your new workspace",summary:"Trackwise brings projects, people and tasks together in a single organized place. The first choice is whether you want to create or join an organization.",icon:"building-2",points:["Create an organization if you'll manage its work.","Join an existing one by accepting an invitation from a leader.","Everything stays inside the organization you select."],view:"overview",action:"navigate",cta:"Start on the welcome screen"},
+ {id:"organization",eyebrow:"STEP 1 · CREATE",title:"Give your organization a name",summary:"Creating a workspace is quick. You can start with only a name and add all other details later.",icon:"building-2",points:["Choose Start an organization.","Enter the club, business or committee name.","Select Create & start setup. You'll become its administrator."],view:"overview",action:"navigate",cta:"Create my organization"},
+ {id:"invite",eyebrow:"STEP 2 · JOIN",title:"Already invited? Join your group",summary:"You do not need to create another organization if your leader has already invited you.",icon:"users-round",points:["Ask your administrator for an invitation link.","Sign in using the same email that received the invitation.","Accept the invitation to see your organization's workspace."],view:"overview",action:"navigate",cta:"Check my invitations"},
+ {id:"features",eyebrow:"STEP 3 · EXPLORE",title:"From an idea to real progress",summary:"Once you join or create a workspace, your new guided tour will take you through the features you can use.",icon:"folder-kanban",points:["Projects group work toward an outcome.","Tasks record who is doing what and by when.","Inbox, calendars and reports keep everyone up to date."],view:"overview",action:"navigate",cta:"Continue to Trackwise"},
+ {id:"finish",eyebrow:"YOU'RE READY",title:"Let's get started",summary:"You can return to this guide at any time through Guided help.",icon:"party-popper",points:["One organization is enough to start.","Invite members only when you're ready.","Your first project can begin with one task."],view:"overview",action:"navigate",cta:"Go to welcome"}
+];
 const leaderSteps:GuideStep[]=[
  {id:"welcome",eyebrow:"01 · THE BASICS",title:"Your whole organization, in one place",summary:"A workspace holds the people, projects and tasks for one organization. Choose its name from the menu at the left.",icon:"layout-dashboard",points:["Start on Home to see what needs attention.","The navigation groups work by Tasks, Projects, People and Inbox.","Use + Create for the fastest route to a new task or project."],view:"overview",action:"navigate",cta:"Open my dashboard"},
  {id:"projects",eyebrow:"02 · PLAN",title:"Start with a project",summary:"A project is an outcome or event made up of smaller tasks. Name it now; link a goal or team later if you wish.",icon:"folder-kanban",points:["Choose a clear project name, such as “Term 2 outreach”.","Add a description to explain why it matters.","Save, then use “Add the first task” to build your plan."],view:"projects",action:"project",cta:"Create a project"},
@@ -53,6 +60,6 @@ export const featureGuide:FeatureGuide[]=[
  {id:"meeting",group:"Advanced",icon:"sparkles",name:"Meeting assistant",purpose:"Find action items in notes and compare them with existing work.",how:"Open Projects → Meeting assistant, provide notes, review recommendations, then approve changes. Full AI requires setup.",view:"meeting_ai",leaderOnly:true},
  {id:"backup",group:"Advanced",icon:"shield-check",name:"Workspace backup",purpose:"Save an encrypted copy of accessible organization data.",how:"Administrators open More → Settings, create a backup and save it securely. This is not a full database restore.",view:"settings",leaderOnly:true}
 ];
-export function stepsForRole(role:GuideRole){return role==="leader"?leaderSteps:memberSteps}
+export function stepsForRole(role:GuideRole){return role==="leader"?leaderSteps:role==="new"?newSteps:memberSteps}
 export function visibleFeatures(role:GuideRole){return featureGuide.filter(f=>!f.leaderOnly||role==="leader")}
 export function progressLabel(step:number,total:number){return "Step "+Math.min(total,step+1)+" of "+total}
