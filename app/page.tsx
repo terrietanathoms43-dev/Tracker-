@@ -19,6 +19,15 @@ type Handover={id:string;task_id:string;from_user:string|null;to_user:string;not
 type Activity={id:string;entity_type:string;action:string;created_at:string;details:Record<string,unknown>};
 const statuses=["not_started","underway","awaiting_approval","blocked","rejected","completed"];
 const statusLabel=(s:string)=>s.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase());
+const displayError=(cause:unknown,fallback:string)=>{
+ if(cause instanceof Error&&cause.message)return cause.message;
+ if(cause&&typeof cause==="object"&&"message" in cause){
+  const message=(cause as {message?:unknown}).message;
+  if(typeof message==="string"&&message.trim())return message;
+ }
+ return fallback;
+};
+const actionStatusLabel=(status:string)=>status==="awaiting_approval"?"Submit for approval":statusLabel(status);
 export default function Home(){
  const [handovers,setHandovers]=useState<Handover[]>([]),[handoverOwner,setHandoverOwner]=useState(""),[handoverNote,setHandoverNote]=useState("");
  const [inviteShareEmail,setInviteShareEmail]=useState(""),[inviteShareReady,setInviteShareReady]=useState(false),[inviteShareId,setInviteShareId]=useState("");
@@ -148,12 +157,32 @@ export default function Home(){
    setShowTaskForm(false);
    await loadWorkspace(selected);
    setNotice("Task saved to the database. It will appear here whenever you return to this workspace.");
-  }catch(e){setError(e instanceof Error?e.message:"Unable to save task");}
+  }catch(e){setError(displayError(e,"Unable to save task. Please try again."));}
   finally{setWorking(false)}
  }
  async function acceptInvite(id:string){if(!db)return;setInvitesLoading(true);clear();try{const {error}=await db.rpc("tw_accept_invitation",{invitation_id:id});if(error)throw error;setPendingInvites(old=>old.filter(x=>x.id!==id));await loadOrgs();setNotice("Invitation accepted. Your new organization is available.")}catch(e){setError(e instanceof Error?e.message:"Unable to accept invitation")}finally{setInvitesLoading(false)}}
  async function addMember(e:FormEvent){e.preventDefault();if(!db||!selected||!manager)return;setWorking(true);clear();try{const recipient=inviteEmail.trim().toLowerCase();const {error}=await db.rpc("tw_invite_member",{org_id:selected,invite_email:recipient,invite_role:inviteRole});if(error)throw error;setInviteShareReady(false);setInviteShareId("");const {data:invitation,error:invitationError}=await db.from("tw_invitations").select("id").eq("organization_id",selected).eq("email",recipient).single();if(invitationError||!invitation)throw invitationError??new Error("Unable to load invitation link.");setInviteShareEmail(recipient);setInviteShareId(invitation.id);setInviteShareReady(true);setInviteEmail("");await loadOutgoingInvites(selected);setNotice("Invitation created. Copy the link or share it directly with the invited person.");}catch(e){setError(e instanceof Error?e.message:"Unable to invite member")}finally{setWorking(false)}}
- async function updateTask(id:string,status:string){if(!db||!selected)return;let reason:string|null=null;if(status==="blocked"){reason=window.prompt("What is blocking this task?");if(!reason?.trim())return}setWorking(true);clear();try{const {error}=await db.rpc("tw_set_task_status",{task_id:id,new_status:status,new_blocker:reason});if(error)throw error;await loadWorkspace(selected);setNotice("Task updated.")}catch(e){setError(e instanceof Error?e.message:"Unable to update task")}finally{setWorking(false)}}
+ async function updateTask(id:string,status:string){
+  if(!db||!selected||!user)return;
+  if(status==="completed"&&!manager){
+   setError("Only an organization leader can approve and complete tasks. Submit your work for approval instead.");
+   return;
+  }
+  let reason:string|null=null;
+  if(status==="blocked"){
+   reason=window.prompt("What is blocking this task? Add a short explanation so your team can help.");
+   if(!reason?.trim())return;
+  }
+  setWorking(true);clear();
+  try{
+   const {error}=await db.rpc("tw_set_task_status",{task_id:id,new_status:status,new_blocker:reason});
+   if(error)throw error;
+   await loadWorkspace(selected);
+   setNotice(status==="completed"?"Task marked complete and saved.":status==="awaiting_approval"?"Task submitted for approval. Your leader can now review it.":"Task status updated and saved.");
+  }catch(e){
+   setError(displayError(e,"Unable to update the task. Check your permissions and try again."));
+  }finally{setWorking(false)}
+ }
  async function assignMember(e:FormEvent){e.preventDefault();if(!db||!selected||!manager)return;setWorking(true);clear();try{const {error}=await db.rpc("tw_assign_team_member",{target_team:assignTeam,target_user:assignUser,target_role:assignRole});if(error)throw error;await loadWorkspace(selected);setNotice("Team membership saved.")}catch(e){setError(e instanceof Error?e.message:"Unable to assign team member")}finally{setWorking(false)}}
  async function submitRequest(e:FormEvent){e.preventDefault();if(!db||!selected||!user)return;setWorking(true);clear();try{const {error}=await db.from("tw_requests").insert({organization_id:selected,submitted_by:user.id,title:requestTitle.trim(),details:requestDetails.trim()||null});if(error)throw error;setRequestTitle("");setRequestDetails("");await loadWorkspace(selected);setNotice("Request submitted.")}catch(e){setError(e instanceof Error?e.message:"Unable to submit request")}finally{setWorking(false)}}
  async function decideRequest(id:string,decision:string){if(!db||!selected||!manager)return;const reason=window.prompt("Explain your decision:");if(!reason?.trim())return;setWorking(true);clear();try{const {error}=await db.rpc("tw_decide_request",{request_id:id,new_decision:decision,reason:reason.trim()});if(error)throw error;await loadWorkspace(selected);setNotice("Decision recorded.")}catch(e){setError(e instanceof Error?e.message:"Unable to decide request")}finally{setWorking(false)}}
@@ -176,10 +205,10 @@ export default function Home(){
    setProjectName("");setProjectDescription("");setProjectGoal("");setProjectTeam("");
    await loadWorkspace(selected);
    setNotice("Project saved to the database. You can now link tasks to it.");
-  }catch(e){setError(e instanceof Error?e.message:"Unable to save project");}
+  }catch(e){setError(displayError(e,"Unable to save project. Check your organization role and try again."));}
   finally{setWorking(false)}
  }
- const taskTable=<><div className="mobileTaskList">{visibleTasks.length?visibleTasks.map(t=><article className="mobileTaskCard" key={t.id}><div className="mobileTaskTop"><span className={"priority "+t.priority}>{statusLabel(t.priority)}</span><span className="mobileTaskDate">{t.due_at?"Due "+new Date(t.due_at).toLocaleDateString():"No deadline"}</span></div><button className="mobileTaskTitle" onClick={()=>void openTask(t.id)}>{t.title} <span aria-hidden="true">↗</span></button><div className="mobileTaskMeta"><span>{t.owner_id===user?.id?"Assigned to you":directory.find(m=>m.user_id===t.owner_id)?.display_name??"Unassigned"}</span><span>{t.project_id?" · "+(projects.find(p=>p.id===t.project_id)?.name??"Project"):" · No project"}</span></div><div className="mobileTaskStatus">{manager||t.owner_id===user?.id?<select aria-label={"Status for "+t.title} value={t.status} disabled={working} onChange={e=>void updateTask(t.id,e.target.value)}>{statuses.filter(st=>(st!=="completed"&&st!=="rejected")||manager).map(st=><option key={st} value={st}>{statusLabel(st)}</option>)}</select>:<span className="chip">{statusLabel(t.status)}</span>}</div></article>):<div className="card"><p className="muted">{workspaceLoading?"Loading saved tasks…":manager?"No saved tasks match these filters. Add a task or change your filters.":"No tasks match these filters."}</p></div>}</div><div className="tablewrap"><table><thead><tr><th>Task</th><th>Priority</th><th>Due date</th><th>Project</th><th>Owner</th><th>Status</th></tr></thead><tbody>{visibleTasks.length?visibleTasks.map(t=><tr key={t.id}><td><button className="taskOpen" onClick={()=>void openTask(t.id)}>{t.title}</button></td><td><span className={"priority "+t.priority}>{statusLabel(t.priority)}</span></td><td>{t.due_at?new Date(t.due_at).toLocaleDateString():"—"}</td><td>{t.project_id?projects.find(p=>p.id===t.project_id)?.name??"Project":"—"}</td><td>{t.owner_id===user?.id?"You":directory.find(m=>m.user_id===t.owner_id)?.display_name??(t.owner_id?"Assigned":"Unassigned")}</td><td>{manager||t.owner_id===user?.id?<select aria-label={"Status for "+t.title} value={t.status} disabled={working} onChange={e=>void updateTask(t.id,e.target.value)}>{statuses.filter(s=>s!=="completed"&&s!=="rejected"||manager).map(s=><option key={s} value={s}>{statusLabel(s)}</option>)}</select>:<span className="chip">{statusLabel(t.status)}</span>}</td></tr>):<tr><td colSpan={6} className="muted">{workspaceLoading?"Loading saved tasks from the database…":manager?"No saved tasks match your filters. Select Add task to create one.":"No saved tasks match your filters."}</td></tr>}</tbody></table></div></>;
+ const taskTable=<><div className="mobileTaskList">{visibleTasks.length?visibleTasks.map(t=><article className="mobileTaskCard" key={t.id}><div className="mobileTaskTop"><span className={"priority "+t.priority}>{statusLabel(t.priority)}</span><span className="mobileTaskDate">{t.due_at?"Due "+new Date(t.due_at).toLocaleDateString():"No deadline"}</span></div><button className="mobileTaskTitle" onClick={()=>void openTask(t.id)}>{t.title} <span aria-hidden="true">↗</span></button><div className="mobileTaskMeta"><span>{t.owner_id===user?.id?"Assigned to you":directory.find(m=>m.user_id===t.owner_id)?.display_name??"Unassigned"}</span><span>{t.project_id?" · "+(projects.find(p=>p.id===t.project_id)?.name??"Project"):" · No project"}</span></div><div className="mobileTaskStatus">{manager||t.owner_id===user?.id?<select aria-label={"Status for "+t.title} value={t.status} disabled={working} onChange={e=>void updateTask(t.id,e.target.value)}>{statuses.filter(st=>manager?st!=="rejected"||t.status==="awaiting_approval":st!=="completed"&&st!=="rejected").map(st=><option key={st} value={st}>{actionStatusLabel(st)}</option>)}</select>:<span className="chip">{statusLabel(t.status)}</span>}</div></article>):<div className="card"><p className="muted">{workspaceLoading?"Loading saved tasks…":manager?"No saved tasks match these filters. Add a task or change your filters.":"No tasks match these filters."}</p></div>}</div><div className="tablewrap"><table><thead><tr><th>Task</th><th>Priority</th><th>Due date</th><th>Project</th><th>Owner</th><th>Status</th></tr></thead><tbody>{visibleTasks.length?visibleTasks.map(t=><tr key={t.id}><td><button className="taskOpen" onClick={()=>void openTask(t.id)}>{t.title}</button></td><td><span className={"priority "+t.priority}>{statusLabel(t.priority)}</span></td><td>{t.due_at?new Date(t.due_at).toLocaleDateString():"—"}</td><td>{t.project_id?projects.find(p=>p.id===t.project_id)?.name??"Project":"—"}</td><td>{t.owner_id===user?.id?"You":directory.find(m=>m.user_id===t.owner_id)?.display_name??(t.owner_id?"Assigned":"Unassigned")}</td><td>{manager||t.owner_id===user?.id?<select aria-label={"Status for "+t.title} value={t.status} disabled={working} onChange={e=>void updateTask(t.id,e.target.value)}>{statuses.filter(st=>manager?st!=="rejected"||t.status==="awaiting_approval":st!=="completed"&&st!=="rejected").map(st=><option key={st} value={st}>{actionStatusLabel(st)}</option>)}</select>:<span className="chip">{statusLabel(t.status)}</span>}</td></tr>):<tr><td colSpan={6} className="muted">{workspaceLoading?"Loading saved tasks from the database…":manager?"No saved tasks match your filters. Select Add task to create one.":"No saved tasks match your filters."}</td></tr>}</tbody></table></div></>;
  if(recovery&&user)return <main className="recoveryPage"><section className="card recoveryCard"><h1>Choose a new password</h1><p className="muted">Set a secure password for your Trackwise account.</p>{error&&<p role="alert" className="feedback bad">{error}</p>}{notice&&<p className="feedback good">{notice}</p>}<form onSubmit={changePassword}><label htmlFor="newPassword">New password</label><input id="newPassword" type="password" autoComplete="new-password" minLength={10} required value={newPassword} onChange={e=>setNewPassword(e.target.value)}/><button className="primary" disabled={working}>Update password</button></form></section></main>;
  if(!ready)return <main className="center"><div className="card"><h1>Trackwise</h1><h2>Setup required</h2><p>Supabase environment variables are missing from this deployment.</p></div></main>;
  if(initial)return <main className="center"><div className="spinner"/><p>Preparing your workspace…</p></main>;
