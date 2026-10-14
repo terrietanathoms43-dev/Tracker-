@@ -892,3 +892,10 @@ label{color:#334564;font-size:13px}
 
 /* Checkbox and radio controls must retain their own sizing; text-field sizes don't apply. */
 input[type="checkbox"],input[type="radio"]{min-height:0;min-width:0}
+
+/* Invite a first-time user to explore before asking them to create an account workspace. */
+.newUserGuideCTA{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+ margin:4px auto 15px;min-height:45px;padding:10px 16px;border-radius:11px;
+ background:#edf3ff;border:1px solid #cad9f8;color:#254fb0;font-size:13px;font-weight:850}
+.newUserGuideCTA:hover{background:#dfe9ff;border-color:#9fbaef}
+@media(max-width:760px){.newUserGuideCTA{width:100%;max-width:380px}}
