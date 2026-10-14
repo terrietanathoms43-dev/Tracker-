@@ -194,8 +194,11 @@ export default function MeetingAssistant({organizationId,userId,tasks,projects,m
   }catch(e){
    setError(cleanError(e,"Couldn't save this suggestion.")+" "+(done.length?"Earlier "+done.length+" item(s) were saved; review the remaining selections.":"No later items were saved."));
   }finally{
-   if(done.length)await onSaved();
-   setWorking(false);
+   try{
+    if(done.length)await onSaved();
+   }catch{
+    setError(current=>current||"Changes were saved, but the workspace couldn't refresh. Reload Trackwise to see them.");
+   }finally{setWorking(false)}
   }
  }
  const proposed=result?.suggestions.filter(s=>s.kind!=="already_tracked")??[];
