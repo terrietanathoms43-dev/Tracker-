@@ -484,3 +484,74 @@ button:active:not(:disabled){transform:scale(.99)}
 .backupNote{font-size:11px;line-height:1.6;margin:15px 0 0}
 .backupNote a{color:#2c5ece;font-weight:800}
 @media(max-width:760px){.backupCreateForm{grid-template-columns:1fr;gap:10px}.backupCreateForm>button{width:100%;min-height:48px}.backupButtons{flex-direction:column}.backupButtons button{width:100%;min-height:49px}.workspaceBackup .sectionHead{flex-wrap:wrap}}
+
+/* Meeting assistant — intentionally review-first: no automatic database writes. */
+.meetingAssistant{display:grid;gap:19px}
+.meetingIntro{background:linear-gradient(115deg,#f6f9ff,#fff 68%);border-color:#dce7fb}
+.meetingIntro>.sectionHead{margin-bottom:12px}
+.meetingIntro>p{max-width:850px}
+.meetingIntro>label:not(.meetingConsent){margin:16px 0 8px;font-size:13px;color:#293e63}
+.meetingIntro input[type="file"]{display:block;width:100%;padding:12px;background:#fff;border:1px solid #dce5f5;border-radius:11px;min-height:49px}
+.meetingIntro>small{display:block;font-size:11px;margin:7px 0 18px}
+.meetingIntro textarea{display:block;width:100%;min-height:205px;resize:vertical;padding:15px;line-height:1.65;border:1px solid #d1ddef;border-radius:11px;background:#fff;font-size:14px}
+.meetingIntro textarea:focus-visible,.meetingEditGrid input:focus-visible,.meetingEditGrid textarea:focus-visible,.meetingEditGrid select:focus-visible{outline:2px solid #547bd8;outline-offset:2px}
+.meetingSource{font-size:12px;margin:9px 0 0}
+.meetingMeta{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:8px 0 17px}
+.meetingMeta small{font-size:11px;color:#7a8aa5}
+.meetingMeta button{font-size:12px}
+.meetingConsent{display:flex;align-items:flex-start;gap:11px;padding:14px 15px;background:#f4f7ff;border:1px solid #e0e8f7;border-radius:11px;margin:12px 0 16px;line-height:1.6;font-weight:500;font-size:12px;color:#455a7f}
+.meetingConsent input{flex-shrink:0;width:19px;height:19px;margin-top:1px;accent-color:#345fce}
+.meetingConsent span{flex:1}
+.meetingAnalyze{min-height:48px;padding:11px 19px;border-radius:10px}
+.meetingPrivacy{font-size:11px;margin:13px 0 0;color:#71809a;line-height:1.65}
+.meetingResults>.sectionHead{margin-bottom:11px}
+.meetingResults>.sectionHead h2{margin:7px 0 0}
+.meetingResults>p.muted{font-size:12px}
+.meetingQuestions{background:#f8faff;border:1px solid #e1eafa;border-radius:11px;padding:13px 15px;margin:15px 0}
+.meetingQuestions h3{font-size:13px;margin-bottom:9px}
+.meetingQuestions ul{margin:0;padding-left:19px;line-height:1.7;font-size:13px}
+.meetingSelectBar{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin:16px 0;padding:12px;background:#f3f6ff;border:1px solid #e1e8f6;border-radius:12px}
+.meetingSelectBar button{background:#fff;border:1px solid #d4dff3;color:#3559aa;font-size:12px;font-weight:800;border-radius:9px;padding:9px 12px;min-height:41px}
+.meetingSelectBar button:hover:not(:disabled){background:#e9f1ff}
+.meetingSelectBar strong{margin-left:auto;font-size:12px;color:#425d92}
+.meetingSuggestionList{display:grid;gap:14px}
+.meetingSuggestion{padding:17px;border:1px solid #dfe8f6;border-radius:14px;background:#fff}
+.meetingSuggestion.meetingAccepted{background:#f3fbf7;border-color:#c8e9d5}
+.meetingSuggestionHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.meetingSuggestionHead label{display:flex;align-items:center;gap:11px;min-width:0;font-size:14px}
+.meetingSuggestionHead strong{font-size:14px;color:#244271}
+.meetingSuggestionHead input{flex-shrink:0;width:20px;height:20px;accent-color:#365cc7}
+.meetingSuggestionHead small{font-size:11px;white-space:nowrap;color:#687a95}
+.meetingSuggestion>.muted{font-size:12px}
+.meetingEditGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.meetingEditGrid>.span2{grid-column:1/-1}
+.meetingEditGrid>div{min-width:0}
+.meetingEditGrid label{display:block;margin:0 0 6px;font-size:12px;font-weight:700;color:#4c6389}
+.meetingEditGrid input,.meetingEditGrid select,.meetingEditGrid textarea{width:100%;border:1px solid #dae4f5;border-radius:9px;padding:10px 11px;font-size:13px;min-height:43px;background:#fff;max-width:100%}
+.meetingEditGrid textarea{line-height:1.6;resize:vertical;min-height:78px}
+.meetingEvidence{background:#f4f7fc;color:#405777;border-left:3px solid #799dde;padding:10px 12px;border-radius:7px;margin:14px 0 0;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.meetingWhy{margin:9px 0 0;font-size:11px;line-height:1.5}
+.meetingSaveBar{border-top:1px solid #e5eaf4;margin:19px 0 5px;padding-top:15px;display:flex;align-items:center;justify-content:space-between;gap:17px;flex-wrap:wrap}
+.meetingSaveBar p{font-size:12px;flex:1;margin:0}
+.meetingSaveBar button{min-height:46px;padding:10px 18px;border-radius:10px;white-space:nowrap}
+.meetingExisting{border:1px solid #dfe8f5;border-radius:11px;padding:14px 15px;margin:20px 0 0;background:#fafdff}
+.meetingExisting summary{cursor:pointer;font-weight:800;font-size:13px;color:#395a91}
+.meetingMatch{border-top:1px solid #e8eef6;padding:12px 0 0;margin-top:12px;display:grid;gap:4px}
+.meetingMatch strong{font-size:13px}
+.meetingMatch span,.meetingMatch small{font-size:11px;color:#697d9e}
+@media(max-width:760px){
+ .meetingIntro>.sectionHead,.meetingResults>.sectionHead{flex-wrap:wrap}
+ .meetingIntro textarea{min-height:175px;font-size:14px}
+ .meetingIntro input[type="file"]{font-size:13px}
+ .meetingAnalyze{width:100%;font-size:13px}
+ .meetingSuggestion{padding:13px}
+ .meetingEditGrid{grid-template-columns:1fr;gap:10px}
+ .meetingEditGrid>.span2{grid-column:auto}
+ .meetingEditGrid input,.meetingEditGrid select,.meetingEditGrid textarea{min-height:46px}
+ .meetingSelectBar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .meetingSelectBar button{font-size:11px;min-width:0}
+ .meetingSelectBar strong{grid-column:1/-1;text-align:right}
+ .meetingSaveBar{display:grid}
+ .meetingSaveBar button{width:100%;white-space:normal}
+ .meetingSuggestionHead strong{font-size:12px}
+}
