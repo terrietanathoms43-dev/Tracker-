@@ -27,7 +27,7 @@ export default function TaskExtras({organizationId,taskId,userId,manager,canComm
  const [error,setError]=useState(""),[notice,setNotice]=useState("");
  const fileInput=useRef<HTMLInputElement>(null);
  const refresh=useCallback(async()=>{
-  setLoading(true);
+  setLoading(true);setError("");
   try{
    const [c,f]=await Promise.all([
     db.from("tw_task_comments").select("id,body,author_id,created_at").eq("organization_id",organizationId).eq("task_id",taskId).order("created_at",{ascending:false}).limit(100),
@@ -91,9 +91,17 @@ export default function TaskExtras({organizationId,taskId,userId,manager,canComm
  }
  async function openFile(item:Attachment){
   setError("");
+  // Open a tab synchronously on click so mobile browsers do not block it after the async request.
+  const popup=window.open("about:blank","_blank");
+  if(popup)popup.opener=null;
   const {data,error}=await db.storage.from(BUCKET).createSignedUrl(item.storage_path,60);
-  if(error||!data?.signedUrl){setError(error?.message??"Could not open the file");return}
-  window.open(data.signedUrl,"_blank","noopener,noreferrer");
+  if(error||!data?.signedUrl){
+   popup?.close();
+   setError(error?.message??"Could not open the file");
+   return;
+  }
+  if(popup)popup.location.replace(data.signedUrl);
+  else window.location.assign(data.signedUrl);
  }
  async function removeFile(item:Attachment){
   if(!window.confirm("Remove this attachment for everyone?"))return;
