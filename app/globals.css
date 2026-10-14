@@ -889,3 +889,6 @@ label{color:#334564;font-size:13px}
  .twTourFeatureToggle{padding:12px 11px}
 }
 @media(max-width:370px){.twTourDots button:nth-child(even){display:none}}
+
+/* Checkbox and radio controls must retain their own sizing; text-field sizes don't apply. */
+input[type="checkbox"],input[type="radio"]{min-height:0;min-width:0}
