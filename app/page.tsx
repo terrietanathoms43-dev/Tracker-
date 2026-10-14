@@ -105,6 +105,20 @@ export default function Home(){
  useEffect(()=>{if(user&&typeof window!=="undefined"&&new URLSearchParams(window.location.search).has("invite"))setView("settings")},[user]);
  useEffect(()=>{if(user)void loadOrgs();else{setOrgs([]);setSelected("");setTeams([]);setTasks([])}},[user,loadOrgs]);
  useEffect(()=>{if(selected){setTasks([]);setProjects([]);setMembers([]);setTeams([]);setGoals([]);setDirectory([]);setProjectFilter("all");setSelectedTask("");void loadWorkspace(selected)}else{workspaceRequest.current++;setTeams([]);setTasks([]);setProjects([]);setMembers([]);setGoals([]);setDirectory([]);setWorkspaceLoading(false)}},[selected,loadWorkspace]);
+ // Refresh persisted tasks and projects after returning to an open Trackwise tab.
+ useEffect(()=>{
+  if(!selected||!user)return;
+  let lastRefresh=Date.now();
+  const checkForUpdates=()=>{
+   if(document.visibilityState!=="visible"||Date.now()-lastRefresh<15000)return;
+   lastRefresh=Date.now();
+   void loadWorkspace(selected);
+  };
+  window.addEventListener("focus",checkForUpdates);
+  document.addEventListener("visibilitychange",checkForUpdates);
+  return()=>{window.removeEventListener("focus",checkForUpdates);document.removeEventListener("visibilitychange",checkForUpdates)};
+ },[selected,user?.id,loadWorkspace]);
+
  const active=orgs.find(o=>o.id===selected),role=members.find(m=>m.user_id===user?.id)?.role,manager=role==="admin"||role==="leader";
  const counts=useMemo(()=>({total:tasks.length,active:tasks.filter(t=>t.status==="underway").length,blocked:tasks.filter(t=>t.status==="blocked").length,done:tasks.filter(t=>t.status==="completed").length,overdue:tasks.filter(t=>t.due_at&&new Date(t.due_at)<new Date()&&t.status!=="completed").length}),[tasks]);
  async function auth(e:FormEvent){e.preventDefault();if(!db)return;setWorking(true);clear();try{if(mode==="reset"){const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});if(error)throw error;setNotice("Password reset email sent. Check your inbox.");return}const result=mode==="signin"?await db.auth.signInWithPassword({email,password}):await db.auth.signUp({email,password,options:{emailRedirectTo:window.location.origin}});if(result.error)throw result.error;if(mode==="signup")setNotice(result.data.session?"Your account is ready.":"Check your email to confirm your account.");}catch(e){setError(e instanceof Error?e.message:"Unable to authenticate")}finally{setWorking(false)}}
