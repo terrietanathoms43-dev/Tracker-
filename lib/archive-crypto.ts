@@ -58,7 +58,7 @@ export async function decryptWorkspaceData(input:unknown,passphrase:string):Prom
   const iv=base64ToBytes(frame.iv);
   if(salt.length!==16||iv.length!==12)throw new Error("Invalid encryption parameters");
   const key=await deriveArchiveKey(passphrase,salt,frame.iterations,["decrypt"]);
-  const plaintext=await crypto.subtle.decrypt({name:"AES-GCM",iv:new Uint8Array(iv).buffer},key,base64ToBytes(frame.ciphertext).buffer);
+  const plaintext=await crypto.subtle.decrypt({name:"AES-GCM",iv:new Uint8Array(iv).buffer},key,new Uint8Array(base64ToBytes(frame.ciphertext)).buffer);
   return JSON.parse(new TextDecoder().decode(plaintext));
  }catch{
   throw new Error("Couldn't open the backup. Check the passphrase and file, then try again.");
