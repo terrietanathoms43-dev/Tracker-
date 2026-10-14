@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {canManageOrganization,canEditTaskChecklist,canSubmitForApproval,canCompleteTask,taskStatusLabel,userFacingError} from "../lib/task-rules.ts";
+import {canManageOrganization,canEditTaskChecklist,canOwnTask,canSubmitForApproval,canCompleteTask,taskStatusLabel,userFacingError} from "../lib/task-rules.ts";
 
 test("administrators and leaders can manage, others cannot",()=>{
  for(const role of ["admin","leader"])assert.equal(canManageOrganization(role),true);
@@ -47,4 +47,9 @@ test("errors explain missing connectivity and expired sessions",()=>{
  assert.match(userFacingError({message:"duplicate key value violates constraint"},"Save failed"),/already exists/i);
  assert.equal(userFacingError(null,"Save failed"),"Save failed");
  assert.equal(userFacingError(new Error("Only administrators can approve"),"Save failed"),"Only administrators can approve");
+});
+
+test("task owner role eligibility blocks read-only roles",()=>{
+ for(const role of ["admin","leader","member"])assert.equal(canOwnTask(role),true);
+ for(const role of ["observer","stakeholder",null,undefined,"unknown"])assert.equal(canOwnTask(role),false);
 });
