@@ -18,6 +18,16 @@ Test confirmation and password-reset emails in a private browser session. Auth s
 
 In Authentication → Providers → Email, maintain a suitable password-length requirement (at least 8 characters). Supabase's *leaked-password protection* is available on **Pro and above** according to [Supabase's official documentation](https://supabase.com/docs/guides/auth/password-security). Do not purchase or enable a paid plan without explicit approval; the scanner will continue reporting this warning on free plans.
 
+## Encrypted organization archive on phone (and Google Drive)
+
+For a quick copy of visible Trackwise organization records, an **administrator** can open the app's **More → Settings → Encrypted workspace backup**. Choose a long private passphrase of at least 16 characters, confirm it, and select **Create encrypted backup**. Once created:
+1. Select **Save on my device** and verify the file appears in Downloads.
+2. Select **Share to Google Drive**; on Android, choose the Drive app in the share sheet, select a private folder, and confirm the upload. If the browser cannot share the file, upload the same downloaded `.twbackup` file in the Google Drive app.
+3. Back in Trackwise, choose **Verify an encrypted backup** and provide the downloaded file and passphrase. AES-GCM authentication verifies the archive has not been altered and that the passphrase is correct.
+4. Verify the uploaded file appears in Drive (same filename and file size) and keep the passphrase somewhere separate from both copies. Do not put it in the Drive folder.
+
+**Important limitations:** This app-level archive is encrypted on the user's device and includes the visible organization records and linked private task attachments, subject to a browser size limit. It **does not** include auth.users / authentication credentials, PostgreSQL functions, RLS policies, other users' private notifications, or database-wide settings. There is no one-click database restore from `.twbackup`. Only the separate CLI logical backup below is intended for database disaster recovery. This client-side export is a supplemental archive, not a replacement.
+
 ## Database backups on free plans
 Supabase's [backup guide](https://supabase.com/docs/guides/platform/backups) recommends that **Free projects export data regularly**: daily managed backups are for paid plans. The GitHub repository contains the app source and some migrations, **not** your users' saved records.
 
