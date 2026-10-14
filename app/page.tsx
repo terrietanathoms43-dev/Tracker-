@@ -44,7 +44,8 @@ const NAV_GROUPS:NavGroup[]=[
  {id:"projects",label:"Projects",icon:"▧",defaultView:"projects",items:[{view:"projects",label:"Projects"},{view:"planning",label:"Goals & planning"},{view:"meeting_ai",label:"Meeting assistant"}]},
  {id:"people",label:"People",icon:"♙",defaultView:"people",items:[{view:"people",label:"Members"},{view:"teams",label:"Teams"}]},
  {id:"inbox",label:"Inbox",icon:"◉",defaultView:"notifications",items:[{view:"notifications",label:"Notifications"},{view:"collaboration",label:"Team messages"},{view:"requests",label:"Requests & approvals"}]},
- {id:"more",label:"More",icon:"⚙",defaultView:"settings",items:[{view:"profile",label:"My profile"},{view:"settings",label:"Settings"},{view:"reports",label:"Reports"},{view:"resources",label:"Budgets"},{view:"activity",label:"Activity history"}]}
+ {id:"reports",label:"Reports",icon:"▤",defaultView:"reports",items:[{view:"reports",label:"Reports"}]},
+ {id:"more",label:"More",icon:"⚙",defaultView:"settings",items:[{view:"profile",label:"My profile"},{view:"settings",label:"Settings"},{view:"resources",label:"Budgets"},{view:"activity",label:"Activity history"}]}
 ];
 function navigationIcon(id:string){
  if(id==="home"||id==="overview")return <House size={19} strokeWidth={2.1}/>;
@@ -52,6 +53,7 @@ function navigationIcon(id:string){
  if(id==="projects")return <FolderKanban size={19} strokeWidth={2.1}/>;
  if(id==="people")return <UsersRound size={19} strokeWidth={2.1}/>;
  if(id==="inbox"||id==="notifications")return <Inbox size={19} strokeWidth={2.1}/>;
+ if(id==="reports")return <BarChart3 size={19} strokeWidth={2.1}/>;
  return <Settings2 size={19} strokeWidth={2.1}/>;
 }
 export default function Home(){
@@ -71,6 +73,7 @@ export default function Home(){
  const [myTasksOnly,setMyTasksOnly]=useState(false),[workspaceLoading,setWorkspaceLoading]=useState(false);
  const workspaceRequest=useRef(0);
  const [mobileMenu,setMobileMenu]=useState(false),[showTaskForm,setShowTaskForm]=useState(false),[showTaskHandover,setShowTaskHandover]=useState(false);
+ useEffect(()=>{if(!mobileMenu)return;const previous=document.body.style.overflow;document.body.style.overflow="hidden";const close=(event:KeyboardEvent)=>{if(event.key==="Escape")setMobileMenu(false)};window.addEventListener("keydown",close);return()=>{document.body.style.overflow=previous;window.removeEventListener("keydown",close)}},[mobileMenu]);
  const [view,setView]=useState<View>("overview"),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [createMenu,setCreateMenu]=useState(false),[showGuide,setShowGuide]=useState(false),[hideChecklist,setHideChecklist]=useState(false);
  const [quickCreate,setQuickCreate]=useState<QuickCreateKind|null>(null),[quickProjectId,setQuickProjectId]=useState("");
@@ -180,7 +183,7 @@ export default function Home(){
  const active=orgs.find(o=>o.id===selected),role=members.find(m=>m.user_id===user?.id)?.role,manager=canManageOrganization(role);
  const unreadNotifications=useUnreadNotifications(selected,user?.id);
  const activeNav=NAV_GROUPS.find(group=>group.items.some(item=>item.view===view))??NAV_GROUPS[0];
- function navigate(to:View){setView(to);setMobileMenu(false);setCreateMenu(false);clear();}
+ function navigate(to:View){setView(to);setMobileMenu(false);setCreateMenu(false);clear();if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"auto"});}
  function launchCreate(kind:"task"|"project"|"team"|"invite"|"request"){
   setCreateMenu(false);setMobileMenu(false);clear();
   if(kind==="task"||kind==="project"||kind==="team"){
@@ -528,7 +531,7 @@ export default function Home(){
   onModeChange={next=>{setMode(next);clear()}}
   onEmailChange={setEmail} onPasswordChange={setPassword} onNameChange={setSignupName}
 />;
- return <div className="appShell"><div className="mobileTopbar"><div className="logo"><span className="mark">T</span> Trackwise</div><button type="button" className="mobileMenuToggle" aria-label="Open workspace menu" aria-expanded={mobileMenu} onClick={()=>setMobileMenu(v=>!v)}>☰ <span>Menu</span></button></div>{mobileMenu&&<button className="mobileBackdrop" aria-label="Close menu" onClick={()=>setMobileMenu(false)}/>}<aside className={"sidebar "+(mobileMenu?"mobileOpen":"")}><div className="logo"><span className="mark">T</span> Trackwise</div><div className="sideLabel">WORKSPACE</div><select className="orgSelect" aria-label="Current organization" value={selected} onChange={e=>{setSelected(e.target.value);setLastCreatedProject(null);setLastCreatedTeam(null);setProjectFilter("all");setView("overview");setMobileMenu(false);clear()}}><option value="">Select organization</option>{orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select><button type="button" className="sidebarNewOrg" onClick={()=>{setMobileMenu(false);setQuickCreate("organization")}}><Plus size={16}/> New organization</button><button type="button" className="sidebarGuideButton" onClick={()=>setShowGuide(true)}><span aria-hidden="true">✦</span><span><strong>Take a guided tour</strong><small>See how everything works</small></span><span aria-hidden="true">→</span></button><nav aria-label="Main navigation">{NAV_GROUPS.map(group=><div className="navCluster" key={group.id}>
+ return <div className="appShell"><div className="mobileTopbar"><div className="logo"><span className="mark">T</span> Trackwise</div><button type="button" className="mobileMenuToggle" aria-label="Open workspace menu" aria-expanded={mobileMenu} onClick={()=>setMobileMenu(v=>!v)}>☰ <span>Menu</span></button></div>{mobileMenu&&<button className="mobileBackdrop" aria-label="Close menu" onClick={()=>setMobileMenu(false)}/>}<aside className={"sidebar "+(mobileMenu?"mobileOpen":"")} aria-label="Workspace sidebar"><div className="logo"><span className="mark">T</span> Trackwise</div><div className="sideLabel">WORKSPACE</div><select className="orgSelect" aria-label="Current organization" value={selected} onChange={e=>{setSelected(e.target.value);setLastCreatedProject(null);setLastCreatedTeam(null);setProjectFilter("all");setView("overview");setMobileMenu(false);clear()}}><option value="">Select organization</option>{orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select><button type="button" className="sidebarNewOrg" onClick={()=>{setMobileMenu(false);setQuickCreate("organization")}}><Plus size={16}/> New organization</button><button type="button" className="sidebarGuideButton" onClick={()=>{setMobileMenu(false);setShowGuide(true)}}><span aria-hidden="true">✦</span><span><strong>Take a guided tour</strong><small>See how everything works</small></span><span aria-hidden="true">→</span></button><nav aria-label="Main navigation">{NAV_GROUPS.map(group=><div className="navCluster" key={group.id}>
  <button type="button" className={"navItem "+(activeNav.id===group.id?"selected":"")} aria-current={view===group.defaultView?"page":undefined} onClick={()=>navigate(group.defaultView)}><span aria-hidden="true" className="navGlyph">{navigationIcon(group.id)}</span>{group.label}{group.id==="inbox"&&unreadNotifications>0&&<span className="unreadNavCount" aria-label={unreadNotifications+" unread notifications"}>{unreadNotifications>99?"99+":unreadNotifications}</span>}</button>
  {group.items.length>1&&activeNav.id===group.id&&<div className="navSubLinks" aria-label={group.label+" sections"}>
   {group.items.filter(item=>item.view!=="meeting_ai"||manager).map(item=><button key={item.view} type="button" className={item.view===view?"navSubActive":""} aria-current={item.view===view?"page":undefined} onClick={()=>navigate(item.view)}>{item.label}</button>)}
@@ -543,7 +546,8 @@ export default function Home(){
  </div>
  <div className="headerControls">
   {active&&<button type="button" className="headerSearch" aria-label="Search tasks, projects, and people" onClick={()=>{setSearchOpen(true);setCreateMenu(false)}}><SearchIcon size={18}/> <span>Search</span></button>}
-  <button type="button" className="headerHelp" onClick={()=>{setShowGuide(true);setCreateMenu(false)}} aria-label="Open guided setup and feature explanations"><Sparkles size={18}/> <span>Guided help</span></button>
+  <button type="button" className="headerReports" onClick={()=>navigate("reports")} aria-label="Open workspace reports"><BarChart3 size={18}/><span>Reports</span></button>
+   <button type="button" className="headerHelp" onClick={()=>{setShowGuide(true);setCreateMenu(false)}} aria-label="Open guided setup and feature explanations"><Sparkles size={18}/> <span>Guided help</span></button>
   {active&&<div className="createWrapper">
    <button type="button" className="primary mainCreateButton" onClick={()=>{if(manager)setQuickCreate("task");else launchCreate("request")}}><Plus size={18}/> {manager?"Quick create":"New request"}</button>
    <button type="button" className="createMenuToggle" aria-label="See all quick actions" aria-expanded={createMenu} aria-controls="globalCreateMenu" onClick={()=>setCreateMenu(v=>!v)}>⌄</button>
@@ -586,7 +590,7 @@ export default function Home(){
  <button type="button" onClick={()=>navigate("collaboration")}><span className="quickIcon"><Inbox size={21}/></span><span><strong>Team chat</strong><small>Share an update</small></span></button>
  <button type="button" onClick={()=>launchCreate("request")}><span className="quickIcon"><Mail size={21}/></span><span><strong>New request</strong><small>Ask your leader</small></span></button>
  <button type="button" onClick={()=>navigate("people")}><span className="quickIcon"><UsersRound size={21}/></span><span><strong>My team</strong><small>Meet people</small></span></button></>}
- </section>{view==="overview"&&!hideChecklist&&<section className="card setupChecklist">
+ </section><section className="card reportShortcutCard" aria-label="Workspace reports"><div><span className="eyebrow blue">WORKSPACE INSIGHTS</span><h2>Reports & progress</h2><p className="muted">See completion rates, overdue work, team workload and project progress in one place.</p><div className="reportShortcutFacts"><span><strong>{tasks.filter(t=>t.status==="completed").length}</strong> completed</span><span><strong>{counts.overdue}</strong> overdue</span><span><strong>{projects.length}</strong> projects</span></div></div><button type="button" className="primary" onClick={()=>navigate("reports")}><BarChart3 size={18}/> View detailed reports →</button></section>{view==="overview"&&!hideChecklist&&<section className="card setupChecklist">
  <div className="sectionHead"><div><span className="eyebrow blue">GETTING STARTED</span><h2>{manager?"Set up your workspace":"Make Trackwise your own"}</h2>{manager&&<span className="setupCount">{setupCompleted} of 4 steps complete</span>}</div><button type="button" className="textAction" onClick={()=>{setHideChecklist(true);if(user&&selected)window.localStorage.setItem("tw-setup-hidden:"+user.id+":"+selected,"yes")}}>Hide checklist ×</button></div>
  <p className="muted">{manager?"Complete these steps to organize your work. You can do them in any order.":"Trackwise helps you follow your tasks and stay in touch with your team."}</p>
  {manager&&<progress className="workspaceSetupProgress" value={setupCompleted} max={4} aria-label={"Workspace setup: "+setupCompleted+" out of 4 steps complete"}/>}
@@ -721,7 +725,7 @@ export default function Home(){
  </div>}</div>):<p className="muted">No requests submitted yet.</p>}</section></>}
 {view==="meeting_ai"&&(manager?<MeetingAssistant key={selected} organizationId={selected} userId={user.id} tasks={tasks} projects={projects} members={directory} onSaved={async()=>{await loadWorkspace(selected)}}/>:<section className="card"><h2>Leader access required</h2><p className="muted">An administrator or leader must review and approve meeting suggestions before they can change the tracker.</p></section>)}
 {view==="activity"&&<section className="card"><h2>Recent activity</h2>{activity.length?activity.map(a=><div className="taskLine" key={a.id}><span className="taskDot"/><div><strong>{statusLabel(a.entity_type.replace("tw_",""))} · {statusLabel(a.action)}</strong><small>{new Date(a.created_at).toLocaleString()}</small></div></div>):<p className="muted">Activity will appear as your team starts working.</p>}</section>}
-{view==="reports"&&<Reports tasks={tasks} projects={projects} teams={teams} directory={directory} organizationName={active?.name??"Organization"} organizationId={selected}/>}{(view==="collaboration"||view==="resources"||view==="notifications")&&user&&<Operations key={selected} organizationId={selected} userId={user.id} tasks={tasks} teams={manager?teams:teams.filter(t=>teamMembers.some(member=>member.team_id===t.id&&member.user_id===user.id))} projects={projects} manager={manager} section={view}/>}{view==="profile"&&<AccountProfile user={user} role={role??null}
+{view==="reports"&&<Reports key={selected} tasks={tasks} projects={projects} teams={teams} directory={directory} organizationName={active?.name??"Organization"} organizationId={selected}/>}{(view==="collaboration"||view==="resources"||view==="notifications")&&user&&<Operations key={selected} organizationId={selected} userId={user.id} tasks={tasks} teams={manager?teams:teams.filter(t=>teamMembers.some(member=>member.team_id===t.id&&member.user_id===user.id))} projects={projects} manager={manager} section={view}/>}{view==="profile"&&<AccountProfile user={user} role={role??null}
  organizationName={active?.name??""} organizationCount={orgs.length}
  assignedTasks={tasks.filter(t=>t.owner_id===user.id).length}
  projectsCount={projects.length} photoUrl={profilePhotoUrl}
