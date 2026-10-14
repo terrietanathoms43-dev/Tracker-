@@ -1485,3 +1485,95 @@ body{font-size:16px;line-height:1.56}
 @media(prefers-reduced-motion:reduce){
  .authV3Preview{transform:none}
 }
+
+/* Trackwise reports center and mobile drawer hotfix */
+@media(max-width:760px){
+ .mobileBackdrop{z-index:110;background:#12213a82}
+ .sidebar{z-index:120;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;visibility:hidden;pointer-events:none;box-shadow:14px 0 36px #06142b40}
+ .sidebar.mobileOpen{z-index:120;visibility:visible;pointer-events:auto}
+ .sidebar .navItem{min-height:48px;font-size:15px;line-height:1.45}
+ .sidebar .navSubLinks button{min-height:43px;font-size:14px}
+ .sidebarGuideButton strong{font-size:14px}
+ .sidebarGuideButton small{font-size:12px}
+ .sidebar .orgSelect{font-size:15px}
+}
+.headerReports{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:10px 13px;border-radius:11px;border:1px solid #cddaf5;background:#edf3ff;color:#234ca9;font-weight:800}
+.headerReports:hover,.headerReports:focus-visible{background:#dfeaff}
+.reportShortcutCard{display:flex;align-items:center;justify-content:space-between;gap:22px;background:linear-gradient(110deg,#fff,#f2f6ff);border-color:#dbe6fa}
+.reportShortcutCard h2{margin:8px 0 5px}
+.reportShortcutCard p{margin:0 0 13px}
+.reportShortcutCard .primary{display:inline-flex;align-items:center;justify-content:center;gap:10px;white-space:nowrap}
+.reportShortcutFacts{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:#506382}
+.reportShortcutFacts strong{color:#22479b}
+@media(max-width:760px){
+ .headerReports{min-width:44px;padding:10px}
+ .headerReports span{display:none}
+ .reportShortcutCard{flex-direction:column;align-items:stretch;padding:18px}
+ .reportShortcutCard .primary{width:100%;white-space:normal}
+}
+.reportPage{display:grid;gap:18px}
+.reportPage .card{margin-bottom:0}
+.reportHero{background:linear-gradient(120deg,#ffffff,#f2f6ff);border-color:#d6e3fc}
+.reportHeroHeading{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.reportHeroHeading h2{margin:5px 0 6px}
+.reportHeroHeading p{margin:0}
+.reportActions{display:flex;gap:8px;flex-wrap:wrap}
+.reportActions button{min-height:44px}
+.reportFilters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px;margin-top:18px}
+.reportFilters label{margin:0;font-size:13px}
+.reportFilters select,.reportFilters input{margin-top:6px;min-width:0}
+.reportDataNote{margin:13px 0 0;font-size:13px;color:#546887}
+.reportDataNote[role="alert"]{color:#a52638}
+.reportKpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.reportKpi{padding:18px;border:1px solid #dfe7f6;border-radius:14px;background:#fff}
+.reportKpi span{display:block;font-size:13px;color:#62718c}
+.reportKpi strong{display:block;font-size:clamp(24px,2.5vw,36px);font-weight:850;color:#1e3d80;margin:8px 0}
+.reportKpi small{display:block;font-size:12px;color:#6c7b93}
+.reportPanelGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.reportSectionTitle{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:15px}
+.reportSectionTitle h2{margin:0}
+.reportRows{display:grid;gap:13px}
+.reportProgressRow{display:grid;gap:7px}
+.reportProgressTop{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px}
+.reportProgressTop strong{font-size:13px}
+.reportProgressTop span{min-width:0;overflow-wrap:anywhere}
+.reportTrack{height:9px;overflow:hidden;border-radius:999px;background:#e9effa}
+.reportTrack>span{display:block;height:100%;background:linear-gradient(90deg,#315cce,#6b93eb);border-radius:999px}
+.reportProgressMeta{display:flex;gap:10px;flex-wrap:wrap;color:#697990;font-size:12px}
+.reportDataTable{width:100%;min-width:690px;border-collapse:collapse}
+.reportDataTable th,.reportDataTable td{font-size:13px;padding:12px 10px;text-align:left}
+.reportDataTable th{color:#52678c}
+.reportDataTable strong{color:#1e335b}
+.reportStatusTag{display:inline-block;border-radius:99px;padding:5px 9px;background:#eaf1ff;color:#254ea3;font-size:12px;font-weight:700}
+.reportStatusTag.isRisk{background:#fff0ed;color:#a63d36}
+.reportEmpty{margin:0;color:#75849d}
+.reportSectionHint{color:#6c7c95;font-size:13px;margin:10px 0 0}
+.reportSmallStat{color:#5b6f91;font-size:14px;margin:0 0 13px}
+.reportPrintHeading{display:none}
+@media(max-width:1050px){.reportFilters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){
+ .reportPage{gap:13px}
+ .reportHero{padding:18px}
+ .reportFilters{grid-template-columns:1fr;gap:12px}
+ .reportKpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+ .reportKpi{padding:14px}
+ .reportKpi strong{font-size:26px}
+ .reportPanelGrid{grid-template-columns:1fr;gap:13px}
+ .reportActions{width:100%}
+ .reportActions button{flex:1}
+}
+@media print{
+ @page{size:A4;margin:14mm}
+ body,.appShell,.workspace,.content{background:#fff!important}
+ .sidebar,.mobileTopbar,.mobileBottomNav,.mobileBackdrop,.appHeader,.sectionTabs,.reportActions,.reportFilters,.reportDataNote{display:none!important}
+ .appShell{display:block!important;padding:0!important}
+ .content{padding:0!important}
+ .contentWidth{max-width:none!important}
+ .reportPage{gap:12px}
+ .reportPrintHeading{display:block;font-size:23px;margin:0}
+ .reportKpi,.reportPage .card{box-shadow:none;break-inside:avoid;border-color:#ccd4e0}
+ .reportPanelGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .reportDataTable{min-width:0}
+ .reportDataTable th,.reportDataTable td{padding:5px;font-size:10px}
+ .reportTrack>span{background:#345bba!important;print-color-adjust:exact}
+}
