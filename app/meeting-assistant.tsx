@@ -31,7 +31,9 @@ const editingFields=(suggestion:MeetingSuggestion,tasks:KnownTask[]):Draft=>{
  const original=suggestion.kind==="update_task"?tasks.find(t=>t.id===suggestion.existing_id):null;
  return {
   title:original?.title??suggestion.title,
-  description:suggestion.description||(original?.description??""),
+  description:original?.description&&suggestion.description
+   ?(original.description.includes(suggestion.description)?original.description:(original.description+"\n\nMeeting note: "+suggestion.description).slice(0,3500))
+   :suggestion.description||(original?.description??""),
   due_date:suggestion.due_date??original?.due_at?.slice(0,10)??"",
   priority:(original?.priority&&["low","normal","high","urgent"].includes(original.priority) && suggestion.priority==="normal"
    ?original.priority:suggestion.priority) as MeetingPriority,
