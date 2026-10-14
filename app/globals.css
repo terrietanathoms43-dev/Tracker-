@@ -122,3 +122,30 @@ button:active:not(:disabled){transform:scale(.99)}
 .readOnlyValue{border:1px solid #e4eaf3;background:#f7f9fd;border-radius:10px;padding:12px 14px;min-height:45px;overflow-wrap:anywhere;margin:7px 0}.memberManageRow{display:flex;align-items:center;justify-content:space-between;gap:15px;border-bottom:1px solid #e7edf6;padding:15px 0}.memberManageRow strong,.memberManageRow small{display:block}.memberManageRow small{color:#728098;margin-top:5px}.memberManageActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.memberManageActions select{min-width:130px}.inviteShare{border:1px solid #cbdaf9;background:#f4f7ff;padding:16px;border-radius:13px;margin-top:18px}.inviteShare .primary{display:inline-flex;align-items:center;text-decoration:none;padding:12px 16px;border-radius:9px}.inviteShare p:last-child{font-size:12px;margin-bottom:0}@media(max-width:760px){.memberManageRow{align-items:flex-start;flex-direction:column}.memberManageActions{width:100%}.memberManageActions select{flex:1;min-width:100px}.memberManageRow>button{min-height:44px}.inviteShare .primary{min-height:44px}}
 
 .taskOwnerFilter{display:flex;align-items:center;gap:8px;white-space:nowrap;margin:0;font-size:13px;font-weight:700;color:#324569}.taskOwnerFilter input{width:17px;height:17px;margin:0;accent-color:#315cce}.inviteActions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}.inviteActions a{font-weight:700;color:#315cce}.inviteShare input{margin-top:8px}
+
+/* Projects: clear creation steps and responsive persisted-project cards */
+.projectHelp{background:linear-gradient(115deg,#f4f7ff,#fff);border-color:#dbe5fb}
+.projectHelp h2{margin-top:6px}
+.projectHelp p{max-width:850px;margin-bottom:8px}
+.projectCreator{border:1px solid #ccd9f7;scroll-margin-top:24px}
+.projectCreator .formGrid{margin-top:10px}
+.projectCreator textarea,.taskComposer textarea{width:100%;padding:12px 13px;border:1px solid #dbe3ef;border-radius:10px;background:#fff;color:#1b2944;resize:vertical;line-height:1.5}
+.projectGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;margin-top:18px}
+.projectCard{display:flex;flex-direction:column;min-width:0;background:#fff;border:1px solid #e4eaf3;border-radius:14px;padding:19px;overflow-wrap:anywhere}
+.projectCard:hover{border-color:#c5d5f5;background:#fcfdff}
+.projectTop{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+.projectTop strong{font-size:16px;color:#1b2944;line-height:1.4}
+.projectTop .chip{flex-shrink:0}
+.projectCard p{font-size:13px;line-height:1.5;margin:4px 0 12px}
+.projectFoot{margin-top:auto;border-top:1px solid #edf0f7;padding-top:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px}
+.projectFoot>span{color:#65758e}
+.projectActions{display:flex;gap:9px;flex-wrap:wrap}
+.projectActions button{min-height:38px;border-radius:9px;padding:8px 12px;font-weight:700;font-size:12px}
+.projectActions button:not(.primary){color:#315cce;border:1px solid #d3dff7;background:#f5f8ff}
+.emptyProject{padding:28px;border:1px dashed #d7e1f3;border-radius:13px;text-align:center;background:#fafcff}
+.emptyProject h3{margin-bottom:8px}
+.emptyProject p{margin-bottom:0;color:#62728d}
+.filterBar{flex-wrap:wrap}
+.filterBar select{max-width:260px}
+@media(max-width:850px){.projectGrid{grid-template-columns:1fr}}
+@media(max-width:760px){.projectGrid{gap:12px}.projectCard{padding:16px}.projectFoot{align-items:flex-start}.projectActions{width:100%}.projectActions button{flex:1;min-height:44px}.filterBar select{max-width:none}}
