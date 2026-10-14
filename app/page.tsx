@@ -574,15 +574,20 @@ export default function Home(){
   <p className="muted">Administrators and leaders can create projects and tasks. Other organization members can view them and follow their assigned work.</p>{!manager&&<div className="limitedAccessHelp"><strong>Want to start a new project?</strong><p>Ask your organization administrator or leader to create it, or submit a project request for their approval.</p><button type="button" className="primary" onClick={()=>setView("requests")}>Request a project →</button></div>}
  </section>
  {manager&&<section className="card projectCreator" id="projectCreator">
-  <div className="sectionHead"><h2>＋ Add a project</h2></div>
-  <p className="muted">Only the project name is required. Other details can be added now or organized later.</p>
-  <form onSubmit={createProject} className="formGrid">
-   <div className="span2"><label htmlFor="projectName">Project name *</label><input id="projectName" value={projectName} onChange={e=>setProjectName(e.target.value)} required maxLength={180} placeholder="e.g. School beautification project"/></div>
-   <div className="span2"><label htmlFor="projectDescription">Description (optional)</label><textarea id="projectDescription" rows={3} maxLength={4000} value={projectDescription} onChange={e=>setProjectDescription(e.target.value)} placeholder="What is this project meant to achieve?"/></div>
-   <div><label htmlFor="projectGoal">Linked goal (optional)</label><select id="projectGoal" value={projectGoal} onChange={e=>setProjectGoal(e.target.value)}><option value="">No linked goal</option>{goals.map(g=><option key={g.id} value={g.id}>{g.title}</option>)}</select></div>
-   <div><label htmlFor="projectTeam">Responsible team (optional)</label><select id="projectTeam" value={projectTeam} onChange={e=>setProjectTeam(e.target.value)}><option value="">No team assigned</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
-   <div className="span2"><button type="submit" className="primary" disabled={working}>{working?"Saving…":"Save project"}</button></div>
-  </form>
+  <div className="sectionHead"><div><span className="eyebrow blue">START HERE · STEP 1</span><h2>Create a project</h2></div></div>
+  <p className="muted">Give your plan a name now, then add the tasks needed to achieve it.</p>
+  <form onSubmit={createProject} className="formGrid friendlyForm">
+   <div className="span2"><label htmlFor="projectName">What are you planning? <span className="requiredMark">*</span></label><input id="projectName" value={projectName} onChange={e=>setProjectName(e.target.value)} required minLength={2} maxLength={180} placeholder="e.g. Christmas outreach drive"/>
+    <small className="fieldHint">Just a name is enough to begin. A project can have many tasks.</small></div>
+   <details className="formAdvanced span2"><summary>More project details <span>Description, goal and team (optional)</span><span aria-hidden="true">⌄</span></summary>
+    <div className="formAdvancedFields">
+     <div><label htmlFor="projectDescription">Description</label><textarea id="projectDescription" rows={3} maxLength={4000} value={projectDescription} onChange={e=>setProjectDescription(e.target.value)} placeholder="What are you hoping to achieve?"/></div>
+     <div><label htmlFor="projectGoal">Linked goal</label><select id="projectGoal" value={projectGoal} onChange={e=>setProjectGoal(e.target.value)}><option value="">No goal yet</option>{goals.map(g=><option key={g.id} value={g.id}>{g.title}</option>)}</select></div>
+     <div><label htmlFor="projectTeam">Responsible team</label><select id="projectTeam" value={projectTeam} onChange={e=>setProjectTeam(e.target.value)}><option value="">Choose later</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+    </div>
+   </details>
+   <div className="span2 friendlyActions"><button type="submit" className="primary" disabled={working}>{working?"Creating project…":"Create project →"}</button></div></form>
+  {lastCreatedProject&&<div className="creationSuccess" role="status"><span className="creationSuccessIcon" aria-hidden="true">✓</span><div><strong>{lastCreatedProject.name} is ready!</strong><p>Next, add the first task for this project. We'll link it automatically.</p></div><button type="button" className="primary" onClick={openFirstProjectTask}>Add its first task →</button></div>}
  </section>}
  <section className="card">
   <div className="sectionHead"><div><h2>Saved projects <span className="count">{projects.length}</span></h2><p className="muted">Projects are stored in your organization database and appear here when you return.</p></div><button type="button" className="textAction" disabled={workspaceLoading} onClick={()=>void loadWorkspace(selected)}>{workspaceLoading?"Loading…":"↻ Refresh"}</button></div>
