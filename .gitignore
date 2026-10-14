@@ -3,3 +3,9 @@ node_modules
 .env*
 !.env.example
 *.tsbuildinfo
+
+# Never commit database exports, user records, or recovery snapshots
+backups/
+*.dump
+*.backup
+*.sql.gz
