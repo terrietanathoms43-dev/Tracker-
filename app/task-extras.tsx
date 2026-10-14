@@ -22,11 +22,13 @@ const MIME_BY_EXTENSION:Record<string,string>={
 };
 type Member={user_id:string;display_name:string};
 type Comment={id:string;body:string;author_id:string;created_at:string};
+type ChecklistItem={id:string;label:string;is_done:boolean;sort_order:number;created_at:string;completed_at:string|null};
 type Attachment={id:string;file_name:string;storage_path:string;file_size:number;mime_type:string;uploaded_by:string;created_at:string};
-type Props={organizationId:string;taskId:string;userId:string;manager:boolean;canComment:boolean;directory:Member[]};
+type Props={organizationId:string;taskId:string;userId:string;manager:boolean;canComment:boolean;canEditChecklist:boolean;directory:Member[]};
 
-export default function TaskExtras({organizationId,taskId,userId,manager,canComment,directory}:Props){
+export default function TaskExtras({organizationId,taskId,userId,manager,canComment,canEditChecklist,directory}:Props){
  const [comments,setComments]=useState<Comment[]>([]);
+ const [checklist,setChecklist]=useState<ChecklistItem[]>([]),[newChecklistItem,setNewChecklistItem]=useState("");
  const [files,setFiles]=useState<Attachment[]>([]);
  const [commentText,setCommentText]=useState("");
  const [file,setFile]=useState<File|null>(null);
@@ -36,12 +38,15 @@ export default function TaskExtras({organizationId,taskId,userId,manager,canComm
  const refresh=useCallback(async()=>{
   setLoading(true);setError("");
   try{
-   const [c,f]=await Promise.all([
+   const [c,f,items]=await Promise.all([
     db.from("tw_task_comments").select("id,body,author_id,created_at").eq("organization_id",organizationId).eq("task_id",taskId).order("created_at",{ascending:false}).limit(100),
-    db.from("tw_task_attachments").select("id,file_name,storage_path,file_size,mime_type,uploaded_by,created_at").eq("organization_id",organizationId).eq("task_id",taskId).order("created_at",{ascending:false}).limit(100)
+    db.from("tw_task_attachments").select("id,file_name,storage_path,file_size,mime_type,uploaded_by,created_at").eq("organization_id",organizationId).eq("task_id",taskId).order("created_at",{ascending:false}).limit(100),
+    db.from("tw_task_checklist").select("id,label,is_done,sort_order,created_at,completed_at").eq("organization_id",organizationId).eq("task_id",taskId).order("sort_order",{ascending:true}).order("created_at",{ascending:true}).limit(100)
    ]);
    if(c.error)throw c.error;
    if(f.error)throw f.error;
+   if(items.error)throw items.error;
+   setChecklist(items.data??[]);
    setComments((c.data??[]).reverse());
    setFiles(f.data??[]);
   }catch(e){setError(e instanceof Error?e.message:"Could not load task conversations and attachments");}
@@ -49,6 +54,40 @@ export default function TaskExtras({organizationId,taskId,userId,manager,canComm
  },[organizationId,taskId]);
  useEffect(()=>{void refresh()},[refresh]);
  const author=(id:string)=>id===userId?"You":directory.find(m=>m.user_id===id)?.display_name??"Team member";
+ const completedChecklist=checklist.filter(item=>item.is_done).length;
+ async function addChecklist(event:FormEvent){
+  event.preventDefault();
+  if(!canEditChecklist||busy||newChecklistItem.trim().length<2)return;
+  setBusy(true);setError("");setNotice("");
+  try{
+   const {error}=await db.rpc("tw_add_checklist_item",{target_task:taskId,item_text:newChecklistItem.trim()});
+   if(error)throw error;
+   setNewChecklistItem("");
+   await refresh();setNotice("Checklist item added.");
+  }catch(e){setError(e instanceof Error?e.message:"Could not add checklist item");}
+  finally{setBusy(false)}
+ }
+ async function markChecklist(item:ChecklistItem){
+  if(!canEditChecklist||busy)return;
+  setBusy(true);setError("");setNotice("");
+  try{
+   const {error}=await db.rpc("tw_set_checklist_item",{item_id:item.id,done:!item.is_done});
+   if(error)throw error;
+   await refresh();
+  }catch(e){setError(e instanceof Error?e.message:"Could not update the checklist");}
+  finally{setBusy(false)}
+ }
+ async function removeChecklist(item:ChecklistItem){
+  if(!canEditChecklist||busy)return;
+  if(!window.confirm("Remove this checklist step?"))return;
+  setBusy(true);setError("");setNotice("");
+  try{
+   const {error}=await db.rpc("tw_delete_checklist_item",{item_id:item.id});
+   if(error)throw error;
+   await refresh();
+  }catch(e){setError(e instanceof Error?e.message:"Could not remove this checklist item");}
+  finally{setBusy(false)}
+ }
  async function submitComment(event:FormEvent){
   event.preventDefault();
   if(!canComment||!commentText.trim()||busy)return;
@@ -127,7 +166,21 @@ export default function TaskExtras({organizationId,taskId,userId,manager,canComm
  return <div className="taskExtras">
   {error&&<p className="feedback bad" role="alert">{error}</p>}
   {notice&&<p className="feedback good" role="status">{notice}</p>}
-  <section className="taskExtraSection" aria-label="Task discussion">
+  <section className="taskExtraSection taskChecklistSection" aria-label="Task checklist">
+ <div className="sectionHead"><h3>Checklist <span className="count">{completedChecklist}/{checklist.length}</span></h3>{checklist.length>0&&<span className="chip">{completedChecklist===checklist.length?"All steps finished":completedChecklist+" done"}</span>}</div>
+ <p className="muted">Break a larger task into manageable steps. Tick each step as you finish it.</p>
+ {checklist.length>0&&<progress className="checklistProgress" value={completedChecklist} max={checklist.length} aria-label="Checklist progress"/>}
+ {loading?<p className="muted">Loading steps…</p>:checklist.length?<div className="checklistRows">
+ {checklist.map(item=><div className={"checklistRow "+(item.is_done?"isDone":"")} key={item.id}>
+  <label><input type="checkbox" checked={item.is_done} disabled={!canEditChecklist||busy} onChange={()=>void markChecklist(item)}/><span>{item.label}</span></label>
+  {canEditChecklist&&<button type="button" className="textAction" disabled={busy} onClick={()=>void removeChecklist(item)} aria-label={"Remove checklist step "+item.label}>Remove</button>}
+ </div>)}</div>:<p className="muted">No steps yet. Add a checklist step to get started.</p>}
+ {canEditChecklist&&<form className="checklistComposer" onSubmit={addChecklist}>
+  <label htmlFor="newChecklistItem">Add a step</label>
+  <div><input id="newChecklistItem" value={newChecklistItem} onChange={event=>setNewChecklistItem(event.target.value)} minLength={2} maxLength={250} required placeholder="What needs to be done?"/><button className="primary" type="submit" disabled={busy||newChecklistItem.trim().length<2}>{busy?"Saving…":"+ Add step"}</button></div>
+ </form>}
+ </section>
+ <section className="taskExtraSection" aria-label="Task discussion">
    <div className="sectionHead"><h3>Discussion <span className="count">{comments.length}</span></h3><button type="button" className="textAction" disabled={loading} onClick={()=>void refresh()}>↻ Refresh</button></div>
    <p className="muted">Keep questions and updates together with the task.</p>
    {loading?<p className="muted">Loading discussion…</p>:comments.length?
