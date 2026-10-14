@@ -60,6 +60,8 @@ export default function Home(){
  const [mobileMenu,setMobileMenu]=useState(false),[showTaskForm,setShowTaskForm]=useState(false),[showTaskHandover,setShowTaskHandover]=useState(false);
  const [view,setView]=useState<View>("overview"),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [createMenu,setCreateMenu]=useState(false),[showGuide,setShowGuide]=useState(false),[hideChecklist,setHideChecklist]=useState(false);
+ const [editingTask,setEditingTask]=useState(""),[editTaskTitle,setEditTaskTitle]=useState(""),[editTaskDescription,setEditTaskDescription]=useState(""),[editTaskPriority,setEditTaskPriority]=useState("normal"),[editTaskDue,setEditTaskDue]=useState(""),[editTaskProject,setEditTaskProject]=useState("");
+ const [editingProject,setEditingProject]=useState(""),[editProjectName,setEditProjectName]=useState(""),[editProjectDescription,setEditProjectDescription]=useState(""),[editProjectGoal,setEditProjectGoal]=useState(""),[editProjectTeam,setEditProjectTeam]=useState(""),[editProjectStatus,setEditProjectStatus]=useState("active");
  useEffect(()=>{setProfileName(String(user?.user_metadata?.display_name??""))},[user?.id]);
  const clear=()=>{setError("");setNotice("")};
  const loadOrgs=useCallback(async()=>{if(!db)return;const {data,error}=await db.from("tw_organizations").select("id,name,created_at").order("created_at",{ascending:false});if(error)setError(error.message);else {setOrgs(data??[]);setSelected(old=>(data??[]).some(o=>o.id===old)?old:(data?.[0]?.id??""))}},[]);
@@ -203,6 +205,34 @@ export default function Home(){
   }catch(e){setError(displayError(e,"Unable to save task. Please try again."));}
   finally{setWorking(false)}
  }
+ function startTaskEdit(t:Task){
+  setEditingTask(t.id);
+  setEditTaskTitle(t.title);
+  setEditTaskDescription(t.description??"");
+  setEditTaskPriority(t.priority);
+  setEditTaskProject(t.project_id??"");
+  if(t.due_at){
+   const d=new Date(t.due_at);
+   setEditTaskDue([d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-"));
+  }else setEditTaskDue("");
+ }
+ async function saveTaskEdit(e:FormEvent){
+  e.preventDefault();
+  if(!db||!selected||!manager||!editingTask)return;
+  setWorking(true);clear();
+  try{
+   const {error}=await db.rpc("tw_edit_task",{
+    target_task:editingTask,task_title:editTaskTitle.trim(),task_description:editTaskDescription.trim(),
+    task_priority:editTaskPriority,task_due:editTaskDue?new Date(editTaskDue+"T23:59:00").toISOString():null,
+    task_project:editTaskProject||null
+   });
+   if(error)throw error;
+   await loadWorkspace(selected);
+   setEditingTask("");
+   setNotice("Task details updated and saved.");
+  }catch(e){setError(displayError(e,"Couldn't save task changes."));}
+  finally{setWorking(false)}
+ }
  async function acceptInvite(id:string){if(!db)return;setInvitesLoading(true);clear();try{const {error}=await db.rpc("tw_accept_invitation",{invitation_id:id});if(error)throw error;setPendingInvites(old=>old.filter(x=>x.id!==id));await loadOrgs();setNotice("Invitation accepted. Your new organization is available.")}catch(e){setError(e instanceof Error?e.message:"Unable to accept invitation")}finally{setInvitesLoading(false)}}
  async function addMember(e:FormEvent){e.preventDefault();if(!db||!selected||!manager)return;setWorking(true);clear();try{const recipient=inviteEmail.trim().toLowerCase();const {error}=await db.rpc("tw_invite_member",{org_id:selected,invite_email:recipient,invite_role:inviteRole});if(error)throw error;setInviteShareReady(false);setInviteShareId("");const {data:invitation,error:invitationError}=await db.from("tw_invitations").select("id").eq("organization_id",selected).eq("email",recipient).single();if(invitationError||!invitation)throw invitationError??new Error("Unable to load invitation link.");setInviteShareEmail(recipient);setInviteShareId(invitation.id);setInviteShareReady(true);setInviteEmail("");await loadOutgoingInvites(selected);setNotice("Invitation created. Copy the link or share it directly with the invited person.");}catch(e){setError(e instanceof Error?e.message:"Unable to invite member")}finally{setWorking(false)}}
  async function updateTask(id:string,status:string){
@@ -249,6 +279,27 @@ export default function Home(){
    await loadWorkspace(selected);
    setNotice("Project saved to the database. You can now link tasks to it.");
   }catch(e){setError(displayError(e,"Unable to save project. Check your organization role and try again."));}
+  finally{setWorking(false)}
+ }
+ function startProjectEdit(p:Project){
+  setEditingProject(p.id);setEditProjectName(p.name);setEditProjectDescription(p.description??"");
+  setEditProjectGoal(p.goal_id??"");setEditProjectTeam(p.team_id??"");setEditProjectStatus(p.status);
+ }
+ async function saveProjectEdit(e:FormEvent){
+  e.preventDefault();
+  if(!db||!selected||!manager||!editingProject)return;
+  setWorking(true);clear();
+  try{
+   const {error}=await db.rpc("tw_edit_project",{
+    target_project:editingProject,project_name:editProjectName.trim(),
+    project_description:editProjectDescription.trim(),project_goal:editProjectGoal||null,
+    project_team:editProjectTeam||null,project_status:editProjectStatus
+   });
+   if(error)throw error;
+   await loadWorkspace(selected);
+   setEditingProject("");
+   setNotice("Project changes saved.");
+  }catch(e){setError(displayError(e,"Couldn't save project changes."));}
   finally{setWorking(false)}
  }
  const taskTable=<><div className="mobileTaskList">{visibleTasks.length?visibleTasks.map(t=><article className="mobileTaskCard" key={t.id}><div className="mobileTaskTop"><span className={"priority "+t.priority}>{statusLabel(t.priority)}</span><span className="mobileTaskDate">{t.due_at?"Due "+new Date(t.due_at).toLocaleDateString():"No deadline"}</span></div><button className="mobileTaskTitle" onClick={()=>void openTask(t.id)}>{t.title} <span aria-hidden="true">↗</span></button><div className="mobileTaskMeta"><span>{t.owner_id===user?.id?"Assigned to you":directory.find(m=>m.user_id===t.owner_id)?.display_name??"Unassigned"}</span><span>{t.project_id?" · "+(projects.find(p=>p.id===t.project_id)?.name??"Project"):" · No project"}</span></div><div className="mobileTaskStatus">{manager||(t.owner_id===user?.id&&t.status!=="completed")?<select aria-label={"Status for "+t.title} value={t.status} disabled={working} onChange={e=>void updateTask(t.id,e.target.value)}>{statuses.filter(st=>st===t.status||(manager?st!=="rejected"||t.status==="awaiting_approval":st!=="completed"&&st!=="rejected")).map(st=><option key={st} value={st}>{actionStatusLabel(st)}</option>)}</select>:<span className="chip">{statusLabel(t.status)}</span>}</div><div className="taskInlineActions">
