@@ -1,6 +1,6 @@
 "use client";
 import {useEffect,useRef,useState,type FormEvent} from "react";
-import {Building2,CalendarDays,Check,ChevronRight,FolderKanban,Plus,SquareCheckBig,UsersRound,X,type LucideIcon} from "lucide-react";
+import {Building2,CalendarDays,Check,ChevronDown,ChevronRight,FolderKanban,Plus,SquareCheckBig,UsersRound,X,type LucideIcon} from "lucide-react";
 import {supabase} from "../lib/supabase";
 
 export type QuickCreateKind="task"|"project"|"team"|"organization";
@@ -26,6 +26,8 @@ const CATEGORIES:{kind:QuickCreateKind;label:string;hint:string;icon:LucideIcon}
  {kind:"team",label:"Team",hint:"Group people",icon:UsersRound},
  {kind:"organization",label:"Organization",hint:"Start a workspace",icon:Building2}
 ];
+const TASK_IDEAS=["Prepare the next meeting","Follow up on an action item","Review the project budget"];
+const PROJECT_IDEAS=["Plan an event","Run a community project","Organize a new initiative"];
 const COPY:Record<QuickCreateKind,{heading:string,desc:string,label:string,placeholder:string,submit:string}>={
  task:{heading:"Create a task",desc:"Start with what needs to get done. Assign it and choose a date if you know them.",label:"What needs to be done?",placeholder:"e.g. Prepare the event budget",submit:"Create task"},
  project:{heading:"Create a project",desc:"A project brings related tasks together. Give your plan a name to begin.",label:"What are you working towards?",placeholder:"e.g. School beautification",submit:"Create project"},
@@ -47,6 +49,7 @@ export default function QuickCreate({
  const [project,setProject]=useState(initialProjectId??"");
  const [priority,setPriority]=useState("normal");
  const [more,setMore]=useState(false);
+ const [planTask,setPlanTask]=useState(false);
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState("");
  const [success,setSuccess]=useState<QuickCreateResult|null>(null);
@@ -79,7 +82,7 @@ export default function QuickCreate({
  const allowed=canManage&&organizationId?CATEGORIES:CATEGORIES.filter(x=>x.kind==="organization");
  function changeType(next:QuickCreateKind){
   if(busy||next===kind)return;
-  setKind(next);setSuccess(null);setTitle("");setDescription("");setOwner("");setDue("");setProject("");setMore(false);setError("");
+  setKind(next);setSuccess(null);setTitle("");setDescription("");setOwner("");setDue("");setProject("");setMore(false);setPlanTask(false);setError("");
   window.requestAnimationFrame(()=>firstField.current?.focus());
  }
  async function submit(event:FormEvent<HTMLFormElement>){
@@ -131,7 +134,7 @@ export default function QuickCreate({
   if(next==="task"&&success?.kind==="project")setProject(success.id);
   else setProject("");
   setKind(next);setTitle("");setDescription("");setDue("");setOwner("");setPriority("normal");
-  setMore(false);setError("");setSuccess(null);
+  setMore(false);setPlanTask(false);setError("");setSuccess(null);
   window.requestAnimationFrame(()=>firstField.current?.focus());
  }
  return <div className="quickCreateOverlay" onPointerDown={event=>{if(event.currentTarget===event.target&&!busy)onClose()}}>
@@ -160,28 +163,33 @@ export default function QuickCreate({
       disabled={busy} onClick={()=>changeType(option)}><Icon size={19}/><span>{label}</span></button>)}
     </div>
     <form className="quickCreateForm" onSubmit={submit}>
+     <div className="quickCreateStep"><span>1</span><strong>Start with a name</strong><small>We’ll take care of the rest. You can change details later.</small></div>
      <div className="quickCreateField"><label htmlFor="quickCreateTitle">{heading.label} <span>*</span></label>
       <input ref={firstField} id="quickCreateTitle" autoComplete="off" minLength={2} maxLength={kind==="organization"||kind==="team"?120:180} required
        value={title} onChange={e=>setTitle(e.target.value)} placeholder={heading.placeholder}/>
-      <small>Only the name is required. You can add more details later.</small></div>
-     {kind==="task"&&<>
-      <div className="quickCreateSplit">
-       <div className="quickCreateField"><label htmlFor="quickOwner">Person responsible</label><select id="quickOwner" value={owner} onChange={e=>setOwner(e.target.value)}>
+      <small>Give it a short, clear name. Only this field is required.</small>
+      {!title.trim()&&(kind==="task"||kind==="project")&&<div className="quickCreateIdeas" aria-label="Suggestions">{(kind==="task"?TASK_IDEAS:PROJECT_IDEAS).map(idea=><button type="button" key={idea} onClick={()=>{setTitle(idea);firstField.current?.focus()}}>{idea} ↗</button>)}</div>}</div>
+     {kind==="task"&&<div className="quickCreateTaskPlan">
+      <div className="quickCreateAssignee"><span className="quickCreateAssigneeLabel">Who will do it?</span><div className="quickCreateAssigneeChoices"><button type="button" aria-pressed={!owner} className={!owner?"chosen":""} onClick={()=>setOwner("")}>Decide later</button><button type="button" aria-pressed={owner===userId} className={owner===userId?"chosen":""} onClick={()=>setOwner(userId)}>Assign to me</button><button type="button" aria-expanded={planTask} onClick={()=>setPlanTask(true)}>Choose someone else →</button></div></div>
+      {initialProjectId&&project===initialProjectId&&<p className="quickCreateContext">Project: <strong>{projects.find(p=>p.id===project)?.name??"Selected project"}</strong></p>}
+      <button type="button" className="quickCreatePlanToggle" aria-expanded={planTask} onClick={()=>setPlanTask(v=>!v)}><span><strong>{planTask?"Hide planning options":"Add deadline, project or teammate"}</strong><small>Optional: you can also do this later.</small></span><ChevronDown size={19} className={planTask?"rotated":""}/></button>
+      {planTask&&<div className="quickCreatePlanFields"><div className="quickCreateSplit">
+       <div className="quickCreateField"><label htmlFor="quickOwner">Assign to a teammate</label><select id="quickOwner" value={owner} onChange={e=>setOwner(e.target.value)}>
         <option value="">Unassigned (choose later)</option>
         {directory.filter(member=>["admin","leader","member"].includes(member.role)).map(member=><option value={member.user_id} key={member.user_id}>{member.user_id===userId?"Me":member.display_name}</option>)}
        </select></div>
        <div className="quickCreateField"><label htmlFor="quickDue"><CalendarDays size={15}/> Due date</label><input id="quickDue" type="date" value={due} onChange={e=>setDue(e.target.value)}/></div>
       </div>
-      <div className="quickCreateField"><label htmlFor="quickProject">Project</label><select id="quickProject" value={project} onChange={e=>setProject(e.target.value)}><option value="">Not linked to a project</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-     </>}
+      <div className="quickCreateField"><label htmlFor="quickProject">Which project?</label><select id="quickProject" value={project} onChange={e=>setProject(e.target.value)}><option value="">No project (organize later)</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div></div>}
+     </div>}
      {(kind==="task"||kind==="project")&&<div className="quickCreateMore">
-      <button type="button" aria-expanded={more} onClick={()=>setMore(v=>!v)}>{more?"− Hide optional details":"+ Add details (optional)"}</button>
+      <button type="button" aria-expanded={more} onClick={()=>setMore(v=>!v)}>{more?"− Hide optional details":kind==="project"?"+ Add a description (optional)":"+ Add instructions or priority (optional)"}</button>
       {more&&<div className="quickCreateMoreFields"><div className="quickCreateField"><label htmlFor="quickDescription">Instructions / description</label><textarea id="quickDescription" rows={3} maxLength={3000} value={description} onChange={e=>setDescription(e.target.value)} placeholder="What should everyone know?"/></div>
        {kind==="task"&&<div className="quickCreateField"><label htmlFor="quickPriority">Priority</label><select id="quickPriority" value={priority} onChange={e=>setPriority(e.target.value)}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>}
       </div>}
      </div>}
      {error&&<p className="feedback bad" role="alert">{error}</p>}
-     <div className="quickCreateFooter"><button type="button" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className="primary" disabled={busy}><Plus size={18}/>{busy?"Saving…":heading.submit}</button></div>
+     <div className="quickCreateFooter"><span className="quickCreateFooterHelp"><Check size={16}/> You can edit it after creation.</span><button type="button" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className="primary" disabled={busy}><Plus size={18}/>{busy?"Saving…":heading.submit}</button></div>
     </form>
    </>}
   </div>
