@@ -170,3 +170,83 @@ button:active:not(:disabled){transform:scale(.99)}
  .taskInlineActions .primary{width:100%;min-height:46px}
  .headerActions>.textAction{min-height:44px}
 }
+
+/* Trackwise's simpler six-section navigation and create workflow */
+.appHeader{align-items:center}
+.pageHeading{min-width:0;flex:1}
+.headerControls{display:flex;align-items:center;justify-content:flex-end;gap:11px;flex-wrap:wrap;min-width:0}
+.headerControls .userBadge{white-space:nowrap}
+.headerHelp{display:inline-flex;gap:8px;align-items:center;justify-content:center;border:1px solid #dfe6f2;border-radius:10px;padding:10px 13px;background:white;color:#365077;font-weight:800;min-height:44px}
+.headerHelp:hover{background:#f3f7ff}
+.createWrapper{position:relative;z-index:106}
+.mainCreateButton{display:flex;align-items:center;justify-content:center;gap:9px;min-height:44px;white-space:nowrap;padding:10px 17px;border-radius:11px}
+.mainCreateButton span{font-size:12px;opacity:.85}
+.createDismiss{position:fixed;inset:0;width:100%;height:100%;background:transparent;border:0;z-index:105;cursor:default}
+.createDropdown{position:absolute;right:0;top:calc(100% + 9px);z-index:110;width:min(320px,calc(100vw - 32px));background:#fff;border:1px solid #e0e9f7;border-radius:15px;box-shadow:0 20px 60px #14234c25;padding:7px;display:grid;gap:3px}
+.createDropdown button{width:100%;padding:12px 13px;border:0;background:transparent;text-align:left;border-radius:10px;min-height:56px;display:flex;flex-direction:column;justify-content:center;gap:3px}
+.createDropdown button:hover,.createDropdown button:focus-visible{background:#eef4ff}
+.createDropdown strong{font-size:13px;color:#1b2944}
+.createDropdown small{font-size:11px;color:#76849a;line-height:1.4}
+.sectionTabs{display:flex;align-items:center;gap:8px;margin:0 0 20px;overflow-x:auto;scrollbar-width:thin;padding:3px 1px 7px}
+.sectionTabs button{flex-shrink:0;background:white;border:1px solid #e2e8f4;border-radius:10px;color:#5f6e89;padding:10px 14px;font-size:13px;font-weight:800;min-height:42px;white-space:nowrap}
+.sectionTabs button.active{background:#315cce;border-color:#315cce;color:white}
+.sectionTabs button:hover:not(.active){background:#edf3ff;border-color:#c9daf9}
+.setupChecklist{background:linear-gradient(120deg,#f6f8ff,#fff 65%);border-color:#d3e0fc}
+.setupChecklist>.muted{margin-bottom:16px}
+.setupSteps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.setupStep{display:flex;align-items:center;text-align:left;gap:12px;border:1px solid #dfe7f6;background:white;border-radius:12px;min-height:72px;padding:13px;color:#203150}
+.setupStep:hover{background:#f4f8ff;border-color:#b9cffb}
+.setupStep>span:nth-child(2){flex:1;min-width:0}
+.setupStep strong,.setupStep small{display:block}
+.setupStep strong{font-size:13px;line-height:1.4}
+.setupStep small{color:#71809a;font-size:11px;margin-top:4px;line-height:1.4}
+.setupStep.done{border-color:#d1eade;background:#f4fbf7}
+.setupCheck{display:grid;place-items:center;flex-shrink:0;width:34px;height:34px;border-radius:11px;background:#eaf1ff;color:#315cce;font-size:20px;font-weight:900}
+.setupStep.done .setupCheck{color:#18714b;background:#def6e8}
+.setupHelpLink{margin-top:16px;padding:8px 0}
+.peopleIntro .stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+.peopleIdentity{display:flex;gap:12px;align-items:center;min-width:0}
+.peopleIdentity>div{min-width:0}
+.peopleAvatar{display:grid;place-items:center;flex-shrink:0;width:42px;height:42px;border-radius:13px;background:#e7efff;color:#315cce;font-size:18px;font-weight:800}
+.startChoices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;text-align:left;margin:21px 0}
+.startChoice{border:1px solid #dce6f8;border-radius:12px;background:#fbfcff;padding:18px}
+.startChoice strong{color:#233c70;font-size:14px}
+.startChoice p{color:#687993;font-size:12px;line-height:1.6;margin:10px 0 0}
+.guideOverlay{position:fixed;inset:0;z-index:150;background:#182743a8;display:grid;place-items:center;padding:20px;overflow-y:auto}
+.guidePanel{width:min(640px,100%);max-height:calc(100dvh - 40px);overflow-y:auto;background:white;border:1px solid #dfe8f9;border-radius:21px;box-shadow:0 30px 90px #101d3a50;padding:clamp(20px,4vw,30px);outline:none}
+.guideTop{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.guideClose{width:39px;height:39px;border:1px solid #e2e9f5;border-radius:11px;background:#f6f9ff;color:#47618f;font-size:22px;line-height:1;display:grid;place-items:center}
+.guidePanel h2{font-size:clamp(20px,4vw,29px);margin:12px 0 8px;line-height:1.2}
+.guidePanel>.muted{margin-bottom:17px}
+.guideCards{display:grid;gap:10px}
+.guideCards>div{display:grid;grid-template-columns:33px minmax(0,1fr);gap:2px 11px;border:1px solid #e6ebf5;background:#fafcff;border-radius:11px;padding:13px}
+.guideCards>div>span{grid-row:span 2;display:grid;place-items:center;width:31px;height:31px;background:#e6efff;color:#315cce;border-radius:9px;font-size:14px;font-weight:900}
+.guideCards strong{font-size:13px;color:#24385a}
+.guideCards p{font-size:12px;color:#687993;line-height:1.5;margin:0}
+.guideActions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:21px}
+.guideActions button{padding:11px 16px;min-height:44px;border-radius:10px;font-weight:800}
+.guideActions button:not(.primary){border:1px solid #dfe7f3;background:#fff;color:#3d577f}
+.guideFooter{font-size:11px;margin:12px 0 0;text-align:right}
+#createTeam,#inviteMembers,#submitRequest,#taskComposer,#projectCreator{scroll-margin-top:90px}
+@media(max-width:1100px){
+ .headerControls .userBadge{display:none}
+ .headerControls{gap:8px}
+}
+@media(max-width:760px){
+ .appHeader{display:flex;align-items:flex-start;gap:9px}
+ .headerControls{flex-shrink:0;max-width:50%;align-self:flex-start}
+ .headerHelp{width:44px;padding:0}
+ .headerHelp span{display:none}
+ .mainCreateButton{padding:10px 12px;font-size:12px;min-height:44px}
+ .createDropdown{right:0}
+ .sectionTabs{margin-bottom:13px}
+ .sectionTabs button{font-size:12px;min-height:44px}
+ .setupSteps{grid-template-columns:1fr}
+ .startChoices{grid-template-columns:1fr}
+ .guideOverlay{padding:12px}
+ .guidePanel{max-height:calc(100dvh - 24px);border-radius:17px}
+ .guideActions{display:grid;grid-template-columns:1fr}
+ .guideActions button{width:100%}
+ .guideFooter{text-align:left}
+}
+@media(max-width:380px){.headerControls{max-width:55%}.mainCreateButton{padding:9px}.headerHelp{width:40px}.setupStep{min-height:65px}}
