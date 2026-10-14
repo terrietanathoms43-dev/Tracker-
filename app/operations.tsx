@@ -1,6 +1,7 @@
 "use client";
 import {useCallback,useEffect,useState,type FormEvent} from "react";
-import {supabase} from "../lib/supabase";
+import {supabase as makeClient} from "../lib/supabase";
+const supabase=makeClient();
 type Task={id:string;title:string;status:string};
 type Team={id:string;name:string};
 type Project={id:string;name:string};
