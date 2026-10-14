@@ -161,7 +161,7 @@ export default function Home(){
   window.setTimeout(()=>document.getElementById(element)?.scrollIntoView({behavior:"smooth",block:"start"}),120);
  }
  function closeGuide(){
-  if(user&&selected&&typeof window!=="undefined")window.localStorage.setItem("tw-tour-v3:"+user.id+":"+selected,"seen");
+  if(user&&typeof window!=="undefined")window.localStorage.setItem("tw-tour-v3:"+user.id+":"+(selected||"start"),"seen");
   setShowGuide(false);
  }
  useEffect(()=>{
@@ -630,10 +630,10 @@ export default function Home(){
     {peopleMatches.length>0&&<div><h3>People</h3>{peopleMatches.map(p=><button type="button" key={p.user_id} onClick={()=>{closeSearch();navigate("people")}}><strong>♙ {p.display_name}</strong><small>{statusLabel(p.role)}</small></button>)}</div>}
    </div>}
   <p className="muted searchFoot">Searching tasks, projects and people in {active.name}. Press Escape to close.</p>
- </section></div>}{showGuide&&user&&active&&<OnboardingTour
- role={manager?"leader":"member"}
- organizationName={active.name}
- progressKey={"tw-tour-v3:"+user.id+":"+selected}
+ </section></div>}{showGuide&&user&&<OnboardingTour
+ role={!active?"new":manager?"leader":"member"}
+ organizationName={active?.name??"your first organization"}
+ progressKey={"tw-tour-v3:"+user.id+":"+(selected||"start")}
  onClose={closeGuide}
  onGo={(action,destination)=>{
   closeGuide();
