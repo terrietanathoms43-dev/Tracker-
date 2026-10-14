@@ -369,3 +369,21 @@ button:active:not(:disabled){transform:scale(.99)}
 .taskCollaboration>p{font-size:12px;margin:9px 0;line-height:1.55}
 .taskCollaboration .taskExtras{margin-top:12px;padding-top:0;border:0}
 @media(max-width:760px){.taskCollaboration{padding:13px;margin:14px 0}}
+
+/* Compact task checklist within each task details screen */
+.taskChecklistSection{border:1px solid #dae6fa;background:#f8faff;border-radius:14px;padding:17px;margin-bottom:20px}
+.taskChecklistSection h3{margin:0;font-size:16px}
+.checklistProgress{display:block;width:100%;height:8px;border-radius:10px;margin:6px 0 17px;accent-color:#3667d7}
+.checklistRows{display:grid;gap:8px;margin:13px 0}
+.checklistRow{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:11px 13px;background:#fff;border:1px solid #e3eaf6;border-radius:10px}
+.checklistRow label{display:flex;align-items:flex-start;gap:11px;flex:1;min-width:0;line-height:1.5;font-size:13px;color:#263752;cursor:pointer;overflow-wrap:anywhere}
+.checklistRow input[type="checkbox"]{margin-top:3px;width:19px;min-width:19px;height:19px;min-height:19px;accent-color:#315cce}
+.checklistRow.isDone label span{text-decoration:line-through;color:#8390a4}
+.checklistRow .textAction{font-size:12px;flex-shrink:0}
+.checklistComposer{margin-top:16px}
+.checklistComposer>div{display:flex;align-items:center;gap:10px}
+.checklistComposer input{flex:1;min-width:0}
+.checklistComposer button{flex-shrink:0;min-height:44px}
+.dangerAction{border:1px solid #f3c8cf;background:#fff6f7;color:#b43a51;font-size:12px;font-weight:800;padding:10px 13px;border-radius:9px;min-height:40px}
+.dangerAction:hover:not(:disabled){background:#ffebef;border-color:#e7a6b1}
+@media(max-width:760px){.taskChecklistSection{padding:12px}.checklistComposer>div{flex-wrap:wrap}.checklistComposer button{width:100%}.memberManageRow>.dangerAction{width:100%}}
