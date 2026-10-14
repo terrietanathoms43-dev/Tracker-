@@ -9,10 +9,11 @@ const VALID_VIEWS=new Set([
 const VALID_ACTIONS=new Set(["navigate","task","project","team","invite","request"]);
 
 test("a complete guided onboarding exists for leaders and members",()=>{
- const leader=stepsForRole("leader"),member=stepsForRole("member");
+ const leader=stepsForRole("leader"),member=stepsForRole("member"),starter=stepsForRole("new");
  assert.ok(leader.length>=10,"Leader guide should cover the main features.");
  assert.ok(member.length>=6,"Member guide should explain their own work.");
- for(const steps of [leader,member]){
+ assert.ok(starter.length>=4,"First-time users should learn to create or join.");
+ for(const steps of [leader,member,starter]){
   assert.equal(steps[0].id,"welcome");
   assert.equal(steps.at(-1)?.id,"finish");
   assert.equal(new Set(steps.map(s=>s.id)).size,steps.length,"No repeated step ids.");
