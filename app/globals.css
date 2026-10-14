@@ -433,3 +433,27 @@ button:active:not(:disabled){transform:scale(.99)}
 .notificationHeadActions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .notificationHeadActions button{min-height:38px}
 @media(max-width:760px){.connectionBanner{font-size:12px;padding:9px 11px}.appErrorPage .card{padding:24px 17px}.notificationHeadActions button{min-height:44px}}
+
+/* Editable goals and budget entries stay compact until a leader chooses Edit. */
+.goalRecord{padding:12px 0;border-bottom:1px solid #e9eef5}
+.goalRecord>.textAction{margin-top:4px;margin-left:14px;font-size:12px}
+.goalRecord .taskLine{margin:0}
+.goalRecord .taskLine .muted{margin-top:5px;font-size:12px;white-space:pre-wrap}
+.goalEditForm{padding:16px;margin:12px 0;background:#f8faff;border:1px solid #dce5f5;border-radius:11px}
+.goalEditForm textarea{width:100%;min-height:80px;resize:vertical}
+.goalEditForm .primary{min-height:44px}
+.budgetItem{padding:8px 0 15px;border-bottom:1px solid #e7edf6}
+.budgetItem>.reportRow{border:0;padding-bottom:6px}
+.budgetControls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:4px}
+.budgetControls button{border:1px solid #dce5f5;background:#fff;border-radius:9px;min-height:38px;padding:8px 13px;font-size:12px;font-weight:800;color:#315cce}
+.budgetControls button:hover{background:#f2f6ff}
+.operations .budgetEditForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;background:#f7faff;border:1px solid #dbe5f8;border-radius:11px;padding:15px;margin:12px 0}
+.budgetEditForm>div{min-width:0}
+.budgetEditForm label{display:block;margin:0 0 5px;font-size:12px}
+.budgetEditForm input,.budgetEditForm select{width:100%;min-height:43px}
+.operations .budgetEditForm button{margin-top:4px}
+@media(max-width:760px){
+ .operations .budgetEditForm{grid-template-columns:1fr;padding:12px}
+ .budgetControls button{min-height:44px}
+ .goalEditForm{padding:11px}
+}
