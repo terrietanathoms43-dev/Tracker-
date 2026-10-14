@@ -415,3 +415,21 @@ button:active:not(:disabled){transform:scale(.99)}
 .searchResults small{font-size:11px;color:#71829f;white-space:nowrap}
 .searchFoot{border-top:1px solid #edf1f7;margin:17px 0 0;padding-top:13px;font-size:11px}
 @media(max-width:760px){.headerSearch{width:44px;padding:0}.headerSearch span{display:none}.searchOverlay{padding:14px}.searchPanel{padding:17px;border-radius:15px;max-height:calc(100dvh - 28px)}.searchResults button{min-height:53px}}
+
+/* Connection awareness, error recovery, and unread inbox counts */
+.connectionBanner{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:210;width:min(660px,calc(100% - 24px));background:#fff4d6;border:1px solid #edd08a;color:#6d4909;box-shadow:0 10px 28px #1b274225;padding:11px 17px;border-radius:0 0 12px 12px;font-size:13px;line-height:1.5;text-align:center}
+.connectionBanner strong{font-weight:800}
+.appErrorPage{min-height:100dvh;padding:20px;text-align:center}
+.appErrorPage .card{width:min(520px,100%);padding:36px 28px}
+.appErrorPage h1{font-size:23px;line-height:1.3}
+.appErrorPage .muted{line-height:1.7}
+.errorActions{display:flex;justify-content:center;align-items:center;gap:13px;flex-wrap:wrap;margin-top:20px}
+.errorActions>*{min-height:44px;display:inline-flex;align-items:center;padding:10px 15px;border-radius:10px;font-weight:800}
+.errorActions a{color:#315cce;border:1px solid #d2e0f5;text-decoration:none}
+.appLoading{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+.unreadNavCount{display:inline-flex;align-items:center;justify-content:center;margin-left:auto;flex-shrink:0;min-width:22px;min-height:22px;padding:2px 6px;background:#305ecb;color:white;border-radius:999px;font-size:11px;font-weight:800;line-height:1}
+.mobileBottomNav button{position:relative}
+.mobileBottomNav button .mobileUnread{position:absolute;right:calc(50% - 30px);top:1px;margin:0;min-width:19px;min-height:19px;font-size:9px;padding:2px 5px}
+.notificationHeadActions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.notificationHeadActions button{min-height:38px}
+@media(max-width:760px){.connectionBanner{font-size:12px;padding:9px 11px}.appErrorPage .card{padding:24px 17px}.notificationHeadActions button{min-height:44px}}
