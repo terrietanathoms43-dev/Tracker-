@@ -149,3 +149,24 @@ button:active:not(:disabled){transform:scale(.99)}
 .filterBar select{max-width:260px}
 @media(max-width:850px){.projectGrid{grid-template-columns:1fr}}
 @media(max-width:760px){.projectGrid{gap:12px}.projectCard{padding:16px}.projectFoot{align-items:flex-start}.projectActions{width:100%}.projectActions button{flex:1;min-height:44px}.filterBar select{max-width:none}}
+
+/* Task actions: completion, review and project creation */
+.taskActionPanel{display:flex;align-items:flex-start;flex-wrap:wrap;gap:12px;padding:15px 17px;margin:16px 0;background:#f4f7ff;border:1px solid #d7e3fb;border-radius:12px}
+.taskActionPanel p{flex:1 1 300px;margin:0;line-height:1.6;font-size:13px}
+.taskActionPanel .primary{flex:0 0 auto;min-height:43px}
+.taskCompletedLabel{color:#126d46;font-weight:800}
+.taskInlineActions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.taskInlineActions .primary{min-height:42px;padding:10px 14px;font-size:12px}
+.taskInlineActions small{font-size:12px}
+.limitedAccessHelp{margin-top:14px;padding:15px 18px;background:#f7f9fd;border:1px solid #d9e3f5;border-radius:12px}
+.limitedAccessHelp strong{display:block;margin-bottom:6px}
+.limitedAccessHelp p{font-size:13px;line-height:1.6}
+.limitedAccessHelp .primary{margin-top:2px;min-height:42px}
+.headerActions>.textAction{white-space:nowrap}
+@media(max-width:760px){
+ .taskActionPanel{flex-direction:column;padding:15px}
+ .taskActionPanel p{flex:auto}
+ .taskActionPanel .primary{width:100%}
+ .taskInlineActions .primary{width:100%;min-height:46px}
+ .headerActions>.textAction{min-height:44px}
+}
