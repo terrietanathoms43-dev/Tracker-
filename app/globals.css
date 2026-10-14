@@ -457,3 +457,30 @@ button:active:not(:disabled){transform:scale(.99)}
  .budgetControls button{min-height:44px}
  .goalEditForm{padding:11px}
 }
+
+/* Password-encrypted workspace exports: deliberately local-only backup process. */
+.workspaceBackup{border-color:#cbdcf8;background:linear-gradient(130deg,#f8faff,#fff 55%)}
+.workspaceBackup .sectionHead{gap:10px}
+.workspaceBackup>.muted{line-height:1.6}
+.backupCreateForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 17px;margin:17px 0}
+.backupCreateForm>div{min-width:0}
+.backupCreateForm label,.backupVerify label{display:block;font-size:12px;font-weight:800;margin-bottom:7px;color:#365279}
+.backupCreateForm input,.backupVerify input{width:100%;min-height:46px;max-width:100%}
+.backupCreateForm>p,.backupCreateForm>button{grid-column:1/-1}
+.backupCreateForm>p{font-size:12px;line-height:1.6;margin:0}
+.backupCreateForm>button{justify-self:start;min-height:45px}
+.backupSavedActions{padding:16px;border:1px solid #c9e9d9;border-radius:13px;background:#f5fcf8;margin:16px 0}
+.backupSavedActions strong{color:#176444;font-size:13px;overflow-wrap:anywhere}
+.backupSavedActions p{font-size:12px;margin:8px 0 13px;line-height:1.5}
+.backupButtons{display:flex;gap:10px;flex-wrap:wrap}
+.backupButtons button{min-height:46px;border-radius:10px;padding:10px 14px;font-size:13px;font-weight:800;border:1px solid #bbd0f5;background:#f5f8ff;color:#315cce}
+.backupButtons button.primary{background:#315cce;color:white;border-color:#315cce}
+.backupProgress{padding:12px;border-radius:9px;background:#eaf2ff;color:#31549a;font-size:13px}
+.backupVerify{padding:14px;border:1px solid #e2e8f5;background:#fff;border-radius:11px}
+.backupVerify summary{font-size:13px;font-weight:800;cursor:pointer;color:#315cce}
+.backupVerify p{font-size:12px;line-height:1.6}
+.backupVerify input{margin:4px 0 13px}
+.backupVerify button{min-height:43px;padding:9px 14px;font-weight:800;border:1px solid #d4e1f6;border-radius:9px;background:#f5f9ff;color:#345bb7}
+.backupNote{font-size:11px;line-height:1.6;margin:15px 0 0}
+.backupNote a{color:#2c5ece;font-weight:800}
+@media(max-width:760px){.backupCreateForm{grid-template-columns:1fr;gap:10px}.backupCreateForm>button{width:100%;min-height:48px}.backupButtons{flex-direction:column}.backupButtons button{width:100%;min-height:49px}.workspaceBackup .sectionHead{flex-wrap:wrap}}
