@@ -9,6 +9,7 @@ type Project={id:string;name:string};
 type Person={user_id:string;display_name:string;role:string};
 type Props={
  initialKind:QuickCreateKind;
+ initialProjectId?:string;
  organizationId:string;
  userId:string;
  canManage:boolean;
@@ -36,14 +37,14 @@ function readableError(value:unknown){
  return value instanceof Error?value.message:"Please try again.";
 }
 export default function QuickCreate({
- initialKind,organizationId,userId,canManage,projects,directory,onClose,onSaved,onOpen,onInvite
+ initialKind,initialProjectId,organizationId,userId,canManage,projects,directory,onClose,onSaved,onOpen,onInvite
 }:Props){
  const [kind,setKind]=useState<QuickCreateKind>(initialKind);
  const [title,setTitle]=useState("");
  const [description,setDescription]=useState("");
  const [owner,setOwner]=useState("");
  const [due,setDue]=useState("");
- const [project,setProject]=useState("");
+ const [project,setProject]=useState(initialProjectId??"");
  const [priority,setPriority]=useState("normal");
  const [more,setMore]=useState(false);
  const [busy,setBusy]=useState(false);
