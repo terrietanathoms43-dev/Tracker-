@@ -387,3 +387,13 @@ button:active:not(:disabled){transform:scale(.99)}
 .dangerAction{border:1px solid #f3c8cf;background:#fff6f7;color:#b43a51;font-size:12px;font-weight:800;padding:10px 13px;border-radius:9px;min-height:40px}
 .dangerAction:hover:not(:disabled){background:#ffebef;border-color:#e7a6b1}
 @media(max-width:760px){.taskChecklistSection{padding:12px}.checklistComposer>div{flex-wrap:wrap}.checklistComposer button{width:100%}.memberManageRow>.dangerAction{width:100%}}
+
+/* View and update team rosters in place */
+.teamMemberList{display:grid;gap:7px;margin-top:14px}
+.teamMemberRow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#f8faff;border:1px solid #e4ebf7;border-radius:9px;padding:10px 12px;min-width:0}
+.teamMemberRow>span{display:block;min-width:0;overflow-wrap:anywhere}
+.teamMemberRow strong,.teamMemberRow small{display:block;line-height:1.4}
+.teamMemberRow strong{font-size:12px;color:#2e4367}
+.teamMemberRow small{font-size:11px;color:#7787a2}
+.teamMemberRow button{min-height:36px;font-size:12px;flex-shrink:0}
+@media(max-width:760px){.teamMemberRow button{min-height:44px}}
