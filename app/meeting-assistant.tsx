@@ -24,8 +24,8 @@ type Draft={
  owner_id:string;
  project_id:string;
 };
-const MAX_FILE_SIZE=8*1024*1024;
-const EXTENSIONS=new Set(["txt","md","csv","pdf","docx"]);
+const MAX_FILE_SIZE=5*1024*1024;
+const EXTENSIONS=new Set(["txt","md","csv","pdf","docx","vtt","srt"]);
 const db=makeClient();
 const editingFields=(suggestion:MeetingSuggestion,tasks:KnownTask[]):Draft=>{
  const original=suggestion.kind==="update_task"?tasks.find(t=>t.id===suggestion.existing_id):null;
@@ -49,31 +49,24 @@ function cleanError(err:unknown,otherwise="Unable to complete this action"){
 function dueTimestamp(date:string){
  return date?new Date(date+"T23:59:00").toISOString():null;
 }
-async function readDocument(file:File):Promise<string>{
+async function readDocument(file:File,organizationId:string):Promise<string>{
  const ext=file.name.split(".").pop()?.toLowerCase()??"";
- if(!EXTENSIONS.has(ext))throw new Error("Use a PDF, DOCX, TXT, MD, or CSV file. Older .doc files should be converted to .docx first.");
+ if(!EXTENSIONS.has(ext))throw new Error("Upload a PDF, DOCX, TXT, Markdown, CSV, VTT, or SRT meeting document.");
  if(file.size===0)throw new Error("The selected document is empty.");
- if(file.size>MAX_FILE_SIZE)throw new Error("This document exceeds 8 MB. Split it into shorter meeting notes.");
- if(["txt","md","csv"].includes(ext))return await file.text();
- if(ext==="docx"){
-  const mammoth=await import("mammoth");
-  const result=await mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});
-  return result.value;
- }
- const pdfjs=await import("pdfjs-dist/legacy/build/pdf.mjs");
- pdfjs.GlobalWorkerOptions.workerSrc=new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs",import.meta.url).toString();
- const pdf=await pdfjs.getDocument({data:new Uint8Array(await file.arrayBuffer()),useSystemFonts:true}).promise;
- if(pdf.numPages>50)throw new Error("This PDF is too long. Use a document of 50 pages or fewer.");
- const lines:string[]=[];
- try{
-  for(let pageNumber=1;pageNumber<=pdf.numPages;pageNumber++){
-   const page=await pdf.getPage(pageNumber);
-   const textContent=await page.getTextContent();
-   const text=textContent.items.map(item=>("str" in item?String(item.str):"")).join(" ");
-   lines.push("Page "+pageNumber+"\n"+text);
-  }
- }finally{await pdf.destroy()}
- return lines.join("\n\n");
+ if(file.size>MAX_FILE_SIZE)throw new Error("Meeting documents must be 5 MB or smaller.");
+ const {data:{session},error:sessionError}=await db.auth.getSession();
+ if(sessionError||!session?.access_token)throw new Error("Please sign in again before uploading a meeting document.");
+ const form=new FormData();
+ form.append("organization_id",organizationId);
+ form.append("file",file);
+ const response=await fetch("/api/meeting-text",{
+  method:"POST",
+  headers:{"Authorization":"Bearer "+session.access_token},
+  body:form,cache:"no-store"
+ });
+ const parsed=await response.json() as {text?:string;error?:string};
+ if(!response.ok||!parsed.text)throw new Error(parsed.error||"The document couldn't be read.");
+ return parsed.text;
 }
 const nameFor=(people:Member[],id:string|null)=>people.find(p=>p.user_id===id)?.display_name??"Not assigned";
 export default function MeetingAssistant({organizationId,userId,tasks,projects,members,onSaved}:Props){
@@ -105,7 +98,7 @@ export default function MeetingAssistant({organizationId,userId,tasks,projects,m
   if(!file)return;
   setLoadingFile(true);setError("");setNotice("");
   try{
-   const text=await readDocument(file);
+   const text=await readDocument(file,organizationId);
    if(!text.trim()||text.trim().length<35)
     throw new Error("I couldn't extract enough text. For scanned or photographed notes, paste the transcript as text instead.");
    if(text.length>MEETING_MAX_TEXT)
@@ -211,8 +204,8 @@ export default function MeetingAssistant({organizationId,userId,tasks,projects,m
    <div className="sectionHead"><div><span className="eyebrow blue">MEETINGS → ACTION</span><h2>Meeting notes assistant</h2></div><span className="chip">Review before saving</span></div>
    <p>Upload meeting notes or a transcript, then compare the action items with tasks, projects, and goals already saved in Trackwise. Choose which suggested changes to add—nothing updates automatically.</p>
    <label htmlFor="meetingNotesFile">Upload meeting notes or transcript</label>
-   <input id="meetingNotesFile" type="file" accept=".pdf,.docx,.txt,.md,.csv" disabled={loadingFile||analyzing||working} onChange={e=>void receiveFile(e)}/>
-   <small className="muted">PDF, Word (.docx), text, Markdown, or CSV • 8 MB maximum • 50 PDF pages • text-based PDFs only</small>
+   <input id="meetingNotesFile" type="file" accept=".pdf,.docx,.txt,.md,.csv,.vtt,.srt" disabled={loadingFile||analyzing||working} onChange={e=>void receiveFile(e)}/>
+   <small className="muted">PDF, Word (.docx), TXT, Markdown, CSV, VTT or SRT • 5 MB maximum • text-based PDFs only</small>
    {sourceName&&<p className="muted meetingSource">Selected document: <strong>{sourceName}</strong></p>}
    <label htmlFor="meetingNotesText">Or paste and edit meeting notes</label>
    <textarea id="meetingNotesText" rows={11} maxLength={MEETING_MAX_TEXT} value={notes} disabled={loadingFile||analyzing||working}
@@ -225,7 +218,7 @@ export default function MeetingAssistant({organizationId,userId,tasks,projects,m
    <button type="button" className="primary meetingAnalyze" disabled={analyzing||working||loadingFile||notes.trim().length<35} onClick={()=>void analyze()}>
     {loadingFile?"Reading document…":analyzing?"Comparing with Trackwise…":"Analyze meeting & compare with Trackwise"}
    </button>
-   <p className="muted meetingPrivacy">The uploaded document is read locally and its extracted text is sent securely to Trackwise for analysis. Notes are not stored as a meeting record. AI analysis requires an administrator-configured API key and your consent; AI API usage may incur charges.</p>
+   <p className="muted meetingPrivacy">Your document is securely sent to Trackwise for text extraction; neither the original file nor the extracted transcript is saved automatically. Notes are not stored as a meeting record. AI analysis requires an administrator-configured API key and your consent; AI API usage may incur charges.</p>
   </section>
   {error&&<p className="feedback bad" role="alert">{error}</p>}
   {notice&&<p className="feedback good" role="status">{notice}</p>}
