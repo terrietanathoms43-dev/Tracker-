@@ -1,5 +1,5 @@
 "use client";
-import {useCallback,useEffect,useMemo,useState,type FormEvent} from "react";
+import {useCallback,useEffect,useMemo,useRef,useState,type FormEvent} from "react";
 import type {User} from "@supabase/supabase-js";
 import Reports from "./reports";
 import Operations from "./operations";
@@ -11,7 +11,7 @@ type Team={id:string;name:string;organization_id:string};
 type Goal={id:string;title:string;description:string|null;status:string;target_date:string|null};
 type Project={id:string;name:string;description:string|null;status:string;team_id:string|null;goal_id:string|null};
 type DirectoryMember={user_id:string;display_name:string;role:string};
-type Task={id:string;title:string;status:string;priority:string;due_at:string|null;owner_id:string|null;created_at:string;latest_progress:string|null;organization_id:string;project_id:string|null};
+type Task={id:string;title:string;description:string|null;status:string;priority:string;due_at:string|null;owner_id:string|null;created_at:string;latest_progress:string|null;organization_id:string;project_id:string|null};
 type Member={user_id:string;role:string};
 type TeamMember={team_id:string;user_id:string;role:string};
 type Request={id:string;title:string;details:string|null;decision:string;submitted_by:string;decision_reason:string|null;created_at:string};
@@ -32,13 +32,70 @@ export default function Home(){
  const [pendingInvites,setPendingInvites]=useState<{id:string;email:string;role:string;organization_id:string;expires_at:string}[]>([]),[invitesLoading,setInvitesLoading]=useState(false);
  const [outgoingInvites,setOutgoingInvites]=useState<{id:string;email:string;role:string;expires_at:string;accepted_at:string|null}[]>([]),[inviteAction,setInviteAction]=useState("");
  const [inviteEmail,setInviteEmail]=useState(""),[inviteRole,setInviteRole]=useState("member"),[orgName,setOrgName]=useState(""),[teamName,setTeamName]=useState(""),[taskTitle,setTaskTitle]=useState(""),[taskDue,setTaskDue]=useState(""),[taskPriority,setTaskPriority]=useState("normal"),[taskOwner,setTaskOwner]=useState("");
- const [myTasksOnly,setMyTasksOnly]=useState(false);
+ const [myTasksOnly,setMyTasksOnly]=useState(false),[workspaceLoading,setWorkspaceLoading]=useState(false);
+ const workspaceRequest=useRef(0);
  const [mobileMenu,setMobileMenu]=useState(false),[showTaskForm,setShowTaskForm]=useState(false),[showTaskHandover,setShowTaskHandover]=useState(false);
  const [view,setView]=useState<"overview"|"tasks"|"teams"|"planning"|"requests"|"activity"|"reports"|"collaboration"|"resources"|"notifications"|"settings">("overview"),[error,setError]=useState(""),[notice,setNotice]=useState("");
  useEffect(()=>{setProfileName(String(user?.user_metadata?.display_name??""))},[user?.id]);
  const clear=()=>{setError("");setNotice("")};
  const loadOrgs=useCallback(async()=>{if(!db)return;const {data,error}=await db.from("tw_organizations").select("id,name,created_at").order("created_at",{ascending:false});if(error)setError(error.message);else {setOrgs(data??[]);setSelected(old=>(data??[]).some(o=>o.id===old)?old:(data?.[0]?.id??""))}},[]);
- const loadWorkspace=useCallback(async(orgId:string)=>{if(!db||!orgId)return;const [t,k,m,tm,r,a,g,p,d,h]=await Promise.all([db.from("tw_teams").select("id,name,organization_id").eq("organization_id",orgId).order("created_at",{ascending:false}),db.from("tw_tasks").select("id,title,status,priority,due_at,owner_id,created_at,latest_progress,organization_id,project_id").eq("organization_id",orgId).order("created_at",{ascending:false}).limit(200),db.from("tw_memberships").select("user_id,role").eq("organization_id",orgId),db.from("tw_team_members").select("team_id,user_id,role"),db.from("tw_requests").select("id,title,details,decision,submitted_by,decision_reason,created_at").eq("organization_id",orgId).order("created_at",{ascending:false}).limit(100),db.from("tw_activity").select("id,entity_type,action,created_at,details").eq("organization_id",orgId).order("created_at",{ascending:false}).limit(50),db.from("tw_goals").select("id,title,description,status,target_date").eq("organization_id",orgId).order("created_at",{ascending:false}),db.from("tw_projects").select("id,name,description,status,team_id,goal_id").eq("organization_id",orgId).order("created_at",{ascending:false}),db.rpc("tw_member_directory",{org_id:orgId}),db.from("tw_task_handovers").select("id,task_id,from_user,to_user,note,created_at").eq("organization_id",orgId).order("created_at",{ascending:false}).limit(100)]);const issue=t.error||k.error||m.error||tm.error||r.error||a.error||g.error||p.error||d.error||h.error;if(issue)setError(issue.message);else{setTeams(t.data??[]);setTasks(k.data??[]);setMembers(m.data??[]);setTeamMembers((tm.data??[]).filter(x=>(t.data??[]).some(team=>team.id===x.team_id)));setRequests(r.data??[]);setActivity(a.data??[]);setGoals(g.data??[]);setProjects(p.data??[]);setDirectory(d.data??[]);setHandovers(h.data??[])}},[]);
+ const loadWorkspace=useCallback(async(orgId:string)=>{
+  if(!db||!orgId)return;
+  const request=++workspaceRequest.current;
+  setWorkspaceLoading(true);
+  // Fetch every saved task in stable batches; a single .limit(200) hid older tasks.
+  const allTasks=async()=>{
+   try{
+    const saved:Task[]=[];
+    const pageSize=200;
+    for(let offset=0;;offset+=pageSize){
+     const result=await db.from("tw_tasks")
+      .select("id,title,description,status,priority,due_at,owner_id,created_at,latest_progress,organization_id,project_id")
+      .eq("organization_id",orgId)
+      .order("created_at",{ascending:false})
+      .order("id",{ascending:false})
+      .range(offset,offset+pageSize-1);
+     if(result.error)throw result.error;
+     const batch=(result.data??[]) as Task[];
+     saved.push(...batch);
+     if(batch.length<pageSize)break;
+    }
+    return {data:saved,error:null};
+   }catch(e){return {data:null,error:{message:e instanceof Error?e.message:"Could not load saved tasks"}}}
+  };
+  try{
+   const [t,k,m,tm,r,a,g,p,d,h]=await Promise.all([
+    db.from("tw_teams").select("id,name,organization_id").eq("organization_id",orgId).order("created_at",{ascending:false}),
+    allTasks(),
+    db.from("tw_memberships").select("user_id,role").eq("organization_id",orgId),
+    db.from("tw_team_members").select("team_id,user_id,role"),
+    db.from("tw_requests").select("id,title,details,decision,submitted_by,decision_reason,created_at").eq("organization_id",orgId).order("created_at",{ascending:false}).limit(100),
+    db.from("tw_activity").select("id,entity_type,action,created_at,details").eq("organization_id",orgId).order("created_at",{ascending:false}).limit(50),
+    db.from("tw_goals").select("id,title,description,status,target_date").eq("organization_id",orgId).order("created_at",{ascending:false}),
+    db.from("tw_projects").select("id,name,description,status,team_id,goal_id").eq("organization_id",orgId).order("created_at",{ascending:false}),
+    db.rpc("tw_member_directory",{org_id:orgId}),
+    db.from("tw_task_handovers").select("id,task_id,from_user,to_user,note,created_at").eq("organization_id",orgId).order("created_at",{ascending:false}).limit(100)
+   ]);
+   if(request!==workspaceRequest.current)return;
+   // Keep the successful reads even if an unrelated feature has a query error.
+   if(!t.error)setTeams(t.data??[]);
+   if(!k.error)setTasks(k.data??[]);
+   if(!m.error)setMembers(m.data??[]);
+   if(!tm.error)setTeamMembers((tm.data??[]).filter(x=>(t.data??[]).some(team=>team.id===x.team_id)));
+   if(!r.error)setRequests(r.data??[]);
+   if(!a.error)setActivity(a.data??[]);
+   if(!g.error)setGoals(g.data??[]);
+   if(!p.error)setProjects(p.data??[]);
+   if(!d.error)setDirectory(d.data??[]);
+   if(!h.error)setHandovers(h.data??[]);
+   const failures=[["teams",t.error],["saved tasks",k.error],["members",m.error],["team membership",tm.error],["requests",r.error],["activity",a.error],["goals",g.error],["projects",p.error],["directory",d.error],["handover history",h.error]].filter((entry)=>entry[1]);
+   if(failures.length)setError("Some workspace information could not be loaded: "+failures.map(entry=>entry[0]).join(", ")+". Refresh to try again.");
+  }catch(e){
+   if(request===workspaceRequest.current)setError(e instanceof Error?e.message:"Unable to load workspace");
+  }finally{
+   if(request===workspaceRequest.current)setWorkspaceLoading(false);
+  }
+ },[]);
  const loadOutgoingInvites=useCallback(async(orgId:string)=>{if(!db||!orgId)return;const {data,error}=await db.from("tw_invitations").select("id,email,role,expires_at,accepted_at").eq("organization_id",orgId).order("created_at",{ascending:false});if(error)setError(error.message);else setOutgoingInvites(data??[])},[]);
  useEffect(()=>{if(selected&&members.some(m=>m.user_id===user?.id&&["admin","leader"].includes(m.role)))void loadOutgoingInvites(selected);else setOutgoingInvites([])},[selected,members,user?.id,loadOutgoingInvites]);
  async function revokeInvite(id:string){if(!db||!selected||!manager)return;if(!window.confirm("Revoke this invitation? Its link will stop working."))return;setInviteAction(id);clear();try{const {error}=await db.rpc("tw_revoke_invitation",{invitation_id:id});if(error)throw error;await loadOutgoingInvites(selected);if(inviteShareId===id){setInviteShareReady(false);setInviteShareId("")}setNotice("Invitation revoked.")}catch(e){setError(e instanceof Error?e.message:"Unable to revoke invitation")}finally{setInviteAction("")}}
@@ -47,7 +104,7 @@ export default function Home(){
  useEffect(()=>{if(user){void db?.from("tw_invitations").select("id,email,role,organization_id,expires_at").eq("email",user.email?.toLowerCase()??"").is("accepted_at",null).gt("expires_at",new Date().toISOString()).then(({data})=>setPendingInvites(data??[]));}else setPendingInvites([])},[user]);
  useEffect(()=>{if(user&&typeof window!=="undefined"&&new URLSearchParams(window.location.search).has("invite"))setView("settings")},[user]);
  useEffect(()=>{if(user)void loadOrgs();else{setOrgs([]);setSelected("");setTeams([]);setTasks([])}},[user,loadOrgs]);
- useEffect(()=>{if(selected)void loadWorkspace(selected);else{setTeams([]);setTasks([]);setMembers([])}},[selected,loadWorkspace]);
+ useEffect(()=>{if(selected){setTasks([]);setProjects([]);void loadWorkspace(selected)}else{workspaceRequest.current++;setTeams([]);setTasks([]);setProjects([]);setMembers([]);setWorkspaceLoading(false)}},[selected,loadWorkspace]);
  const active=orgs.find(o=>o.id===selected),role=members.find(m=>m.user_id===user?.id)?.role,manager=role==="admin"||role==="leader";
  const counts=useMemo(()=>({total:tasks.length,active:tasks.filter(t=>t.status==="underway").length,blocked:tasks.filter(t=>t.status==="blocked").length,done:tasks.filter(t=>t.status==="completed").length,overdue:tasks.filter(t=>t.due_at&&new Date(t.due_at)<new Date()&&t.status!=="completed").length}),[tasks]);
  async function auth(e:FormEvent){e.preventDefault();if(!db)return;setWorking(true);clear();try{if(mode==="reset"){const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});if(error)throw error;setNotice("Password reset email sent. Check your inbox.");return}const result=mode==="signin"?await db.auth.signInWithPassword({email,password}):await db.auth.signUp({email,password,options:{emailRedirectTo:window.location.origin}});if(result.error)throw result.error;if(mode==="signup")setNotice(result.data.session?"Your account is ready.":"Check your email to confirm your account.");}catch(e){setError(e instanceof Error?e.message:"Unable to authenticate")}finally{setWorking(false)}}
