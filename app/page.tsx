@@ -133,13 +133,14 @@ export default function Home(){
   const checkForUpdates=()=>{
    if(document.visibilityState!=="visible"||Date.now()-lastRefresh<15000)return;
    lastRefresh=Date.now();
+   void loadOrgs();
    void loadWorkspace(selected);
   };
   window.addEventListener("focus",checkForUpdates);
   window.addEventListener("online",checkForUpdates);
   document.addEventListener("visibilitychange",checkForUpdates);
   return()=>{window.removeEventListener("focus",checkForUpdates);window.removeEventListener("online",checkForUpdates);document.removeEventListener("visibilitychange",checkForUpdates)};
- },[selected,user?.id,loadWorkspace]);
+ },[selected,user?.id,loadWorkspace,loadOrgs]);
 
  const active=orgs.find(o=>o.id===selected),role=members.find(m=>m.user_id===user?.id)?.role,manager=canManageOrganization(role);
  const unreadNotifications=useUnreadNotifications(selected,user?.id);
