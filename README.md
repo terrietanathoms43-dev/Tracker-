@@ -2,10 +2,10 @@
 
 A team-leader-first work management application built around six principles: clear task ownership, honest statuses, actionable handovers, fair performance benchmarks, organizational goal alignment, and transparent request decisions.
 
-## Planned stack
+## Technology
 Next.js App Router, TypeScript, Supabase Auth/Postgres with RLS, Tailwind CSS, Vercel.
 
-## Initial scope
+## Product capabilities
 - Organizations and teams; a user may lead one team and join another.
 - Projects, organizational goals, tasks, owners, dates and task dependencies.
 - Statuses: not_started, underway, awaiting_approval, blocked, rejected, completed.
@@ -17,8 +17,8 @@ Next.js App Router, TypeScript, Supabase Auth/Postgres with RLS, Tailwind CSS, V
 ## Security
 Every organization-scoped record must be protected by PostgreSQL row-level security. Client input cannot determine permission. Service-role keys must never appear in browser code.
 
-## Setup status
-Architecture and first schema prepared. Database migration is intentionally NOT applied until the existing Supabase project is confirmed to be dedicated to Trackwise.
+## Deployment
+The Supabase schema and organization-onboarding migration have been applied to the Trackwise database. Configure the two public Supabase environment variables in Vercel. Verify the build, authentication, access policies, and end-to-end workflows before a production launch.
 
 
 ## Repository
