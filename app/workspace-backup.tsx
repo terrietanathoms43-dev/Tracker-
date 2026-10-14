@@ -16,7 +16,7 @@ const TABLES=[
  "tw_activity","tw_budget_items","tw_goals","tw_invitations","tw_memberships",
  "tw_messages","tw_notifications","tw_organizations","tw_projects","tw_recurring_tasks",
  "tw_requests","tw_task_attachments","tw_task_checklist","tw_task_comments",
- "tw_task_dependencies","tw_task_handovers","tw_task_updates","tw_tasks","tw_team_members","tw_teams"
+ "tw_task_dependencies","tw_task_handovers","tw_task_updates","tw_tasks","tw_teams","tw_team_members"
 ] as const;
 const BATCH_SIZE=250;
 const MAX_ARCHIVE_BYTES=40*1024*1024;
