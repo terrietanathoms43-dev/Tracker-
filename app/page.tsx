@@ -12,6 +12,9 @@ const TaskCalendar=dynamic(()=>import("./task-calendar"),{ssr:false,loading:()=>
 const RecurringSchedules=dynamic(()=>import("./recurring-schedules"),{ssr:false,loading:()=>null});
 const WorkspaceBackup=dynamic(()=>import("./workspace-backup"),{ssr:false,loading:()=>null});
 const OnboardingTour=dynamic(()=>import("./onboarding-tour"),{ssr:false,loading:()=>null});
+const QuickCreate=dynamic(()=>import("./quick-create"),{ssr:false,loading:()=>null});
+type QuickCreateKind="task"|"project"|"team"|"organization";
+type QuickCreated={kind:QuickCreateKind;id:string;name:string};
 const MeetingAssistant=dynamic(()=>import("./meeting-assistant"),{ssr:false,loading:()=><p className="muted">Opening meeting assistant…</p>});
 import {supabase as makeClient} from "../lib/supabase";
 const ready=Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
@@ -66,6 +69,7 @@ export default function Home(){
  const [mobileMenu,setMobileMenu]=useState(false),[showTaskForm,setShowTaskForm]=useState(false),[showTaskHandover,setShowTaskHandover]=useState(false);
  const [view,setView]=useState<View>("overview"),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [createMenu,setCreateMenu]=useState(false),[showGuide,setShowGuide]=useState(false),[hideChecklist,setHideChecklist]=useState(false);
+ const [quickCreate,setQuickCreate]=useState<QuickCreateKind|null>(null);
  const [lastCreatedProject,setLastCreatedProject]=useState<{id:string;name:string}|null>(null);
  const [lastCreatedTeam,setLastCreatedTeam]=useState<{id:string;name:string}|null>(null);
  const [goalDescription,setGoalDescription]=useState("");
@@ -163,13 +167,36 @@ export default function Home(){
  const activeNav=NAV_GROUPS.find(group=>group.items.some(item=>item.view===view))??NAV_GROUPS[0];
  function navigate(to:View){setView(to);setMobileMenu(false);setCreateMenu(false);clear();}
  function launchCreate(kind:"task"|"project"|"team"|"invite"|"request"){
-  const target:View=kind==="task"?"tasks":kind==="project"?"projects":kind==="team"?"teams":kind==="invite"?"settings":"requests";
-  if(kind==="task")setShowTaskForm(true);
-  navigate(target);
-  const element=kind==="task"?"taskComposer":kind==="project"?"projectCreator":kind==="team"?"createTeam":kind==="invite"?"inviteMembers":"submitRequest";
-  window.setTimeout(()=>document.getElementById(element)?.scrollIntoView({behavior:"smooth",block:"start"}),120);
+  setCreateMenu(false);setMobileMenu(false);clear();
+  if(kind==="task"||kind==="project"||kind==="team"){
+   if(!manager)return;
+   setQuickCreate(kind);
+   return;
+  }
+  const destination:View=kind==="invite"?"settings":"requests";
+  navigate(destination);
+  const target=kind==="invite"?"inviteMembers":"submitRequest";
+  window.setTimeout(()=>document.getElementById(target)?.scrollIntoView({behavior:"smooth",block:"start"}),120);
  }
- function closeGuide(){
+ async function onQuickSaved(created:QuickCreated){
+  if(created.kind==="organization"){
+   await loadOrgs();
+   setSelected(created.id);
+   setView("overview");setHideChecklist(false);setMobileMenu(false);
+   setNotice("Your new organization is ready. Start with a project or invite your team.");
+  }else{
+   await loadWorkspace(selected);
+   setNotice(created.name+" has been created.");
+  }
+ }
+ function openQuickCreated(created:QuickCreated){
+  setQuickCreate(null);
+  if(created.kind==="organization")navigate("overview");
+  else if(created.kind==="task"){navigate("tasks");window.setTimeout(()=>void openTask(created.id),50)}
+  else if(created.kind==="project"){navigate("projects");setProjectFilter("all")}
+  else navigate("teams");
+ }
+  function closeGuide(){
   if(user&&typeof window!=="undefined")window.localStorage.setItem("tw-tour-v3:"+user.id+":"+(selected||"start"),"seen");
   setShowGuide(false);
  }
@@ -481,7 +508,12 @@ export default function Home(){
  if(!ready)return <main className="center"><div className="card"><h1>Trackwise</h1><h2>Setup required</h2><p>Supabase environment variables are missing from this deployment.</p></div></main>;
  if(initial)return <main className="center"><div className="spinner"/><p>Preparing your workspace…</p></main>;
  if(!user)return <main className="authShell"><div className="authHero"><div className="logo light"><span className="mark">T</span> Trackwise</div><div><span className="eyebrow">A clearer way to lead</span><h1>Every task.<br/>Every team.<br/><em>One clear picture.</em></h1><p>Turn scattered updates into focused action, shared accountability, and measurable progress.</p><div className="heroChips"><span>✓ Clear ownership</span><span>✓ Live progress</span><span>✓ Team visibility</span></div></div><small>Designed for leaders who value clarity.</small></div><div className="authSide"><div className="authCard"><div className="mobileLogo logo"><span className="mark">T</span> Trackwise</div><span className="eyebrow blue">YOUR WORKSPACE STARTS HERE</span><h2>{mode==="signin"?"Welcome back":mode==="signup"?"Create your account":"Reset your password"}</h2><p className="muted">{mode==="signin"?"Sign in to pick up where your team left off.":mode==="signup"?"Bring your people and priorities together.":"We'll send a reset link to your email."}</p><form onSubmit={auth}>{mode==="signup"&&<><label htmlFor="signupName">Full name</label><input id="signupName" type="text" autoComplete="name" minLength={2} maxLength={80} required value={signupName} onChange={e=>setSignupName(e.target.value)} placeholder="Enter your name"/><p className="muted authNameHint">Your name is visible to teammates and on task assignments. You can change it later in Settings.</p></>}<label htmlFor="email">Email address</label><input id="email" type="email" placeholder="you@example.com" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required/>{mode!=="reset"&&<><label htmlFor="password">Password</label><input id="password" type="password" minLength={mode==="signup"?10:1} placeholder={mode==="signup"?"At least 10 characters":"Enter your password"} autoComplete={mode==="signin"?"current-password":"new-password"} value={password} onChange={e=>setPassword(e.target.value)} required/>{mode==="signup"&&<p className="muted" style={{fontSize:12,marginTop:6}}>Use at least 10 characters and a unique password. A long passphrase is a good choice.</p>}</>}<button className="primary wide" disabled={working}>{working?"Please wait…":mode==="signin"?"Sign in →":mode==="signup"?"Create account →":"Send reset link →"}</button></form>{mode==="signin"&&<button className="linkButton" onClick={()=>{setMode("reset");clear()}}>Forgot password?</button>}<div className="authSwitch">{mode==="signin"?"New to Trackwise?":mode==="signup"?"Already have an account?":"Remember your password?"} <button className="linkButton" onClick={()=>{setMode(mode==="signin"?"signup":"signin");clear()}}>{mode==="signin"?"Create an account":"Sign in"}</button></div>{error&&<p role="alert" className="feedback bad">{error}</p>}{notice&&<p role="status" className="feedback good">{notice}</p>}</div></div></main>;
- return <div className="appShell"><div className="mobileTopbar"><div className="logo"><span className="mark">T</span> Trackwise</div><button type="button" className="mobileMenuToggle" aria-label="Open workspace menu" aria-expanded={mobileMenu} onClick={()=>setMobileMenu(v=>!v)}>☰ <span>Menu</span></button></div>{mobileMenu&&<button className="mobileBackdrop" aria-label="Close menu" onClick={()=>setMobileMenu(false)}/>}<aside className={"sidebar "+(mobileMenu?"mobileOpen":"")}><div className="logo"><span className="mark">T</span> Trackwise</div><div className="sideLabel">WORKSPACE</div><select className="orgSelect" aria-label="Current organization" value={selected} onChange={e=>{setSelected(e.target.value);setLastCreatedProject(null);setLastCreatedTeam(null);setProjectFilter("all");setView("overview");setMobileMenu(false);clear()}}><option value="">Select organization</option>{orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select><button type="button" className="sidebarGuideButton" onClick={()=>setShowGuide(true)}><span aria-hidden="true">✦</span><span><strong>Take a guided tour</strong><small>See how everything works</small></span><span aria-hidden="true">→</span></button><nav aria-label="Main navigation">{NAV_GROUPS.map(group=><button type="button" key={group.id} className={"navItem "+(activeNav.id===group.id?"selected":"")} aria-current={activeNav.id===group.id?"page":undefined} onClick={()=>navigate(group.defaultView)}><span aria-hidden="true" className="navGlyph">{navigationIcon(group.id)}</span>{group.label}{group.id==="inbox"&&unreadNotifications>0&&<span className="unreadNavCount" aria-label={unreadNotifications+" unread notifications"}>{unreadNotifications>99?"99+":unreadNotifications}</span>}</button>)}</nav><div className="sideFoot"><div className="avatar">{(user.email??"U").slice(0,1).toUpperCase()}</div><div className="userDetails"><strong>{String(user.user_metadata?.display_name??"").trim()||user.email?.split("@")[0]}</strong><small>{role?statusLabel(role):"Account"}</small></div><button className="logout" title="Sign out" aria-label="Sign out" onClick={()=>void db?.auth.signOut()}>↪</button></div></aside><div className="workspace"><header className="appHeader">
+ return <div className="appShell"><div className="mobileTopbar"><div className="logo"><span className="mark">T</span> Trackwise</div><button type="button" className="mobileMenuToggle" aria-label="Open workspace menu" aria-expanded={mobileMenu} onClick={()=>setMobileMenu(v=>!v)}>☰ <span>Menu</span></button></div>{mobileMenu&&<button className="mobileBackdrop" aria-label="Close menu" onClick={()=>setMobileMenu(false)}/>}<aside className={"sidebar "+(mobileMenu?"mobileOpen":"")}><div className="logo"><span className="mark">T</span> Trackwise</div><div className="sideLabel">WORKSPACE</div><select className="orgSelect" aria-label="Current organization" value={selected} onChange={e=>{setSelected(e.target.value);setLastCreatedProject(null);setLastCreatedTeam(null);setProjectFilter("all");setView("overview");setMobileMenu(false);clear()}}><option value="">Select organization</option>{orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select><button type="button" className="sidebarNewOrg" onClick={()=>{setMobileMenu(false);setQuickCreate("organization")}}><Plus size={16}/> New organization</button><button type="button" className="sidebarGuideButton" onClick={()=>setShowGuide(true)}><span aria-hidden="true">✦</span><span><strong>Take a guided tour</strong><small>See how everything works</small></span><span aria-hidden="true">→</span></button><nav aria-label="Main navigation">{NAV_GROUPS.map(group=><div className="navCluster" key={group.id}>
+ <button type="button" className={"navItem "+(activeNav.id===group.id?"selected":"")} aria-current={view===group.defaultView?"page":undefined} onClick={()=>navigate(group.defaultView)}><span aria-hidden="true" className="navGlyph">{navigationIcon(group.id)}</span>{group.label}{group.id==="inbox"&&unreadNotifications>0&&<span className="unreadNavCount" aria-label={unreadNotifications+" unread notifications"}>{unreadNotifications>99?"99+":unreadNotifications}</span>}</button>
+ {group.items.length>1&&activeNav.id===group.id&&<div className="navSubLinks" aria-label={group.label+" sections"}>
+  {group.items.filter(item=>item.view!=="meeting_ai"||manager).map(item=><button key={item.view} type="button" className={item.view===view?"navSubActive":""} aria-current={item.view===view?"page":undefined} onClick={()=>navigate(item.view)}>{item.label}</button>)}
+ </div>}
+ </div>)}</nav><div className="sideFoot"><div className="avatar">{(user.email??"U").slice(0,1).toUpperCase()}</div><div className="userDetails"><strong>{String(user.user_metadata?.display_name??"").trim()||user.email?.split("@")[0]}</strong><small>{role?statusLabel(role):"Account"}</small></div><button className="logout" title="Sign out" aria-label="Sign out" onClick={()=>void db?.auth.signOut()}>↪</button></div></aside><div className="workspace"><header className="appHeader">
  <div className="pageHeading"><span className="eyebrow blue">TRACKWISE / {activeNav.label.toUpperCase()}</span>
   <h1>{view==="overview"?"Your workspace":view==="tasks"?"Tasks":view==="calendar"?"Task calendar":view==="meeting_ai"?"Meeting assistant":view==="projects"?"Projects":view==="planning"?"Goals & planning":view==="people"?"People":view==="teams"?"Teams":view==="notifications"?"Inbox":view==="collaboration"?"Team messages":view==="requests"?"Requests & approvals":view==="reports"?"Reports":view==="resources"?"Budgets & resources":view==="activity"?"Activity history":"Settings"}</h1>
   <p className="muted">{view==="overview"?"See what needs attention and keep work moving.":view==="tasks"?"Find, assign, and finish work.":view==="calendar"?"See deadlines at a glance.":view==="meeting_ai"?"Turn meeting decisions into reviewed tasks and plans.":view==="projects"?"Group related tasks and see what's moving.":view==="people"?"Find your colleagues and manage your teams.":view==="teams"?"Bring people together around shared work.":view==="notifications"?"Your updates, requests, and conversations in one place.":view==="settings"?"Your account, organization, and invitations.":"Keep everything organized in one place."}</p>
@@ -490,7 +522,8 @@ export default function Home(){
   {active&&<button type="button" className="headerSearch" aria-label="Search tasks, projects, and people" onClick={()=>{setSearchOpen(true);setCreateMenu(false)}}><SearchIcon size={18}/> <span>Search</span></button>}
   <button type="button" className="headerHelp" onClick={()=>{setShowGuide(true);setCreateMenu(false)}} aria-label="Open guided setup and feature explanations"><Sparkles size={18}/> <span>Guided help</span></button>
   {active&&<div className="createWrapper">
-   <button type="button" className="primary mainCreateButton" aria-expanded={createMenu} aria-controls="globalCreateMenu" onClick={()=>setCreateMenu(v=>!v)}><Plus size={18}/> {manager?"Create":"Quick actions"} <span aria-hidden="true">⌄</span></button>
+   <button type="button" className="primary mainCreateButton" onClick={()=>{if(manager)setQuickCreate("task");else launchCreate("request")}}><Plus size={18}/> {manager?"Quick create":"New request"}</button>
+   <button type="button" className="createMenuToggle" aria-label="See all quick actions" aria-expanded={createMenu} aria-controls="globalCreateMenu" onClick={()=>setCreateMenu(v=>!v)}>⌄</button>
    {createMenu&&<><button type="button" className="createDismiss" aria-label="Close create menu" onClick={()=>setCreateMenu(false)}/><div className="createDropdown" id="globalCreateMenu" role="menu" aria-label="Quick actions">
     {manager?<><button type="button" role="menuitem" onClick={()=>launchCreate("task")}><strong>☑ New task</strong><small>Assign something to get done</small></button>
     <button type="button" role="menuitem" onClick={()=>launchCreate("project")}><strong>▧ New project</strong><small>Group related tasks</small></button>
@@ -664,7 +697,12 @@ export default function Home(){
     {peopleMatches.length>0&&<div><h3>People</h3>{peopleMatches.map(p=><button type="button" key={p.user_id} onClick={()=>{closeSearch();navigate("people")}}><strong>♙ {p.display_name}</strong><small>{statusLabel(p.role)}</small></button>)}</div>}
    </div>}
   <p className="muted searchFoot">Searching tasks, projects and people in {active.name}. Press Escape to close.</p>
- </section></div>}{showGuide&&user&&<OnboardingTour
+ </section></div>}{quickCreate&&user&&<QuickCreate key={quickCreate} initialKind={quickCreate}
+  organizationId={selected} userId={user.id} canManage={manager}
+  projects={projects} directory={directory}
+  onClose={()=>setQuickCreate(null)} onSaved={onQuickSaved}
+  onOpen={openQuickCreated} onInvite={()=>launchCreate("invite")}/>}
+ {showGuide&&user&&<OnboardingTour
  role={!active?"new":manager?"leader":"member"}
  organizationName={active?.name??"your first organization"}
  progressKey={"tw-tour-v3:"+user.id+":"+(selected||"start")}
@@ -675,5 +713,12 @@ export default function Home(){
   else if(!manager&&action==="request")launchCreate("request");
   else navigate(destination);
  }}
- />}<nav className="mobileBottomNav" aria-label="Mobile quick navigation">{([["overview","⌂","Home"],["tasks","☑","Tasks"],["projects","▧","Projects"],["notifications","◉","Inbox"]] as const).map(([key,icon,label])=><button type="button" key={key} className={activeNav.defaultView===key?"active":""} onClick={()=>navigate(key)}><span aria-hidden="true">{navigationIcon(key)}</span><small>{label}</small>{key==="notifications"&&unreadNotifications>0&&<span className="unreadNavCount mobileUnread" aria-label={unreadNotifications+" unread notifications"}>{unreadNotifications>99?"99+":unreadNotifications}</span>}</button>)}<button type="button" className={mobileMenu||activeNav.id==="more"||activeNav.id==="people"?"active":""} onClick={()=>setMobileMenu(v=>!v)} aria-label="More navigation"><span aria-hidden="true"><Menu size={20}/></span><small>More</small></button></nav></div>
+ />}<nav className="mobileBottomNav" aria-label="Mobile quick navigation">
+ <button type="button" className={view==="overview"?"active":""} onClick={()=>navigate("overview")}><House size={21}/><small>Home</small></button>
+ <button type="button" className={activeNav.id==="tasks"?"active":""} onClick={()=>navigate("tasks")}><SquareCheckBig size={21}/><small>Tasks</small></button>
+ <button type="button" className="mobileCreateAction" onClick={()=>{if(manager)setQuickCreate("task");else launchCreate("request")}} aria-label={manager?"Create a task, project, team or organization":"Submit a new request"}><span className="mobileCreateSymbol"><Plus size={25}/></span><small>Create</small></button>
+ <button type="button" className={activeNav.id==="projects"?"active":""} onClick={()=>navigate("projects")}><FolderKanban size={21}/><small>Projects</small></button>
+ <button type="button" className={activeNav.id==="inbox"?"active":""} onClick={()=>navigate("notifications")}><Inbox size={21}/><small>Inbox</small>{unreadNotifications>0&&<span className="unreadNavCount mobileUnread" aria-label={unreadNotifications+" unread notifications"}>{unreadNotifications>99?"99+":unreadNotifications}</span>}</button>
+ <button type="button" className={mobileMenu||activeNav.id==="more"||activeNav.id==="people"?"active":""} onClick={()=>setMobileMenu(v=>!v)} aria-label="Open more navigation"><Menu size={21}/><small>More</small></button>
+ </nav></div>
 }
