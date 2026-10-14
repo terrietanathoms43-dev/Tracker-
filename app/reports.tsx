@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useMemo,useState} from "react";
 import {supabase as makeClient} from "../lib/supabase";
+import ReportExport from "./report-export";
 
 const db=makeClient();
 type Task={id:string;title:string;status:string;priority:string;due_at:string|null;owner_id:string|null;project_id:string|null;created_at:string};
@@ -21,13 +22,6 @@ const rollup=(name:string,tasks:Task[],now:number):Rollup=>({
  name,total:tasks.length,done:tasks.filter(isComplete).length,overdue:tasks.filter(task=>isOverdue(task,now)).length,
  blocked:tasks.filter(t=>t.status==="blocked").length,pending:tasks.filter(t=>t.status==="awaiting_approval").length
 });
-function downloadCsv(rows:string[][],filename:string){
- const quote=(value:string)=>'"'+String(value).replace(/^[\s=+@-]/,"'").replaceAll('"','""')+'"';
- const csv="\uFEFF"+rows.map(row=>row.map(quote).join(",")).join("\r\n");
- const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
- const link=document.createElement("a");link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();
- window.setTimeout(()=>URL.revokeObjectURL(url),1200);
-}
 function Progress({item}:{item:Rollup}){
  const value=percentage(item.done,item.total);
  return <div className="reportProgressRow">
@@ -39,6 +33,7 @@ function Progress({item}:{item:Rollup}){
 export default function Reports({tasks,projects,teams,directory,organizationName,organizationId}:Props){
  const [allTasks,setAllTasks]=useState<Task[]|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(""),[limited,setLimited]=useState(false),[reload,setReload]=useState(0);
  const [team,setTeam]=useState("all"),[project,setProject]=useState("all"),[member,setMember]=useState("all"),[status,setStatus]=useState("all"),[period,setPeriod]=useState("all"),[search,setSearch]=useState("");
+ const [exportOpen,setExportOpen]=useState(false);
  useEffect(()=>{
   let cancelled=false;
   setLoading(true);setError("");setAllTasks(null);setLimited(false);
@@ -99,26 +94,11 @@ export default function Reports({tasks,projects,teams,directory,organizationName
  function ownerName(t:Task){return t.owner_id?byMemberId.get(t.owner_id)?.display_name??"Unknown member":"Unassigned"}
  function projectName(t:Task){return t.project_id?byProjectId.get(t.project_id)?.name??"Unknown project":"No project"}
  function teamName(t:Task){const teamId=t.project_id?byProjectId.get(t.project_id)?.team_id:null;return teamId?byTeamId.get(teamId)?.name??"Unknown team":"No team"}
- const filenameDate=new Date().toISOString().slice(0,10);
- function exportTasks(){
-  const rows=[["Task","Project","Team","Owner","Status","Priority","Due date","Created","Overdue","Days overdue"],...filtered.map(t=>[
-   t.title,projectName(t),teamName(t),ownerName(t),label(t.status),label(t.priority),t.due_at??"",t.created_at,
-   isOverdue(t,now)?"Yes":"No",isOverdue(t,now)?String(Math.ceil((now-new Date(t.due_at!).getTime())/DAY)):""
-  ])];
-  downloadCsv(rows,"trackwise-tasks-"+filenameDate+".csv");
- }
- function exportSummary(){
-  const rows=[["Group","Name","Tasks","Completed","Completion %","Overdue","Blocked","Awaiting approval"]];
-  for(const group of [{name:"Project",rows:projectRows},{name:"Team",rows:teamRows},{name:"Member",rows:peopleRows}]){
-   for(const item of group.rows)rows.push([group.name,item.name,String(item.total),String(item.done),String(percentage(item.done,item.total)),String(item.overdue),String(item.blocked),String(item.pending)]);
-  }
-  downloadCsv(rows,"trackwise-summary-"+filenameDate+".csv");
- }
  return <div className="reportPage">
   <h2 className="reportPrintHeading">{organizationName} · Work report · {displayDate(new Date().toISOString())}</h2>
   <section className="card reportHero">
    <div className="reportHeroHeading"><div><span className="eyebrow blue">REPORTING CENTER</span><h2>{organizationName} · Reports</h2><p className="muted">Analyze deadlines, delivery, team workload, projects and task priorities.</p></div>
-    <div className="reportActions"><button type="button" disabled={loading} onClick={()=>setReload(value=>value+1)}>{loading?"Loading…":"↻ Refresh"}</button><button type="button" onClick={()=>window.print()}>Print / PDF</button><button type="button" disabled={!filtered.length} onClick={exportSummary}>Summary CSV ↓</button><button type="button" className="primary" disabled={!filtered.length} onClick={exportTasks}>Task CSV ↓</button></div>
+    <div className="reportActions"><button type="button" disabled={loading} onClick={()=>setReload(value=>value+1)}>{loading?"Loading…":"↻ Refresh"}</button><button type="button" className="primary" onClick={()=>setExportOpen(true)}>Create a report →</button></div>
    </div>
    <div className="reportFilters">
     <label htmlFor="reportTeam">Team<select id="reportTeam" value={team} onChange={event=>setTeam(event.target.value)}><option value="all">All teams</option><option value="none">No team</option>{teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
@@ -162,5 +142,6 @@ export default function Reports({tasks,projects,teams,directory,organizationName
    {filtered.length?<div className="tablewrap"><table className="reportDataTable"><thead><tr><th>Task</th><th>Team / project</th><th>Owner</th><th>Status</th><th>Priority</th><th>Due</th></tr></thead><tbody>{filtered.slice(0,30).map(t=><tr key={t.id}><td><strong>{t.title}</strong></td><td>{teamName(t)} / {projectName(t)}</td><td>{ownerName(t)}</td><td>{label(t.status)}</td><td>{label(t.priority)}</td><td>{displayDate(t.due_at)}</td></tr>)}</tbody></table></div>:<p className="reportEmpty">No tasks match the selected filters.</p>}
    {filtered.length>30&&<p className="reportSectionHint">Showing 30 of {filtered.length} matching tasks. Export the Task CSV for all records.</p>}
   </section>
+  {exportOpen&&<ReportExport tasks={source} projects={projects} teams={teams} directory={directory} organizationName={organizationName} complete={!loading&&!error&&!limited&&allTasks!==null} warning={loading?"Full data is still loading.":error||(limited?"Reporting reached the 50,000 task limit.":undefined)} onClose={()=>setExportOpen(false)}/>}
  </div>;
 }
