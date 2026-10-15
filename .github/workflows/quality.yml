@@ -8,9 +8,13 @@ permissions:
   contents: read
 jobs:
   build-and-test:
-    name: TypeScript, automated tests and production build
+    name: Node ${{ matrix.node }} / TypeScript, tests and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
     env:
       # Dummy public values only for compiling; tests never access production data.
       NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
@@ -18,10 +22,10 @@ jobs:
     steps:
       - name: Check out application
         uses: actions/checkout@v4
-      - name: Set up Node 22
+      - name: Set up Node ${{ matrix.node }}
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "${{ matrix.node }}"
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Check TypeScript
