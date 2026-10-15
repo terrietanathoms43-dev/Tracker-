@@ -31,7 +31,7 @@ export default function WorkspaceInfo({name,createdAt,role,members,invites,activ
    if(event.key!=="Tab"||!dialogRef.current)return;
    const controls=Array.from(dialogRef.current.querySelectorAll<HTMLElement>("button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]")).filter(el=>el.getClientRects().length>0);
    if(!controls.length)return;
-   if(event.shiftKey&&document.activeElement===controls[0]){event.preventDefault();controls[controls.length-1].focus()}
+   if(event.shiftKey&&(document.activeElement===controls[0]||document.activeElement===dialogRef.current)){event.preventDefault();controls[controls.length-1].focus()}
    if(!event.shiftKey&&document.activeElement===controls[controls.length-1]){event.preventDefault();controls[0].focus()}
   }
   window.addEventListener("keydown",onKey);
