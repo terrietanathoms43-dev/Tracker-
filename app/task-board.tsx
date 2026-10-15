@@ -7,7 +7,7 @@ type Person={user_id:string;display_name:string};
 type Project={id:string;name:string};
 type Lane="todo"|"progress"|"done";
 type Props={
- tasks:Task[];directory:Person[];projects:Project[];userId:string;manager:boolean;working:boolean;
+ tasks:Task[];directory:Person[];projects:Project[];userId:string;manager:boolean;working:boolean;hideStats?:boolean;
  onOpen:(id:string)=>void;onStatusChange:(id:string,status:string)=>void;onCreate:()=>void;
 };
 const lanes:{id:Lane;label:string;hint:string}[]=[
@@ -20,7 +20,7 @@ const label=(value:string)=>({
  not_started:"To do",underway:"In progress",awaiting_approval:"For review",
  blocked:"Blocked",rejected:"Needs changes",completed:"Completed",normal:"Normal"
 } as Record<string,string>)[value]??value.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase());
-export default function TaskBoard({tasks,directory,projects,userId,manager,working,onOpen,onStatusChange,onCreate}:Props){
+export default function TaskBoard({tasks,directory,projects,userId,manager,working,hideStats=false,onOpen,onStatusChange,onCreate}:Props){
  const [dragged,setDragged]=useState<string|null>(null);
  const [over,setOver]=useState<Lane|null>(null);
  const assigned=tasks.filter(t=>t.owner_id===userId).length;
@@ -35,13 +35,13 @@ export default function TaskBoard({tasks,directory,projects,userId,manager,worki
   setDragged(null);setOver(null);
  }
  return <section aria-label="Task board" className="twBoard">
-  <div className="twBoardStats" aria-label="Task summary">
+  {!hideStats&&<div className="twBoardStats" aria-label="Task summary">
    <div><span>Total tasks</span><strong>{tasks.length}</strong></div>
    <div><span>Assigned to me</span><strong>{assigned}</strong></div>
    <div><span>Overdue</span><strong>{overdue}</strong></div>
    <div><span>Completed</span><strong>{tasks.filter(t=>t.status==="completed").length}</strong></div>
    <div><span>Unassigned</span><strong>{tasks.filter(t=>!t.owner_id).length}</strong></div>
-  </div>
+  </div>}
   {manager&&<p className="twBoardHint">Drag a task between columns on a computer, or use its status menu on any device. Completed work still follows your organization’s approval rules.</p>}
   <div className="twBoardLanes">
    {lanes.map(lane=>{
