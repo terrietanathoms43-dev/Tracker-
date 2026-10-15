@@ -1,5 +1,5 @@
 "use client";
-import {useEffect,useState} from "react";
+import {useEffect,useRef,useState} from "react";
 import {Activity,CalendarDays,ClipboardList,Inbox,Info,UsersRound,X} from "lucide-react";
 
 type Tab="overview"|"members"|"invitations"|"activity";
@@ -18,10 +18,28 @@ const tabs:{id:Tab;title:string}[]=[
 function title(text:string){return text.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase())}
 export default function WorkspaceInfo({name,createdAt,role,members,invites,activities,taskCount,projectCount,canManage,userId,onClose,onNavigate}:Props){
  const [tab,setTab]=useState<Tab>("overview");
- useEffect(()=>{const before=document.body.style.overflow;document.body.style.overflow="hidden";const onKey=(event:KeyboardEvent)=>{if(event.key==="Escape")onClose()};window.addEventListener("keydown",onKey);return()=>{document.body.style.overflow=before;window.removeEventListener("keydown",onKey)}},[onClose]);
+ const dialogRef=useRef<HTMLElement>(null);
+ const closeRef=useRef(onClose);
+ useEffect(()=>{closeRef.current=onClose},[onClose]);
+ useEffect(()=>{
+  const previous=document.activeElement instanceof HTMLElement?document.activeElement:null;
+  const originalOverflow=document.body.style.overflow;
+  document.body.style.overflow="hidden";
+  dialogRef.current?.focus();
+  function onKey(event:KeyboardEvent){
+   if(event.key==="Escape"){event.preventDefault();closeRef.current();return}
+   if(event.key!=="Tab"||!dialogRef.current)return;
+   const controls=Array.from(dialogRef.current.querySelectorAll<HTMLElement>("button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]")).filter(el=>el.getClientRects().length>0);
+   if(!controls.length)return;
+   if(event.shiftKey&&document.activeElement===controls[0]){event.preventDefault();controls[controls.length-1].focus()}
+   if(!event.shiftKey&&document.activeElement===controls[controls.length-1]){event.preventDefault();controls[0].focus()}
+  }
+  window.addEventListener("keydown",onKey);
+  return()=>{document.body.style.overflow=originalOverflow;window.removeEventListener("keydown",onKey);previous?.focus()};
+ },[]);
  const pending=invites.filter(i=>!i.accepted_at&&new Date(i.expires_at).getTime()>Date.now());
  return <div className="twInfoOverlay" onPointerDown={event=>{if(event.target===event.currentTarget)onClose()}}>
-  <section className="twInfoDialog" role="dialog" aria-modal="true" aria-labelledby="twInfoTitle">
+  <section ref={dialogRef} tabIndex={-1} className="twInfoDialog" role="dialog" aria-modal="true" aria-labelledby="twInfoTitle">
    <aside className="twInfoSide"><div className="twInfoSideTitle"><strong>Workspace</strong><span>{name}</span></div>
     <nav aria-label="Workspace information sections">{tabs.map(item=><button key={item.id} type="button" className={tab===item.id?"active":""} aria-current={tab===item.id?"page":undefined} onClick={()=>setTab(item.id)}>
      {item.id==="overview"?<Info size={17}/>:item.id==="members"?<UsersRound size={17}/>:item.id==="invitations"?<Inbox size={17}/>:<Activity size={17}/>}
