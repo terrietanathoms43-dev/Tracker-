@@ -1,13 +1,14 @@
 "use client";
 import {useState,type DragEvent} from "react";
 import {CheckCircle2,Clock3,Plus,Square,UsersRound} from "lucide-react";
+import {allowedTaskStatuses,canChangeTaskStatus} from "../lib/task-rules";
 
 type Task={id:string;title:string;status:string;priority:string;due_at:string|null;owner_id:string|null;project_id:string|null};
 type Person={user_id:string;display_name:string};
 type Project={id:string;name:string};
 type Lane="todo"|"progress"|"done";
 type Props={
- tasks:Task[];directory:Person[];projects:Project[];userId:string;manager:boolean;working:boolean;hideStats?:boolean;
+ tasks:Task[];directory:Person[];projects:Project[];userId:string;role:string|null;manager:boolean;working:boolean;hideStats?:boolean;
  onOpen:(id:string)=>void;onStatusChange:(id:string,status:string)=>void;onCreate:()=>void;
 };
 const lanes:{id:Lane;label:string;hint:string}[]=[
@@ -20,7 +21,7 @@ const label=(value:string)=>({
  not_started:"To do",underway:"In progress",awaiting_approval:"For review",
  blocked:"Blocked",rejected:"Needs changes",completed:"Completed",normal:"Normal"
 } as Record<string,string>)[value]??value.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase());
-export default function TaskBoard({tasks,directory,projects,userId,manager,working,hideStats=false,onOpen,onStatusChange,onCreate}:Props){
+export default function TaskBoard({tasks,directory,projects,userId,role,manager,working,hideStats=false,onOpen,onStatusChange,onCreate}:Props){
  const [dragged,setDragged]=useState<string|null>(null);
  const [over,setOver]=useState<Lane|null>(null);
  const assigned=tasks.filter(t=>t.owner_id===userId).length;
@@ -60,8 +61,8 @@ export default function TaskBoard({tasks,directory,projects,userId,manager,worki
       {items.length?items.map(task=>{
        const owner=directory.find(p=>p.user_id===task.owner_id)?.display_name;
        const project=projects.find(p=>p.id===task.project_id)?.name;
-       const canChange=manager||(task.owner_id===userId&&task.status!=="completed");
-       const choices=["not_started","underway","blocked","awaiting_approval","completed","rejected"].filter(status=>status===task.status||(manager?status!=="rejected":status!=="completed"&&status!=="rejected"));
+       const canChange=canChangeTaskStatus(role,task.owner_id,userId,task.status);
+       const choices=allowedTaskStatuses(role,task.status);
        return <article key={task.id} className="twBoardCard" draggable={manager&&!working}
         onDragStart={event=>{if(!manager||working)return;event.dataTransfer.effectAllowed="move";setDragged(task.id)}}
         onDragEnd={()=>{setDragged(null);setOver(null)}}>
