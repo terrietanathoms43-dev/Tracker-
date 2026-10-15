@@ -67,6 +67,7 @@ test("task board and list use the same permission rules",()=>{
  assert.equal(canChangeTaskStatus("member","a","b","underway"),false);
  assert.equal(canChangeTaskStatus("observer","a","a","underway"),false);
  assert.equal(canChangeTaskStatus("stakeholder","a","a","underway"),false);
+ assert.ok(allowedTaskStatuses("member","rejected").includes("rejected"));
  assert.deepEqual(allowedTaskStatuses("member","awaiting_approval"),["awaiting_approval"]);
  assert.deepEqual(allowedTaskStatuses("member","completed"),["completed"]);
  assert.deepEqual(allowedTaskStatuses("observer","underway"),["underway"]);
