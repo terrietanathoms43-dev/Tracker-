@@ -57,6 +57,6 @@ export function allowedTaskStatuses(role:TrackwiseRole,current:string):string[]{
   return known.filter(s=>s!=="rejected"||current==="awaiting_approval"||s===current);
  }
  if(role==="member"&&current!=="completed"&&current!=="awaiting_approval")
-  return known.filter(s=>s!=="completed"&&s!=="rejected");
+  return known.filter(s=>s===current||(s!=="completed"&&s!=="rejected"));
  return [current];
 }
