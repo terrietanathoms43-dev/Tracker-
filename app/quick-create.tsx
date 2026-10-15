@@ -26,10 +26,10 @@ const CATEGORIES:{kind:QuickCreateKind;label:string;hint:string;icon:LucideIcon}
  {kind:"team",label:"Team",hint:"Group people",icon:UsersRound},
  {kind:"organization",label:"Organization",hint:"Start a workspace",icon:Building2}
 ];
-const TASK_IDEAS=["Prepare the next meeting","Follow up on an action item","Review the project budget"];
+const TASK_IDEAS=["Prepare the next meeting","Follow up on an action item","Review the project timeline"];
 const PROJECT_IDEAS=["Plan an event","Run a community project","Organize a new initiative"];
 const COPY:Record<QuickCreateKind,{heading:string,desc:string,label:string,placeholder:string,submit:string}>={
- task:{heading:"Create a task",desc:"Start with what needs to get done. Assign it and choose a date if you know them.",label:"What needs to be done?",placeholder:"e.g. Prepare the event budget",submit:"Create task"},
+ task:{heading:"Create a task",desc:"Start with what needs to get done. Assign it and choose a date if you know them.",label:"What needs to be done?",placeholder:"e.g. Prepare the meeting agenda",submit:"Create task"},
  project:{heading:"Create a project",desc:"A project brings related tasks together. Give your plan a name to begin.",label:"What are you working towards?",placeholder:"e.g. School beautification",submit:"Create project"},
  team:{heading:"Create a team",desc:"Organize people who share responsibility. Add members after creating your team.",label:"What is your team called?",placeholder:"e.g. Outreach committee",submit:"Create team"},
  organization:{heading:"Create an organization",desc:"A private workspace for your club, business or community group. You'll be the administrator.",label:"Organization name",placeholder:"e.g. Volunteerism Club",submit:"Create organization"}
