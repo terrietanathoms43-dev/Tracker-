@@ -43,7 +43,7 @@ export default function Reports({tasks,projects,teams,directory,organizationName
    try{
     for(let offset=0;offset<50000;offset+=500){
      const {data,error:dbError}=await db.from("tw_tasks").select("id,title,status,priority,due_at,owner_id,project_id,created_at")
-      .eq("organization_id",organizationId).order("created_at",{ascending:false}).range(offset,offset+499);
+      .eq("organization_id",organizationId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(offset,offset+499);
      if(dbError)throw dbError;
      collected.push(...(data??[]));
      if((data??[]).length<500)break;
