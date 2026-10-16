@@ -659,3 +659,313 @@ body{
  .dialogOverlay{position:static;background:#fff;backdrop-filter:none}
  .dialogPanel{box-shadow:none;border:0}
 }
+
+
+/*
+ * Editorial dashboard refinement — more visual personality, less visual noise.
+ * The blue/gold identity, responsive breakpoints and functional dialogs remain.
+ */
+.appShell .sidebar .navItem {
+ display:flex;
+ align-items:center;
+ gap:11px;
+ padding:10px 13px;
+ font-weight:650;
+ transition:background .15s ease, border-color .15s ease, transform .15s ease;
+}
+.appShell .sidebar .navItem svg {
+ flex:0 0 auto;
+ color:#a9c5f4;
+ stroke-width:1.9;
+}
+.appShell .sidebar .navItem.selected svg{color:#ffdb91}
+.appShell .sidebar .navItem:not(.selected):hover{transform:translateX(2px)}
+.appShell .sidebar .sideFoot .navItem{width:100%}
+.appShell .sidebar .logo .mark{
+ position:relative;
+ overflow:hidden;
+}
+.appShell .sidebar .logo .mark::after{
+ content:"";
+ position:absolute;
+ width:24px;height:42px;
+ left:-14px;top:-12px;
+ background:#ffffff6c;
+ transform:rotate(37deg);
+ pointer-events:none;
+}
+.appShell .appHeader{
+ padding-block:clamp(21px,2.2vw,31px);
+}
+.appShell .pageHeading h1{letter-spacing:-1.15px}
+.appShell .pageHeading .eyebrow{font-weight:850}
+.appShell .headerControls{align-items:center}
+.appShell .headerHelp{
+ display:inline-flex;
+ align-items:center;
+ justify-content:center;
+ gap:9px;
+ min-height:43px;
+ border-radius:11px;
+ font-weight:750;
+}
+.appShell .headerHelp svg{flex:none;stroke-width:1.9}
+.appShell .sectionTabs{
+ flex-wrap:wrap;
+ gap:8px;
+ margin-bottom:22px;
+}
+.appShell .sectionTabs button{
+ display:inline-flex;
+ align-items:center;
+ justify-content:center;
+ gap:9px;
+ padding:10px 15px;
+ font-weight:780;
+ letter-spacing:-.12px;
+ white-space:nowrap;
+}
+.appShell .sectionTabs button svg{flex-shrink:0;stroke-width:1.9}
+.appShell .sectionTabs button.active svg{color:#ffdda0}
+
+/* Strong but considered first impression: a designed status dashboard. */
+.appShell .twSignatureWelcome{
+ min-height:312px;
+ background:
+  radial-gradient(380px 350px at 58% 110%,#c49f5261,transparent 75%),
+  radial-gradient(540px 390px at 102% -23%,#5d83c785,transparent 80%),
+  linear-gradient(121deg,#0b2457 0%,#163878 47%,#315bb0 100%);
+ border-color:#d1a65b;
+ box-shadow:0 23px 46px #122c6234, inset 0 1px #ffffff27;
+}
+.appShell .twSignatureWelcome::before{
+ width:360px;height:360px;
+ right:-110px;top:-156px;
+ border:1px solid #f8ddaa55;
+ box-shadow:0 0 0 54px #ffffff09,0 0 0 112px #e1b65f0e,0 0 0 168px #ffffff05;
+}
+.appShell .twSignatureWelcomeContent>p{color:#e0eaff}
+.twSignatureWelcomePills span{
+ background:#ffffff17;
+ border:1px solid #f1d69647;
+ box-shadow:inset 0 1px #ffffff1b;
+}
+.twSignatureWelcomeAside{
+ gap:10px;
+ padding:22px 23px;
+ border-radius:18px;
+ border:1px solid #f1d6a7;
+ background:linear-gradient(158deg,#fffefa 0%,#f6f9ff 68%,#eaf1ff);
+ box-shadow:0 20px 41px #071a3e51, inset 0 1px #fff;
+}
+.twSignatureMomentum{
+ display:flex;
+ align-items:center;
+ gap:16px;
+ min-width:0;
+}
+.twSignatureProgressDial{
+ flex:none;
+ width:96px;height:96px;
+ display:grid;place-items:center;
+ padding:8px;
+ border-radius:50%;
+ background:conic-gradient(#d3a244 0 var(--tw-progress),#dce6f5 var(--tw-progress) 100%);
+ box-shadow:0 5px 19px #183b771d,inset 0 0 0 1px #ffffff9c;
+}
+.twSignatureProgressInner{
+ display:flex;
+ flex-direction:column;
+ align-items:center;
+ justify-content:center;
+ height:100%;width:100%;
+ border-radius:50%;
+ background:linear-gradient(150deg,#fff,#f5f8ff);
+ color:#183c7c;
+ box-shadow:inset 0 0 0 1px #ecf1fa;
+}
+.twSignatureProgressInner strong{
+ font:850 23px/1.1 "Plus Jakarta Sans",sans-serif;
+ letter-spacing:-1px;
+}
+.twSignatureProgressInner span{
+ margin-top:3px;
+ font-size:10px;
+ font-weight:750;
+ color:#6a7f9b;
+}
+.twSignatureMomentumCopy{display:flex;flex-direction:column;gap:6px;min-width:0}
+.twSignatureMomentumCopy strong{
+ font:850 clamp(14px,1.3vw,17px)/1.32 "Plus Jakarta Sans",sans-serif;
+ color:#193d79;
+}
+.twSignatureMomentumCopy small{
+ font-size:11.5px;
+ line-height:1.5;
+ color:#617792;
+}
+.twSignatureAsideDivider{height:1px;background:linear-gradient(90deg,#e5c689,#dce8f7);margin:7px 0 3px}
+.appShell .twSignatureWelcomeActions button{
+ min-height:46px;
+ font-size:12.5px;
+ transition:transform .16s ease, box-shadow .16s ease, filter .16s ease;
+}
+.appShell .twSignatureWelcomeActions button:hover:not(:disabled){transform:translateY(-1px)}
+
+/* Metrics are readable, identifiable and intentionally ordered. */
+.appShell .stats.statsSix{gap:15px;margin-bottom:24px}
+.appShell .stats.statsSix .stat{
+ display:flex;
+ flex-direction:column;
+ justify-content:flex-start;
+ gap:8px;
+ min-height:155px;
+ padding:18px 19px;
+ border-radius:17px;
+ box-shadow:0 9px 24px #17397113;
+}
+.appShell .stats.statsSix .stat::before{width:3px}
+.appShell .stats.statsSix .stat::after{
+ content:"";
+ position:absolute;
+ width:90px;height:90px;
+ border-radius:50%;
+ right:-36px;bottom:-51px;
+ border:1px solid #376bc321;
+ box-shadow:0 0 0 18px #376bc309;
+ pointer-events:none;
+}
+.appShell .stats.statsSix .stat:first-child::after{
+ border-color:#ffffff2c;
+ box-shadow:0 0 0 18px #ffffff0d;
+}
+.appShell .stats.statsSix .twStatTop{
+ display:flex;justify-content:space-between;align-items:center;gap:10px;
+ width:100%;position:relative;z-index:1;
+}
+.appShell .stats.statsSix .twStatTop span{
+ font-size:13px;font-weight:800;line-height:1.45;
+}
+.appShell .stats.statsSix .twStatTop svg{
+ box-sizing:content-box;
+ flex:none;
+ padding:9px;
+ background:#eaf2ff;
+ color:#2955a0;
+ border:1px solid #d9e5f8;
+ border-radius:11px;
+}
+.appShell .stats.statsSix .stat:first-child .twStatTop svg{
+ background:#ffffff1c;
+ border-color:#ffffff3d;
+ color:#ffdd95;
+}
+.appShell .stats.statsSix .stat:nth-child(3) .twStatTop svg{
+ color:#926522;background:#fff5dc;border-color:#eedab4;
+}
+.appShell .stats.statsSix .stat strong{
+ position:relative;z-index:1;
+ line-height:1.13;
+ font-size:clamp(30px,2.6vw,39px);
+ margin-top:1px;
+}
+.appShell .stats.statsSix .stat small{
+ position:relative;z-index:1;
+ font-size:11.5px;
+ line-height:1.45;
+}
+
+/* Distinctive cards with useful, truthful visual progress. */
+.appShell .contentWidth .twoCol .card{border-top-width:3px}
+.appShell .taskLine{
+ padding:12px 5px;
+ border-radius:9px;
+ transition:background .16s ease;
+}
+.appShell .taskLine:hover{background:#f3f7fe}
+.appShell .taskLine strong{font-size:13.5px}
+.appShell .projectGrid{gap:17px}
+.appShell .projectCard{
+ display:flex;
+ flex-direction:column;
+ gap:10px;
+ padding:19px;
+ min-height:225px;
+ background:
+  radial-gradient(180px 120px at 110% -5%,#fff0ca5f,transparent 90%),
+  linear-gradient(155deg,#fff,#f7faff);
+ border-top:4px solid #e4b761;
+}
+.appShell .projectCard .projectTop{gap:10px}
+.appShell .projectCard .projectTop strong{
+ color:#153875;
+ font-size:15px;
+ letter-spacing:-.25px;
+ line-height:1.35;
+}
+.appShell .projectCard .muted{line-height:1.55}
+.twProjectProgress{display:grid;gap:9px;margin:6px 0}
+.twProjectProgressLabel{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:11.5px;color:#5e7496}
+.twProjectProgressLabel span{font-weight:750}
+.twProjectProgressLabel strong{font-size:11.5px;color:#204781}
+.twProjectProgressTrack{
+ overflow:hidden;
+ height:8px;
+ background:#e6edf8;
+ border:1px solid #d7e1f1;
+ border-radius:100px;
+}
+.twProjectProgressTrack>span{
+ display:block;
+ height:100%;
+ border-radius:inherit;
+ background:linear-gradient(90deg,#2754a2,#4777d3 73%,#e5ba6b);
+ transition:width .2s ease;
+}
+.appShell .projectFoot{margin-top:auto}
+.appShell :where(button,input,select,textarea):focus-visible{
+ outline:3px solid #e8b95e;
+ outline-offset:2px;
+}
+.authV3Preview{box-shadow:0 29px 57px #071d4b6b,0 0 0 5px #f2c56f1a}
+.authV3StoryMain h1{line-height:1.15}
+.authV3FormCard{box-shadow:0 24px 60px #0d326126,0 0 0 5px #ffffff82}
+@media(max-width:1100px){
+ .appShell .stats.statsSix .stat{padding:15px;min-height:143px}
+ .appShell .stats.statsSix .twStatTop svg{padding:8px}
+ .twSignatureProgressDial{width:84px;height:84px}
+}
+@media(max-width:760px){
+ .appShell .twSignatureWelcome{min-height:0}
+ .appShell .sectionTabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}
+ .appShell .sectionTabs button{flex:0 0 auto;font-size:12.5px;padding-inline:13px}
+ .appShell .stats.statsSix{gap:10px}
+ .appShell .stats.statsSix .stat{min-height:137px;padding:14px}
+ .appShell .stats.statsSix .stat strong{font-size:30px}
+ .appShell .stats.statsSix .twStatTop svg{padding:7px}
+ .appShell .projectCard{min-height:0}
+ .twSignatureWelcomeAside{padding:19px}
+}
+@media(max-width:410px){
+ .appShell .stats.statsSix .stat{min-height:128px;padding:12px}
+ .appShell .stats.statsSix .twStatTop span{font-size:11.8px}
+ .appShell .stats.statsSix .twStatTop svg{width:17px;height:17px;padding:6px}
+ .appShell .stats.statsSix .stat strong{font-size:28px}
+ .appShell .stats.statsSix .stat small{font-size:10.5px}
+ .twSignatureProgressDial{width:75px;height:75px;padding:7px}
+ .twSignatureProgressInner strong{font-size:19px}
+ .twSignatureMomentum{gap:12px}
+ .twSignatureMomentumCopy strong{font-size:13px}
+ .twSignatureMomentumCopy small{font-size:10.5px}
+}
+@media(prefers-reduced-motion:reduce){
+ .appShell .sidebar .navItem,.twProjectProgressTrack>span,
+ .appShell .taskLine,.appShell .twSignatureWelcomeActions button{
+  transition:none!important;transform:none!important;
+ }
+}
+@media print{
+ .twSignatureProgressDial{box-shadow:none}
+ .appShell .stats.statsSix .stat{box-shadow:none}
+ .twProjectProgressTrack>span{print-color-adjust:exact}
+}
