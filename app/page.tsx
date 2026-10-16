@@ -84,6 +84,7 @@ export default function Home(){
  const taskDetailRequest=useRef(0);
  const [taskLayout,setTaskLayout]=useState<"board"|"list">("board"),[workspaceInfoOpen,setWorkspaceInfoOpen]=useState(false);
  const [dashboardLayout,setDashboardLayout]=useState<"board"|"list">("board");
+ const [showDashboardFilters,setShowDashboardFilters]=useState(false);
  const [dashboardSearch,setDashboardSearch]=useState(""),[dashboardStatus,setDashboardStatus]=useState("all"),[dashboardPriority,setDashboardPriority]=useState("all"),[dashboardAssignee,setDashboardAssignee]=useState("all");
   const [mobileMenu,setMobileMenu]=useState(false),[showTaskForm,setShowTaskForm]=useState(false),[showTaskHandover,setShowTaskHandover]=useState(false),[showAdvancedProject,setShowAdvancedProject]=useState(false);
  useEffect(()=>{if(!mobileMenu)return;const previous=document.body.style.overflow;document.body.style.overflow="hidden";const close=(event:KeyboardEvent)=>{if(event.key==="Escape")setMobileMenu(false)};window.addEventListener("keydown",close);return()=>{document.body.style.overflow=previous;window.removeEventListener("keydown",close)}},[mobileMenu]);
@@ -369,12 +370,13 @@ export default function Home(){
  );
  const dashboardStats=[
   {label:manager?"Total tasks":"My tasks",value:homeTasks.length,help:manager?"Across this workspace":"Assigned to you"},
-  {label:"Assigned to me",value:tasks.filter(t=>t.owner_id===user?.id).length,help:"Your responsibilities"},
-  {label:"Overdue",value:homeTasks.filter(t=>t.due_at&&new Date(t.due_at).getTime()<Date.now()&&t.status!=="completed").length,help:"Still awaiting completion"},
-  {label:"Completed",value:homeTasks.filter(t=>t.status==="completed").length,help:"Approved work"},
-  {label:"Unassigned",value:homeTasks.filter(t=>!t.owner_id).length,help:"Needs an owner"},
-  {label:"For review",value:homeTasks.filter(t=>t.status==="awaiting_approval").length,help:"Awaiting approval"}
+  {label:"In progress",value:homeTasks.filter(t=>t.status==="underway").length,help:"Work being done"},
+  {label:"Overdue",value:homeTasks.filter(t=>t.due_at&&new Date(t.due_at).getTime()<Date.now()&&t.status!=="completed").length,help:"Needs attention"},
+  manager?{label:"For review",value:homeTasks.filter(t=>t.status==="awaiting_approval").length,help:"Awaiting approval"}:{label:"Completed",value:homeTasks.filter(t=>t.status==="completed").length,help:"Approved work"}
  ];
+ const dashboardFilterCount=[dashboardStatus!=="all",dashboardPriority!=="all",manager&&dashboardAssignee!=="all"].filter(Boolean).length;
+ function clearDashboardFilters(){setDashboardSearch("");setDashboardStatus("all");setDashboardPriority("all");setDashboardAssignee("all");}
+
  const counts=useMemo(()=>({total:homeTasks.length,active:homeTasks.filter(t=>t.status==="underway").length,blocked:homeTasks.filter(t=>t.status==="blocked").length,done:homeTasks.filter(t=>t.status==="completed").length,overdue:homeTasks.filter(t=>t.due_at&&new Date(t.due_at)<new Date()&&t.status!=="completed").length}),[tasks,manager,user?.id]);
  const setupCompleted=[projects.length>0,teams.length>0,members.length>1||outgoingInvites.length>0,tasks.length>0].filter(Boolean).length;
  function openFirstProjectTask(){
@@ -670,12 +672,10 @@ export default function Home(){
   onModeChange={next=>{setMode(next);clear()}}
   onEmailChange={setEmail} onPasswordChange={setPassword} onNameChange={setSignupName}
 />;
- return <div className="appShell"><div className="mobileTopbar"><div className="logo"><span className="mark">T</span> Trackwise</div><button type="button" className="mobileMenuToggle" aria-label="Open workspace menu" aria-expanded={mobileMenu} onClick={()=>setMobileMenu(v=>!v)}>☰ <span>Menu</span></button></div>{mobileMenu&&<button className="mobileBackdrop" aria-label="Close menu" onClick={()=>setMobileMenu(false)}/>}<aside className={"sidebar "+(mobileMenu?"mobileOpen":"")} aria-label="Workspace sidebar"><div className="logo"><span className="mark">T</span> Trackwise</div><div className="sideLabel">WORKSPACE</div><select className="orgSelect" aria-label="Current organization" value={selected} onChange={e=>{setSelected(e.target.value);setLastCreatedProject(null);setLastCreatedTeam(null);setProjectFilter("all");setView("overview");setMobileMenu(false);clear()}}><option value="">Select organization</option>{orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select><button type="button" className="sidebarNewOrg" onClick={()=>{setMobileMenu(false);setQuickCreate("organization")}}><Plus size={16}/> New organization</button><button type="button" className="sidebarGuideButton" onClick={()=>{setMobileMenu(false);setShowGuide(true)}}><span aria-hidden="true">✦</span><span><strong>Take a guided tour</strong><small>See how everything works</small></span><span aria-hidden="true">→</span></button><nav aria-label="Main navigation">{NAV_GROUPS.map(group=><div className="navCluster" key={group.id}>
+ return <div className="appShell"><div className="mobileTopbar"><div className="logo"><span className="mark">T</span> Trackwise</div><button type="button" className="mobileMenuToggle" aria-label="Open workspace menu" aria-expanded={mobileMenu} onClick={()=>setMobileMenu(v=>!v)}>☰ <span>Menu</span></button></div>{mobileMenu&&<button className="mobileBackdrop" aria-label="Close menu" onClick={()=>setMobileMenu(false)}/>}<aside className={"sidebar "+(mobileMenu?"mobileOpen":"")} aria-label="Workspace sidebar"><div className="logo"><span className="mark">T</span> Trackwise</div><div className="sideLabel">WORKSPACE</div><select className="orgSelect" aria-label="Current organization" value={selected} onChange={e=>{setSelected(e.target.value);setLastCreatedProject(null);setLastCreatedTeam(null);setProjectFilter("all");setView("overview");setMobileMenu(false);clear()}}><option value="">Select organization</option>{orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select><button type="button" className="sidebarNewOrg" onClick={()=>{setMobileMenu(false);setQuickCreate("organization")}}><Plus size={16}/> New organization</button><div className="sideLabel sideNavigationLabel">NAVIGATE</div><nav aria-label="Main navigation">{NAV_GROUPS.map(group=><div className="navCluster" key={group.id}>
  <button type="button" className={"navItem "+(activeNav.id===group.id?"selected":"")} aria-current={view===group.defaultView?"page":undefined} onClick={()=>navigate(group.defaultView)}><span aria-hidden="true" className="navGlyph">{navigationIcon(group.id)}</span>{group.label}{group.id==="inbox"&&unreadNotifications>0&&<span className="unreadNavCount" aria-label={unreadNotifications+" unread notifications"}>{unreadNotifications>99?"99+":unreadNotifications}</span>}</button>
- {group.items.length>1&&activeNav.id===group.id&&<div className="navSubLinks" aria-label={group.label+" sections"}>
-  {group.items.filter(item=>item.view!=="meeting_ai"||manager).map(item=><button key={item.view} type="button" className={item.view===view?"navSubActive":""} aria-current={item.view===view?"page":undefined} onClick={()=>navigate(item.view)}>{item.label}</button>)}
- </div>}
- </div>)}</nav><div className="sideFoot"><button type="button" className="sidebarProfileShortcut" onClick={()=>navigate("profile")} aria-label="Open my account profile">
+ 
+ </div>)}</nav><div className="sidebarUtility"><button type="button" className="sidebarWorkspaceInfo" onClick={()=>{setMobileMenu(false);setWorkspaceInfoOpen(true)}}><UsersRound size={17}/> Workspace details</button><button type="button" className="sidebarGuideButton" onClick={()=>{setMobileMenu(false);setShowGuide(true)}}><span aria-hidden="true">✦</span><span><strong>Take a guided tour</strong><small>See how everything works</small></span><span aria-hidden="true">→</span></button></div><div className="sideFoot"><button type="button" className="sidebarProfileShortcut" onClick={()=>navigate("profile")} aria-label="Open my account profile">
   <ProfileAvatar size="md" name={String(user.user_metadata?.display_name??user.email??"Member")} photoUrl={profilePhotoUrl} styleName={user.user_metadata?.avatar_style}/>
   <span className="userDetails"><strong>{String(user.user_metadata?.display_name??"").trim()||user.email?.split("@")[0]}</strong><small>{role?statusLabel(role):"Account"} · My profile →</small></span>
  </button><button className="logout" title="Sign out" aria-label="Sign out" onClick={()=>void db?.auth.signOut()}>↪</button></div></aside><div className="workspace"><header className="appHeader">
@@ -685,8 +685,8 @@ export default function Home(){
  </div>
  <div className="headerControls">
   {active&&<button type="button" className="headerSearch" aria-label="Search tasks, projects, and people" onClick={()=>{setSearchOpen(true);setCreateMenu(false)}}><SearchIcon size={18}/> <span>Search</span></button>}
-  <button type="button" className="headerReports" onClick={()=>navigate("reports")} aria-label="Open workspace reports"><BarChart3 size={18}/><span>Reports</span></button>
-   {active&&<button type="button" className="headerWorkspaceInfo" onClick={()=>{setWorkspaceInfoOpen(true);setCreateMenu(false)}} aria-label="Open workspace information"><UsersRound size={18}/><span>Workspace info</span></button>}
+  
+   
    <button type="button" className="headerHelp" onClick={()=>{setShowGuide(true);setCreateMenu(false)}} aria-label="Open guided setup and feature explanations"><Sparkles size={18}/> <span>Guided help</span></button>
   {active&&<div className="createWrapper">
    <button type="button" className="primary mainCreateButton" onClick={()=>{if(manager)setQuickCreate("task");else launchCreate("request")}}><Plus size={18}/> {manager?"Quick create":"New request"}</button>
@@ -734,13 +734,16 @@ export default function Home(){
    <button type="button" className="twDashboardHeroGuide" onClick={()=>setShowGuide(true)}><Sparkles size={15} aria-hidden="true"/> Take a guided tour</button>
   </div>
  </section>
- <section className="twDashboardToolbar" aria-label="Workspace actions">
-  <div className="twDashboardWorkspaceSelect"><label htmlFor="twDashboardOrganization">Workspace</label><select id="twDashboardOrganization" value={selected} onChange={e=>{setSelected(e.target.value);setLastCreatedProject(null);setLastCreatedTeam(null);setProjectFilter("all");setDashboardSearch("");setDashboardStatus("all");setDashboardPriority("all");setDashboardAssignee("all");clear()}}>{orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
-  <button type="button" onClick={()=>setWorkspaceInfoOpen(true)}><UsersRound size={17}/> Workspace info</button>
-  {manager&&<button type="button" onClick={()=>navigate("people")}><UsersRound size={17}/> Manage people</button>}
-  {manager&&<button type="button" className="twDashboardInviteButton" onClick={()=>launchCreate("invite")}><Mail size={17}/> Invite people</button>}
-  <button type="button" onClick={()=>setQuickCreate("organization")}><Plus size={17}/> New workspace</button>
-  <button type="button" className="primary" onClick={()=>manager?launchCreate("task"):launchCreate("request")}><Plus size={17}/>{manager?"New task":"New request"}</button>
+ <section className="twDashboardActionStrip" aria-label="Get started quickly">
+  <div className="twDashboardActionIntro"><strong>What would you like to do?</strong><span>Choose an action to get started.</span></div>
+  <div className="twDashboardActionButtons">
+   {manager?<><button type="button" className="primary" onClick={()=>launchCreate("task")}><Plus size={17}/> New task</button>
+    <button type="button" onClick={()=>launchCreate("project")}><FolderKanban size={17}/> New project</button>
+    <button type="button" onClick={()=>launchCreate("invite")}><Mail size={17}/> Invite person</button></>:
+    <><button type="button" className="primary" onClick={()=>{setMyTasksOnly(true);navigate("tasks")}}><SquareCheckBig size={17}/> My tasks</button>
+    <button type="button" onClick={()=>launchCreate("request")}><Plus size={17}/> New request</button>
+    <button type="button" onClick={()=>navigate("collaboration")}><Inbox size={17}/> Team messages</button></>}
+  </div>
  </section>
  <section className="twDashboardMetricGrid" aria-label="Workspace task summary">
   {/* Summary cards stay visible above the task board on desktop and mobile. */}
@@ -753,25 +756,26 @@ export default function Home(){
    <div className="twDashboardTaskHeadingActions"><button type="button" disabled={workspaceLoading} onClick={()=>void loadWorkspace(selected)}>{workspaceLoading?"Refreshing…":"↻ Refresh"}</button><button type="button" className="primary" onClick={()=>navigate("tasks")}>Open all tasks →</button></div>
   </div>
   <div className="twDashboardFilters">
-   <input type="search" aria-label="Search dashboard tasks" value={dashboardSearch} onChange={e=>setDashboardSearch(e.target.value)} placeholder="Search tasks…"/>
-   <select aria-label="Filter dashboard task status" value={dashboardStatus} onChange={e=>setDashboardStatus(e.target.value)}><option value="all">All statuses</option>{statuses.map(x=><option key={x} value={x}>{taskLabel(x)}</option>)}</select>
-   <select aria-label="Filter dashboard priority" value={dashboardPriority} onChange={e=>setDashboardPriority(e.target.value)}><option value="all">All priorities</option>{["low","normal","high","urgent"].map(x=><option key={x} value={x}>{statusLabel(x)}</option>)}</select>
-   {manager&&<select aria-label="Filter dashboard assignee" value={dashboardAssignee} onChange={e=>setDashboardAssignee(e.target.value)}><option value="all">All assignees</option><option value="unassigned">Unassigned</option>{directory.map(p=><option key={p.user_id} value={p.user_id}>{p.user_id===user.id?"Me":p.display_name}</option>)}</select>}
+   <input type="search" aria-label="Search dashboard tasks" value={dashboardSearch} onChange={e=>setDashboardSearch(e.target.value)} placeholder="Find a task by name or description…"/>
+   <button type="button" className="twDashboardFilterToggle" aria-expanded={showDashboardFilters} aria-controls="twDashboardAdvancedFilters" onClick={()=>setShowDashboardFilters(v=>!v)}><SearchIcon size={16}/> Filters{dashboardFilterCount>0?" ("+dashboardFilterCount+")":""} <span aria-hidden="true">{showDashboardFilters?"⌃":"⌄"}</span></button>
+   {(dashboardFilterCount>0||dashboardSearch)&&<button type="button" className="twDashboardClearFilters" onClick={clearDashboardFilters}>Clear</button>}
+  </div>
+  <div id="twDashboardAdvancedFilters" className={"twDashboardAdvancedFilters "+(showDashboardFilters?"isOpen":"")} hidden={!showDashboardFilters}>
+   <label>Status<select aria-label="Filter dashboard task status" value={dashboardStatus} onChange={e=>setDashboardStatus(e.target.value)}><option value="all">All statuses</option>{statuses.map(x=><option key={x} value={x}>{taskLabel(x)}</option>)}</select></label>
+   <label>Priority<select aria-label="Filter dashboard priority" value={dashboardPriority} onChange={e=>setDashboardPriority(e.target.value)}><option value="all">All priorities</option>{["low","normal","high","urgent"].map(x=><option key={x} value={x}>{statusLabel(x)}</option>)}</select></label>
+   {manager&&<label>Assigned to<select aria-label="Filter dashboard assignee" value={dashboardAssignee} onChange={e=>setDashboardAssignee(e.target.value)}><option value="all">All assignees</option><option value="unassigned">Unassigned</option>{directory.map(p=><option key={p.user_id} value={p.user_id}>{p.user_id===user.id?"Me":p.display_name}</option>)}</select></label>}
   </div>
   <div className="twDashboardTaskTools"><div className="twTaskViewSwitch" role="group" aria-label="Dashboard task display"><button type="button" aria-pressed={dashboardLayout==="board"} className={dashboardLayout==="board"?"selected":""} onClick={()=>setDashboardLayout("board")}>▦ Board</button><button type="button" aria-pressed={dashboardLayout==="list"} className={dashboardLayout==="list"?"selected":""} onClick={()=>setDashboardLayout("list")}>☷ List</button></div><span className="muted">{dashboardTasks.length} matching task{dashboardTasks.length===1?"":"s"}</span></div>
   {dashboardLayout==="board"?<TaskBoard hideStats tasks={dashboardTasks} directory={directory} projects={projects} userId={user.id} role={role??null} manager={manager} working={working} onOpen={id=>{navigate("tasks");void openTask(id)}} onStatusChange={(id,status)=>void updateTask(id,status)} onCreate={()=>launchCreate("task")}/>:
    <div className="tablewrap twDashboardList"><table><thead><tr><th>Task</th><th>Owner</th><th>Priority</th><th>Status</th><th>Deadline</th></tr></thead><tbody>{dashboardTasks.length?dashboardTasks.map(t=><tr key={t.id}><td><button type="button" className="taskOpen" onClick={()=>{navigate("tasks");void openTask(t.id)}}>{t.title}</button></td><td>{t.owner_id===user.id?"You":directory.find(m=>m.user_id===t.owner_id)?.display_name??"Unassigned"}</td><td>{statusLabel(t.priority)}</td><td>{taskLabel(t.status)}</td><td>{t.due_at?new Date(t.due_at).toLocaleDateString():"—"}</td></tr>):<tr><td colSpan={5} className="muted">No tasks match these filters.</td></tr>}</tbody></table></div>}
  </section>
- <div className="twDashboardBelow"><section className="card twDashboardShortcuts"><div className="sectionHead"><h2>Quick actions</h2><button className="textAction" type="button" onClick={()=>setShowGuide(true)}>Guided help →</button></div>
- <section className="quickActions" aria-label="Quick actions">
- {manager?<><button type="button" onClick={()=>launchCreate("task")}><span className="quickIcon"><SquareCheckBig size={21}/></span><span><strong>New task</strong><small>Create & assign</small></span></button>
- <button type="button" onClick={()=>launchCreate("project")}><span className="quickIcon"><FolderKanban size={21}/></span><span><strong>New project</strong><small>Organize work</small></span></button>
- <button type="button" onClick={()=>launchCreate("team")}><span className="quickIcon"><UsersRound size={21}/></span><span><strong>New team</strong><small>Organize people</small></span></button>
- <button type="button" onClick={()=>launchCreate("invite")}><span className="quickIcon"><Mail size={21}/></span><span><strong>Invite person</strong><small>Grow your team</small></span></button></>:
- <><button type="button" onClick={()=>{setMyTasksOnly(true);navigate("tasks")}}><span className="quickIcon"><SquareCheckBig size={21}/></span><span><strong>My tasks</strong><small>See assignments</small></span></button>
- <button type="button" onClick={()=>navigate("collaboration")}><span className="quickIcon"><Inbox size={21}/></span><span><strong>Team chat</strong><small>Share an update</small></span></button>
- <button type="button" onClick={()=>launchCreate("request")}><span className="quickIcon"><Mail size={21}/></span><span><strong>New request</strong><small>Ask your leader</small></span></button>
- <button type="button" onClick={()=>navigate("people")}><span className="quickIcon"><UsersRound size={21}/></span><span><strong>My team</strong><small>Meet people</small></span></button></>}
+ <div className="twDashboardBelow"><section className="card twDashboardShortcuts"><div className="sectionHead"><h2>Explore your workspace</h2><button className="textAction" type="button" onClick={()=>setShowGuide(true)}>How it works →</button></div>
+ <p className="muted">Everything you need, without searching through menus.</p>
+ <section className="quickActions" aria-label="Workspace shortcuts">
+  <button type="button" onClick={()=>navigate("calendar")}><span className="quickIcon"><SquareCheckBig size={21}/></span><span><strong>Calendar</strong><small>See deadlines</small></span></button>
+  <button type="button" onClick={()=>navigate("people")}><span className="quickIcon"><UsersRound size={21}/></span><span><strong>People & teams</strong><small>Work together</small></span></button>
+  <button type="button" onClick={()=>navigate("collaboration")}><span className="quickIcon"><Inbox size={21}/></span><span><strong>Team messages</strong><small>Share updates</small></span></button>
+  <button type="button" onClick={()=>navigate("requests")}><span className="quickIcon"><Mail size={21}/></span><span><strong>Requests</strong><small>Review decisions</small></span></button>
  </section>
  </section><section className="card reportShortcutCard" aria-label="Workspace reports"><div><span className="eyebrow blue">WORKSPACE INSIGHTS</span><h2>Reports & progress</h2><p className="muted">See completion rates, overdue work, team workload and project progress in one place.</p><div className="reportShortcutFacts"><span><strong>{tasks.filter(t=>t.status==="completed").length}</strong> completed</span><span><strong>{counts.overdue}</strong> overdue</span><span><strong>{projects.length}</strong> projects</span></div></div><button type="button" className="primary" onClick={()=>navigate("reports")}><BarChart3 size={18}/> View detailed reports →</button></section></div>
  <details className="twDashboardGettingStarted"><summary><span>✦ Getting started & guided setup</span><span className="muted">{setupCompleted} of 4 setup steps</span></summary>
