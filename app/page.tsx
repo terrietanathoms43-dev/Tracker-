@@ -75,6 +75,7 @@ export default function Home(){
  const [inviteEmail,setInviteEmail]=useState(""),[inviteRole,setInviteRole]=useState("member"),[orgName,setOrgName]=useState(""),[teamName,setTeamName]=useState(""),[taskTitle,setTaskTitle]=useState(""),[taskDescription,setTaskDescription]=useState(""),[taskDue,setTaskDue]=useState(""),[taskFrequency,setTaskFrequency]=useState("none"),[recurringRefresh,setRecurringRefresh]=useState(0),[taskPriority,setTaskPriority]=useState("normal"),[taskOwner,setTaskOwner]=useState("");
  const [myTasksOnly,setMyTasksOnly]=useState(false),[workspaceLoading,setWorkspaceLoading]=useState(false);
  const workspaceRequest=useRef(0);
+ const taskDetailRequest=useRef(0);
  const [taskLayout,setTaskLayout]=useState<"board"|"list">("board"),[workspaceInfoOpen,setWorkspaceInfoOpen]=useState(false);
  const [dashboardLayout,setDashboardLayout]=useState<"board"|"list">("board");
  const [dashboardSearch,setDashboardSearch]=useState(""),[dashboardStatus,setDashboardStatus]=useState("all"),[dashboardPriority,setDashboardPriority]=useState("all"),[dashboardAssignee,setDashboardAssignee]=useState("all");
@@ -142,17 +143,17 @@ export default function Home(){
     db.from("tw_task_handovers").select("id,task_id,from_user,to_user,note,created_at").eq("organization_id",orgId).order("created_at",{ascending:false}).limit(100)
    ]);
    if(request!==workspaceRequest.current)return;
-   // Keep the successful reads even if an unrelated feature has a query error.
-   if(!t.error)setTeams(t.data??[]);
-   if(!k.error)setTasks(k.data??[]);
-   if(!m.error)setMembers(m.data??[]);
-   if(!tm.error)setTeamMembers((tm.data??[]).filter(x=>(t.data??[]).some(team=>team.id===x.team_id)));
-   if(!r.error)setRequests(r.data??[]);
-   if(!a.error)setActivity(a.data??[]);
-   if(!g.error)setGoals(g.data??[]);
-   if(!p.error)setProjects(p.data??[]);
-   if(!d.error)setDirectory(d.data??[]);
-   if(!h.error)setHandovers(h.data??[]);
+   // Never reuse stale data after a failed workspace read.
+   setTeams(t.error?[]:t.data??[]);
+   setTasks(k.error?[]:k.data??[]);
+   setMembers(m.error?[]:m.data??[]);
+   setTeamMembers(t.error||tm.error?[]:(tm.data??[]).filter(x=>(t.data??[]).some(team=>team.id===x.team_id)));
+   setRequests(r.error?[]:r.data??[]);
+   setActivity(a.error?[]:a.data??[]);
+   setGoals(g.error?[]:g.data??[]);
+   setProjects(p.error?[]:p.data??[]);
+   setDirectory(d.error?[]:d.data??[]);
+   setHandovers(h.error?[]:h.data??[]);
    const failures=[["teams",t.error],["saved tasks",k.error],["members",m.error],["team membership",tm.error],["requests",r.error],["activity",a.error],["goals",g.error],["projects",p.error],["directory",d.error],["handover history",h.error]].filter((entry)=>entry[1]);
    if(failures.length)setError("Some workspace information could not be loaded: "+failures.map(entry=>entry[0]).join(", ")+". Refresh to try again.");
   }catch(e){
@@ -168,8 +169,19 @@ export default function Home(){
  useEffect(()=>{if(!db){setInitial(false);return}let live=true;db.auth.getUser().then(({data,error})=>{if(live){if(error)setError(error.message);setUser(data.user);setInitial(false)}}).catch(()=>{if(live){setError("Unable to connect. Check your internet connection.");setInitial(false)}});const {data:{subscription}}=db.auth.onAuthStateChange((_event,session)=>{if(live)setUser(session?.user??null);if(_event==="PASSWORD_RECOVERY")setRecovery(true)});return()=>{live=false;subscription.unsubscribe()}},[]);
  useEffect(()=>{if(user){void db?.from("tw_invitations").select("id,email,role,organization_id,expires_at").eq("email",user.email?.toLowerCase()??"").is("accepted_at",null).gt("expires_at",new Date().toISOString()).then(({data})=>setPendingInvites(data??[]));}else setPendingInvites([])},[user]);
  useEffect(()=>{if(user&&typeof window!=="undefined"&&new URLSearchParams(window.location.search).has("invite"))setView("settings")},[user]);
- useEffect(()=>{if(user)void loadOrgs();else{setOrgs([]);setSelected("");setTeams([]);setTasks([])}},[user,loadOrgs]);
- useEffect(()=>{if(selected){setTasks([]);setProjects([]);setMembers([]);setTeams([]);setGoals([]);setDirectory([]);setProjectFilter("all");setSelectedTask("");void loadWorkspace(selected)}else{workspaceRequest.current++;setTeams([]);setTasks([]);setProjects([]);setMembers([]);setGoals([]);setDirectory([]);setWorkspaceLoading(false)}},[selected,loadWorkspace]);
+ useEffect(()=>{if(user)void loadOrgs();else{workspaceRequest.current++;taskDetailRequest.current++;inviteRequest.current++;setOrgs([]);setSelected("");setTeams([]);setTasks([]);setTeamMembers([]);setRequests([]);setActivity([]);setHandovers([]);setOutgoingInvites([]);setQuickCreate(null);setWorkspaceInfoOpen(false)}},[user?.id,loadOrgs]);
+ useEffect(()=>{
+  taskDetailRequest.current++;
+  inviteRequest.current++;
+  setTasks([]);setProjects([]);setMembers([]);setTeams([]);setGoals([]);setDirectory([]);
+  setTeamMembers([]);setRequests([]);setActivity([]);setHandovers([]);setOutgoingInvites([]);
+  setSelectedTask("");setTaskUpdates([]);setQuickCreate(null);setWorkspaceInfoOpen(false);
+  setEditingTask("");setEditingProject("");setEditingGoal("");
+  setInviteShareReady(false);setInviteShareId("");setProjectFilter("all");
+  setDashboardSearch("");setDashboardStatus("all");setDashboardPriority("all");setDashboardAssignee("all");
+  if(selected)void loadWorkspace(selected);
+  else{workspaceRequest.current++;setWorkspaceLoading(false)}
+ },[selected,loadWorkspace]);
  // Refresh persisted tasks and projects after returning to an open Trackwise tab.
  useEffect(()=>{
   if(!selected||!user)return;
@@ -333,7 +345,15 @@ export default function Home(){
   finally{setWorking(false)}
  }
  async function changePassword(e:FormEvent){e.preventDefault();if(!db)return;setWorking(true);clear();try{if(newPassword.length<10)throw new Error("Use at least 10 characters.");const {error}=await db.auth.updateUser({password:newPassword});if(error)throw error;setNewPassword("");setRecovery(false);setNotice("Password updated successfully.")}catch(e){setError(e instanceof Error?e.message:"Unable to update password")}finally{setWorking(false)}}
- async function openTask(id:string){if(!db)return;setSelectedTask(id);setTaskUpdates([]);const {data,error}=await db.from("tw_task_updates").select("id,progress,next_action,created_at,author_id").eq("task_id",id).order("created_at",{ascending:false}).limit(50);if(error)setError(error.message);else setTaskUpdates(data??[])}
+ async function openTask(id:string){
+  if(!db||!selected)return;
+  const request=++taskDetailRequest.current;
+  setSelectedTask(id);setTaskUpdates([]);
+  const {data,error}=await db.from("tw_task_updates").select("id,progress,next_action,created_at,author_id")
+   .eq("task_id",id).order("created_at",{ascending:false}).limit(50);
+  if(request!==taskDetailRequest.current)return;
+  if(error)setError(error.message);else setTaskUpdates(data??[]);
+ }
  async function addProgress(e:FormEvent){e.preventDefault();if(!db||!selectedTask)return;setWorking(true);clear();try{const {error}=await db.rpc("tw_add_task_update",{target_task:selectedTask,progress_text:progressText.trim(),next_step:nextStep.trim()||null});if(error)throw error;setProgressText("");setNextStep("");await Promise.all([openTask(selectedTask),loadWorkspace(selected)]);setNotice("Progress update recorded.")}catch(e){setError(e instanceof Error?e.message:"Unable to save progress")}finally{setWorking(false)}}
  async function reassignTask(e:FormEvent){e.preventDefault();if(!db||!selected||!selectedTask||!manager)return;setWorking(true);clear();try{const {error}=await db.rpc("tw_reassign_task",{target_task:selectedTask,new_owner:handoverOwner,handover_message:handoverNote.trim()});if(error)throw error;setHandoverOwner("");setHandoverNote("");await loadWorkspace(selected);setNotice("Task reassigned and handover recorded.")}catch(e){setError(e instanceof Error?e.message:"Unable to reassign task")}finally{setWorking(false)}}
  async function createOrg(e:FormEvent){e.preventDefault();if(!db)return;setWorking(true);clear();try{const {data,error}=await db.rpc("tw_create_organization",{org_name:orgName.trim()});if(error)throw error;setOrgName("");await loadOrgs();if(data)setSelected(data);setView("overview");setLastCreatedProject(null);setLastCreatedTeam(null);setNotice("Your organization is ready! Follow the setup checklist or take the guided tour.");}catch(e){setError(e instanceof Error?e.message:"Unable to create workspace")}finally{setWorking(false)}}
