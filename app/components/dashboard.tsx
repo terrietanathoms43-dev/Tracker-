@@ -611,7 +611,7 @@ export default function Dashboard({
 
    if (!active) {
       return (
-         <div className="appShell">
+         <div className="appShell appShellOnboarding">
             <main className="content">
                <div className="contentWidth">
                   <div className="card emptyState">
