@@ -1,0 +1,298 @@
+/* Large workspace panels modelled on Trackwise's dialog workflow.
+ * Main task/project pages remain simple; workspaces tools appear in a large dialog
+ * with an internal navigation rail, keeping all forms and nested quick-create dialogs.
+ */
+.twWorkspaceDialog{
+ position:fixed!important;
+ inset:0!important;
+ z-index:145;
+ display:grid;
+ place-items:center;
+ width:100vw;
+ height:100dvh;
+ max-height:100dvh;
+ padding:clamp(12px,2.6vw,32px)!important;
+ background:#0616359c!important;
+ backdrop-filter:blur(3px);
+ overflow:hidden;
+}
+.twWorkspaceDialogBackdrop{
+ position:absolute;
+ inset:0;
+ z-index:0;
+ width:100%;height:100%;
+ background:transparent;
+ border:0;
+ border-radius:0;
+ cursor:default;
+}
+.twWorkspaceDialog .contentWidth{
+ position:relative;
+ z-index:1;
+ isolation:isolate;
+ display:grid;
+ grid-template-columns:210px minmax(0,1fr);
+ width:min(1110px,100%);
+ max-width:1110px;
+ height:min(740px,calc(100dvh - 46px));
+ max-height:100%;
+ min-height:0;
+ margin:0;
+ padding:0!important;
+ overflow:hidden;
+ background:#fff;
+ border:1px solid #cfdcf4;
+ border-top:4px solid #e4b65c;
+ border-radius:17px;
+ box-shadow:0 36px 95px #061b436e;
+}
+.twWorkspaceDialogNav{
+ position:relative;
+ display:flex;
+ flex-direction:column;
+ min-width:0;
+ padding:22px 13px;
+ background:#f1f5fd;
+ border-right:1px solid #dae4f5;
+ overflow-y:auto;
+ overscroll-behavior:contain;
+}
+.twWorkspaceDialogNavTop{
+ display:grid;
+ gap:6px;
+ margin-bottom:18px;
+ padding:0 8px 15px;
+ border-bottom:1px solid #d7e2f2;
+}
+.twWorkspaceDialogNavTop small{
+ color:#375b92;
+ font-size:10px;
+ font-weight:900;
+ letter-spacing:1.2px;
+}
+.twWorkspaceDialogNavTop strong{
+ color:#153770;
+ font-size:16px;
+ overflow-wrap:anywhere;
+}
+.twWorkspaceDialogNavGroup{
+ display:grid;
+ gap:3px;
+ margin:0 0 15px;
+}
+.twWorkspaceDialogNavGroup>span{
+ padding:0 9px 6px;
+ color:#7184a5;
+ font-size:10px;
+ font-weight:900;
+ letter-spacing:1.2px;
+}
+.twWorkspaceDialogNavGroup button{
+ min-height:40px;
+ width:100%;
+ border:1px solid transparent;
+ background:transparent;
+ border-radius:10px;
+ color:#375378;
+ font-size:13px;
+ font-weight:750;
+ text-align:left;
+ padding:10px 12px;
+ transition:background .13s;
+}
+.twWorkspaceDialogNavGroup button:hover{
+ background:#e3ecfb;
+ color:#1d4a9b;
+}
+.twWorkspaceDialogNavGroup button.selected{
+ color:#173d86;
+ background:#e4edff;
+ border-left:3px solid #e0ad47;
+ border-color:#c6d9f8;
+ box-shadow:inset 3px 0 0 #e0ad47;
+ padding-left:10px;
+ font-weight:900;
+}
+.twWorkspaceDialogBody{
+ height:100%;
+ min-width:0;
+ min-height:0;
+ padding:0 24px 28px;
+ overflow-y:auto;
+ overscroll-behavior:contain;
+ scrollbar-gutter:stable;
+ background:#fff;
+}
+.twWorkspaceDialogTitleBar{
+ position:sticky;
+ z-index:12;
+ top:0;
+ display:flex;
+ align-items:flex-start;
+ justify-content:space-between;
+ gap:15px;
+ padding:23px 0 17px;
+ margin-bottom:19px;
+ background:#fff;
+ border-bottom:2px solid #e7c279;
+}
+.twWorkspaceDialogTitleBar>div{
+ min-width:0;
+}
+.twWorkspaceDialogTitleBar span{
+ color:#9a702c;
+ font-size:10px;
+ font-weight:900;
+ letter-spacing:1.3px;
+ text-transform:uppercase;
+}
+.twWorkspaceDialogTitleBar h2{
+ color:#173c7f;
+ font-size:clamp(21px,2.4vw,28px);
+ margin:6px 0 0;
+ line-height:1.18;
+}
+.twWorkspaceDialogTitleBar button{
+ flex:0 0 35px;
+ height:35px;
+ display:grid;
+ place-items:center;
+ padding:0;
+ border:1px solid #d3dff1;
+ border-radius:10px;
+ background:#f1f5fc;
+ color:#264985;
+ font-size:24px;
+ line-height:1;
+}
+.twWorkspaceDialogTitleBar button:hover{
+ background:#fff0ce;
+ border-color:#e1b75f;
+}
+.twWorkspaceDialog .sectionTabs{
+ display:none;
+}
+.twWorkspaceDialog .twWorkspaceDialogBody>.card,
+.twWorkspaceDialog .twWorkspaceDialogBody>section.card{
+ margin-bottom:15px;
+}
+.twWorkspaceDialog .card{
+ background:#fff;
+ border-color:#dde5f4;
+ border-radius:13px;
+ box-shadow:0 3px 11px #183b7508;
+}
+.twWorkspaceDialog .contentWidth .card .sectionHead h2{
+ font-size:17px;
+}
+.twWorkspaceDialog .reportPage{margin-top:0}
+.twWorkspaceDialog .reportHero{margin-bottom:10px}
+.twWorkspaceDialog .reportPage>.card{margin-bottom:13px}
+.twWorkspaceDialog .reportKpis{gap:10px}
+.twWorkspaceDialogBody :where(input,select,textarea){
+ max-width:100%;
+}
+.twWorkspaceDialogBody :where(button,input,select,textarea):focus-visible,
+.twWorkspaceDialogNav button:focus-visible,
+.twWorkspaceDialogTitleBar button:focus-visible{
+ outline:3px solid #dcac4e;
+ outline-offset:2px;
+}
+/* Keep nested quick-create, tour and workspace-info dialogs above this panel */
+.quickCreateOverlay,.searchOverlay,.guideOverlay,.tourOverlay,.workspaceInfoOverlay{z-index:260}
+@media(max-width:850px){
+ .twWorkspaceDialog{padding:12px!important}
+ .twWorkspaceDialog .contentWidth{
+  grid-template-columns:175px minmax(0,1fr);
+  height:calc(100dvh - 24px);
+ }
+ .twWorkspaceDialogNav{padding:18px 8px}
+ .twWorkspaceDialogBody{padding:0 16px 20px}
+}
+@media(max-width:600px){
+ .twWorkspaceDialog{
+  padding:0!important;
+  align-items:stretch;
+  justify-items:stretch;
+ }
+ .twWorkspaceDialog .contentWidth{
+  width:100%;
+  height:100dvh;
+  max-height:100dvh;
+  border-radius:0;
+  border-left:0;border-right:0;
+  border-top:4px solid #dcb25d;
+  grid-template-columns:minmax(0,1fr);
+  grid-template-rows:auto minmax(0,1fr);
+ }
+ .twWorkspaceDialogNav{
+  display:flex;
+  flex-direction:row;
+  align-items:center;
+  flex-wrap:nowrap;
+  gap:6px;
+  padding:9px 12px;
+  width:100%;
+  max-width:100vw;
+  overflow-x:auto;
+  overflow-y:hidden;
+  border-right:0;
+  border-bottom:1px solid #d9e3f2;
+ }
+ .twWorkspaceDialogNavTop{
+  display:none;
+ }
+ .twWorkspaceDialogNavGroup{
+  display:flex;
+  flex-direction:row;
+  align-items:center;
+  gap:5px;
+  margin:0;
+ }
+ .twWorkspaceDialogNavGroup>span{display:none}
+ .twWorkspaceDialogNavGroup button{
+  width:auto;
+  min-height:38px;
+  flex:0 0 auto;
+  white-space:nowrap;
+  font-size:12px;
+  padding:9px 12px;
+ }
+ .twWorkspaceDialogNavGroup button.selected{
+  border:1px solid #dfb75f;
+  box-shadow:inset 0 -3px 0 #dcaa45;
+  padding:9px 12px;
+ }
+ .twWorkspaceDialogBody{
+  padding:0 15px 28px;
+  scrollbar-gutter:auto;
+ }
+ .twWorkspaceDialogTitleBar{
+  padding:15px 0 12px;
+  margin-bottom:14px;
+ }
+ .twWorkspaceDialogTitleBar h2{font-size:22px}
+ .twWorkspaceDialogTitleBar button{width:37px;height:37px}
+ .twWorkspaceDialog .reportKpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media print {
+ .twWorkspaceDialog{
+  position:static!important;
+  display:block;
+  padding:0!important;
+  background:#fff!important;
+  backdrop-filter:none;
+  overflow:visible;
+  width:100%;
+  height:auto;
+ }
+ .twWorkspaceDialogBackdrop,.twWorkspaceDialogNav,.twWorkspaceDialogTitleBar{display:none!important}
+ .twWorkspaceDialog .contentWidth{
+  display:block;
+  width:100%;height:auto;max-height:none;
+  overflow:visible;
+  border:0;
+  box-shadow:none;
+ }
+ .twWorkspaceDialogBody{overflow:visible;height:auto;padding:0}
+}
