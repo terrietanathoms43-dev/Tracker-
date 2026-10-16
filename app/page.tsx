@@ -4,7 +4,7 @@ import type {User} from "@supabase/supabase-js";
 import useUnreadNotifications from "./use-unread-notifications";
 import {canManageOrganization,canEditTaskChecklist,canOwnTask,canChangeTaskStatus,allowedTaskStatuses,taskStatusLabel as taskLabel,userFacingError as displayError} from "../lib/task-rules";
 import dynamic from "next/dynamic";
-import {House,SquareCheckBig,FolderKanban,UsersRound,Inbox,Settings2,Menu,Search as SearchIcon,Sparkles,Plus,BarChart3,Mail} from "lucide-react";
+import {House,SquareCheckBig,FolderKanban,UsersRound,Inbox,Settings2,Menu,Search as SearchIcon,Sparkles,Plus,BarChart3,Mail,CheckCircle2} from "lucide-react";
 const Reports=dynamic(()=>import("./reports"),{ssr:false,loading:()=><p className="muted">Opening reports…</p>});
 const Operations=dynamic(()=>import("./operations"),{ssr:false,loading:()=><p className="muted">Loading your workspace…</p>});
 const TaskExtras=dynamic(()=>import("./task-extras"),{ssr:false,loading:()=>null});
