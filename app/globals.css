@@ -260,6 +260,32 @@ button.secondary {
 button.secondary:hover {
    background: #f2f5fb;
 }
+.notificationBadge {
+   width: 8px;
+   height: 8px;
+   border-radius: 50%;
+   background: #e5484d;
+   position: absolute;
+   top: 6px;
+   right: 6px;
+}
+.headerHelp {
+   position: relative;
+}
+.notificationRow {
+   display: flex;
+   align-items: flex-start;
+   justify-content: space-between;
+   gap: 12px;
+   padding: 14px 0;
+   border-bottom: 1px solid #eef1f7;
+}
+.notificationRow.unread strong {
+   color: #315cce;
+}
+.notificationRow.read {
+   opacity: 0.75;
+}
 .sidebar nav {
    display: grid;
    gap: 5px;

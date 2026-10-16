@@ -37,6 +37,17 @@ type Request = {
 };
 type Handover = { id: string; task_id: string; from_user: string | null; to_user: string; note: string; created_at: string };
 type Activity = { id: string; entity_type: string; action: string; created_at: string; details: Record<string, unknown> };
+type Notification = {
+   id: string;
+   user_id: string;
+   organization_id: string;
+   type: string;
+   title: string;
+   message: string | null;
+   read_at: string | null;
+   dedupe_key: string | null;
+   created_at: string;
+};
 type Task = {
    id: string;
    title: string;
@@ -78,6 +89,7 @@ export default function Home() {
    const [requests, setRequests] = useState<Request[]>([]);
    const [activity, setActivity] = useState<Activity[]>([]);
    const [handovers, setHandovers] = useState<Handover[]>([]);
+   const [notifications, setNotifications] = useState<Notification[]>([]);
    const [workspaceLoading, setWorkspaceLoading] = useState(false);
    const workspaceRequest = useRef(0);
 
@@ -181,7 +193,7 @@ export default function Home() {
       };
 
       try {
-         const [t, rawTasks, m, tm, r, a, g, p, d, h, assigneesResult] = await Promise.all([
+         const [t, rawTasks, m, tm, r, a, g, p, d, h, n, assigneesResult] = await Promise.all([
             db
                .from("tw_teams")
                .select("id,name,organization_id")
@@ -219,6 +231,12 @@ export default function Home() {
                .eq("organization_id", orgId)
                .order("created_at", { ascending: false })
                .limit(100),
+            db
+               .from("tw_notifications")
+               .select("id,user_id,organization_id,type,title,message,read_at,dedupe_key,created_at")
+               .eq("user_id", user?.id ?? "")
+               .order("created_at", { ascending: false })
+               .limit(50),
             db.from("tw_task_assignees").select("task_id,user_id").eq("organization_id", orgId),
          ]);
          if (request !== workspaceRequest.current) return;
@@ -239,6 +257,7 @@ export default function Home() {
          if (!p.error) setProjects(p.data ?? []);
          if (!d.error) setDirectory(d.data ?? []);
          if (!h.error) setHandovers(h.data ?? []);
+         if (!n.error) setNotifications(n.data ?? []);
          const failures = [
             ["teams", t.error],
             ["saved tasks", null],
@@ -250,6 +269,7 @@ export default function Home() {
             ["projects", p.error],
             ["directory", d.error],
             ["handover history", h.error],
+            ["notifications", n.error],
             ["assignees", assigneesResult.error],
          ].filter((entry) => entry[1]);
          if (failures.length)
@@ -702,6 +722,13 @@ export default function Home() {
       await loadWorkspace(selected);
    }
 
+   async function markNotificationRead(id: string) {
+      if (!db) return;
+      const { error } = await db.rpc("tw_mark_notification_read", { notification_id: id });
+      if (error) throw error;
+      setNotifications((old) => old.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n)));
+   }
+
    async function createRequest(title: string, details: string) {
       if (!db || !selected || !user) throw new Error("Unable to submit request");
       const { error } = await db.from("tw_requests").insert({
@@ -927,6 +954,8 @@ export default function Home() {
          handovers={handovers}
          outgoingInvites={outgoingInvites}
          pendingInvites={pendingInvites}
+         notifications={notifications}
+         onMarkNotificationRead={markNotificationRead}
          workspaceLoading={workspaceLoading}
          onRefresh={() => loadWorkspace(selected)}
          onCreateTask={createTask}

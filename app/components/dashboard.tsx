@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { type User } from "@supabase/supabase-js";
+import DialogShell from "./dialog-shell";
 import TaskDialog from "./task-dialog";
 import UserDialog from "./user-dialog";
 import WorkspaceDialog from "./workspace-dialog";
@@ -61,6 +62,16 @@ export type DashboardHandover = {
    note: string;
    created_at: string;
 };
+export type DashboardNotification = {
+   id: string;
+   user_id: string;
+   organization_id: string;
+   type: string;
+   title: string;
+   message: string | null;
+   read_at: string | null;
+   created_at: string;
+};
 export type DashboardInvite = { id: string; email: string; role: string; expires_at: string; accepted_at: string | null };
 export type DashboardPendingInvite = { id: string; email: string; role: string; organization_id: string; expires_at: string };
 export type DashboardOrg = { id: string; name: string; created_at: string };
@@ -84,6 +95,8 @@ type DashboardProps = {
    handovers: DashboardHandover[];
    outgoingInvites: DashboardInvite[];
    pendingInvites: DashboardPendingInvite[];
+   notifications: DashboardNotification[];
+   onMarkNotificationRead: (id: string) => Promise<void>;
    workspaceLoading: boolean;
    onRefresh: () => Promise<void>;
    onCreateTask: (values: {
@@ -166,6 +179,8 @@ export default function Dashboard({
    handovers,
    outgoingInvites,
    pendingInvites,
+   notifications,
+   onMarkNotificationRead,
    workspaceLoading,
    onRefresh,
    onCreateTask,
@@ -208,6 +223,7 @@ export default function Dashboard({
    const [workspaceTab, setWorkspaceTab] = useState<"overview" | "members" | "teams" | "activity" | "reports">("overview");
    const [userDialogOpen, setUserDialogOpen] = useState(false);
    const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+   const [notificationOpen, setNotificationOpen] = useState(false);
    const [editingTask, setEditingTask] = useState<DashboardTask | null>(null);
    const [selectedTask, setSelectedTask] = useState<string>("");
    const [taskUpdates, setTaskUpdates] = useState<
@@ -664,6 +680,10 @@ export default function Dashboard({
                   <p className="muted">Everything your team needs, organized in one place.</p>
                </div>
                <div className="headerControls">
+                  <button type="button" className="headerHelp" onClick={() => setNotificationOpen(true)} aria-label="Notifications">
+                     🔔 <span>Notifications</span>
+                     {notifications.some((n) => !n.read_at) && <span className="notificationBadge" aria-hidden="true" />}
+                  </button>
                   <button
                      type="button"
                      className="headerHelp"
@@ -1515,6 +1535,27 @@ export default function Dashboard({
                   : undefined
             }
          />
+
+         <DialogShell open={notificationOpen} onOpenChange={setNotificationOpen} title="Notifications">
+            {notifications.length ? (
+               notifications.map((n) => (
+                  <div className={"notificationRow " + (n.read_at ? "read" : "unread")} key={n.id}>
+                     <div>
+                        <strong>{n.title}</strong>
+                        <p className="muted">{n.message}</p>
+                        <small>{new Date(n.created_at).toLocaleString()}</small>
+                     </div>
+                     {!n.read_at && (
+                        <button type="button" className="textAction" onClick={() => void onMarkNotificationRead(n.id)}>
+                           Mark read
+                        </button>
+                     )}
+                  </div>
+               ))
+            ) : (
+               <p className="muted">You have no notifications.</p>
+            )}
+         </DialogShell>
 
          {showGuide && (
             <div className="guideOverlay" role="dialog" aria-modal="true" aria-label="Trackwise quick-start guide">
