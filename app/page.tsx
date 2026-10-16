@@ -702,6 +702,25 @@ export default function Home() {
       await loadWorkspace(selected);
    }
 
+   async function createRequest(title: string, details: string) {
+      if (!db || !selected || !user) throw new Error("Unable to submit request");
+      const { error } = await db.from("tw_requests").insert({
+         organization_id: selected,
+         submitted_by: user.id,
+         title: title.trim(),
+         details: details.trim() || null,
+      });
+      if (error) throw error;
+      await loadWorkspace(selected);
+   }
+
+   async function decideRequest(id: string, decision: string, reason: string) {
+      if (!db || !selected || !manager) throw new Error("Unable to decide request");
+      const { error } = await db.rpc("tw_decide_request", { request_id: id, new_decision: decision, reason: reason.trim() });
+      if (error) throw error;
+      await loadWorkspace(selected);
+   }
+
    async function loadTaskUpdates(taskId: string) {
       if (!db) return [];
       const { data, error } = await db
@@ -928,6 +947,8 @@ export default function Home() {
          onDeleteOrganization={deleteOrganization}
          onLeaveOrganization={leaveOrganization}
          onCreateOrganization={createOrg}
+         onCreateRequest={createRequest}
+         onDecideRequest={decideRequest}
          onAcceptInvite={acceptInvite}
          onSaveProfile={saveProfile}
          onChangePassword={async (pwd) => {
@@ -939,6 +960,7 @@ export default function Home() {
          onAddTaskProgress={addTaskProgress}
          onReassignTask={reassignTask}
          showGuide={showGuide}
+         onOpenGuide={() => setShowGuide(true)}
          onCloseGuide={closeGuide}
       />
    );

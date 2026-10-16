@@ -129,6 +129,8 @@ type DashboardProps = {
    onDeleteOrganization: () => Promise<void>;
    onLeaveOrganization: () => Promise<void>;
    onCreateOrganization: (name: string) => Promise<string | undefined>;
+   onCreateRequest: (title: string, details: string) => Promise<void>;
+   onDecideRequest: (id: string, decision: string, reason: string) => Promise<void>;
    onAcceptInvite: (id: string) => Promise<void>;
    onSaveProfile: (name: string) => Promise<void>;
    onChangePassword: (password: string) => Promise<void>;
@@ -139,6 +141,7 @@ type DashboardProps = {
    onAddTaskProgress: (taskId: string, progress: string, nextStep: string | null) => Promise<void>;
    onReassignTask: (taskId: string, newOwner: string, note: string) => Promise<void>;
    showGuide: boolean;
+   onOpenGuide: () => void;
    onCloseGuide: () => void;
 };
 
@@ -183,6 +186,8 @@ export default function Dashboard({
    onDeleteOrganization,
    onLeaveOrganization,
    onCreateOrganization,
+   onCreateRequest,
+   onDecideRequest,
    onAcceptInvite,
    onSaveProfile,
    onChangePassword,
@@ -191,6 +196,7 @@ export default function Dashboard({
    onAddTaskProgress,
    onReassignTask,
    showGuide,
+   onOpenGuide,
    onCloseGuide,
 }: DashboardProps) {
    const [tab, setTab] = useState<Tab>("summary");
@@ -538,6 +544,46 @@ export default function Dashboard({
             <div className="logo">
                <span className="mark">T</span> Trackwise
             </div>
+
+            <div className="sideLabel">QUICK ACTIONS</div>
+            <div className="sideQuickActions">
+               {manager && (
+                  <button
+                     type="button"
+                     className="primary"
+                     onClick={() => {
+                        setEditingTask(null);
+                        setTaskDialogOpen(true);
+                        setMobileMenu(false);
+                     }}
+                  >
+                     ＋ New task
+                  </button>
+               )}
+               <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                     setTab("summary");
+                     setTimeout(() => document.getElementById("projectCreator")?.scrollIntoView({ behavior: "smooth" }), 50);
+                     setMobileMenu(false);
+                  }}
+               >
+                  ＋ New project
+               </button>
+               <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                     setWorkspaceTab("overview");
+                     setWorkspaceDialogOpen(true);
+                     setMobileMenu(false);
+                  }}
+               >
+                  ＋ New workspace
+               </button>
+            </div>
+
             <div className="sideLabel">WORKSPACE</div>
             <select
                className="orgSelect"
@@ -638,7 +684,7 @@ export default function Dashboard({
                         ＋ New task
                      </button>
                   )}
-                  <button type="button" className="headerHelp" onClick={() => onCloseGuide()} aria-label="How to use Trackwise">
+                  <button type="button" className="headerHelp" onClick={() => onOpenGuide()} aria-label="How to use Trackwise">
                      ? <span>Help</span>
                   </button>
                   <button
@@ -1411,6 +1457,7 @@ export default function Dashboard({
             projects={projects}
             activity={activity}
             outgoingInvites={outgoingInvites}
+            requests={requests}
             createdAt={active.created_at}
             onRefresh={onRefresh}
             onCreateTeam={onCreateTeam}
@@ -1422,6 +1469,9 @@ export default function Dashboard({
             onUpdateMemberRole={onUpdateMemberRole}
             onDeleteOrganization={onDeleteOrganization}
             onLeaveOrganization={onLeaveOrganization}
+            onCreateOrganization={onCreateOrganization}
+            onCreateRequest={onCreateRequest}
+            onDecideRequest={onDecideRequest}
          />
 
          <UserDialog
@@ -1430,11 +1480,15 @@ export default function Dashboard({
             user={user}
             role={role}
             pendingInvites={pendingInvites}
+            orgs={orgs}
+            selectedOrg={selected}
+            onSelectOrg={onSelectOrg}
             profileName={profileName}
             onProfileNameChange={setProfileName}
             onSaveProfile={onSaveProfile}
             onChangePassword={onChangePassword}
             onAcceptInvite={onAcceptInvite}
+            onCreateOrganization={onCreateOrganization}
             onSignOut={onSignOut}
          />
 

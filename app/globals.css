@@ -242,6 +242,24 @@ select:focus {
    background: #f6f8fc;
    margin-bottom: 25px;
 }
+.sideQuickActions {
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+   padding: 0 12px 22px;
+}
+.sideQuickActions button {
+   width: 100%;
+   justify-content: center;
+}
+button.secondary {
+   background: #fff;
+   color: #315cce;
+   border: 1.5px solid #d8deea;
+}
+button.secondary:hover {
+   background: #f2f5fb;
+}
 .sidebar nav {
    display: grid;
    gap: 5px;

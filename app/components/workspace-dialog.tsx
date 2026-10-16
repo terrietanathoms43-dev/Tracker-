@@ -32,6 +32,15 @@ type Task = {
    project_id: string | null;
 };
 type OutgoingInvite = { id: string; email: string; role: string; expires_at: string; accepted_at: string | null };
+type RequestItem = {
+   id: string;
+   title: string;
+   details: string | null;
+   decision: string;
+   submitted_by: string;
+   decision_reason: string | null;
+   created_at: string;
+};
 
 type WorkspaceDialogProps = {
    open: boolean;
@@ -48,6 +57,7 @@ type WorkspaceDialogProps = {
    projects: Project[];
    activity: Activity[];
    outgoingInvites: OutgoingInvite[];
+   requests: RequestItem[];
    createdAt: string;
    onRefresh: () => Promise<void>;
    onCreateTeam: (name: string) => Promise<void>;
@@ -59,9 +69,12 @@ type WorkspaceDialogProps = {
    onUpdateMemberRole: (userId: string, role: string) => Promise<void>;
    onDeleteOrganization: () => Promise<void>;
    onLeaveOrganization: () => Promise<void>;
+   onCreateOrganization: (name: string) => Promise<string | undefined>;
+   onCreateRequest: (title: string, details: string) => Promise<void>;
+   onDecideRequest: (id: string, decision: string, reason: string) => Promise<void>;
 };
 
-type Tab = "overview" | "members" | "teams" | "activity" | "reports";
+type Tab = "overview" | "members" | "teams" | "requests" | "activity" | "reports";
 
 export default function WorkspaceDialog({
    open,
@@ -78,6 +91,7 @@ export default function WorkspaceDialog({
    projects,
    activity,
    outgoingInvites,
+   requests,
    createdAt,
    onRefresh,
    onCreateTeam,
@@ -89,6 +103,9 @@ export default function WorkspaceDialog({
    onUpdateMemberRole,
    onDeleteOrganization,
    onLeaveOrganization,
+   onCreateOrganization,
+   onCreateRequest,
+   onDecideRequest,
 }: WorkspaceDialogProps) {
    const [tab, setTab] = useState<Tab>("overview");
    const [teamName, setTeamName] = useState("");
@@ -99,6 +116,11 @@ export default function WorkspaceDialog({
    const [inviteRole, setInviteRole] = useState("member");
    const [roleEditing, setRoleEditing] = useState("");
    const [roleChoice, setRoleChoice] = useState("member");
+   const [newOrgName, setNewOrgName] = useState("");
+   const [requestTitle, setRequestTitle] = useState("");
+   const [requestDetails, setRequestDetails] = useState("");
+   const [decisionReason, setDecisionReason] = useState("");
+   const [decidingRequest, setDecidingRequest] = useState("");
    const [busy, setBusy] = useState(false);
    const [error, setError] = useState("");
    const [notice, setNotice] = useState("");
@@ -119,10 +141,11 @@ export default function WorkspaceDialog({
          { value: "overview" as Tab, label: "Overview" },
          { value: "members" as Tab, label: `Members (${members.length})` },
          { value: "teams" as Tab, label: `Teams (${teams.length})` },
+         { value: "requests" as Tab, label: `Requests (${requests.length})` },
          { value: "activity" as Tab, label: "Activity" },
          { value: "reports" as Tab, label: "Reports" },
       ],
-      [members.length, teams.length],
+      [members.length, teams.length, requests.length],
    );
 
    async function handleCreateTeam(e: FormEvent) {
@@ -226,6 +249,58 @@ export default function WorkspaceDialog({
       }
    }
 
+   async function handleCreateOrg(e: FormEvent) {
+      e.preventDefault();
+      if (!newOrgName.trim()) return;
+      setBusy(true);
+      clear();
+      try {
+         await onCreateOrganization(newOrgName.trim());
+         setNewOrgName("");
+         setNotice("Workspace created. Switch to it from the sidebar.");
+      } catch (e) {
+         setError(e instanceof Error ? e.message : "Unable to create workspace");
+      } finally {
+         setBusy(false);
+      }
+   }
+
+   async function handleCreateRequest(e: FormEvent) {
+      e.preventDefault();
+      if (!requestTitle.trim()) return;
+      setBusy(true);
+      clear();
+      try {
+         await onCreateRequest(requestTitle.trim(), requestDetails.trim());
+         setRequestTitle("");
+         setRequestDetails("");
+         setNotice("Request submitted.");
+         await onRefresh();
+      } catch (err) {
+         setError(err instanceof Error ? err.message : "Unable to submit request");
+      } finally {
+         setBusy(false);
+      }
+   }
+
+   async function handleDecide(e: FormEvent) {
+      e.preventDefault();
+      if (!decidingRequest || !decisionReason.trim()) return;
+      setBusy(true);
+      clear();
+      try {
+         await onDecideRequest(decidingRequest, "approved", decisionReason.trim());
+         setDecidingRequest("");
+         setDecisionReason("");
+         setNotice("Request approved.");
+         await onRefresh();
+      } catch (err) {
+         setError(err instanceof Error ? err.message : "Unable to decide request");
+      } finally {
+         setBusy(false);
+      }
+   }
+
    const inviteLink =
       typeof window !== "undefined" && inviteShareReady
          ? `${window.location.origin}${window.location.pathname}?invite=${inviteShareId}`
@@ -293,6 +368,25 @@ export default function WorkspaceDialog({
                      </button>
                   )}
                </div>
+
+               <section className="card">
+                  <h2>Create another workspace</h2>
+                  <p className="muted">You can belong to multiple Trackwise workspaces.</p>
+                  <form onSubmit={handleCreateOrg} className="inlineForm">
+                     <input
+                        aria-label="New workspace name"
+                        value={newOrgName}
+                        onChange={(e) => setNewOrgName(e.target.value)}
+                        placeholder="New workspace name"
+                        minLength={2}
+                        maxLength={120}
+                        required
+                     />
+                     <button className="primary" type="submit" disabled={busy || !newOrgName.trim()}>
+                        Create workspace
+                     </button>
+                  </form>
+               </section>
             </div>
          )}
 
@@ -539,6 +633,104 @@ export default function WorkspaceDialog({
                      </form>
                   </section>
                )}
+            </div>
+         )}
+
+         {tab === "requests" && (
+            <div className="space-y-5">
+               {!manager && (
+                  <section className="card">
+                     <h2>Submit a request</h2>
+                     <p className="muted">Ask a workspace leader to approve, defer, or reject a proposal.</p>
+                     <form onSubmit={handleCreateRequest} className="formGrid">
+                        <div className="span2">
+                           <label htmlFor="wd-request-title">Title</label>
+                           <input
+                              id="wd-request-title"
+                              value={requestTitle}
+                              onChange={(e) => setRequestTitle(e.target.value)}
+                              placeholder="What are you requesting?"
+                              required
+                              minLength={2}
+                              maxLength={180}
+                           />
+                        </div>
+                        <div className="span2">
+                           <label htmlFor="wd-request-details">Details</label>
+                           <textarea
+                              id="wd-request-details"
+                              rows={3}
+                              value={requestDetails}
+                              onChange={(e) => setRequestDetails(e.target.value)}
+                              placeholder="Add context so leaders can decide."
+                              maxLength={4000}
+                           />
+                        </div>
+                        <div className="span2">
+                           <button className="primary" type="submit" disabled={busy || !requestTitle.trim()}>
+                              Submit request
+                           </button>
+                        </div>
+                     </form>
+                  </section>
+               )}
+
+               <section className="card">
+                  <div className="sectionHead">
+                     <h2>{manager ? "Requests & approvals" : "Your requests"}</h2>
+                     <span className="chip">{requests.length}</span>
+                  </div>
+                  {requests.length ? (
+                     requests.map((r) => (
+                        <div className="reportRow" key={r.id}>
+                           <div>
+                              <strong>{r.title}</strong>
+                              <p className="muted">{r.details || "No details"}</p>
+                              <small>
+                                 {statusLabel(r.decision)} · Submitted by{" "}
+                                 {directory.find((m) => m.user_id === r.submitted_by)?.display_name ?? "Member"} ·{" "}
+                                 {new Date(r.created_at).toLocaleDateString()}
+                              </small>
+                              {r.decision_reason && <small className="muted">Reason: {r.decision_reason}</small>}
+                           </div>
+                           {manager && (r.decision === "submitted" || r.decision === "deferred") && (
+                              <div className="requestActions">
+                                 {decidingRequest === r.id ? (
+                                    <form onSubmit={handleDecide} className="inlineForm">
+                                       <input
+                                          aria-label="Decision reason"
+                                          value={decisionReason}
+                                          onChange={(e) => setDecisionReason(e.target.value)}
+                                          placeholder="Reason for decision"
+                                          required
+                                       />
+                                       <button className="primary" type="submit" disabled={busy || !decisionReason.trim()}>
+                                          Approve
+                                       </button>
+                                       <button
+                                          type="button"
+                                          disabled={busy}
+                                          onClick={() => void onDecideRequest(r.id, "rejected", decisionReason.trim() || "Rejected")}
+                                       >
+                                          Reject
+                                       </button>
+                                       <button type="button" onClick={() => setDecidingRequest("")}>
+                                          Cancel
+                                       </button>
+                                    </form>
+                                 ) : (
+                                    <button type="button" className="textAction" onClick={() => setDecidingRequest(r.id)}>
+                                       Decide
+                                    </button>
+                                 )}
+                              </div>
+                           )}
+                        </div>
+                     ))
+                  ) : (
+                     <p className="muted">No requests yet.</p>
+                  )}
+               </section>
             </div>
          )}
 

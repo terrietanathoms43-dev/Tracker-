@@ -7,6 +7,7 @@ const statusLabel = (s: string) => s.replaceAll("_", " ").replace(/\b\w/g, (c) =
 
 type User = { id: string; email?: string | undefined; user_metadata?: { display_name?: string } };
 type PendingInvite = { id: string; email: string; role: string; organization_id: string; expires_at: string };
+type Org = { id: string; name: string; created_at: string };
 
 type UserDialogProps = {
    open: boolean;
@@ -14,15 +15,19 @@ type UserDialogProps = {
    user: User | null;
    role: string | null | undefined;
    pendingInvites: PendingInvite[];
+   orgs: Org[];
+   selectedOrg: string;
+   onSelectOrg: (id: string) => void;
    profileName: string;
    onProfileNameChange: (value: string) => void;
    onSaveProfile: (name: string) => Promise<void>;
    onChangePassword: (password: string) => Promise<void>;
    onAcceptInvite: (id: string) => Promise<void>;
+   onCreateOrganization: (name: string) => Promise<string | undefined>;
    onSignOut: () => Promise<void>;
 };
 
-type Tab = "profile" | "invitations";
+type Tab = "profile" | "invitations" | "workspaces";
 
 export default function UserDialog({
    open,
@@ -30,15 +35,20 @@ export default function UserDialog({
    user,
    role,
    pendingInvites,
+   orgs,
+   selectedOrg,
+   onSelectOrg,
    profileName,
    onProfileNameChange,
    onSaveProfile,
    onChangePassword,
    onAcceptInvite,
+   onCreateOrganization,
    onSignOut,
 }: UserDialogProps) {
    const [tab, setTab] = useState<Tab>("profile");
    const [newPassword, setNewPassword] = useState("");
+   const [newOrgName, setNewOrgName] = useState("");
    const [busy, setBusy] = useState(false);
    const [error, setError] = useState("");
    const [notice, setNotice] = useState("");
@@ -98,14 +108,54 @@ export default function UserDialog({
       }
    }
 
+   async function handleCreateOrg(e: FormEvent) {
+      e.preventDefault();
+      if (!newOrgName.trim()) return;
+      setBusy(true);
+      clear();
+      try {
+         const id = await onCreateOrganization(newOrgName.trim());
+         if (id) {
+            setNewOrgName("");
+            setNotice("Workspace created.");
+            onSelectOrg(id);
+         }
+      } catch (e) {
+         setError(e instanceof Error ? e.message : "Unable to create workspace");
+      } finally {
+         setBusy(false);
+      }
+   }
+
    return (
       <DialogShell open={open} onOpenChange={onOpenChange} title="Account">
          <div className="dialogTabs" role="tablist" aria-label="Account sections">
-            <button type="button" role="tab" aria-selected={tab === "profile"} className={tab === "profile" ? "active" : ""} onClick={() => setTab("profile")}>
+            <button
+               type="button"
+               role="tab"
+               aria-selected={tab === "profile"}
+               className={tab === "profile" ? "active" : ""}
+               onClick={() => setTab("profile")}
+            >
                Profile
             </button>
-            <button type="button" role="tab" aria-selected={tab === "invitations"} className={tab === "invitations" ? "active" : ""} onClick={() => setTab("invitations")}>
+            <button
+               type="button"
+               role="tab"
+               aria-selected={tab === "invitations"}
+               className={tab === "invitations" ? "active" : ""}
+               onClick={() => setTab("invitations")}
+            >
                Invitations ({pendingInvites.length})
+            </button>
+            <button
+               type="button"
+               role="tab"
+               aria-selected={tab === "workspaces"}
+               className={tab === "workspaces" ? "active" : ""}
+               onClick={() => setTab("workspaces")}
+            >
+               Workspaces ({orgs.length})
             </button>
          </div>
 
@@ -191,6 +241,52 @@ export default function UserDialog({
                   <p className="muted">You have no pending invitations.</p>
                )}
             </section>
+         )}
+
+         {tab === "workspaces" && (
+            <div className="space-y-5">
+               <section className="card">
+                  <div className="sectionHead">
+                     <h2>Your workspaces</h2>
+                     <span className="chip">{orgs.length}</span>
+                  </div>
+                  {orgs.length ? (
+                     orgs.map((o) => (
+                        <div className="reportRow" key={o.id}>
+                           <span>
+                              {o.name} {o.id === selectedOrg ? "· current" : ""}
+                           </span>
+                           {o.id !== selectedOrg && (
+                              <button type="button" className="textAction" onClick={() => onSelectOrg(o.id)}>
+                                 Switch to
+                              </button>
+                           )}
+                        </div>
+                     ))
+                  ) : (
+                     <p className="muted">You are not in any workspaces yet.</p>
+                  )}
+               </section>
+
+               <section className="card">
+                  <h2>Create a workspace</h2>
+                  <p className="muted">Start a new Trackwise workspace for another team.</p>
+                  <form onSubmit={handleCreateOrg} className="inlineForm">
+                     <input
+                        aria-label="New workspace name"
+                        value={newOrgName}
+                        onChange={(e) => setNewOrgName(e.target.value)}
+                        placeholder="Workspace name"
+                        minLength={2}
+                        maxLength={120}
+                        required
+                     />
+                     <button className="primary" type="submit" disabled={busy || !newOrgName.trim()}>
+                        Create workspace
+                     </button>
+                  </form>
+               </section>
+            </div>
          )}
       </DialogShell>
    );
