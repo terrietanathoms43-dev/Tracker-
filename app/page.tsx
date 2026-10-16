@@ -99,6 +99,14 @@ export default function Home(){
  const taskDetailRequest=useRef(0);
  const [taskLayout,setTaskLayout]=useState<"board"|"list">("board"),[workspaceInfoOpen,setWorkspaceInfoOpen]=useState(false);
  const [workspacePickerOpen,setWorkspacePickerOpen]=useState(false);
+ useEffect(()=>{
+  if(!workspacePickerOpen)return;
+  const previousOverflow=document.body.style.overflow;
+  document.body.style.overflow="hidden";
+  const onEscape=(event:KeyboardEvent)=>{if(event.key==="Escape")setWorkspacePickerOpen(false)};
+  window.addEventListener("keydown",onEscape);
+  return()=>{document.body.style.overflow=previousOverflow;window.removeEventListener("keydown",onEscape)};
+ },[workspacePickerOpen]);
  const [dashboardLayout,setDashboardLayout]=useState<"board"|"list">("board");
  const [showDashboardFilters,setShowDashboardFilters]=useState(false);
  const [dashboardSearch,setDashboardSearch]=useState(""),[dashboardStatus,setDashboardStatus]=useState("all"),[dashboardPriority,setDashboardPriority]=useState("all"),[dashboardAssignee,setDashboardAssignee]=useState("all");
