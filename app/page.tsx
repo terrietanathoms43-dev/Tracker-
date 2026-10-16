@@ -16,12 +16,13 @@ const QuickCreate=dynamic(()=>import("./quick-create"),{ssr:false,loading:()=>nu
 const TaskBoard=dynamic(()=>import("./task-board"),{ssr:false,loading:()=>null});
 const WorkspaceInfo=dynamic(()=>import("./workspace-info"),{ssr:false,loading:()=>null});
 const AccountProfile=dynamic(()=>import("./account-profile"),{ssr:false,loading:()=>null});
-const AuthExperience=dynamic(()=>import("./auth-experience"),{ssr:false,loading:()=>null});
+const AuthExperience=dynamic(()=>import("./auth-experience"),{ssr:false,loading:()=> <main className="authV3 authV3Loading" role="status" aria-live="polite"><div className="authV3LoadingCard"><span className="authV3BrandMark">T</span><strong>Trackwise</strong><span>Preparing your sign-in page…</span></div></main>});
 import ProfileAvatar from "./profile-avatar";
 type QuickCreateKind="task"|"project"|"team"|"organization";
 type QuickCreated={kind:QuickCreateKind;id:string;name:string};
 const MeetingAssistant=dynamic(()=>import("./meeting-assistant"),{ssr:false,loading:()=><p className="muted">Opening meeting assistant…</p>});
 import {supabase as makeClient} from "../lib/supabase";
+import {initialAuthErrorMessage} from "../lib/auth-session";
 const ready=Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL&&process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 const db=ready?makeClient():null;
 type Org={id:string;name:string;created_at:string};
@@ -253,7 +254,34 @@ export default function Home(){
  useEffect(()=>{if(selected&&members.some(m=>m.user_id===user?.id&&["admin","leader"].includes(m.role)))void loadOutgoingInvites(selected);else{inviteRequest.current++;setOutgoingInvites([])}},[selected,members,user?.id,loadOutgoingInvites]);
  async function revokeInvite(id:string){if(!db||!selected||!manager)return;if(!window.confirm("Revoke this invitation? Its link will stop working."))return;setInviteAction(id);clear();try{const {error}=await db.rpc("tw_revoke_invitation",{invitation_id:id});if(error)throw error;await loadOutgoingInvites(selected);if(inviteShareId===id){setInviteShareReady(false);setInviteShareId("")}setNotice("Invitation revoked.")}catch(e){setError(e instanceof Error?e.message:"Unable to revoke invitation")}finally{setInviteAction("")}}
  function shareExistingInvite(id:string,email:string){setInviteShareEmail(email);setInviteShareId(id);setInviteShareReady(true);setNotice("Invitation link ready to share.")}
- useEffect(()=>{if(!db){setInitial(false);return}let live=true;db.auth.getUser().then(({data,error})=>{if(live){if(error)setError(error.message);setUser(data.user);setInitial(false)}}).catch(()=>{if(live){setError("Unable to connect. Check your internet connection.");setInitial(false)}});const {data:{subscription}}=db.auth.onAuthStateChange((_event,session)=>{if(live)setUser(session?.user??null);if(_event==="PASSWORD_RECOVERY")setRecovery(true)});return()=>{live=false;subscription.unsubscribe()}},[]);
+ useEffect(()=>{
+  if(!db){setInitial(false);return}
+  let live=true;
+  let authChangedSinceInitialCheck=false;
+  // A visitor without a session should see sign-in, not "Auth session missing".
+  const {data:{subscription}}=db.auth.onAuthStateChange((event,session)=>{
+   if(!live)return;
+   if(event==="SIGNED_IN"||event==="SIGNED_OUT"||event==="TOKEN_REFRESHED"||event==="PASSWORD_RECOVERY"){
+    authChangedSinceInitialCheck=true;
+    setError("");
+   }
+   setUser(session?.user??null);
+   if(event==="PASSWORD_RECOVERY")setRecovery(true);
+  });
+  void db.auth.getUser().then(({data,error})=>{
+   if(!live)return;
+   const message=initialAuthErrorMessage(error);
+   // Don't restore an initial session error after a successful sign-in.
+   if(message&&!authChangedSinceInitialCheck)setError(message);
+   if(!authChangedSinceInitialCheck)setUser(data.user);
+   setInitial(false);
+  }).catch(()=>{
+   if(!live)return;
+   if(!authChangedSinceInitialCheck)setError("Unable to connect. Check your internet connection.");
+   setInitial(false);
+  });
+  return()=>{live=false;subscription.unsubscribe()}
+ },[]);
  useEffect(()=>{
   const request=++personalInvitesRequest.current;
   setPendingInvites([]);
