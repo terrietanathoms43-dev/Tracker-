@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import { readFileSync } from "node:fs";
 import {initialAuthErrorMessage,isMissingAuthSessionError} from "../lib/auth-session.ts";
 
 const page=readFileSync(new URL("../app/page.tsx",import.meta.url),"utf8");
@@ -21,13 +21,12 @@ test("real login or refresh errors remain useful without leaking internal detail
  assert.match(initialAuthErrorMessage({message:"Failed to fetch"}),/internet connection/i);
  assert.match(initialAuthErrorMessage({message:"Unrecognized internal error"}),/sign in again/i);
 });
-test("initial user check treats missing sessions as normal and follows auth events",()=>{
- assert.match(page,/initialAuthErrorMessage\(error\)/);
- assert.match(page,/if\(message&&!authChangedSinceInitialCheck\)setError\(message\)/);
- assert.match(page,/event==="SIGNED_IN"\|\|event==="SIGNED_OUT"/);
- assert.match(page,/if\(!authChangedSinceInitialCheck\)setUser\(data.user\)/);
- assert.match(page,/className="authV3 authV3Loading"/);
- assert.match(page,/if\(!user\)return <AuthExperience/);
+test("new dashboard architecture still follows auth events and displays signed-out sign-in page",()=>{
+ for(const item of ["initialAuthErrorMessage(error)","authChangedSinceInitialCheck","SIGNED_IN","SIGNED_OUT","setUser(data.user)","className=\"authV3 authV3Loading\"","if (!user) return <AuthExperience","<Dashboard"]){
+  assert.ok(page.includes(item),"Missing signed-out session behaviour "+item);
+ }
+ assert.ok(page.includes('if (message && !authChangedSinceInitialCheck) setError(message)'));
+ assert.ok(page.includes('if (!authChangedSinceInitialCheck) setUser(data.user)'));
 });
 test("royal blue and gold appear from first login through mobile and desktop",()=>{
  for(const token of ["--trackwise-brand-navy:#102a63","--trackwise-brand-royal:#234a9e","--trackwise-brand-blue:#346bd5","--trackwise-brand-gold:#f2c56f"]){
