@@ -9,3 +9,6 @@ backups/
 *.dump
 *.backup
 *.sql.gz
+
+# Supabase CLI temp files
+supabase/.temp/
