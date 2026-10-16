@@ -14,32 +14,36 @@ type DialogShellProps = {
 };
 
 export default function DialogShell({ open, onOpenChange, title, subtitle, sidebar, wide, children, footer }: DialogShellProps) {
-   const panelRef = useRef<HTMLDivElement>(null);
+   const overlayRef = useRef<HTMLDivElement>(null);
 
    useEffect(() => {
       if (!open) return;
+      const previousOverflow = document.body.style.overflow;
+      const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      document.body.style.overflow = "hidden";
+      overlayRef.current?.querySelector<HTMLButtonElement>(".dialogClose")?.focus();
       function onKey(event: KeyboardEvent) {
-         if (event.key === "Escape") onOpenChange(false);
-      }
-      function onClick(event: MouseEvent) {
-         if (event.target instanceof HTMLElement && event.target.closest(".dialogPanel") === panelRef.current) return;
+         if (event.key !== "Escape" || event.defaultPrevented) return;
+         const dialogs = document.querySelectorAll('.dialogOverlay[role="dialog"]');
+         // Only the topmost dialog handles Escape. Keep the parent dialog open.
+         if (dialogs.item(dialogs.length - 1) !== overlayRef.current) return;
+         event.preventDefault();
          onOpenChange(false);
       }
       window.addEventListener("keydown", onKey);
-      window.addEventListener("click", onClick, { capture: true });
       return () => {
          window.removeEventListener("keydown", onKey);
-         window.removeEventListener("click", onClick, { capture: true });
+         document.body.style.overflow = previousOverflow;
+         previousFocus?.focus();
       };
    }, [open, onOpenChange]);
 
    if (!open) return null;
 
    return (
-      <div className="dialogOverlay" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="dialogOverlay" ref={overlayRef} role="dialog" aria-modal="true" aria-label={title} onClick={(event) => { if (event.target === event.currentTarget) onOpenChange(false); }}>
          <div
             className={"dialogPanel" + (wide || sidebar ? " dialogWide" : "") + (sidebar ? " dialogWithSidebar" : "")}
-            ref={panelRef}
          >
             {sidebar ? (
                <div className="dialogSplit">

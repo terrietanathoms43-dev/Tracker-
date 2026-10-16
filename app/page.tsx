@@ -6,6 +6,8 @@ import { supabase as makeClient } from "../lib/supabase";
 import { canManageOrganization, userFacingError as displayError } from "../lib/task-rules";
 import useUnreadNotifications from "./use-unread-notifications";
 import Dashboard from "./components/dashboard";
+import AuthExperience from "./auth-experience";
+import { initialAuthErrorMessage } from "../lib/auth-session";
 
 const ready = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 const db = ready ? makeClient() : null;
@@ -74,6 +76,7 @@ export default function Home() {
    const [mode, setMode] = useState<"signin" | "signup" | "reset">("signin");
    const [email, setEmail] = useState("");
    const [password, setPassword] = useState("");
+   const [signupName, setSignupName] = useState("");
    const [newPassword, setNewPassword] = useState("");
    const [error, setError] = useState("");
    const [notice, setNotice] = useState("");
@@ -124,26 +127,31 @@ export default function Home() {
          return;
       }
       let live = true;
-      db.auth
-         .getUser()
+      let authChangedSinceInitialCheck = false;
+      const {
+         data: { subscription },
+      } = db.auth.onAuthStateChange((event, session) => {
+         if (!live) return;
+         if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED" || event === "PASSWORD_RECOVERY") {
+            authChangedSinceInitialCheck = true;
+            setError("");
+         }
+         setUser(session?.user ?? null);
+         if (event === "PASSWORD_RECOVERY") setRecovery(true);
+      });
+      void db.auth.getUser()
          .then(({ data, error }) => {
             if (!live) return;
-            if (error) setError(error.message);
-            setUser(data.user);
+            const message = initialAuthErrorMessage(error);
+            if (message && !authChangedSinceInitialCheck) setError(message);
+            if (!authChangedSinceInitialCheck) setUser(data.user);
             setInitial(false);
          })
          .catch(() => {
             if (!live) return;
-            setError("Unable to connect. Check your internet connection.");
+            if (!authChangedSinceInitialCheck) setError("Unable to connect. Check your internet connection.");
             setInitial(false);
          });
-      const {
-         data: { subscription },
-      } = db.auth.onAuthStateChange((_event, session) => {
-         if (!live) return;
-         setUser(session?.user ?? null);
-         if (_event === "PASSWORD_RECOVERY") setRecovery(true);
-      });
       return () => {
          live = false;
          subscription.unsubscribe();
@@ -373,6 +381,8 @@ export default function Home() {
       setWorking(true);
       clear();
       try {
+         const name=signupName.trim().replace(/\s+/g," ");
+         if (mode === "signup" && (name.length < 2 || name.length > 80)) throw new Error("Enter your full name (2–80 characters).");
          if (mode === "signup" && password.length < 10) throw new Error("Choose a password with at least 10 characters.");
          if (mode === "reset") {
             const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
@@ -383,7 +393,7 @@ export default function Home() {
          const result =
             mode === "signin"
                ? await db.auth.signInWithPassword({ email, password })
-               : await db.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } });
+               : await db.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin, data: { display_name: name, full_name: name } } });
          if (result.error) throw result.error;
          if (mode === "signup")
             setNotice(result.data.session ? "Your account is ready." : "Check your email to confirm your account.");
@@ -848,112 +858,17 @@ export default function Home() {
    }
 
    if (initial) {
-      return (
-         <main className="center">
-            <div className="spinner" />
-            <p>Preparing your workspace…</p>
-         </main>
-      );
+      return <main className="authV3 authV3Loading" role="status" aria-live="polite">
+         <div className="authV3LoadingCard"><span className="authV3BrandMark">T</span><strong>Trackwise</strong><span>Preparing your workspace…</span></div>
+      </main>;
    }
 
-   if (!user) {
-      return (
-         <main className="authShell">
-            <div className="authHero">
-               <div className="logo light">
-                  <span className="mark">T</span> Trackwise
-               </div>
-               <div>
-                  <span className="eyebrow">A clearer way to lead</span>
-                  <h1>
-                     Every task.
-                     <br />
-                     Every team.
-                     <br />
-                     <em>One clear picture.</em>
-                  </h1>
-                  <p>Turn scattered updates into focused action, shared accountability, and measurable progress.</p>
-                  <div className="heroChips">
-                     <span>✓ Clear ownership</span>
-                     <span>✓ Live progress</span>
-                     <span>✓ Team visibility</span>
-                  </div>
-               </div>
-               <small>Designed for leaders who value clarity.</small>
-            </div>
-            <div className="authSide">
-               <div className="authCard">
-                  <div className="mobileLogo logo">
-                     <span className="mark">T</span> Trackwise
-                  </div>
-                  <span className="eyebrow blue">YOUR WORKSPACE STARTS HERE</span>
-                  <h2>{mode === "signin" ? "Welcome back" : mode === "signup" ? "Create your account" : "Reset your password"}</h2>
-                  <p className="muted">
-                     {mode === "signin"
-                        ? "Sign in to pick up where your team left off."
-                        : mode === "signup"
-                          ? "Bring your people and priorities together."
-                          : "We'll send a reset link to your email."}
-                  </p>
-                  <form onSubmit={auth}>
-                     <label htmlFor="email">Email address</label>
-                     <input
-                        id="email"
-                        type="email"
-                        placeholder="you@example.com"
-                        autoComplete="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                     />
-                     {mode !== "reset" && (
-                        <>
-                           <label htmlFor="password">Password</label>
-                           <input
-                              id="password"
-                              type="password"
-                              minLength={mode === "signup" ? 10 : 1}
-                              placeholder={mode === "signup" ? "At least 10 characters" : "Enter your password"}
-                              autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                              value={password}
-                              onChange={(e) => setPassword(e.target.value)}
-                              required
-                           />
-                           {mode === "signup" && <p className="muted">Use at least 10 characters and a unique password.</p>}
-                        </>
-                     )}
-                     <button className="primary wide" disabled={working}>
-                        {working
-                           ? "Please wait…"
-                           : mode === "signin"
-                             ? "Sign in →"
-                             : mode === "signup"
-                               ? "Create account →"
-                               : "Send reset link →"}
-                     </button>
-                  </form>
-                  {mode === "signin" && (
-                     <>
-                        <button className="linkButton" type="button" onClick={() => setMode("signup")}>
-                           Create an account
-                        </button>
-                        <button className="linkButton" type="button" onClick={() => setMode("reset")}>
-                           Forgot your password?
-                        </button>
-                     </>
-                  )}
-                  {(mode === "signup" || mode === "reset") && (
-                     <button className="linkButton" type="button" onClick={() => setMode("signin")}>
-                        Back to sign in
-                     </button>
-                  )}
-                  {error && <p className="feedback bad">{error}</p>}
-                  {notice && <p className="feedback good">{notice}</p>}
-               </div>
-            </div>
-         </main>
-      );
-   }
+   if (!user) return <AuthExperience
+      mode={mode} email={email} password={password} name={signupName}
+      working={working} error={error} notice={notice}
+      onSubmit={auth} onModeChange={next=>{setMode(next);clear()}}
+      onEmailChange={setEmail} onPasswordChange={setPassword} onNameChange={setSignupName}
+   />;
 
    return (
       <Dashboard
