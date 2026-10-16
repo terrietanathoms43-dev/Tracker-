@@ -158,6 +158,39 @@ export default function Home() {
       };
    }, []);
 
+   // Email verification may open a second browser tab. When the user returns
+   // to the original tab (including a restored back/forward-cache page), read
+   // the shared Supabase browser session instead of requiring a resize/reload.
+   useEffect(() => {
+      if (!db || typeof window === "undefined") return;
+      let mounted = true;
+      let refreshNumber = 0;
+      const syncReturnedSession = () => {
+         const request = ++refreshNumber;
+         void db.auth.getUser()
+            .then(({ data }) => {
+               if (!mounted || request !== refreshNumber) return;
+               // An unverified account has no session yet; keep sign-in usable.
+               // SIGNED_OUT from Supabase remains the authority for clearing one.
+               if (data.user) setUser(data.user);
+            })
+            .catch(() => { /* Offline returns leave the sign-in form available. */ });
+      };
+      const onVisibility = () => {
+         if (document.visibilityState === "visible") syncReturnedSession();
+      };
+      window.addEventListener("pageshow", syncReturnedSession);
+      window.addEventListener("focus", syncReturnedSession);
+      document.addEventListener("visibilitychange", onVisibility);
+      return () => {
+         mounted = false;
+         refreshNumber++;
+         window.removeEventListener("pageshow", syncReturnedSession);
+         window.removeEventListener("focus", syncReturnedSession);
+         document.removeEventListener("visibilitychange", onVisibility);
+      };
+   }, []);
+
    const loadOrgs = useCallback(async () => {
       if (!db) return;
       const { data, error } = await db.from("tw_organizations").select("id,name,created_at").order("created_at", { ascending: false });
@@ -395,8 +428,17 @@ export default function Home() {
                ? await db.auth.signInWithPassword({ email, password })
                : await db.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin, data: { display_name: name, full_name: name } } });
          if (result.error) throw result.error;
-         if (mode === "signup")
-            setNotice(result.data.session ? "Your account is ready." : "Check your email to confirm your account.");
+         if (mode === "signup") {
+            if (result.data.session) {
+               setNotice("Your account is ready.");
+            } else {
+               // Verification can happen in another tab or email application.
+               // Show a sign-in form immediately so the return flow works at
+               // normal laptop zoom without another account creation attempt.
+               setMode("signin");
+               setNotice("Check your email to confirm your account. After confirming, return here to sign in.");
+            }
+         }
       } catch (e) {
          setError(e instanceof Error ? e.message : "Unable to authenticate");
       } finally {
