@@ -1868,3 +1868,67 @@ body{font-size:16px;line-height:1.56}
  .twInviteLinkReady .inviteActions button{width:100%}
  .twInviteEmailAlternate>p,.twInviteEmailAlternate>form,.twInviteEmailAlternate>.inviteShare{margin:11px}
 }
+
+
+/* Trackwise dashboard identity — expressive blue/gold, without sacrificing clarity. */
+.twDashboard{gap:17px}
+.twDashboardHero{position:relative;isolation:isolate;overflow:hidden;display:grid;grid-template-columns:minmax(0,1.55fr) minmax(270px,.85fr);align-items:center;gap:clamp(18px,3vw,42px);padding:clamp(23px,3.2vw,42px);color:#fff;border-radius:23px;background:radial-gradient(620px 370px at 95% -20%,#668ceb8c,transparent 70%),linear-gradient(118deg,#102a63 3%,#1c469c 53%,#335fc5 100%);box-shadow:0 16px 38px #153e8a30;border:1px solid #ffffff18}
+.twDashboardHero::before{content:"";pointer-events:none;position:absolute;z-index:-1;width:350px;height:350px;border:1px solid #ffffff1c;border-radius:50%;top:-205px;left:35%;box-shadow:0 0 0 52px #ffffff07,0 0 0 104px #ffffff04}
+.twDashboardHero::after{content:"";pointer-events:none;position:absolute;width:270px;height:270px;border:1px solid #c6d8ff25;border-radius:50%;bottom:-217px;right:24%;box-shadow:0 0 0 44px #ffffff08}
+.twDashboardHeroCopy,.twDashboardHeroCard{position:relative;z-index:1;min-width:0}
+.twDashboardHeroEyebrow{display:inline-flex;align-items:center;gap:9px;color:#ffe0a1;letter-spacing:1.6px;text-transform:uppercase;font-size:10px;font-weight:900}
+.twDashboardHeroEyebrow svg{color:#ffdf9d}
+.twDashboardHero h2{margin:18px 0 12px;max-width:620px;color:#fff;font-family:"Plus Jakarta Sans",sans-serif;font-size:clamp(31px,3.4vw,47px);font-weight:850;line-height:1.17;letter-spacing:-1.5px}
+.twDashboardHero h2 span{display:block;color:#ffda91}
+.twDashboardHeroCopy>p{margin:0;max-width:490px;color:#e1eaff;font-size:14px;line-height:1.75}
+.twDashboardHeroHighlights{display:flex;flex-wrap:wrap;gap:9px;margin-top:26px}
+.twDashboardHeroHighlights>span{display:inline-flex;align-items:center;gap:9px;min-height:45px;padding:8px 13px;border:1px solid #ffffff42;border-radius:11px;background:#ffffff15;color:#f0f5ff;font-size:12px;font-weight:700;backdrop-filter:blur(6px)}
+.twDashboardHeroHighlights strong{font-family:"Plus Jakarta Sans",sans-serif;font-size:21px;line-height:1;color:white}
+.twDashboardHeroCard{display:grid;gap:11px;align-content:center;padding:23px;background:linear-gradient(140deg,#fff,#f3f7ff);border:1px solid #fff;border-radius:18px;color:#243657;box-shadow:0 16px 32px #071a4560}
+.twDashboardHeroCardLabel{font-size:10px;font-weight:900;letter-spacing:1.3px;color:#5e76aa}
+.twDashboardHeroCardLabel span{font-size:16px;color:#b98934;margin-right:5px}
+.twDashboardHeroCard>strong{font-family:"Plus Jakarta Sans",sans-serif;font-size:clamp(18px,1.8vw,23px);letter-spacing:-.6px;line-height:1.35;color:#18366e}
+.twDashboardHeroCard>p{margin:0 0 5px;font-size:12px;line-height:1.7;color:#5e6e8a}
+.twDashboardHeroCard button{display:inline-flex;align-items:center;justify-content:center;gap:9px;border:0;border-radius:11px;padding:12px 14px;min-height:43px;font-size:13px;font-weight:850}
+.twDashboardHeroCard button.twDashboardHeroPrimary{background:linear-gradient(115deg,#2350b9,#346ad8);color:#fff;box-shadow:0 6px 16px #2d5bc244}
+.twDashboardHeroPrimary>span{margin-left:auto}
+.twDashboardHeroCard button.twDashboardHeroGuide{background:#e9effc;color:#3155a3}
+.twDashboardHeroCard button:hover{filter:brightness(.96)}
+.twDashboardHeroCard button:focus-visible,.twDashboardToolbar button:focus-visible,.twDashboardMetric:focus-within{outline:3px solid #f5c676;outline-offset:3px}
+.twDashboardToolbar{border-color:#d7e3f6;background:linear-gradient(105deg,#fff,#f9fbff);box-shadow:0 8px 24px #12355b0b}
+.twDashboardToolbar>button{transition:background .18s,border-color .18s,transform .18s}
+.twDashboardToolbar>button:hover{transform:translateY(-1px)}
+.twDashboardToolbar>button.primary{background:linear-gradient(115deg,#204ba8,#386dde);box-shadow:0 6px 14px #284ec52b}
+.twDashboardMetric{position:relative;overflow:hidden;min-height:118px;padding:19px 20px;border-color:#dee7f6;background:linear-gradient(145deg,#fff,#f9fbff);box-shadow:0 6px 19px #1b3b720b;transition:transform .18s,box-shadow .18s,border-color .18s}
+.twDashboardMetric::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:#4374d9}
+.twDashboardMetric::after{content:"";position:absolute;right:-38px;top:-36px;width:104px;height:104px;border-radius:50%;background:#dae8ff65}
+.twDashboardMetric:nth-child(2)::before{background:#7196d9}
+.twDashboardMetric:nth-child(3)::before{background:#d48d4b}
+.twDashboardMetric:nth-child(3){background:linear-gradient(145deg,#fff,#fffaf4);border-color:#f0dfc7}
+.twDashboardMetric:nth-child(3)::after{background:#ffe7cb65}
+.twDashboardMetric:nth-child(4)::before{background:#3a9b8a}
+.twDashboardMetric:nth-child(4)::after{background:#ddf7ed6b}
+.twDashboardMetric:nth-child(5)::before{background:#7e85d6}
+.twDashboardMetric:nth-child(6)::before{background:#bc92cf}
+.twDashboardMetric>span,.twDashboardMetric>strong,.twDashboardMetric>small{position:relative;z-index:1}
+.twDashboardMetric>span{font-size:12px;color:#607595}
+.twDashboardMetric strong{font-size:clamp(27px,2.2vw,33px);color:#153c89}
+.twDashboardMetric small{color:#637895;font-size:11px}
+.twDashboardMetric:hover{transform:translateY(-2px);border-color:#b6caed;box-shadow:0 12px 22px #123f871a}
+.twDashboardTaskPanel{border-color:#dce5f4;box-shadow:0 10px 28px #1238690e;border-radius:18px}
+.twDashboardTaskHeading{padding-bottom:16px;border-bottom:1px solid #e9eef8}
+.twDashboardTaskHeading .eyebrow{letter-spacing:1.4px}
+.twDashboardTaskHeading h2{font-size:clamp(20px,2vw,25px);letter-spacing:-.6px;color:#1b3e82}
+.twDashboardTaskHeadingActions button.primary{background:linear-gradient(115deg,#2150b4,#376cde);border-color:#3368d3}
+.twDashboardFilters{background:linear-gradient(110deg,#f2f6ff,#f9fbff);border-color:#dce7fa}
+.twDashboardBelow>.card{border-color:#dde7f5;box-shadow:0 8px 23px #183f7a0d;border-radius:18px}
+.twDashboardBelow .sectionHead h2,.twDashboardBelow .reportShortcutCard h2{color:#1b3d7c}
+.twDashboardShortcuts .quickActions button{transition:transform .18s,box-shadow .18s,border-color .18s}
+.twDashboardShortcuts .quickActions button:hover{transform:translateY(-2px);border-color:#adc7f1;box-shadow:0 9px 20px #214b8917}
+.twDashboardBelow .reportShortcutCard{background:radial-gradient(350px 170px at 100% 0%,#d9e7ff8a,transparent 85%),linear-gradient(145deg,#fff,#f8fbff)}
+.twDashboardGettingStarted{border-color:#dce6f5;box-shadow:0 4px 14px #17396008}
+.twDashboardGettingStarted>summary{background:linear-gradient(110deg,#fff,#f6f9ff)}
+@media(max-width:1020px){.twDashboardHero{grid-template-columns:minmax(0,1fr) minmax(245px,.9fr)}.twDashboardHeroCard{padding:19px}}
+@media(max-width:760px){.twDashboardHero{grid-template-columns:1fr;gap:18px;padding:25px 20px;border-radius:18px}.twDashboardHero h2{font-size:clamp(29px,7vw,39px);margin:13px 0 10px}.twDashboardHeroCopy>p{font-size:13px}.twDashboardHeroHighlights{margin-top:18px}.twDashboardHeroCard{display:grid;grid-template-columns:1fr 1fr;gap:9px 12px;padding:17px}.twDashboardHeroCardLabel,.twDashboardHeroCard>strong,.twDashboardHeroCard>p{grid-column:1/-1}.twDashboardHeroCard button{font-size:12px}.twDashboardMetric{min-height:105px;padding:16px}.twDashboardTaskPanel{padding:17px}.twDashboardTaskHeading{padding-bottom:12px}.twDashboardHero::after{right:-80px}}
+@media(max-width:510px){.twDashboardHero{padding:22px 16px}.twDashboardHeroEyebrow{font-size:9px;letter-spacing:1.1px}.twDashboardHeroHighlights{gap:7px}.twDashboardHeroHighlights>span{padding:8px 10px;font-size:11px;flex:1 1 auto;justify-content:center}.twDashboardHeroHighlights strong{font-size:19px}.twDashboardHeroCard{grid-template-columns:1fr}.twDashboardHeroCard button{width:100%}.twDashboardMetric{padding:14px 16px}.twDashboardMetric strong{font-size:28px}.twDashboardMetric>span{font-size:11px}.twDashboardMetric small{font-size:10px}.twDashboardToolbar{border-radius:13px}}
+@media(prefers-reduced-motion:reduce){.twDashboardMetric,.twDashboardToolbar>button,.twDashboardShortcuts .quickActions button{transition:none!important}.twDashboardMetric:hover,.twDashboardToolbar>button:hover,.twDashboardShortcuts .quickActions button:hover{transform:none}}
