@@ -20,7 +20,7 @@ test("simplified navigation retains Trackwise royal-blue and gold theme",()=>{
 });
 test("blue-gold look does not displace functional simplified dashboard",()=>{
  for(const className of ["twDashboardHero","twDashboardActionStrip","twDashboardMetricGrid","twDashboardTaskPanel","twDashboardFilters","twDashboardAdvancedFilters","twDashboardBelow"]){
-  assert.ok(page.includes('className="'+className+'"')||page.includes('className="card '+className+'"'),"Missing "+className);
+  assert.ok(page.includes('className="'+className+'"')||page.includes('className="card '+className+'"')||page.includes('className={"'+className+' "'),"Missing "+className);
  }
  assert.match(page,/TaskBoard hideStats/);
  assert.match(page,/className="sectionTabs"/);
