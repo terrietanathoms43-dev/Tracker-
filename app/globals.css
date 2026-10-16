@@ -1811,3 +1811,60 @@ body{font-size:16px;line-height:1.56}
 @media(max-width:1170px){.twDashboardFilters{grid-template-columns:repeat(2,minmax(0,1fr))}.twDashboardFilters input{grid-column:span 2}.twDashboardBelow{grid-template-columns:1fr}}
 @media(max-width:760px){.twDashboard{gap:13px}.twDashboardToolbar{padding:11px;gap:8px}.twDashboardWorkspaceSelect{max-width:100%;flex-basis:100%}.twDashboardToolbar>button{flex:1 1 auto;font-size:12px;padding:9px 10px}.twDashboardMetricGrid{gap:9px}.twDashboardMetric{min-height:96px;padding:14px}.twDashboardMetric strong{font-size:26px}.twDashboardTaskPanel{padding:16px}.twDashboardTaskHeading{gap:10px}.twDashboardTaskHeading h2{font-size:18px}.twDashboardTaskHeadingActions{width:100%}.twDashboardTaskHeadingActions button{flex:1;justify-content:center}.twDashboardBelow .reportShortcutCard .primary{align-self:stretch}}
 @media(max-width:510px){.twDashboardFilters{grid-template-columns:1fr;gap:8px}.twDashboardFilters input{grid-column:span 1}.twDashboardShortcuts .quickActions{grid-template-columns:1fr 1fr}.twDashboardShortcuts .quickActions button{gap:8px;padding:10px}.twDashboardShortcuts .quickActions button strong{font-size:12px}.twDashboardShortcuts .quickActions button small{font-size:10px}.twDashboardShortcuts .quickIcon{width:33px;height:33px}.twDashboardMetric small{line-height:1.35}}
+
+
+/* Invitation links and mobile dashboard: preserve Trackwise colours and UI identity. */
+.authInviteBanner{display:grid;gap:5px;margin:0 0 18px;padding:13px 16px;background:#edf4ff;border:1px solid #d1dfff;border-radius:12px;color:#244b96;font-size:13px}
+.authInviteBanner strong{font-weight:800}
+.authInviteBanner span{line-height:1.5}
+.twJoinBanner{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:15px;border-color:#bfd3fa;background:#f3f7ff}
+.twJoinBanner>div:first-child{flex:1 1 240px}
+.twJoinBanner strong{color:#234789;font-size:16px}
+.twJoinBanner p{margin:5px 0 0;font-size:13px}
+.twJoinActions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.twJoinActions button{min-height:42px;padding:10px 16px;border:1px solid #d7e4fb;border-radius:9px;font-size:13px;font-weight:800}
+.twJoinActions button.primary{background:#315cce;color:white}
+.twInviteSection{scroll-margin-top:20px}
+.twInviteSection>.muted{line-height:1.65}
+.twInviteCreate{display:flex;align-items:end;flex-wrap:wrap;gap:12px;padding:16px;border:1px solid #dbe5f5;border-radius:13px;background:#f8fbff}
+.twInviteCreate label{display:grid;gap:7px;flex:1 1 230px;margin:0;font-size:12px;font-weight:700;color:#5b6b84}
+.twInviteCreate select{min-height:45px;width:100%;font-size:13px}
+.twInviteCreate button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:45px;padding:11px 17px;border-radius:10px;font-size:13px;font-weight:800}
+.twInviteLinkReady{display:grid;gap:11px;margin-top:16px;padding:16px;background:#eef9f3;border:1px solid #c7ead5;border-radius:12px}
+.twInviteLinkReady>strong{display:flex;align-items:center;gap:8px;color:#216746}
+.twInviteLinkReady p{margin:0;font-size:13px;line-height:1.6;color:#426c5b}
+.twInviteLinkReady input{width:100%;min-width:0;font-size:13px}
+.twInviteLinkReady .inviteActions{display:flex;gap:9px;flex-wrap:wrap}
+.twInviteLinkReady .inviteActions button{min-height:42px}
+.twInviteManage,.twInviteEmailAlternate{margin-top:16px;border:1px solid #e0e8f4;border-radius:12px;overflow:hidden}
+.twInviteManage summary,.twInviteEmailAlternate summary{cursor:pointer;padding:15px 17px;font-size:13px;font-weight:800;color:#2956a9;background:#f8faff}
+.twInviteEmailAlternate>p,.twInviteEmailAlternate>form,.twInviteEmailAlternate>.inviteShare{margin:15px}
+.twInviteLinkList{display:grid;padding:0 15px 10px}
+.twInviteLinkRow{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 2px;border-top:1px solid #e7ecf4}
+.twInviteLinkRow>div:first-child{display:grid;gap:4px}
+.twInviteLinkRow strong{font-size:13px}
+.twInviteLinkRow small{font-size:11px;color:#7b879d}
+.twInviteLinkRow .inviteActions{display:flex;gap:8px;flex-wrap:wrap}
+.twInviteLinkRow button{min-height:39px;padding:9px 13px;border:1px solid #d7e4fb;border-radius:9px;background:#fff;font-weight:800;font-size:12px}
+.twDashboardInviteButton{font-weight:900!important}
+@media(min-width:1100px){.twDashboardMetricGrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){
+ .twDashboardInviteButton{flex:1 1 45%;background:#e8f0ff!important;border-color:#bbd0fc!important;color:#254da9!important}
+ .twDashboardToolbar>button.primary{flex:1 1 45%}
+ .twInviteCreate{padding:12px}
+ .twInviteCreate label,.twInviteCreate button{flex:1 1 100%;width:100%}
+ .twInviteLinkReady{padding:13px}
+ .twInviteLinkReady .inviteActions{display:grid;grid-template-columns:1fr 1fr}
+ .twInviteLinkReady .inviteActions button{font-size:12px}
+ .twJoinBanner{padding:16px}
+ .twJoinActions{width:100%}
+ .twJoinActions button{flex:1}
+}
+@media(max-width:420px){
+ .twDashboardMetricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .twDashboardToolbar>button{white-space:normal}
+ .twDashboardInviteButton{flex:1 1 100%}
+ .twInviteLinkReady .inviteActions{grid-template-columns:1fr}
+ .twInviteLinkReady .inviteActions button{width:100%}
+ .twInviteEmailAlternate>p,.twInviteEmailAlternate>form,.twInviteEmailAlternate>.inviteShare{margin:11px}
+}
