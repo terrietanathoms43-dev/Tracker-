@@ -1,9 +1,9 @@
 name: Trackwise quality checks
 on:
   push:
-    branches: [main, ux-onboarding-refresh]
+    branches: [main, ux-onboarding-refresh, signature-dashboard-refinement-20261016]
   pull_request:
-    branches: [main, ux-onboarding-refresh]
+    branches: [main, ux-onboarding-refresh, premium-blue-gold-ui-polish-20261016]
 permissions:
   contents: read
 jobs:
