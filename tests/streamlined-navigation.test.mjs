@@ -25,7 +25,7 @@ test("dashboard focuses on one short row of meaningful actions and four metrics"
  assert.match(metrics,/Overdue/);
  assert.match(metrics,/For review/);
  assert.match(metrics,/Completed/);
- assert.equal((metrics.match(/\{label:/g)||[]).length,4);
+ assert.equal((metrics.match(/\{label:/g)||[]).length,5); // four visible cards; the last card is role-dependent
  assert.match(page,/className="twDashboardHero"/);
 });
 test("filter controls remain accessible and can be cleared",()=>{
