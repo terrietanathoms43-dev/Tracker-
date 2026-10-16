@@ -10,7 +10,7 @@ test("dashboard keeps the Trackwise branded hero and usable actions",()=>{
  assert.match(page,/className="twDashboardHero"/);
  assert.match(page,/Make progress\.<span>Stay in control\.<\/span>/);
  assert.match(page,/className="twDashboardMetricGrid"/);
- assert.match(page,/className="twDashboardTaskPanel"/);
+ assert.match(page,/className="[^"]*twDashboardTaskPanel/);
  assert.match(page,/className="twDashboardToolbar"/);
  assert.match(styles,/\.twDashboardHero\{/);
  assert.match(styles,/@media\(max-width:760px\).*\.twDashboardHero/s);
