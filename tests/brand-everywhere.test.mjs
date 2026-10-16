@@ -7,7 +7,7 @@ const theme=readFileSync(new URL("../app/brand-system.css",import.meta.url),"utf
 const globals=readFileSync(new URL("../app/globals.css",import.meta.url),"utf8");
 const page=readFileSync(new URL("../app/page.tsx",import.meta.url),"utf8");
 const auth=readFileSync(new URL("../app/auth-experience.tsx",import.meta.url),"utf8");
-const board=readFileSync(new URL("../app/task-board.tsx",import.meta.url),"utf8");
+const board=readFileSync(new URL("../app/components/dashboard.tsx",import.meta.url),"utf8");
 const reports=readFileSync(new URL("../app/reports.tsx",import.meta.url),"utf8");
 
 test("global theme loads after base styles so consistent brand rules win",()=>{
@@ -49,5 +49,7 @@ test("responsive theme preserves keyboard focus and print-ready reports",()=>{
  assert.match(theme,/outline:\s*3px solid #d29b37/);
  assert.match(theme,/@media print/);
  assert.match(theme,/\.appShell \.reportHero/);
- assert.match(page,/TaskBoard hideStats/);
+ assert.ok(page.includes("<Dashboard"));
+ assert.ok(board.includes("<DndContext"));
+ assert.ok(board.includes("<WorkspaceDialog"));
 });
