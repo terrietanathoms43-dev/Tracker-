@@ -1,0 +1,661 @@
+/*
+ * TRACKWISE • SIGNATURE FINISH
+ * Consistent royal blue + warm gold across the real dialog-based dashboard.
+ * This file is intentionally imported after globals.css and brand-system.css.
+ * Visual-only enhancements; no changes to auth, roles, data or workflows.
+ */
+:root{
+ --tw-elevated:#ffffff;
+ --tw-canvas:#f4f7fd;
+ --tw-deep:#102a63;
+ --tw-royal:#234a9e;
+ --tw-cobalt:#346bd5;
+ --tw-gold:#f2c56f;
+ --tw-gold-ink:#8b6021;
+ --tw-text:#193661;
+ --tw-copy:#506787;
+ --tw-edge:#dce6f5;
+ --tw-soft-blue:#edf3fe;
+ --tw-soft-gold:#fff6e4;
+}
+body{
+ color:var(--tw-text);
+ background:var(--tw-canvas);
+}
+.appShell{
+ background:
+  radial-gradient(630px 360px at 90% 0%,#ffeed168,transparent 82%),
+  radial-gradient(900px 610px at 15% 17%,#d6e5ff6b,transparent 79%),
+  linear-gradient(170deg,#f3f7ff,#f8faff 55%,#fffdf9);
+}
+.appShell .workspace{
+ background:transparent;
+ min-width:0;
+}
+.appShell .contentWidth{max-width:1540px}
+.appShell .content{padding-bottom:75px}
+.appShell .sidebar{
+ background:
+  radial-gradient(430px 210px at 10% 0%,#3565af55,transparent 95%),
+  linear-gradient(173deg,#0f295d,#153775 55%,#102a63);
+ border-right:2px solid #dfb867;
+ box-shadow:5px 0 24px #0b28511b;
+}
+.appShell .sidebar .logo{
+ color:#fff;
+ font-weight:850;
+ letter-spacing:-.65px;
+}
+.appShell .sidebar .logo .mark,
+.appShell .mobileTopbar .mark{
+ background:linear-gradient(145deg,#fff0c7,#e6b653);
+ color:#122e64;
+ border:1px solid #fbe0a7;
+ border-radius:13px;
+ box-shadow:0 5px 16px #091d4836;
+}
+.appShell .sidebar .sideLabel{
+ color:#f8d491;
+ letter-spacing:1.3px;
+ font-size:10px;
+}
+.appShell .sidebar .sideSectionHead{
+ border-color:#eac57839;
+}
+.appShell .sidebar .sideAddBtn{
+ background:#ffffff14;
+ color:#ffdfa1;
+ border:1px solid #eac5786e;
+ border-radius:9px;
+}
+.appShell .sidebar .sideAddBtn:hover{background:#ffffff27}
+.appShell .sidebar .navItem{
+ border:1px solid transparent;
+ border-radius:11px;
+ color:#d6e4fe;
+ min-height:43px;
+}
+.appShell .sidebar .navItem:hover{
+ background:#ffffff13;
+ color:#fff;
+}
+.appShell .sidebar .navItem.selected{
+ background:linear-gradient(100deg,#294f9c,#3763bb);
+ color:#fff;
+ border-color:#ecce8c60;
+ box-shadow:inset 3px 0 var(--tw-gold),0 4px 14px #091c3e35;
+}
+.appShell .sidebar .sideFoot{border-top:1px solid #f2c56f45}
+.appShell .sidebar .sideUserBtn{color:#f4f7ff;border-radius:11px}
+.appShell .sidebar .sideUserBtn:hover{background:#ffffff14}
+.appShell .sidebar .userDetails small{color:#b8caeb}
+.appShell .sidebar .logout{color:#ffe1a5}
+.appShell .sidebar .orgSelect{
+ background:#f6f8ff;
+ border:1px solid #ebce8f;
+ color:#15366f;
+}
+.appShell .appHeader{
+ background:
+  radial-gradient(410px 185px at 100% 0%,#ffebbb8b,transparent 88%),
+  linear-gradient(110deg,#fff,#f7faff);
+ border-bottom:2px solid #dfb765;
+ box-shadow:0 8px 23px #163e7610;
+}
+.appShell .pageHeading .eyebrow{
+ color:#9c6c27;
+ letter-spacing:1.6px;
+ font-size:10.5px;
+}
+.appShell .pageHeading h1{
+ color:#14366f;
+ font-size:clamp(27px,2.9vw,36px);
+ font-weight:850;
+ letter-spacing:-.9px;
+}
+.appShell .pageHeading p{color:#526a91}
+.appShell .headerHelp{
+ color:#234c93;
+ background:#f1f6ff;
+ border:1px solid #c6d7f2;
+ box-shadow:0 2px 7px #1539790a;
+}
+.appShell .headerHelp:hover{
+ color:#173b79;
+ background:var(--tw-soft-gold);
+ border-color:#e5c57d;
+}
+.appShell .sectionTabs{
+ display:flex;gap:7px;
+ padding:7px;
+ background:linear-gradient(110deg,#fff,#f6f9ff);
+ border:1px solid #d8e4f5;
+ border-bottom:2px solid #e4be73;
+ box-shadow:0 7px 19px #1b3c7210;
+ border-radius:14px;
+}
+.appShell .sectionTabs button{
+ color:#365681;
+ background:transparent;
+ border:1px solid transparent;
+ border-radius:10px;
+ font-size:13px;
+ min-height:43px;
+}
+.appShell .sectionTabs button.active{
+ background:linear-gradient(115deg,#1d448e,#3567d1);
+ border:1px solid #2654a8;
+ box-shadow:inset 0 -3px 0 #f2c56f,0 5px 15px #1b47932a;
+ color:#fff;
+}
+.appShell .sectionTabs button:not(.active):hover{
+ background:#f0f5ff;
+ color:#1d4796;
+ border-color:#cbddf6;
+}
+
+/* Signature welcome. Restrained visual interest with a useful action. */
+.appShell .twSignatureWelcome{
+ position:relative;
+ isolation:isolate;
+ overflow:hidden;
+ display:grid;
+ grid-template-columns:minmax(0,1.4fr) minmax(270px,.8fr);
+ align-items:center;
+ gap:clamp(16px,3.4vw,48px);
+ padding:clamp(24px,3.2vw,40px);
+ margin:1px 0 21px;
+ border-radius:22px;
+ background:
+  radial-gradient(530px 300px at 91% -25%,#5980d181,transparent 77%),
+  linear-gradient(119deg,#112d65,#1b438f 55%,#3263ba);
+ color:#fff;
+ border:1px solid #385b9e;
+ box-shadow:0 18px 35px #13397928;
+}
+.appShell .twSignatureWelcome::before{
+ content:"";
+ position:absolute;z-index:-1;
+ width:240px;height:240px;
+ right:-75px;top:-115px;
+ border:1px solid #fff4d547;
+ border-radius:50%;
+ box-shadow:0 0 0 48px #ffffff0a,0 0 0 96px #f4ce6f0a;
+ pointer-events:none;
+}
+.appShell .twSignatureWelcome::after{
+ content:"";position:absolute;
+ inset:auto 28px 0 28px;height:4px;
+ border-radius:8px 8px 0 0;
+ background:linear-gradient(90deg,transparent,#f0c26e,transparent);
+ opacity:.9;pointer-events:none;
+}
+.twSignatureWelcomeContent,.twSignatureWelcomeAside{position:relative;z-index:1;min-width:0}
+.twSignatureEyebrow{
+ display:inline-flex;align-items:center;gap:8px;
+ color:#ffe0a4;font-size:10px;font-weight:850;
+ letter-spacing:1.7px;
+}
+.twSignatureEyebrow span{
+ display:grid;place-items:center;
+ width:25px;height:25px;
+ border:1px solid #f1cf8980;
+ border-radius:8px;
+ color:#ffdb88;
+ font-size:15px;
+ background:#ffffff12;
+}
+.twSignatureWelcome h2{
+ color:white;
+ font-family:"Plus Jakarta Sans",sans-serif;
+ font-size:clamp(28px,3.5vw,47px);
+ font-weight:850;
+ line-height:1.17;
+ letter-spacing:-1.4px;
+ margin:17px 0 12px;
+}
+.twSignatureWelcome h2 em{color:#ffd991;font-style:normal}
+.twSignatureWelcomeContent>p{
+ color:#e0eafc;
+ font-size:clamp(13px,1.1vw,15px);
+ line-height:1.75;
+ max-width:520px;
+ margin:0;
+}
+.twSignatureWelcomePills{display:flex;flex-wrap:wrap;gap:9px;margin-top:23px}
+.twSignatureWelcomePills span{
+ display:inline-flex;align-items:center;gap:8px;
+ min-height:41px;padding:8px 13px;
+ color:#eef5ff;background:#ffffff12;
+ border:1px solid #ffffff36;
+ border-radius:11px;
+ font-size:12px;font-weight:700;
+}
+.twSignatureWelcomePills strong{
+ color:#ffdf9b;font-size:19px;
+ font-family:"Plus Jakarta Sans",sans-serif;
+}
+.twSignatureWelcomeAside{
+ display:grid;gap:9px;
+ padding:22px;
+ color:#253d61;
+ background:linear-gradient(145deg,#fffdf9,#f2f6ff);
+ border:1px solid #f8dcad;
+ border-radius:16px;
+ box-shadow:0 17px 31px #091a4250;
+}
+.twSignatureNextLabel{color:#ac7a2d;font-size:10px;font-weight:900;letter-spacing:1.3px}
+.twSignatureWelcomeAside>strong{
+ color:#193c79;
+ font-family:"Plus Jakarta Sans",sans-serif;
+ font-size:clamp(16px,1.8vw,21px);
+ line-height:1.35;
+}
+.twSignatureWelcomeAside>p{font-size:12.5px;color:#58708c;line-height:1.6;margin:0 0 6px}
+.twSignatureWelcomeActions{display:flex;gap:9px;flex-wrap:wrap}
+.twSignatureWelcomeActions button{
+ flex:1 1 auto;
+ display:inline-flex;align-items:center;justify-content:center;
+ gap:8px;
+ min-height:43px;
+ padding:10px 13px;
+ border-radius:10px;
+ font-size:12px;
+ font-weight:850;
+}
+.twSignaturePrimary{
+ color:#fff;
+ border:1px solid #244b9c;
+ background:linear-gradient(110deg,#173c84,#3468d3);
+ box-shadow:0 5px 13px #1a499a28;
+}
+.twSignatureSecondary{
+ border:1px solid #c6d7f5;
+ color:#1d478c;
+ background:#ebf2ff;
+}
+.twSignatureWelcomeActions button:hover:not(:disabled){filter:brightness(.95)}
+
+/* Information at a glance, with distinct but harmonious surfaces. */
+.appShell .stats.statsSix{
+ display:grid;
+ grid-template-columns:repeat(3,minmax(0,1fr));
+ gap:13px;
+ margin-bottom:20px;
+}
+.appShell .stats.statsSix .stat{
+ position:relative;
+ overflow:hidden;
+ min-width:0;min-height:112px;
+ padding:19px 20px;
+ border-radius:15px;
+ border:1px solid #dbe5f5;
+ box-shadow:0 8px 20px #183e7710;
+ background:linear-gradient(146deg,#fff,#f5f8ff);
+ transition:transform .17s ease,box-shadow .17s ease;
+}
+.appShell .stats.statsSix .stat::before{
+ content:"";
+ position:absolute;inset:0 auto 0 0;width:4px;
+ background:#3d72d0;
+}
+.appShell .stats.statsSix .stat:first-child{
+ color:#fff;
+ background:linear-gradient(119deg,#193c80,#3162bd);
+ border-color:#2d55a2;
+ box-shadow:0 10px 25px #143d832d;
+}
+.appShell .stats.statsSix .stat:first-child::before{background:#f2c56f}
+.appShell .stats.statsSix .stat:first-child span,
+.appShell .stats.statsSix .stat:first-child strong,
+.appShell .stats.statsSix .stat:first-child small{color:#fff}
+.appShell .stats.statsSix .stat:nth-child(3){
+ background:linear-gradient(130deg,#fffdf7,#fff2d4);
+ border-color:#ebd4a1;
+}
+.appShell .stats.statsSix .stat:nth-child(3)::before,
+.appShell .stats.statsSix .stat:nth-child(6)::before{background:#d8a447}
+.appShell .stats.statsSix .stat:nth-child(4){
+ background:linear-gradient(135deg,#fff,#eaf2ff);
+}
+.appShell .stats.statsSix .stat:nth-child(5)::before{background:#6d8bcc}
+.appShell .stats.statsSix .stat strong{
+ font-family:"Plus Jakarta Sans",sans-serif;
+ font-size:clamp(26px,2.4vw,33px);
+ font-weight:850;
+ letter-spacing:-.8px;
+ color:#183f85;
+}
+.appShell .stats.statsSix .stat span{
+ color:#4a638d;font-size:12px;font-weight:750;
+}
+.appShell .stats.statsSix .stat small{
+ color:#637b99;font-size:11px;line-height:1.5;
+}
+.appShell .stats.statsSix .stat:hover{
+ transform:translateY(-2px);
+ box-shadow:0 13px 28px #183e7721;
+}
+
+/* Surface system: fewer blank white rectangles, stronger hierarchy. */
+.appShell .contentWidth>.card,
+.appShell .contentWidth>.twoCol>.card,
+.appShell .contentWidth>.twoCol>section.card,
+.appShell .contentWidth>.projectGrid>.projectCard{
+ border:1px solid var(--tw-edge);
+ border-radius:17px;
+ box-shadow:0 8px 24px #173a710d;
+ background:linear-gradient(160deg,#fff,#fbfcff);
+}
+.appShell .contentWidth .twoCol .card{
+ border-top:3px solid #eac275;
+}
+.appShell .contentWidth .sectionHead h2{
+ color:#1b4082;font-family:"Plus Jakarta Sans",sans-serif;
+ font-size:18px;
+}
+.appShell .contentWidth .sectionHead .textAction{
+ color:#214f9c;
+ font-weight:800;
+}
+.appShell .setupChecklist{
+ background:
+  radial-gradient(350px 165px at 100% 0%,#fff1cd91,transparent 90%),
+  linear-gradient(130deg,#fff,#f0f5ff);
+ border-color:#d9e5f7;
+ border-left:4px solid #e9bd66;
+}
+.appShell .setupStep{
+ border-color:#d5e2f5;
+ background:linear-gradient(135deg,#fff,#f6f9ff);
+ border-radius:12px;
+}
+.appShell .setupStep.done{
+ background:linear-gradient(145deg,#f5f9ff,#fffaf0);
+}
+.appShell .setupCheck{color:#1d4a95}
+.appShell .taskLine{border-top-color:#e7edf7}
+.appShell .taskLine strong{color:#234678}
+.appShell .projectCard{
+ border:1px solid #dbe7f7;
+ border-top:3px solid #e6ba68;
+ background:linear-gradient(160deg,#fff,#f5f9ff);
+ border-radius:15px;
+ box-shadow:0 7px 18px #143a790c;
+}
+.appShell .projectCard:hover{
+ box-shadow:0 12px 28px #143a7921;
+ transform:translateY(-2px);
+}
+.appShell .projectTop strong{color:#193d7f}
+.appShell :where(.filterBar,.taskActionPanel){
+ border:1px solid #d7e3f5;
+ background:linear-gradient(116deg,#eff5ff,#fffaf0);
+ border-radius:13px;
+}
+.appShell :where(input,select,textarea){
+ border-color:#d2def0;
+ background-color:#fff;
+ color:#193a70;
+}
+.appShell :where(input,select,textarea):focus{
+ border-color:#a8874c;
+ box-shadow:0 0 0 3px #f2c56f45;
+}
+.appShell .primary{
+ background:linear-gradient(110deg,#173c86,#356bce);
+ color:#fff;
+ border-color:#2655b3;
+ box-shadow:0 6px 15px #20499125;
+}
+.appShell .primary:hover:not(:disabled){
+ filter:brightness(1.06);
+ transform:translateY(-1px);
+}
+.appShell .secondary{
+ border:1px solid #cbdcf3;
+ background:linear-gradient(110deg,#fff,#f2f6ff);
+ color:#285499;
+}
+
+/* Kanban remains functional and scannable, but no longer looks like grey boxes. */
+.appShell .kanbanBoard{gap:16px}
+.appShell .kanbanColumn{
+ padding:11px;
+ background:#f1f6ff;
+ border:1px solid #d4e0f2;
+ border-radius:16px;
+ box-shadow:0 5px 15px #133f8310;
+}
+.appShell .kanbanColumn:nth-child(2){background:#f5f8ff}
+.appShell .kanbanColumn:nth-child(3){
+ background:#fff9ed;
+ border-color:#e9d7b2;
+}
+.appShell .kanbanColumnHead{
+ margin:-11px -11px 13px;
+ padding:15px 15px 13px;
+ background:linear-gradient(110deg,#1a4188,#3567c6);
+ border-radius:15px 15px 0 0;
+ border-bottom:3px solid #eac171;
+}
+.appShell .kanbanColumn:nth-child(2) .kanbanColumnHead{
+ background:linear-gradient(110deg,#25539d,#5480cb);
+}
+.appShell .kanbanColumn:nth-child(3) .kanbanColumnHead{
+ background:linear-gradient(110deg,#ffe8b3,#f5d082);
+ border-bottom-color:#254a8d;
+}
+.appShell .kanbanColumnHead h3{
+ color:#fff;
+ font-size:12px;
+ letter-spacing:1px;
+}
+.appShell .kanbanColumn:nth-child(3) .kanbanColumnHead h3{color:#183b77}
+.appShell .kanbanCard{
+ border:1px solid #d5e2f5;
+ border-left:3px solid #e2b45d;
+ background:linear-gradient(145deg,#fff,#fcfdff);
+ border-radius:12px;
+ padding:14px;
+ gap:10px;
+ box-shadow:0 4px 13px #1539720b;
+ transition:box-shadow .16s ease,transform .16s ease,border-color .16s ease;
+}
+.appShell .kanbanCard:not(.dragging):hover{
+ transform:translateY(-2px);
+ border-color:#b9cce9;
+ box-shadow:0 10px 23px #1539721d;
+}
+.appShell .kanbanCardTitle{
+ color:#193e7c;
+ font-size:14px;
+ font-weight:850;
+}
+.appShell .kanbanCardMeta{color:#546c90;line-height:1.55}
+.appShell .kanbanCardFoot{border-top-color:#e5ebf4}
+.appShell .kanbanColumn.over{
+ border-color:#d5a850;
+ box-shadow:0 0 0 3px #edc77b59;
+}
+.appShell .kanbanDropHint{
+ background:#ffffff8e;
+ border-color:#b9cce8;
+ color:#587097;
+}
+
+/* Dialogs are deliberately retained: make them feel like a designed workspace. */
+.dialogOverlay{
+ background:#071a3dba;
+ backdrop-filter:blur(5px);
+}
+.dialogPanel{
+ border:1px solid #d3def2;
+ border-top:4px solid #eac075;
+ border-radius:19px;
+ background:#fff;
+ box-shadow:0 38px 100px #071a3b7a;
+}
+.dialogSidebar{
+ background:
+  radial-gradient(220px 140px at 0% 0%,#ffe7b47a,transparent 95%),
+  linear-gradient(160deg,#edf3ff,#f8faff);
+ border-right:1px solid #d2e0f3;
+}
+.dialogSideHead{
+ border-bottom:2px solid #e4bd75;
+}
+.dialogSideHead .eyebrow{
+ color:#9a6b27;
+ font-weight:900;
+ letter-spacing:1.4px;
+}
+.dialogSideHead h2{
+ color:#183d7d;
+ font-family:"Plus Jakarta Sans",sans-serif;
+}
+.dialogSidebar .navItem{
+ color:#3a5885;
+ background:transparent;
+ border:1px solid transparent;
+ border-radius:10px;
+}
+.dialogSidebar .navItem:hover:not(.selected){
+ background:#e4edfb;
+ color:#1b468c;
+}
+.dialogSidebar .navItem.selected{
+ color:#fff;
+ background:linear-gradient(110deg,#1c468e,#3468cd);
+ border:1px solid #b4caeb;
+ box-shadow:inset 3px 0 0 #f2c56f,0 4px 13px #1b49912d;
+}
+.dialogMain{background:#fff}
+.dialogMain .dialogBody,
+.dialogPanel>.dialogBody{
+ background:linear-gradient(150deg,#f8faff,#fff 58%,#fffdf8);
+}
+.dialogHeader{
+ background:
+  radial-gradient(260px 110px at 100% 0%,#ffebc478,transparent 91%),
+  linear-gradient(110deg,#fff,#f5f8ff);
+ border-bottom:2px solid #e7bf76;
+ padding:21px 24px 18px;
+}
+.dialogHeader h2{
+ font-family:"Plus Jakarta Sans",sans-serif;
+ font-weight:850;
+ font-size:clamp(18px,2vw,22px);
+ color:#183b79;
+}
+.dialogClose{
+ background:#fff7e7;
+ border:1px solid #e5c68b;
+ color:#1c468d;
+}
+.dialogClose:hover{background:#ffebbd}
+.dialogPanel .card{
+ border:1px solid #dfe8f6;
+ border-radius:14px;
+ box-shadow:0 5px 15px #1c41810a;
+}
+.dialogPanel .sectionHead h2{color:#1a4186}
+.dialogFooter{
+ background:#f7f9ff;
+ border-top:1px solid #dce5f4;
+}
+.dialogFooter button:not(.primary){
+ background:#fff;
+ border-color:#c9d9ef;
+ color:#224a8a;
+}
+.dialogTabs button.active{
+ background:linear-gradient(108deg,#1d458e,#386dd1);
+ border-color:#285cb9;
+ box-shadow:inset 0 -3px 0 #e9bd6b;
+}
+.dialogPanel input:focus,.dialogPanel select:focus,.dialogPanel textarea:focus{
+ border-color:#bd9145;
+ box-shadow:0 0 0 3px #f2c56f59;
+}
+
+/* The very first impression—desktop and mobile authentication. */
+.authV3FormCard{
+ border:1px solid #d8e3f6;
+ border-top:5px solid #e5b75e;
+ border-radius:21px;
+ background:#fff;
+ box-shadow:0 18px 45px #18396b18;
+}
+.authV3StoryMain h1{
+ letter-spacing:-1.8px;
+}
+.authV3StoryMain h1 em{color:#ffdd91}
+.authV3ModeTabs button.selected{
+ background:#183d80;
+ color:white;
+ box-shadow:inset 0 -3px 0 #e7be76;
+}
+.authV3Submit{
+ background:linear-gradient(110deg,#173d87,#346acf);
+ box-shadow:0 9px 20px #1c43862e,0 0 0 2px #e9c37b78;
+}
+.authV3Greeting h2{
+ color:#173e7f;
+ font-weight:850;
+}
+
+/* Responsive layouts retain hierarchy and readable touch targets. */
+@media(max-width:1050px){
+ .appShell .twSignatureWelcome{grid-template-columns:minmax(0,1.2fr) minmax(250px,.9fr)}
+ .appShell .stats.statsSix{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:760px){
+ .appShell .twSignatureWelcome{grid-template-columns:1fr;gap:18px;padding:24px 19px;border-radius:18px}
+ .twSignatureWelcome h2{font-size:clamp(29px,6vw,38px)}
+ .twSignatureWelcomeAside{padding:17px}
+ .appShell .stats.statsSix{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .appShell .stats.statsSix .stat{min-height:108px;padding:15px}
+ .appShell .mobileTopbar{
+  background:linear-gradient(108deg,#102a63,#315ab1);
+  color:#fff;border-bottom:3px solid #eac075;
+  box-shadow:0 5px 16px #092e6b32;
+ }
+ .appShell .mobileTopbar .logo{color:#fff}
+ .appShell .mobileMenuToggle{color:#fff;border-color:#f2c56f69;background:#ffffff13}
+ .dialogOverlay{padding:10px}
+ .dialogPanel{border-radius:16px;max-height:calc(100dvh - 20px)}
+ .dialogSplit{max-height:calc(100dvh - 20px)}
+ .dialogSidebar{background:#eef4ff;max-height:170px;padding:13px}
+ .dialogSidebar nav{padding-bottom:3px}
+ .dialogHeader{padding:16px 17px}
+ .dialogBody{padding:16px}
+ .authV3FormCard{padding:21px 16px}
+}
+@media(max-width:420px){
+ .twSignatureWelcomePills{gap:7px}
+ .twSignatureWelcomePills span{padding:7px 9px;font-size:11px;flex:1 1 auto;justify-content:center}
+ .twSignatureWelcomePills strong{font-size:17px}
+ .appShell .sectionTabs{padding:5px}
+ .appShell .sectionTabs button{min-height:43px;font-size:12px}
+ .appShell .stats.statsSix .stat strong{font-size:26px}
+ .dialogPanel{border-radius:12px}
+}
+@media(prefers-reduced-motion:reduce){
+ .appShell .stats.statsSix .stat,
+ .appShell .kanbanCard,
+ .appShell .projectCard,
+ .appShell .primary{transition:none!important;transform:none!important}
+}
+@media print{
+ .appShell .twSignatureWelcome{
+  box-shadow:none;
+  color:#102a63;
+  background:#fff;
+  border-color:#dde4ed;
+ }
+ .twSignatureWelcome h2,.twSignatureWelcome h2 em{color:#102a63}
+ .twSignatureWelcomeContent>p{color:#536783}
+ .dialogOverlay{position:static;background:#fff;backdrop-filter:none}
+ .dialogPanel{box-shadow:none;border:0}
+}
