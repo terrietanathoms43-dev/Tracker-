@@ -50,6 +50,20 @@ const NAV_GROUPS:NavGroup[]=[
  {id:"reports",label:"Reports",icon:"▤",defaultView:"reports",items:[{view:"reports",label:"Reports"}]},
  {id:"more",label:"More",icon:"⚙",defaultView:"settings",items:[{view:"profile",label:"My profile"},{view:"settings",label:"Settings"},{view:"activity",label:"Activity history"}]}
 ];
+const DIALOG_VIEWS=new Set<View>(["profile","settings","people","teams","planning","requests","activity","reports","meeting_ai","collaboration","notifications"]);
+const DIALOG_NAV: {label:string;view:View;section:"workspace"|"account"}[]=[
+ {label:"My profile",view:"profile",section:"account"},
+ {label:"Settings & invitations",view:"settings",section:"account"},
+ {label:"Members",view:"people",section:"workspace"},
+ {label:"Teams",view:"teams",section:"workspace"},
+ {label:"Goals & planning",view:"planning",section:"workspace"},
+ {label:"Requests",view:"requests",section:"workspace"},
+ {label:"Activity",view:"activity",section:"workspace"},
+ {label:"Reports",view:"reports",section:"workspace"},
+ {label:"Meeting assistant",view:"meeting_ai",section:"workspace"},
+ {label:"Notifications",view:"notifications",section:"workspace"},
+ {label:"Team messages",view:"collaboration",section:"workspace"}
+];
 function navigationIcon(id:string){
  if(id==="home"||id==="overview")return <House size={19} strokeWidth={2.1}/>;
  if(id==="tasks")return <SquareCheckBig size={19} strokeWidth={2.1}/>;
@@ -90,6 +104,9 @@ export default function Home(){
   const [mobileMenu,setMobileMenu]=useState(false),[showTaskForm,setShowTaskForm]=useState(false),[showTaskHandover,setShowTaskHandover]=useState(false),[showAdvancedProject,setShowAdvancedProject]=useState(false);
  useEffect(()=>{if(!mobileMenu)return;const previous=document.body.style.overflow;document.body.style.overflow="hidden";const close=(event:KeyboardEvent)=>{if(event.key==="Escape")setMobileMenu(false)};window.addEventListener("keydown",close);return()=>{document.body.style.overflow=previous;window.removeEventListener("keydown",close)}},[mobileMenu]);
  const [view,setView]=useState<View>("overview"),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const dialogView=DIALOG_VIEWS.has(view);
+ const dialogReturnView=useRef<View>("overview");
+ const dialogCloseRef=useRef<HTMLButtonElement>(null);
  const [createMenu,setCreateMenu]=useState(false),[showGuide,setShowGuide]=useState(false),[hideChecklist,setHideChecklist]=useState(false);
  const [quickCreate,setQuickCreate]=useState<QuickCreateKind|null>(null),[quickProjectId,setQuickProjectId]=useState("");
  const [lastCreatedProject,setLastCreatedProject]=useState<{id:string;name:string}|null>(null);
@@ -328,7 +345,22 @@ export default function Home(){
  const active=orgs.find(o=>o.id===selected),role=members.find(m=>m.user_id===user?.id)?.role,manager=canManageOrganization(role);
  const unreadNotifications=useUnreadNotifications(selected,user?.id);
  const activeNav=NAV_GROUPS.find(group=>group.items.some(item=>item.view===view))??NAV_GROUPS[0];
- function navigate(to:View){setView(to);setMobileMenu(false);setCreateMenu(false);clear();if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"auto"});}
+ useEffect(()=>{
+  if(!dialogView)return;
+  const previousOverflow=document.body.style.overflow;
+  document.body.style.overflow="hidden";
+  dialogCloseRef.current?.focus();
+  const closeOnEscape=(event:KeyboardEvent)=>{
+   if(event.key==="Escape"&&!searchOpen&&!quickCreate&&!showGuide&&!workspaceInfoOpen){
+    setView(dialogReturnView.current);
+   }
+  };
+  window.addEventListener("keydown",closeOnEscape);
+  return()=>{document.body.style.overflow=previousOverflow;window.removeEventListener("keydown",closeOnEscape)};
+ },[dialogView,searchOpen,quickCreate,showGuide,workspaceInfoOpen]);
+ function navigate(to:View){if(!DIALOG_VIEWS.has(to))dialogReturnView.current=to;setView(to);setMobileMenu(false);setCreateMenu(false);clear();if(typeof window!=="undefined"&&!DIALOG_VIEWS.has(to))window.scrollTo({top:0,behavior:"auto"});}
+ function closeWorkspaceDialog(){navigate(dialogReturnView.current)}
+
  function launchCreate(kind:"task"|"project"|"team"|"invite"|"request"){
   setCreateMenu(false);setMobileMenu(false);clear();
   if(kind==="task"||kind==="project"||kind==="team"){
@@ -734,7 +766,20 @@ export default function Home(){
    <span>{String(user.user_metadata?.display_name??"").trim()||user.email?.split("@")[0]}</span>
  </button>
  </div>
-</header><main className="content"><div className="contentWidth">
+</header><main className={"content "+(dialogView?"twWorkspaceDialog":"")} role={dialogView?"dialog":undefined} aria-modal={dialogView?true:undefined} aria-label={dialogView?"Trackwise workspace tools":undefined}>
+ {dialogView&&<button type="button" className="twWorkspaceDialogBackdrop" onClick={closeWorkspaceDialog} aria-label="Close workspace dialog"/>}
+ <div className="contentWidth">
+ {dialogView&&<aside className="twWorkspaceDialogNav" aria-label="Workspace dialog sections">
+   <div className="twWorkspaceDialogNavTop"><small>WORKSPACE</small><strong>{active?.name??"Your workspace"}</strong></div>
+   {(["account","workspace"] as const).map(section=><div key={section} className="twWorkspaceDialogNavGroup">
+    <span>{section==="account"?"ACCOUNT":"WORKSPACE TOOLS"}</span>
+    {DIALOG_NAV.filter(item=>item.section===section&&(item.view!=="meeting_ai"||manager)).map(item=>
+     <button type="button" key={item.view} className={view===item.view?"selected":""} aria-current={view===item.view?"page":undefined} onClick={()=>navigate(item.view)}>{item.label}</button>
+    )}
+   </div>)}
+  </aside>}
+ <div className="twWorkspaceDialogBody">
+ {dialogView&&<div className="twWorkspaceDialogTitleBar"><div><span>TRACKWISE / {active?.name??"WORKSPACE"}</span><h2>{view==="profile"?"My profile":view==="people"?"Members":view==="teams"?"Teams":view==="planning"?"Goals & planning":view==="requests"?"Requests & approvals":view==="activity"?"Recent activity":view==="reports"?"Reports":view==="settings"?"Workspace settings":view==="meeting_ai"?"Meeting assistant":view==="notifications"?"Notifications":"Team messages"}</h2></div><button type="button" ref={dialogCloseRef} onClick={closeWorkspaceDialog} aria-label="Close dialog and return to workspace">×</button></div>}
  {joinToken&&<section className="card twJoinBanner" role="region" aria-label="Join workspace invitation"><div><strong>You've been invited to a Trackwise workspace.</strong><p className="muted">Choose Join workspace to accept. You'll have access based on the role your inviter selected.</p></div><div className="twJoinActions"><button type="button" className="primary" onClick={()=>void joinFromLink()} disabled={joiningWorkspace}>{joiningWorkspace?"Joining…":"Join workspace →"}</button><button type="button" onClick={dismissJoinLink} disabled={joiningWorkspace}>Dismiss</button></div></section>}
  
  {active&&activeNav.items.length>1&&<nav className="sectionTabs" aria-label={activeNav.label+" sections"}>{activeNav.items.filter(item=>item.view!=="meeting_ai"||manager).map(item=><button type="button" key={item.view} className={view===item.view?"active":""} aria-current={view===item.view?"page":undefined} onClick={()=>navigate(item.view)}>{item.label}</button>)}</nav>}
@@ -972,7 +1017,7 @@ export default function Home(){
  <details className="twInviteEmailAlternate"><summary>Prefer to invite a specific email? (Optional)</summary><p className="muted">Email-specific invitations are useful when you want access restricted to one email address, or need to invite a team leader.</p>
  <form onSubmit={addMember} className="formGrid"><div><label htmlFor="inviteEmail">Member email</label><input id="inviteEmail" type="email" required value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} placeholder="colleague@example.com"/></div><div><label htmlFor="inviteRole">Organization role</label><select id="inviteRole" value={inviteRole} onChange={e=>setInviteRole(e.target.value)}><option value="member">Member</option><option value="leader">Leader</option><option value="observer">Observer</option><option value="stakeholder">Stakeholder</option></select></div><div className="formAction"><button className="primary" disabled={working}>Create invitation</button></div></form>{inviteShareReady&&inviteShareId&&<div className="inviteShare"><p>Invitation ready for <strong>{inviteShareEmail}</strong>. It expires in 14 days and can only be accepted by that email address.</p><input aria-label="Invitation link" readOnly value={typeof window!=="undefined"?window.location.origin+"/?invite="+encodeURIComponent(inviteShareId):""}/><div className="inviteActions"><button className="primary" type="button" onClick={async()=>{try{await navigator.clipboard.writeText(window.location.origin+"/?invite="+encodeURIComponent(inviteShareId));setNotice("Invitation link copied.")}catch{setError("Could not copy automatically. Select and copy the invitation link above.")}}}>Copy invitation link</button><button type="button" onClick={async()=>{const url=window.location.origin+"/?invite="+encodeURIComponent(inviteShareId);const message="You're invited to join "+(active?.name??"an organization")+" on Trackwise. Sign in using "+inviteShareEmail+" and accept the invitation.";if(navigator.share){try{await navigator.share({title:"Trackwise invitation",text:message,url})}catch(e){if(e instanceof Error&&e.name!=="AbortError")setError("Sharing failed. Try copying the link.")}}else{window.open("https://wa.me/?text="+encodeURIComponent(message+" "+url),"_blank","noopener,noreferrer")}}}>Share invitation ↗</button><a href={"https://wa.me/?text="+encodeURIComponent("You're invited to join "+(active?.name??"an organization")+" on Trackwise. Sign in as "+inviteShareEmail+" to accept: "+(typeof window!=="undefined"?window.location.origin+"/?invite="+encodeURIComponent(inviteShareId):""))} target="_blank" rel="noopener noreferrer">Share on WhatsApp ↗</a></div></div>}
  </details>
- </section>}{manager&&<section className="card"><div className="sectionHead"><h2>Manage invitations</h2><button type="button" onClick={()=>void loadOutgoingInvites(selected)}>Refresh</button></div><p className="muted">View invitations, share their links again, or revoke access before acceptance.</p>{outgoingInvites.length===0?<p className="muted">No invitations yet.</p>:outgoingInvites.map(inv=><div className="memberManageRow" key={inv.id}><div><strong>{inv.email}</strong><small>{statusLabel(inv.role)} · {inv.accepted_at?"Accepted":new Date(inv.expires_at).getTime()<Date.now()?"Expired":"Pending"} · Expires {new Date(inv.expires_at).toLocaleDateString()}</small></div><div className="memberManageActions">{!inv.accepted_at&&new Date(inv.expires_at).getTime()>=Date.now()&&<><button type="button" onClick={()=>shareExistingInvite(inv.id,inv.email)}>Share link</button><button type="button" disabled={inviteAction===inv.id} onClick={()=>void revokeInvite(inv.id)}>Revoke</button></>}{!inv.accepted_at&&new Date(inv.expires_at).getTime()<Date.now()&&<span className="muted">Create a new invitation to renew</span>}</div></div>)}</section>}<section className="card"><h2>Current organization</h2><p><strong>{active?.name??"Workspace"}</strong></p><p className="muted">Your role: {role?statusLabel(role):"Loading…"}</p><p className="muted">Organization ID: {active?.id??"Not selected"}</p></section><section className="card"><h2>Create another organization</h2><form onSubmit={createOrg} className="inlineForm"><input aria-label="New organization name" value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="Organization name" minLength={2} maxLength={120} required/><button className="primary" disabled={working}>Create workspace</button></form></section></>}</>}</div></main></div>{searchOpen&&active&&<div className="searchOverlay"><section className="searchPanel" role="dialog" aria-modal="true" aria-label="Search workspace">
+ </section>}{manager&&<section className="card"><div className="sectionHead"><h2>Manage invitations</h2><button type="button" onClick={()=>void loadOutgoingInvites(selected)}>Refresh</button></div><p className="muted">View invitations, share their links again, or revoke access before acceptance.</p>{outgoingInvites.length===0?<p className="muted">No invitations yet.</p>:outgoingInvites.map(inv=><div className="memberManageRow" key={inv.id}><div><strong>{inv.email}</strong><small>{statusLabel(inv.role)} · {inv.accepted_at?"Accepted":new Date(inv.expires_at).getTime()<Date.now()?"Expired":"Pending"} · Expires {new Date(inv.expires_at).toLocaleDateString()}</small></div><div className="memberManageActions">{!inv.accepted_at&&new Date(inv.expires_at).getTime()>=Date.now()&&<><button type="button" onClick={()=>shareExistingInvite(inv.id,inv.email)}>Share link</button><button type="button" disabled={inviteAction===inv.id} onClick={()=>void revokeInvite(inv.id)}>Revoke</button></>}{!inv.accepted_at&&new Date(inv.expires_at).getTime()<Date.now()&&<span className="muted">Create a new invitation to renew</span>}</div></div>)}</section>}<section className="card"><h2>Current organization</h2><p><strong>{active?.name??"Workspace"}</strong></p><p className="muted">Your role: {role?statusLabel(role):"Loading…"}</p><p className="muted">Organization ID: {active?.id??"Not selected"}</p></section><section className="card"><h2>Create another organization</h2><form onSubmit={createOrg} className="inlineForm"><input aria-label="New organization name" value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="Organization name" minLength={2} maxLength={120} required/><button className="primary" disabled={working}>Create workspace</button></form></section></>}</>}</div></div></main></div>{searchOpen&&active&&<div className="searchOverlay"><section className="searchPanel" role="dialog" aria-modal="true" aria-label="Search workspace">
   <div className="searchTop"><label htmlFor="globalSearch">Search this organization</label><button type="button" className="guideClose" onClick={closeSearch} aria-label="Close search">×</button></div>
   <input id="globalSearch" type="search" autoFocus placeholder="Find a task, project, or person…" value={globalSearch} maxLength={160} onChange={e=>setGlobalSearch(e.target.value)}/>
   {!searchTerm?<p className="muted">Type a name, task title, or project to find it quickly.</p>:
