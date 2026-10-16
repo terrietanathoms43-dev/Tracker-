@@ -72,6 +72,7 @@ export type DashboardNotification = {
    read_at: string | null;
    created_at: string;
 };
+export type DashboardTeamMessage = { id: string; team_id: string; sender_id: string; content: string; created_at: string };
 export type DashboardInvite = { id: string; email: string; role: string; expires_at: string; accepted_at: string | null };
 export type DashboardPendingInvite = { id: string; email: string; role: string; organization_id: string; expires_at: string };
 export type DashboardOrg = { id: string; name: string; created_at: string };
@@ -97,6 +98,8 @@ type DashboardProps = {
    pendingInvites: DashboardPendingInvite[];
    notifications: DashboardNotification[];
    onMarkNotificationRead: (id: string) => Promise<void>;
+   teamMessages: DashboardTeamMessage[];
+   onSendTeamMessage: (teamId: string, content: string) => Promise<void>;
    workspaceLoading: boolean;
    onRefresh: () => Promise<void>;
    onCreateTask: (values: {
@@ -181,6 +184,8 @@ export default function Dashboard({
    pendingInvites,
    notifications,
    onMarkNotificationRead,
+   teamMessages,
+   onSendTeamMessage,
    workspaceLoading,
    onRefresh,
    onCreateTask,
@@ -1478,6 +1483,8 @@ export default function Dashboard({
             activity={activity}
             outgoingInvites={outgoingInvites}
             requests={requests}
+            teamMessages={teamMessages}
+            onSendTeamMessage={onSendTeamMessage}
             createdAt={active.created_at}
             onRefresh={onRefresh}
             onCreateTeam={onCreateTeam}

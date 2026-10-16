@@ -48,6 +48,7 @@ type Notification = {
    dedupe_key: string | null;
    created_at: string;
 };
+type TeamMessage = { id: string; team_id: string; sender_id: string; content: string; created_at: string };
 type Task = {
    id: string;
    title: string;
@@ -90,6 +91,7 @@ export default function Home() {
    const [activity, setActivity] = useState<Activity[]>([]);
    const [handovers, setHandovers] = useState<Handover[]>([]);
    const [notifications, setNotifications] = useState<Notification[]>([]);
+   const [teamMessages, setTeamMessages] = useState<TeamMessage[]>([]);
    const [workspaceLoading, setWorkspaceLoading] = useState(false);
    const workspaceRequest = useRef(0);
 
@@ -193,7 +195,7 @@ export default function Home() {
       };
 
       try {
-         const [t, rawTasks, m, tm, r, a, g, p, d, h, n, assigneesResult] = await Promise.all([
+         const [t, rawTasks, m, tm, r, a, g, p, d, h, n, msg, assigneesResult] = await Promise.all([
             db
                .from("tw_teams")
                .select("id,name,organization_id")
@@ -237,6 +239,11 @@ export default function Home() {
                .eq("user_id", user?.id ?? "")
                .order("created_at", { ascending: false })
                .limit(50),
+            db
+               .from("tw_messages")
+               .select("id,team_id,sender_id,content,created_at")
+               .order("created_at", { ascending: false })
+               .limit(200),
             db.from("tw_task_assignees").select("task_id,user_id").eq("organization_id", orgId),
          ]);
          if (request !== workspaceRequest.current) return;
@@ -258,6 +265,7 @@ export default function Home() {
          if (!d.error) setDirectory(d.data ?? []);
          if (!h.error) setHandovers(h.data ?? []);
          if (!n.error) setNotifications(n.data ?? []);
+         if (!msg.error) setTeamMessages(msg.data ?? []);
          const failures = [
             ["teams", t.error],
             ["saved tasks", null],
@@ -270,6 +278,7 @@ export default function Home() {
             ["directory", d.error],
             ["handover history", h.error],
             ["notifications", n.error],
+            ["team messages", msg.error],
             ["assignees", assigneesResult.error],
          ].filter((entry) => entry[1]);
          if (failures.length)
@@ -729,6 +738,13 @@ export default function Home() {
       setNotifications((old) => old.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n)));
    }
 
+   async function sendTeamMessage(teamId: string, content: string) {
+      if (!db || !user) throw new Error("Unable to send message");
+      const { error } = await db.from("tw_messages").insert({ team_id: teamId, sender_id: user.id, content: content.trim() });
+      if (error) throw error;
+      await loadWorkspace(selected);
+   }
+
    async function createRequest(title: string, details: string) {
       if (!db || !selected || !user) throw new Error("Unable to submit request");
       const { error } = await db.from("tw_requests").insert({
@@ -956,6 +972,8 @@ export default function Home() {
          pendingInvites={pendingInvites}
          notifications={notifications}
          onMarkNotificationRead={markNotificationRead}
+         teamMessages={teamMessages}
+         onSendTeamMessage={sendTeamMessage}
          workspaceLoading={workspaceLoading}
          onRefresh={() => loadWorkspace(selected)}
          onCreateTask={createTask}

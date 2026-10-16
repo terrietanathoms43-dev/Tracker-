@@ -286,6 +286,14 @@ button.secondary:hover {
 .notificationRow.read {
    opacity: 0.75;
 }
+.messageRow {
+   padding: 14px 0;
+   border-bottom: 1px solid #eef1f7;
+}
+.messageRow p {
+   margin: 4px 0 0;
+   color: #3c4458;
+}
 .sidebar nav {
    display: grid;
    gap: 5px;

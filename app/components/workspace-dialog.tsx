@@ -20,6 +20,7 @@ type Project = {
    goal_id: string | null;
 };
 type Activity = { id: string; entity_type: string; action: string; created_at: string; details: Record<string, unknown> };
+type TeamMessage = { id: string; team_id: string; sender_id: string; content: string; created_at: string };
 type Task = {
    id: string;
    title: string;
@@ -58,6 +59,8 @@ type WorkspaceDialogProps = {
    activity: Activity[];
    outgoingInvites: OutgoingInvite[];
    requests: RequestItem[];
+   teamMessages: TeamMessage[];
+   onSendTeamMessage: (teamId: string, content: string) => Promise<void>;
    createdAt: string;
    onRefresh: () => Promise<void>;
    onCreateTeam: (name: string) => Promise<void>;
@@ -74,7 +77,7 @@ type WorkspaceDialogProps = {
    onDecideRequest: (id: string, decision: string, reason: string) => Promise<void>;
 };
 
-type Tab = "overview" | "members" | "teams" | "requests" | "activity" | "reports";
+type Tab = "overview" | "members" | "teams" | "requests" | "messages" | "activity" | "reports";
 
 export default function WorkspaceDialog({
    open,
@@ -92,6 +95,8 @@ export default function WorkspaceDialog({
    activity,
    outgoingInvites,
    requests,
+   teamMessages,
+   onSendTeamMessage,
    createdAt,
    onRefresh,
    onCreateTeam,
@@ -121,6 +126,8 @@ export default function WorkspaceDialog({
    const [requestDetails, setRequestDetails] = useState("");
    const [decisionReason, setDecisionReason] = useState("");
    const [decidingRequest, setDecidingRequest] = useState("");
+   const [messageTeam, setMessageTeam] = useState("");
+   const [messageText, setMessageText] = useState("");
    const [busy, setBusy] = useState(false);
    const [error, setError] = useState("");
    const [notice, setNotice] = useState("");
@@ -142,6 +149,7 @@ export default function WorkspaceDialog({
          { value: "members" as Tab, label: `Members (${members.length})` },
          { value: "teams" as Tab, label: `Teams (${teams.length})` },
          { value: "requests" as Tab, label: `Requests (${requests.length})` },
+         { value: "messages" as Tab, label: "Messages" },
          { value: "activity" as Tab, label: "Activity" },
          { value: "reports" as Tab, label: "Reports" },
       ],
@@ -296,6 +304,23 @@ export default function WorkspaceDialog({
          await onRefresh();
       } catch (err) {
          setError(err instanceof Error ? err.message : "Unable to decide request");
+      } finally {
+         setBusy(false);
+      }
+   }
+
+   async function handleSendMessage(e: FormEvent) {
+      e.preventDefault();
+      if (!messageTeam || !messageText.trim()) return;
+      setBusy(true);
+      clear();
+      try {
+         await onSendTeamMessage(messageTeam, messageText.trim());
+         setMessageText("");
+         setNotice("Message sent.");
+         await onRefresh();
+      } catch (err) {
+         setError(err instanceof Error ? err.message : "Unable to send message");
       } finally {
          setBusy(false);
       }
@@ -729,6 +754,69 @@ export default function WorkspaceDialog({
                      ))
                   ) : (
                      <p className="muted">No requests yet.</p>
+                  )}
+               </section>
+            </div>
+         )}
+
+         {tab === "messages" && (
+            <div className="space-y-5">
+               <section className="card">
+                  <h2>Send a team message</h2>
+                  <form onSubmit={handleSendMessage} className="formGrid">
+                     <div className="span2">
+                        <label htmlFor="wd-message-team">Team</label>
+                        <select id="wd-message-team" value={messageTeam} onChange={(e) => setMessageTeam(e.target.value)} required>
+                           <option value="">Choose a team</option>
+                           {teams.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                 {t.name}
+                              </option>
+                           ))}
+                        </select>
+                     </div>
+                     <div className="span2">
+                        <label htmlFor="wd-message-text">Message</label>
+                        <textarea
+                           id="wd-message-text"
+                           rows={3}
+                           value={messageText}
+                           onChange={(e) => setMessageText(e.target.value)}
+                           placeholder="Write something to your team…"
+                           required
+                           minLength={1}
+                           maxLength={4000}
+                        />
+                     </div>
+                     <div className="span2">
+                        <button className="primary" type="submit" disabled={busy || !messageTeam || !messageText.trim()}>
+                           Send message
+                        </button>
+                     </div>
+                  </form>
+               </section>
+
+               <section className="card">
+                  <div className="sectionHead">
+                     <h2>Recent team messages</h2>
+                     <span className="chip">{teamMessages.length}</span>
+                  </div>
+                  {teamMessages.length ? (
+                     teamMessages.map((msg) => (
+                        <div className="messageRow" key={msg.id}>
+                           <div>
+                              <strong>{directory.find((m) => m.user_id === msg.sender_id)?.display_name ?? "Member"}</strong>
+                              <small>
+                                 {" "}
+                                 · {teams.find((t) => t.id === msg.team_id)?.name ?? "Team"} ·{" "}
+                                 {new Date(msg.created_at).toLocaleString()}
+                              </small>
+                              <p>{msg.content}</p>
+                           </div>
+                        </div>
+                     ))
+                  ) : (
+                     <p className="muted">No team messages yet.</p>
                   )}
                </section>
             </div>
