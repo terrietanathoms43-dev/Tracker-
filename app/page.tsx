@@ -715,6 +715,25 @@ export default function Home(){
  <div className="startChoices"><div className="startChoice"><strong>🏢 Start an organization</strong><p>You'll be its administrator, so you can invite people, create projects and assign tasks.</p></div><div className="startChoice"><strong>✉ Join an organization</strong><p>Ask your leader to share an invitation link with you. Sign in with your invited email and accept it here.</p></div></div><div className="organizationSetupForm"><label htmlFor="firstOrgName">Organization name</label>
  <form onSubmit={createOrg} className="inlineForm"><input id="firstOrgName" aria-label="Organization name" minLength={2} maxLength={120} value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="e.g. Volunteerism Club" required/><button type="submit" className="primary" disabled={working}>{working?"Creating…":"Create & start setup →"}</button></form>
  <small className="fieldHint">You'll be the administrator. Only approved members can see your organization's work.</small></div></div>:<>{view==="overview"&&<div className="twDashboard">
+ <section className="twDashboardHero" aria-label="Workspace overview">
+  <div className="twDashboardHeroCopy">
+   <span className="twDashboardHeroEyebrow"><Sparkles size={15} aria-hidden="true"/> TRACKWISE · WORKSPACE OVERVIEW</span>
+   <h2>Make progress.<span>Stay in control.</span></h2>
+   <p>One clear view of your priorities, people and projects. Less searching, more moving forward.</p>
+   <div className="twDashboardHeroHighlights" aria-label="Workspace totals">
+    <span><strong>{projects.length}</strong> Projects</span>
+    <span><strong>{teams.length}</strong> Teams</span>
+    <span><strong>{homeTasks.length}</strong> Tasks</span>
+   </div>
+  </div>
+  <div className="twDashboardHeroCard">
+   <span className="twDashboardHeroCardLabel"><span aria-hidden="true">✦</span> YOUR NEXT MOVE</span>
+   <strong>{counts.overdue>0?"You have work to catch up on.":manager?"Let's make something happen.":"Your priorities, all in one place."}</strong>
+   <p>{counts.overdue>0?`${counts.overdue} overdue task${counts.overdue===1?" needs":"s need"} attention. Check the board below to get things moving.`:manager?"Create a project, assign a task, or invite your team in a few simple steps.":"See your assigned work, follow progress and stay connected with your team."}</p>
+   <button type="button" className="twDashboardHeroPrimary" onClick={()=>manager?launchCreate("project"):navigate("tasks")}><Plus size={18} aria-hidden="true"/>{manager?"Start a project":"Open my tasks"} <span aria-hidden="true">→</span></button>
+   <button type="button" className="twDashboardHeroGuide" onClick={()=>setShowGuide(true)}><Sparkles size={15} aria-hidden="true"/> Take a guided tour</button>
+  </div>
+ </section>
  <section className="twDashboardToolbar" aria-label="Workspace actions">
   <div className="twDashboardWorkspaceSelect"><label htmlFor="twDashboardOrganization">Workspace</label><select id="twDashboardOrganization" value={selected} onChange={e=>{setSelected(e.target.value);setLastCreatedProject(null);setLastCreatedTeam(null);setProjectFilter("all");setDashboardSearch("");setDashboardStatus("all");setDashboardPriority("all");setDashboardAssignee("all");clear()}}>{orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
   <button type="button" onClick={()=>setWorkspaceInfoOpen(true)}><UsersRound size={17}/> Workspace info</button>
@@ -724,6 +743,7 @@ export default function Home(){
   <button type="button" className="primary" onClick={()=>manager?launchCreate("task"):launchCreate("request")}><Plus size={17}/>{manager?"New task":"New request"}</button>
  </section>
  <section className="twDashboardMetricGrid" aria-label="Workspace task summary">
+  {/* Summary cards stay visible above the task board on desktop and mobile. */}
   {dashboardStats.map(item=><div className="twDashboardMetric" key={item.label}>
    <span>{item.label}</span><strong>{item.value}</strong><small>{item.help}</small>
   </div>)}
