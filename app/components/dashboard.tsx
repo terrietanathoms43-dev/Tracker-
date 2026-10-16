@@ -820,6 +820,27 @@ export default function Dashboard({
 
                   {tab === "summary" && (
                      <>
+                        <section className="twSignatureWelcome" aria-label="Workspace welcome and quick actions">
+                           <div className="twSignatureWelcomeContent">
+                              <span className="twSignatureEyebrow"><span aria-hidden="true">✦</span> YOUR TRACKWISE WORKSPACE</span>
+                              <h2>Make every move <em>count.</em></h2>
+                              <p>From the first idea to the final milestone, keep your people, priorities and progress beautifully organized.</p>
+                              <div className="twSignatureWelcomePills" aria-label="Workspace at a glance">
+                                 <span><strong>{projects.length}</strong> projects</span>
+                                 <span><strong>{teams.length}</strong> teams</span>
+                                 <span><strong>{counts.total}</strong> tasks</span>
+                              </div>
+                           </div>
+                           <div className="twSignatureWelcomeAside">
+                              <span className="twSignatureNextLabel">✧ YOUR NEXT STEP</span>
+                              <strong>{counts.overdue > 0 ? "Bring your priorities back on track." : manager ? "Great work starts with one clear task." : "Your next win is on the board."}</strong>
+                              <p>{counts.overdue > 0 ? `${counts.overdue} overdue task${counts.overdue === 1 ? " needs" : "s need"} your attention.` : manager ? "Create a task or jump straight into the work that matters." : "See what is assigned to you and follow your team's progress."}</p>
+                              <div className="twSignatureWelcomeActions">
+                                 {manager && <button type="button" className="twSignaturePrimary" onClick={() => { setEditingTask(null); setTaskDialogOpen(true); }}>＋ New task</button>}
+                                 <button type="button" className="twSignatureSecondary" onClick={() => setTab("kanban")}>View task board <span aria-hidden="true">→</span></button>
+                              </div>
+                           </div>
+                        </section>
                         {!hideChecklist && (
                            <section className="card setupChecklist">
                               <div className="sectionHead">
