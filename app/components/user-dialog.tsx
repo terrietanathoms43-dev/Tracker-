@@ -1,17 +1,22 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import dynamic from "next/dynamic";
+import { type FormEvent, useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import DialogShell from "./dialog-shell";
 
-const statusLabel = (s: string) => s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const AccountProfile = dynamic(() => import("../account-profile"), { ssr: false, loading: () => null });
 
-type User = { id: string; email?: string | undefined; user_metadata?: { display_name?: string } };
+const statusLabel = (s: string) => s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 type PendingInvite = { id: string; email: string; role: string; organization_id: string; expires_at: string };
 type Org = { id: string; name: string; created_at: string };
+
+type Tab = "profile" | "security" | "invitations" | "workspaces";
 
 type UserDialogProps = {
    open: boolean;
    onOpenChange: (open: boolean) => void;
+   initialTab?: Tab;
    user: User | null;
    role: string | null | undefined;
    pendingInvites: PendingInvite[];
@@ -19,19 +24,22 @@ type UserDialogProps = {
    selectedOrg: string;
    onSelectOrg: (id: string) => void;
    profileName: string;
-   onProfileNameChange: (value: string) => void;
-   onSaveProfile: (name: string) => Promise<void>;
+   organizationName: string;
+   assignedTasks: number;
+   projectsCount: number;
+   photoUrl: string | null;
+   onUserRefresh: () => Promise<void>;
    onChangePassword: (password: string) => Promise<void>;
    onAcceptInvite: (id: string) => Promise<void>;
    onCreateOrganization: (name: string) => Promise<string | undefined>;
-   onSignOut: () => Promise<void>;
+   onLeaveOrganization: (orgId: string) => Promise<boolean>;
+   onSignOut: () => void;
 };
-
-type Tab = "profile" | "invitations" | "workspaces";
 
 export default function UserDialog({
    open,
    onOpenChange,
+   initialTab = "profile",
    user,
    role,
    pendingInvites,
@@ -39,42 +47,37 @@ export default function UserDialog({
    selectedOrg,
    onSelectOrg,
    profileName,
-   onProfileNameChange,
-   onSaveProfile,
+   organizationName,
+   assignedTasks,
+   projectsCount,
+   photoUrl,
+   onUserRefresh,
    onChangePassword,
    onAcceptInvite,
    onCreateOrganization,
+   onLeaveOrganization,
    onSignOut,
 }: UserDialogProps) {
-   const [tab, setTab] = useState<Tab>("profile");
+   const [tab, setTab] = useState<Tab>(initialTab);
+   const atWorkspaceLimit = orgs.length >= 2;
    const [newPassword, setNewPassword] = useState("");
    const [newOrgName, setNewOrgName] = useState("");
    const [busy, setBusy] = useState(false);
    const [error, setError] = useState("");
    const [notice, setNotice] = useState("");
 
+   useEffect(() => {
+      if (open) {
+         setTab(initialTab);
+         setError("");
+         setNotice("");
+      }
+   }, [open, initialTab]);
+
    const clear = () => {
       setError("");
       setNotice("");
    };
-
-   async function handleSaveProfile(e: FormEvent) {
-      e.preventDefault();
-      if (!profileName.trim() || profileName.trim().length < 2) {
-         setError("Display name must be between 2 and 80 characters.");
-         return;
-      }
-      setBusy(true);
-      clear();
-      try {
-         await onSaveProfile(profileName.trim());
-         setNotice("Profile updated.");
-      } catch (e) {
-         setError(e instanceof Error ? e.message : "Unable to update profile");
-      } finally {
-         setBusy(false);
-      }
-   }
 
    async function handleChangePassword(e: FormEvent) {
       e.preventDefault();
@@ -108,6 +111,19 @@ export default function UserDialog({
       }
    }
 
+   async function handleLeaveOrg(orgId: string) {
+      setBusy(true);
+      clear();
+      try {
+         const left = await onLeaveOrganization(orgId);
+         if (left) setNotice("You left the workspace.");
+      } catch (e) {
+         setError(e instanceof Error ? e.message : "Unable to leave workspace");
+      } finally {
+         setBusy(false);
+      }
+   }
+
    async function handleCreateOrg(e: FormEvent) {
       e.preventDefault();
       if (!newOrgName.trim()) return;
@@ -127,71 +143,94 @@ export default function UserDialog({
       }
    }
 
-   return (
-      <DialogShell open={open} onOpenChange={onOpenChange} title="Account">
-         <div className="dialogTabs" role="tablist" aria-label="Account sections">
-            <button
-               type="button"
-               role="tab"
-               aria-selected={tab === "profile"}
-               className={tab === "profile" ? "active" : ""}
-               onClick={() => setTab("profile")}
-            >
-               Profile
-            </button>
-            <button
-               type="button"
-               role="tab"
-               aria-selected={tab === "invitations"}
-               className={tab === "invitations" ? "active" : ""}
-               onClick={() => setTab("invitations")}
-            >
-               Invitations ({pendingInvites.length})
-            </button>
-            <button
-               type="button"
-               role="tab"
-               aria-selected={tab === "workspaces"}
-               className={tab === "workspaces" ? "active" : ""}
-               onClick={() => setTab("workspaces")}
-            >
-               Workspaces ({orgs.length})
-            </button>
-         </div>
+   const tabs: { value: Tab; label: string; icon: string }[] = [
+      { value: "profile", label: "My profile", icon: "♙" },
+      { value: "security", label: "Password & security", icon: "🔒" },
+      { value: "invitations", label: `Invitations (${pendingInvites.length})`, icon: "✉" },
+      { value: "workspaces", label: `Workspaces (${orgs.length})`, icon: "🏢" },
+   ];
 
+   const activeTabLabel = tabs.find((t) => t.value === tab)?.label ?? "Account";
+
+   const sidebarNav = (
+      <nav aria-label="Account sections">
+         {tabs.map((t) => (
+            <button
+               key={t.value}
+               type="button"
+               className={"navItem " + (tab === t.value ? "selected" : "")}
+               onClick={() => {
+                  setTab(t.value);
+                  clear();
+               }}
+            >
+               <span aria-hidden="true">{t.icon}</span>
+               {t.label}
+            </button>
+         ))}
+      </nav>
+   );
+
+   const activeOrgName = orgs.find((o) => o.id === selectedOrg)?.name ?? "Workspace";
+
+   return (
+      <DialogShell
+         open={open}
+         onOpenChange={onOpenChange}
+         title={profileName.trim() || user?.email?.split("@")[0] || "Account"}
+         subtitle={activeTabLabel}
+         sidebar={sidebarNav}
+         wide
+      >
          {error && <p className="feedback bad">{error}</p>}
          {notice && <p className="feedback good">{notice}</p>}
 
          {tab === "profile" && (
-            <div className="space-y-5">
-               <div className="peopleIdentity">
-                  <span className="peopleAvatar">{(user?.email ?? "U").slice(0, 1).toUpperCase()}</span>
-                  <div>
-                     <strong>{user?.email?.split("@")[0] ?? "Account"}</strong>
-                     <small>{user?.email ?? ""}</small>
-                     <small>{role ? statusLabel(role) : "Signed in"}</small>
-                  </div>
-               </div>
+            <div>
+               {user && (
+                  <AccountProfile
+                     user={user}
+                     role={role ?? null}
+                     organizationName={organizationName}
+                     organizationCount={orgs.length}
+                     assignedTasks={assignedTasks}
+                     projectsCount={projectsCount}
+                     photoUrl={photoUrl}
+                     onUpdated={onUserRefresh}
+                  />
+               )}
 
-               <form onSubmit={handleSaveProfile} className="formGrid">
-                  <div className="span2">
-                     <label htmlFor="ud-display-name">Display name</label>
-                     <input
-                        id="ud-display-name"
-                        value={profileName}
-                        onChange={(e) => onProfileNameChange(e.target.value)}
-                        minLength={2}
-                        maxLength={80}
-                        required
-                     />
-                  </div>
-                  <div className="span2">
-                     <button className="primary" type="submit" disabled={busy}>
-                        Save display name
+               <section className="card">
+                  <h2>Your organization role</h2>
+                  <p className="muted">
+                     Your role belongs to the active workspace, not your login account. The person who creates a workspace becomes its
+                     administrator.
+                  </p>
+                  <p className="readOnlyValue">
+                     <strong>{role ? statusLabel(role) : "No organization role assigned"}</strong> · {activeOrgName}
+                  </p>
+               </section>
+
+               <section className="card">
+                  <div className="sectionHead">
+                     <div>
+                        <h2>Session</h2>
+                        <p className="muted" style={{ margin: 0 }}>
+                           Signed in as {user?.email}
+                        </p>
+                     </div>
+                     <button type="button" className="dangerAction" onClick={() => void onSignOut()}>
+                        Sign out ↪
                      </button>
                   </div>
-               </form>
+               </section>
+            </div>
+         )}
 
+         {tab === "security" && (
+            <section className="card">
+               <h2>Change password</h2>
+               <p className="muted">Use at least 10 characters and a unique passphrase to keep your Trackwise account secure.</p>
                <form onSubmit={handleChangePassword} className="formGrid">
                   <div className="span2">
                      <label htmlFor="ud-new-password">New password</label>
@@ -203,21 +242,16 @@ export default function UserDialog({
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         placeholder="At least 10 characters"
+                        required
                      />
                   </div>
-                  <div className="span2">
+                  <div className="formAction span2">
                      <button className="primary" type="submit" disabled={busy || newPassword.length < 10}>
-                        Update password
+                        {busy ? "Updating…" : "Update password"}
                      </button>
                   </div>
                </form>
-
-               <div className="taskInlineActions">
-                  <button type="button" onClick={() => void onSignOut()}>
-                     Sign out
-                  </button>
-               </div>
-            </div>
+            </section>
          )}
 
          {tab === "invitations" && (
@@ -226,14 +260,24 @@ export default function UserDialog({
                   <h2>Invitations for you</h2>
                   <span className="chip">{pendingInvites.length}</span>
                </div>
+               <p className="muted">Invitations sent to {user?.email} appear here before they expire.</p>
+               {atWorkspaceLimit && (
+                  <p className="muted">You belong to 2 of 2 allowed workspaces. Leave one before joining another.</p>
+               )}
                {pendingInvites.length ? (
                   pendingInvites.map((i) => (
                      <div className="reportRow" key={i.id}>
                         <span>
-                           Invitation to join as {statusLabel(i.role)} · {i.email}
+                           Invitation to join as <strong>{statusLabel(i.role)}</strong> · {i.email}
                         </span>
-                        <button type="button" className="primary" disabled={busy} onClick={() => void handleAccept(i.id)}>
-                           Accept
+                        <button
+                           type="button"
+                           className="primary"
+                           disabled={busy || atWorkspaceLimit}
+                           title={atWorkspaceLimit ? "Leave a workspace before accepting" : "Accept invitation"}
+                           onClick={() => void handleAccept(i.id)}
+                        >
+                           Accept invitation
                         </button>
                      </div>
                   ))
@@ -244,7 +288,7 @@ export default function UserDialog({
          )}
 
          {tab === "workspaces" && (
-            <div className="space-y-5">
+            <div>
                <section className="card">
                   <div className="sectionHead">
                      <h2>Your workspaces</h2>
@@ -252,15 +296,39 @@ export default function UserDialog({
                   </div>
                   {orgs.length ? (
                      orgs.map((o) => (
-                        <div className="reportRow" key={o.id}>
-                           <span>
-                              {o.name} {o.id === selectedOrg ? "· current" : ""}
-                           </span>
-                           {o.id !== selectedOrg && (
-                              <button type="button" className="textAction" onClick={() => onSelectOrg(o.id)}>
-                                 Switch to
+                        <div className="memberManageRow" key={o.id}>
+                           <div>
+                              <strong>{o.name}</strong>
+                              <small>
+                                 Created {new Date(o.created_at).toLocaleDateString()}
+                                 {o.id === selectedOrg ? " · Active workspace" : ""}
+                              </small>
+                           </div>
+                           <div className="memberManageActions">
+                              {o.id !== selectedOrg ? (
+                                 <button
+                                    type="button"
+                                    className="secondary"
+                                    onClick={() => {
+                                       onSelectOrg(o.id);
+                                       onOpenChange(false);
+                                    }}
+                                 >
+                                    Switch workspace
+                                 </button>
+                              ) : (
+                                 <span className="chip">Current</span>
+                              )}
+                              <button
+                                 type="button"
+                                 className="dangerAction"
+                                 disabled={busy}
+                                 title={`Leave ${o.name}`}
+                                 onClick={() => void handleLeaveOrg(o.id)}
+                              >
+                                 Leave
                               </button>
-                           )}
+                           </div>
                         </div>
                      ))
                   ) : (
@@ -270,21 +338,27 @@ export default function UserDialog({
 
                <section className="card">
                   <h2>Create a workspace</h2>
-                  <p className="muted">Start a new Trackwise workspace for another team.</p>
-                  <form onSubmit={handleCreateOrg} className="inlineForm">
-                     <input
-                        aria-label="New workspace name"
-                        value={newOrgName}
-                        onChange={(e) => setNewOrgName(e.target.value)}
-                        placeholder="Workspace name"
-                        minLength={2}
-                        maxLength={120}
-                        required
-                     />
-                     <button className="primary" type="submit" disabled={busy || !newOrgName.trim()}>
-                        Create workspace
-                     </button>
-                  </form>
+                  {atWorkspaceLimit ? (
+                     <p className="muted">You belong to 2 of 2 allowed workspaces. Leave one before creating or joining another.</p>
+                  ) : (
+                     <>
+                        <p className="muted">Start a new Trackwise workspace for another team or organization.</p>
+                        <form onSubmit={handleCreateOrg} className="inlineForm">
+                           <input
+                              aria-label="New workspace name"
+                              value={newOrgName}
+                              onChange={(e) => setNewOrgName(e.target.value)}
+                              placeholder="Workspace name"
+                              minLength={2}
+                              maxLength={120}
+                              required
+                           />
+                           <button className="primary" type="submit" disabled={busy || !newOrgName.trim()}>
+                              Create workspace
+                           </button>
+                        </form>
+                     </>
+                  )}
                </section>
             </div>
          )}

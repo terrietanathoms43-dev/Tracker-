@@ -1,9 +1,12 @@
 "use client";
 
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import DialogShell from "./dialog-shell";
 import Reports from "../reports";
 import { canManageOrganization, canOwnTask } from "../../lib/task-rules";
+
+const WorkspaceBackup = dynamic(() => import("../workspace-backup"), { ssr: false, loading: () => null });
 
 const statusLabel = (s: string) => s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -19,8 +22,8 @@ type Project = {
    team_id: string | null;
    goal_id: string | null;
 };
+type Goal = { id: string; title: string; description: string | null; status: string; target_date: string | null };
 type Activity = { id: string; entity_type: string; action: string; created_at: string; details: Record<string, unknown> };
-type TeamMessage = { id: string; team_id: string; sender_id: string; content: string; created_at: string };
 type Task = {
    id: string;
    title: string;
@@ -43,11 +46,24 @@ type RequestItem = {
    created_at: string;
 };
 
+export type WorkspaceDialogTab =
+   | "overview"
+   | "planning"
+   | "members"
+   | "teams"
+   | "invitations"
+   | "requests"
+   | "activity"
+   | "reports"
+   | "backup";
+
 type WorkspaceDialogProps = {
    open: boolean;
    onOpenChange: (open: boolean) => void;
+   initialTab?: WorkspaceDialogTab;
    organizationId: string;
    organizationName: string;
+   organizationCount: number;
    userId: string;
    role: string | null | undefined;
    directory: DirectoryMember[];
@@ -56,11 +72,10 @@ type WorkspaceDialogProps = {
    teamMembers: TeamMember[];
    tasks: Task[];
    projects: Project[];
+   goals: Goal[];
    activity: Activity[];
    outgoingInvites: OutgoingInvite[];
    requests: RequestItem[];
-   teamMessages: TeamMessage[];
-   onSendTeamMessage: (teamId: string, content: string) => Promise<void>;
    createdAt: string;
    onRefresh: () => Promise<void>;
    onCreateTeam: (name: string) => Promise<void>;
@@ -71,19 +86,21 @@ type WorkspaceDialogProps = {
    onRemoveMember: (userId: string, displayName: string) => Promise<void>;
    onUpdateMemberRole: (userId: string, role: string) => Promise<void>;
    onDeleteOrganization: () => Promise<void>;
-   onLeaveOrganization: () => Promise<void>;
+   onLeaveOrganization: (orgId?: string) => Promise<boolean>;
    onCreateOrganization: (name: string) => Promise<string | undefined>;
    onCreateRequest: (title: string, details: string) => Promise<void>;
    onDecideRequest: (id: string, decision: string, reason: string) => Promise<void>;
+   onCreateGoal: (title: string, description: string | null, targetDate: string | null) => Promise<void>;
+   onEditGoal: (id: string, title: string, description: string | null, targetDate: string | null, status: string) => Promise<void>;
 };
-
-type Tab = "overview" | "members" | "teams" | "requests" | "messages" | "activity" | "reports";
 
 export default function WorkspaceDialog({
    open,
    onOpenChange,
+   initialTab = "overview",
    organizationId,
    organizationName,
+   organizationCount,
    userId,
    role,
    directory,
@@ -92,11 +109,10 @@ export default function WorkspaceDialog({
    teamMembers,
    tasks,
    projects,
+   goals,
    activity,
    outgoingInvites,
    requests,
-   teamMessages,
-   onSendTeamMessage,
    createdAt,
    onRefresh,
    onCreateTeam,
@@ -111,8 +127,10 @@ export default function WorkspaceDialog({
    onCreateOrganization,
    onCreateRequest,
    onDecideRequest,
+   onCreateGoal,
+   onEditGoal,
 }: WorkspaceDialogProps) {
-   const [tab, setTab] = useState<Tab>("overview");
+   const [tab, setTab] = useState<WorkspaceDialogTab>(initialTab);
    const [teamName, setTeamName] = useState("");
    const [assignTeam, setAssignTeam] = useState("");
    const [assignUser, setAssignUser] = useState("");
@@ -126,8 +144,14 @@ export default function WorkspaceDialog({
    const [requestDetails, setRequestDetails] = useState("");
    const [decisionReason, setDecisionReason] = useState("");
    const [decidingRequest, setDecidingRequest] = useState("");
-   const [messageTeam, setMessageTeam] = useState("");
-   const [messageText, setMessageText] = useState("");
+   const [goalTitle, setGoalTitle] = useState("");
+   const [goalDescription, setGoalDescription] = useState("");
+   const [goalTarget, setGoalTarget] = useState("");
+   const [editingGoal, setEditingGoal] = useState("");
+   const [editGoalTitle, setEditGoalTitle] = useState("");
+   const [editGoalDescription, setEditGoalDescription] = useState("");
+   const [editGoalDate, setEditGoalDate] = useState("");
+   const [editGoalStatus, setEditGoalStatus] = useState("active");
    const [busy, setBusy] = useState(false);
    const [error, setError] = useState("");
    const [notice, setNotice] = useState("");
@@ -138,23 +162,46 @@ export default function WorkspaceDialog({
    const manager = canManageOrganization(role);
    const isAdmin = role === "admin";
 
+   useEffect(() => {
+      if (open) {
+         setTab(initialTab);
+         setError("");
+         setNotice("");
+      }
+   }, [open, initialTab]);
+
    const clear = () => {
       setError("");
       setNotice("");
    };
 
-   const tabs = useMemo(
-      () => [
-         { value: "overview" as Tab, label: "Overview" },
-         { value: "members" as Tab, label: `Members (${members.length})` },
-         { value: "teams" as Tab, label: `Teams (${teams.length})` },
-         { value: "requests" as Tab, label: `Requests (${requests.length})` },
-         { value: "messages" as Tab, label: "Messages" },
-         { value: "activity" as Tab, label: "Activity" },
-         { value: "reports" as Tab, label: "Reports" },
-      ],
-      [members.length, teams.length, requests.length],
+   const pendingInvites = useMemo(
+      () => outgoingInvites.filter((i) => !i.accepted_at && new Date(i.expires_at) > new Date()),
+      [outgoingInvites],
    );
+
+   const tabs = useMemo(() => {
+      const items: { value: WorkspaceDialogTab; label: string; icon: string }[] = [
+         { value: "overview", label: "Overview", icon: "⌂" },
+         { value: "members", label: `Members (${members.length})`, icon: "♙" },
+         { value: "teams", label: `Teams (${teams.length})`, icon: "◈" },
+      ];
+      if (manager) {
+         items.push({ value: "invitations", label: `Invitations (${pendingInvites.length})`, icon: "✉" });
+      }
+      items.push(
+         { value: "planning", label: "Goals & planning", icon: "◉" },
+         { value: "requests", label: `Requests (${requests.length})`, icon: "☑" },
+         { value: "activity", label: "Activity", icon: "◷" },
+         { value: "reports", label: "Reports", icon: "▤" },
+      );
+      if (isAdmin) {
+         items.push({ value: "backup", label: "Backup & export", icon: "🔒" });
+      }
+      return items;
+   }, [members.length, teams.length, pendingInvites.length, requests.length, manager, isAdmin]);
+
+   const activeTabLabel = tabs.find((t) => t.value === tab)?.label ?? "Workspace";
 
    async function handleCreateTeam(e: FormEvent) {
       e.preventDefault();
@@ -291,16 +338,18 @@ export default function WorkspaceDialog({
       }
    }
 
-   async function handleDecide(e: FormEvent) {
-      e.preventDefault();
-      if (!decidingRequest || !decisionReason.trim()) return;
+   async function handleDecide(requestId: string, decision: "approved" | "deferred" | "rejected") {
+      if (!decisionReason.trim()) {
+         setError("Enter a short reason for your decision.");
+         return;
+      }
       setBusy(true);
       clear();
       try {
-         await onDecideRequest(decidingRequest, "approved", decisionReason.trim());
+         await onDecideRequest(requestId, decision, decisionReason.trim());
          setDecidingRequest("");
          setDecisionReason("");
-         setNotice("Request approved.");
+         setNotice(`Request ${decision}.`);
          await onRefresh();
       } catch (err) {
          setError(err instanceof Error ? err.message : "Unable to decide request");
@@ -309,18 +358,46 @@ export default function WorkspaceDialog({
       }
    }
 
-   async function handleSendMessage(e: FormEvent) {
+   async function handleCreateGoal(e: FormEvent) {
       e.preventDefault();
-      if (!messageTeam || !messageText.trim()) return;
+      if (!goalTitle.trim()) return;
       setBusy(true);
       clear();
       try {
-         await onSendTeamMessage(messageTeam, messageText.trim());
-         setMessageText("");
-         setNotice("Message sent.");
+         await onCreateGoal(goalTitle.trim(), goalDescription.trim() || null, goalTarget || null);
+         setGoalTitle("");
+         setGoalDescription("");
+         setGoalTarget("");
+         setNotice("Goal created.");
          await onRefresh();
       } catch (err) {
-         setError(err instanceof Error ? err.message : "Unable to send message");
+         setError(err instanceof Error ? err.message : "Unable to create goal");
+      } finally {
+         setBusy(false);
+      }
+   }
+
+   function startGoalEdit(g: Goal) {
+      setEditingGoal(g.id);
+      setEditGoalTitle(g.title);
+      setEditGoalDescription(g.description ?? "");
+      setEditGoalDate(g.target_date ?? "");
+      setEditGoalStatus(g.status);
+      clear();
+   }
+
+   async function handleSaveGoalEdit(e: FormEvent) {
+      e.preventDefault();
+      if (!editGoalTitle.trim()) return;
+      setBusy(true);
+      clear();
+      try {
+         await onEditGoal(editingGoal, editGoalTitle.trim(), editGoalDescription.trim() || null, editGoalDate || null, editGoalStatus);
+         setEditingGoal("");
+         setNotice("Goal updated.");
+         await onRefresh();
+      } catch (err) {
+         setError(err instanceof Error ? err.message : "Unable to update goal");
       } finally {
          setBusy(false);
       }
@@ -328,130 +405,303 @@ export default function WorkspaceDialog({
 
    const inviteLink =
       typeof window !== "undefined" && inviteShareReady
-         ? `${window.location.origin}${window.location.pathname}?invite=${inviteShareId}`
+         ? `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(inviteShareId)}`
          : "";
 
-   const pendingInvites = outgoingInvites.filter((i) => !i.accepted_at && new Date(i.expires_at) > new Date());
+   const sidebarNav = (
+      <nav aria-label="Workspace sections">
+         {tabs.map((t) => (
+            <button
+               key={t.value}
+               type="button"
+               className={"navItem " + (tab === t.value ? "selected" : "")}
+               onClick={() => {
+                  setTab(t.value);
+                  clear();
+               }}
+            >
+               <span aria-hidden="true">{t.icon}</span>
+               {t.label}
+            </button>
+         ))}
+      </nav>
+   );
 
    return (
-      <DialogShell open={open} onOpenChange={onOpenChange} title="Workspace">
-         <div className="dialogTabs" role="tablist" aria-label="Workspace sections">
-            {tabs.map((t) => (
-               <button
-                  key={t.value}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === t.value}
-                  className={tab === t.value ? "active" : ""}
-                  onClick={() => setTab(t.value)}
-               >
-                  {t.label}
-               </button>
-            ))}
-         </div>
-
+      <DialogShell
+         open={open}
+         onOpenChange={onOpenChange}
+         title={organizationName}
+         subtitle={activeTabLabel}
+         sidebar={sidebarNav}
+         wide
+      >
          {error && <p className="feedback bad">{error}</p>}
          {notice && <p className="feedback good">{notice}</p>}
 
          {tab === "overview" && (
-            <div className="space-y-5">
-               <div className="flex items-center gap-3">
-                  <div className="mark">W</div>
-                  <div>
-                     <p className="font-semibold text-lg">{organizationName}</p>
-                     <p className="muted text-xs">Created {new Date(createdAt).toLocaleDateString()}</p>
+            <div>
+               <section className="card">
+                  <div className="peopleIdentity" style={{ marginBottom: 18 }}>
+                     <div className="mark">{organizationName.slice(0, 1).toUpperCase()}</div>
+                     <div>
+                        <strong style={{ fontSize: 18, display: "block" }}>{organizationName}</strong>
+                        <small className="muted">
+                           Created {new Date(createdAt).toLocaleDateString()} · Your role: {statusLabel(role ?? "member")}
+                        </small>
+                     </div>
                   </div>
-               </div>
-               <div className="reportStats">
-                  <div className="card reportMetric">
-                     <span>Members</span>
-                     <strong>{members.length}</strong>
+                  <div className="stats" style={{ marginBottom: 16 }}>
+                     <div className="stat">
+                        <span>Members</span>
+                        <strong>{members.length}</strong>
+                     </div>
+                     <div className="stat">
+                        <span>Teams</span>
+                        <strong>{teams.length}</strong>
+                     </div>
+                     <div className="stat">
+                        <span>Projects</span>
+                        <strong>{projects.length}</strong>
+                     </div>
+                     <div className="stat">
+                        <span>Tasks</span>
+                        <strong>{tasks.length}</strong>
+                     </div>
                   </div>
-                  <div className="card reportMetric">
-                     <span>Teams</span>
-                     <strong>{teams.length}</strong>
-                  </div>
-                  <div className="card reportMetric">
-                     <span>Tasks</span>
-                     <strong>{tasks.length}</strong>
-                  </div>
-                  <div className="card reportMetric">
-                     <span>Projects</span>
-                     <strong>{projects.length}</strong>
-                  </div>
-               </div>
-               <p>
-                  Your role: <strong>{statusLabel(role ?? "member")}</strong>
-               </p>
-               <div className="taskInlineActions">
-                  <button type="button" onClick={() => void onLeaveOrganization()}>
-                     Leave workspace
-                  </button>
-                  {isAdmin && (
-                     <button type="button" className="dangerAction" onClick={() => void onDeleteOrganization()}>
-                        Delete workspace
+                  <div className="taskInlineActions">
+                     <button type="button" className="secondary" onClick={() => void onLeaveOrganization()}>
+                        Leave workspace
                      </button>
-                  )}
-               </div>
+                     {isAdmin && (
+                        <button type="button" className="dangerAction" onClick={() => void onDeleteOrganization()}>
+                           Delete workspace
+                        </button>
+                     )}
+                  </div>
+               </section>
 
                <section className="card">
                   <h2>Create another workspace</h2>
-                  <p className="muted">You can belong to multiple Trackwise workspaces.</p>
-                  <form onSubmit={handleCreateOrg} className="inlineForm">
-                     <input
-                        aria-label="New workspace name"
-                        value={newOrgName}
-                        onChange={(e) => setNewOrgName(e.target.value)}
-                        placeholder="New workspace name"
-                        minLength={2}
-                        maxLength={120}
-                        required
-                     />
-                     <button className="primary" type="submit" disabled={busy || !newOrgName.trim()}>
-                        Create workspace
-                     </button>
-                  </form>
+                  {organizationCount >= 2 ? (
+                     <p className="muted">You belong to 2 of 2 allowed workspaces. Leave one before creating or joining another.</p>
+                  ) : (
+                     <>
+                        <p className="muted">Start a separate Trackwise workspace for another organization or department.</p>
+                        <form onSubmit={handleCreateOrg} className="inlineForm">
+                           <input
+                              aria-label="New workspace name"
+                              value={newOrgName}
+                              onChange={(e) => setNewOrgName(e.target.value)}
+                              placeholder="New workspace name"
+                              minLength={2}
+                              maxLength={120}
+                              required
+                           />
+                           <button className="primary" type="submit" disabled={busy || !newOrgName.trim()}>
+                              Create workspace
+                           </button>
+                        </form>
+                     </>
+                  )}
+               </section>
+            </div>
+         )}
+
+         {tab === "planning" && (
+            <div>
+               <section className="card">
+                  <div className="sectionHead">
+                     <h2>
+                        Organization goals <span className="count">{goals.length}</span>
+                     </h2>
+                  </div>
+                  {goals.length ? (
+                     goals.map((g) => (
+                        <div className="goalRecord" key={g.id}>
+                           <div className="taskLine">
+                              <span className="taskDot underway" />
+                              <div>
+                                 <strong>{g.title}</strong>
+                                 <small>
+                                    {statusLabel(g.status)}
+                                    {g.target_date ? " · Target " + new Date(g.target_date + "T12:00:00").toLocaleDateString() : ""}
+                                 </small>
+                                 {g.description && <p className="muted">{g.description}</p>}
+                              </div>
+                           </div>
+                           {manager && (
+                              <button type="button" className="textAction" onClick={() => startGoalEdit(g)}>
+                                 Edit goal
+                              </button>
+                           )}
+                           {manager && editingGoal === g.id && (
+                              <form className="projectEditForm" onSubmit={handleSaveGoalEdit}>
+                                 <div className="formGrid">
+                                    <div>
+                                       <label>Goal title</label>
+                                       <input value={editGoalTitle} onChange={(e) => setEditGoalTitle(e.target.value)} required />
+                                    </div>
+                                    <div>
+                                       <label>Target date</label>
+                                       <input type="date" value={editGoalDate} onChange={(e) => setEditGoalDate(e.target.value)} />
+                                    </div>
+                                    <div className="span2">
+                                       <label>Description</label>
+                                       <textarea
+                                          rows={2}
+                                          value={editGoalDescription}
+                                          onChange={(e) => setEditGoalDescription(e.target.value)}
+                                       />
+                                    </div>
+                                    <div>
+                                       <label>Status</label>
+                                       <select value={editGoalStatus} onChange={(e) => setEditGoalStatus(e.target.value)}>
+                                          <option value="active">Active</option>
+                                          <option value="paused">Paused</option>
+                                          <option value="achieved">Achieved</option>
+                                       </select>
+                                    </div>
+                                    <div className="formAction">
+                                       <button type="submit" className="primary" disabled={busy || !editGoalTitle.trim()}>
+                                          Save goal
+                                       </button>
+                                       <button type="button" className="secondary" onClick={() => setEditingGoal("")}>
+                                          Cancel
+                                       </button>
+                                    </div>
+                                 </div>
+                              </form>
+                           )}
+                        </div>
+                     ))
+                  ) : (
+                     <p className="muted">Create a goal to define what success looks like.</p>
+                  )}
+                  {manager && (
+                     <form onSubmit={handleCreateGoal} className="formGrid">
+                        <div>
+                           <label>New goal</label>
+                           <input
+                              value={goalTitle}
+                              onChange={(e) => setGoalTitle(e.target.value)}
+                              placeholder="e.g. Improve service response time"
+                              required
+                           />
+                        </div>
+                        <div>
+                           <label>Target date</label>
+                           <input type="date" value={goalTarget} onChange={(e) => setGoalTarget(e.target.value)} />
+                        </div>
+                        <div className="span2">
+                           <label>Description (optional)</label>
+                           <textarea
+                              rows={2}
+                              value={goalDescription}
+                              onChange={(e) => setGoalDescription(e.target.value)}
+                              placeholder="What will success look like?"
+                           />
+                        </div>
+                        <div className="formAction span2">
+                           <button type="submit" className="primary" disabled={busy || !goalTitle.trim()}>
+                              Create goal
+                           </button>
+                        </div>
+                     </form>
+                  )}
+               </section>
+
+               <section className="card">
+                  <div className="sectionHead">
+                     <h2>
+                        Projects <span className="count">{projects.length}</span>
+                     </h2>
+                  </div>
+                  <button type="button" className="textAction" onClick={() => onOpenChange(false)}>
+                     Open Projects to manage and create projects →
+                  </button>
+                  {projects.length ? (
+                     projects.map((p) => (
+                        <div className="taskLine" key={p.id}>
+                           <span className="taskDot" />
+                           <div>
+                              <strong>{p.name}</strong>
+                              <small>
+                                 {statusLabel(p.status)} · {tasks.filter((t) => t.project_id === p.id).length} tasks
+                              </small>
+                           </div>
+                        </div>
+                     ))
+                  ) : (
+                     <p className="muted">Projects organize the work needed to reach goals.</p>
+                  )}
                </section>
             </div>
          )}
 
          {tab === "members" && (
-            <div className="space-y-5">
-               {isAdmin && (
-                  <form onSubmit={handleInvite} className="formGrid">
-                     <div className="span2">
-                        <label htmlFor="wd-invite-email">Invite by email</label>
-                        <input
-                           id="wd-invite-email"
-                           type="email"
-                           value={inviteEmail}
-                           onChange={(e) => setInviteEmail(e.target.value)}
-                           placeholder="colleague@example.com"
-                           required
-                        />
-                     </div>
-                     <div>
-                        <label htmlFor="wd-invite-role">Role</label>
-                        <select id="wd-invite-role" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
-                           <option value="member">Member</option>
-                           <option value="leader">Leader</option>
-                           <option value="stakeholder">Stakeholder</option>
-                           <option value="observer">Observer</option>
-                        </select>
-                     </div>
-                     <div className="formAction">
-                        <button className="primary" type="submit" disabled={busy || !inviteEmail.trim()}>
-                           Send invitation
+            <div>
+               {manager && (
+                  <section className="card">
+                     <div className="sectionHead">
+                        <h2>Invite a colleague</h2>
+                        <button type="button" className="textAction" onClick={() => setTab("invitations")}>
+                           Manage invitations ({pendingInvites.length}) →
                         </button>
                      </div>
+                     <p className="muted">Choose a role, create an invitation, and share the generated link.</p>
+                     <form onSubmit={handleInvite} className="formGrid">
+                        <div>
+                           <label htmlFor="wd-invite-email">Member email</label>
+                           <input
+                              id="wd-invite-email"
+                              type="email"
+                              value={inviteEmail}
+                              onChange={(e) => setInviteEmail(e.target.value)}
+                              placeholder="colleague@example.com"
+                              required
+                           />
+                        </div>
+                        <div>
+                           <label htmlFor="wd-invite-role">Organization role</label>
+                           <select id="wd-invite-role" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+                              <option value="member">Member</option>
+                              <option value="leader">Leader</option>
+                              <option value="stakeholder">Stakeholder</option>
+                              <option value="observer">Observer</option>
+                           </select>
+                        </div>
+                        <div className="formAction span2">
+                           <button className="primary" type="submit" disabled={busy || !inviteEmail.trim()}>
+                              Create invitation
+                           </button>
+                        </div>
+                     </form>
                      {inviteShareReady && (
-                        <div className="inviteShare span2">
-                           <p>Share this invitation link with {inviteShareEmail}:</p>
+                        <div className="inviteShare">
+                           <p>
+                              Invitation ready for <strong>{inviteShareEmail}</strong>:
+                           </p>
                            <input value={inviteLink} readOnly onFocus={(e) => e.target.select()} />
-                           <p className="muted">The link will stop working if you revoke the invitation.</p>
+                           <div className="inviteActions">
+                              <button
+                                 type="button"
+                                 className="primary"
+                                 onClick={async () => {
+                                    try {
+                                       await navigator.clipboard.writeText(inviteLink);
+                                       setNotice("Invitation link copied.");
+                                    } catch {
+                                       setError("Could not copy automatically. Select and copy the link above.");
+                                    }
+                                 }}
+                              >
+                                 Copy invitation link
+                              </button>
+                           </div>
                         </div>
                      )}
-                  </form>
+                  </section>
                )}
 
                <section className="card">
@@ -483,15 +733,16 @@ export default function WorkspaceDialog({
                                           onChange={(e) => setRoleChoice(e.target.value)}
                                           aria-label={`Role for ${m.display_name}`}
                                        >
-                                          <option value="member">Member</option>
+                                          <option value="admin">Admin</option>
                                           <option value="leader">Leader</option>
+                                          <option value="member">Member</option>
                                           <option value="stakeholder">Stakeholder</option>
                                           <option value="observer">Observer</option>
                                        </select>
                                        <button type="button" className="primary" onClick={() => void handleUpdateRole(m.user_id)}>
                                           Save
                                        </button>
-                                       <button type="button" onClick={() => setRoleEditing("")}>
+                                       <button type="button" className="secondary" onClick={() => setRoleEditing("")}>
                                           Cancel
                                        </button>
                                     </>
@@ -499,7 +750,7 @@ export default function WorkspaceDialog({
                                     <>
                                        <button
                                           type="button"
-                                          className="textAction"
+                                          className="secondary"
                                           onClick={() => {
                                              setRoleEditing(m.user_id);
                                              setRoleChoice(m.role);
@@ -525,79 +776,67 @@ export default function WorkspaceDialog({
                      <p className="muted">No members found.</p>
                   )}
                </section>
-
-               {isAdmin && pendingInvites.length > 0 && (
-                  <section className="card">
-                     <div className="sectionHead">
-                        <h2>Pending invitations</h2>
-                        <span className="chip">{pendingInvites.length}</span>
-                     </div>
-                     {pendingInvites.map((i) => (
-                        <div className="reportRow" key={i.id}>
-                           <span>
-                              {i.email} · {statusLabel(i.role)}
-                           </span>
-                           <button type="button" className="textAction" disabled={busy} onClick={() => void handleRevoke(i.id)}>
-                              Revoke
-                           </button>
-                        </div>
-                     ))}
-                  </section>
-               )}
             </div>
          )}
 
          {tab === "teams" && (
-            <div className="space-y-5">
+            <div>
                <section className="card">
                   <div className="sectionHead">
-                     <h2>Teams</h2>
-                     <span className="chip">{teams.length}</span>
+                     <h2>
+                        Teams <span className="count">{teams.length}</span>
+                     </h2>
                   </div>
                   {teams.length ? (
-                     teams.map((t) => (
-                        <div className="budgetItem" key={t.id}>
-                           <div className="reportRow">
-                              <span>{t.name}</span>
-                              <strong>{teamMembers.filter((tm) => tm.team_id === t.id).length} member(s)</strong>
+                     <div className="teamGrid">
+                        {teams.map((t) => (
+                           <div className="teamCard" key={t.id}>
+                              <div className="teamSymbol">♙</div>
+                              <h3>{t.name}</h3>
+                              <p className="muted">{teamMembers.filter((tm) => tm.team_id === t.id).length} assigned members</p>
+                              <div className="teamMemberList">
+                                 {teamMembers
+                                    .filter((tm) => tm.team_id === t.id)
+                                    .map((tm) => {
+                                       const member = directory.find((d) => d.user_id === tm.user_id);
+                                       return (
+                                          <div className="teamMemberRow" key={tm.user_id}>
+                                             <span>
+                                                <strong>{member?.display_name ?? "Member"}</strong>
+                                                <small>{statusLabel(tm.role)}</small>
+                                             </span>
+                                             {manager && (
+                                                <button
+                                                   type="button"
+                                                   className="textAction"
+                                                   disabled={busy}
+                                                   onClick={() =>
+                                                      void onUnassignTeamMember(
+                                                         t.id,
+                                                         tm.user_id,
+                                                         member?.display_name ?? "This member",
+                                                      )
+                                                   }
+                                                >
+                                                   Remove
+                                                </button>
+                                             )}
+                                          </div>
+                                       );
+                                    })}
+                              </div>
                            </div>
-                           <div className="teamMemberList">
-                              {teamMembers
-                                 .filter((tm) => tm.team_id === t.id)
-                                 .map((tm) => {
-                                    const member = directory.find((d) => d.user_id === tm.user_id);
-                                    return (
-                                       <div className="teamMemberRow" key={tm.user_id}>
-                                          <span>
-                                             <strong>{member?.display_name ?? "Member"}</strong>
-                                             <small>{statusLabel(tm.role)}</small>
-                                          </span>
-                                          {manager && (
-                                             <button
-                                                type="button"
-                                                className="textAction"
-                                                disabled={busy}
-                                                onClick={() =>
-                                                   void onUnassignTeamMember(t.id, tm.user_id, member?.display_name ?? "This member")
-                                                }
-                                             >
-                                                Remove
-                                             </button>
-                                          )}
-                                       </div>
-                                    );
-                                 })}
-                           </div>
-                        </div>
-                     ))
+                        ))}
+                     </div>
                   ) : (
-                     <p className="muted">No teams yet.</p>
+                     <p className="muted">No teams yet. Create a team below and assign members to it.</p>
                   )}
                </section>
 
                {manager && (
                   <section className="card">
                      <h2>Create a team</h2>
+                     <p className="muted">Enter a clear team name, then add people using Assign a team member below.</p>
                      <form onSubmit={handleCreateTeam} className="inlineForm">
                         <input
                            aria-label="Team name"
@@ -661,67 +900,173 @@ export default function WorkspaceDialog({
             </div>
          )}
 
-         {tab === "requests" && (
-            <div className="space-y-5">
-               {!manager && (
-                  <section className="card">
-                     <h2>Submit a request</h2>
-                     <p className="muted">Ask a workspace leader to approve, defer, or reject a proposal.</p>
-                     <form onSubmit={handleCreateRequest} className="formGrid">
-                        <div className="span2">
-                           <label htmlFor="wd-request-title">Title</label>
-                           <input
-                              id="wd-request-title"
-                              value={requestTitle}
-                              onChange={(e) => setRequestTitle(e.target.value)}
-                              placeholder="What are you requesting?"
-                              required
-                              minLength={2}
-                              maxLength={180}
-                           />
-                        </div>
-                        <div className="span2">
-                           <label htmlFor="wd-request-details">Details</label>
-                           <textarea
-                              id="wd-request-details"
-                              rows={3}
-                              value={requestDetails}
-                              onChange={(e) => setRequestDetails(e.target.value)}
-                              placeholder="Add context so leaders can decide."
-                              maxLength={4000}
-                           />
-                        </div>
-                        <div className="span2">
-                           <button className="primary" type="submit" disabled={busy || !requestTitle.trim()}>
-                              Submit request
+         {tab === "invitations" && manager && (
+            <div>
+               <section className="card">
+                  <h2>Invite organization members</h2>
+                  <p className="muted">
+                     Choose a role, create an invitation, then copy its link. The invited person must sign in using the email you
+                     enter.
+                  </p>
+                  <form onSubmit={handleInvite} className="formGrid">
+                     <div>
+                        <label htmlFor="wd-inv-email">Member email</label>
+                        <input
+                           id="wd-inv-email"
+                           type="email"
+                           required
+                           value={inviteEmail}
+                           onChange={(e) => setInviteEmail(e.target.value)}
+                           placeholder="colleague@example.com"
+                        />
+                     </div>
+                     <div>
+                        <label htmlFor="wd-inv-role">Organization role</label>
+                        <select id="wd-inv-role" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+                           <option value="member">Member</option>
+                           <option value="leader">Leader</option>
+                           <option value="observer">Observer</option>
+                           <option value="stakeholder">Stakeholder</option>
+                        </select>
+                     </div>
+                     <div className="formAction span2">
+                        <button className="primary" type="submit" disabled={busy || !inviteEmail.trim()}>
+                           Create invitation
+                        </button>
+                     </div>
+                  </form>
+                  {inviteShareReady && inviteShareId && (
+                     <div className="inviteShare">
+                        <p>
+                           Invitation ready for <strong>{inviteShareEmail}</strong>. It expires in 14 days.
+                        </p>
+                        <input aria-label="Invitation link" readOnly value={inviteLink} onFocus={(e) => e.target.select()} />
+                        <div className="inviteActions">
+                           <button
+                              className="primary"
+                              type="button"
+                              onClick={async () => {
+                                 try {
+                                    await navigator.clipboard.writeText(inviteLink);
+                                    setNotice("Invitation link copied.");
+                                 } catch {
+                                    setError("Could not copy automatically. Select and copy the invitation link above.");
+                                 }
+                              }}
+                           >
+                              Copy invitation link
                            </button>
                         </div>
-                     </form>
-                  </section>
-               )}
+                     </div>
+                  )}
+               </section>
 
                <section className="card">
                   <div className="sectionHead">
-                     <h2>{manager ? "Requests & approvals" : "Your requests"}</h2>
+                     <h2>Sent invitations</h2>
+                     <span className="chip">{outgoingInvites.length}</span>
+                  </div>
+                  {outgoingInvites.length === 0 ? (
+                     <p className="muted">No invitations sent yet.</p>
+                  ) : (
+                     outgoingInvites.map((inv) => {
+                        const expired = new Date(inv.expires_at).getTime() < Date.now();
+                        return (
+                           <div className="memberManageRow" key={inv.id}>
+                              <div>
+                                 <strong>{inv.email}</strong>
+                                 <small>
+                                    {statusLabel(inv.role)} · {inv.accepted_at ? "Accepted" : expired ? "Expired" : "Pending"} ·
+                                    Expires {new Date(inv.expires_at).toLocaleDateString()}
+                                 </small>
+                              </div>
+                              <div className="memberManageActions">
+                                 {!inv.accepted_at && !expired && (
+                                    <>
+                                       <button
+                                          type="button"
+                                          className="secondary"
+                                          onClick={() => {
+                                             setInviteShareEmail(inv.email);
+                                             setInviteShareId(inv.id);
+                                             setInviteShareReady(true);
+                                             setNotice("Invitation link ready to share.");
+                                          }}
+                                       >
+                                          Share link
+                                       </button>
+                                       <button
+                                          type="button"
+                                          className="dangerAction"
+                                          disabled={busy}
+                                          onClick={() => void handleRevoke(inv.id)}
+                                       >
+                                          Revoke
+                                       </button>
+                                    </>
+                                 )}
+                              </div>
+                           </div>
+                        );
+                     })
+                  )}
+               </section>
+            </div>
+         )}
+
+         {tab === "requests" && (
+            <div>
+               <section className="card">
+                  <h2>Submit a request</h2>
+                  <p className="muted">Ask a workspace leader to approve, defer, or reject a proposal.</p>
+                  <form onSubmit={handleCreateRequest}>
+                     <label htmlFor="wd-request-title">Request title</label>
+                     <input
+                        id="wd-request-title"
+                        value={requestTitle}
+                        onChange={(e) => setRequestTitle(e.target.value)}
+                        placeholder="What do you need?"
+                        required
+                        minLength={2}
+                        maxLength={180}
+                     />
+                     <label htmlFor="wd-request-details">Details</label>
+                     <textarea
+                        id="wd-request-details"
+                        rows={3}
+                        value={requestDetails}
+                        onChange={(e) => setRequestDetails(e.target.value)}
+                        placeholder="Provide context and expected outcome"
+                        maxLength={4000}
+                     />
+                     <button className="primary" type="submit" style={{ marginTop: 14 }} disabled={busy || !requestTitle.trim()}>
+                        Submit request
+                     </button>
+                  </form>
+               </section>
+
+               <section className="card">
+                  <div className="sectionHead">
+                     <h2>Request inbox</h2>
                      <span className="chip">{requests.length}</span>
                   </div>
                   {requests.length ? (
                      requests.map((r) => (
-                        <div className="reportRow" key={r.id}>
+                        <div className="requestRow" key={r.id}>
                            <div>
                               <strong>{r.title}</strong>
-                              <p className="muted">{r.details || "No details"}</p>
-                              <small>
-                                 {statusLabel(r.decision)} · Submitted by{" "}
-                                 {directory.find((m) => m.user_id === r.submitted_by)?.display_name ?? "Member"} ·{" "}
+                              <p className="muted">{r.details || "No additional details"}</p>
+                              <span className="chip">{statusLabel(r.decision)}</span>{" "}
+                              <small className="muted">
+                                 · Submitted by {directory.find((m) => m.user_id === r.submitted_by)?.display_name ?? "Member"} ·{" "}
                                  {new Date(r.created_at).toLocaleDateString()}
                               </small>
-                              {r.decision_reason && <small className="muted">Reason: {r.decision_reason}</small>}
+                              {r.decision_reason && <p className="muted">Decision: {r.decision_reason}</p>}
                            </div>
                            {manager && (r.decision === "submitted" || r.decision === "deferred") && (
-                              <div className="requestActions">
+                              <div className="rowActions">
                                  {decidingRequest === r.id ? (
-                                    <form onSubmit={handleDecide} className="inlineForm">
+                                    <div className="inlineForm">
                                        <input
                                           aria-label="Decision reason"
                                           value={decisionReason}
@@ -729,23 +1074,37 @@ export default function WorkspaceDialog({
                                           placeholder="Reason for decision"
                                           required
                                        />
-                                       <button className="primary" type="submit" disabled={busy || !decisionReason.trim()}>
+                                       <button
+                                          className="primary"
+                                          type="button"
+                                          disabled={busy || !decisionReason.trim()}
+                                          onClick={() => void handleDecide(r.id, "approved")}
+                                       >
                                           Approve
                                        </button>
                                        <button
                                           type="button"
-                                          disabled={busy}
-                                          onClick={() => void onDecideRequest(r.id, "rejected", decisionReason.trim() || "Rejected")}
+                                          className="secondary"
+                                          disabled={busy || !decisionReason.trim()}
+                                          onClick={() => void handleDecide(r.id, "deferred")}
+                                       >
+                                          Defer
+                                       </button>
+                                       <button
+                                          type="button"
+                                          className="dangerAction"
+                                          disabled={busy || !decisionReason.trim()}
+                                          onClick={() => void handleDecide(r.id, "rejected")}
                                        >
                                           Reject
                                        </button>
-                                       <button type="button" onClick={() => setDecidingRequest("")}>
+                                       <button type="button" className="secondary" onClick={() => setDecidingRequest("")}>
                                           Cancel
                                        </button>
-                                    </form>
+                                    </div>
                                  ) : (
-                                    <button type="button" className="textAction" onClick={() => setDecidingRequest(r.id)}>
-                                       Decide
+                                    <button type="button" onClick={() => setDecidingRequest(r.id)}>
+                                       Review & decide
                                     </button>
                                  )}
                               </div>
@@ -753,70 +1112,7 @@ export default function WorkspaceDialog({
                         </div>
                      ))
                   ) : (
-                     <p className="muted">No requests yet.</p>
-                  )}
-               </section>
-            </div>
-         )}
-
-         {tab === "messages" && (
-            <div className="space-y-5">
-               <section className="card">
-                  <h2>Send a team message</h2>
-                  <form onSubmit={handleSendMessage} className="formGrid">
-                     <div className="span2">
-                        <label htmlFor="wd-message-team">Team</label>
-                        <select id="wd-message-team" value={messageTeam} onChange={(e) => setMessageTeam(e.target.value)} required>
-                           <option value="">Choose a team</option>
-                           {teams.map((t) => (
-                              <option key={t.id} value={t.id}>
-                                 {t.name}
-                              </option>
-                           ))}
-                        </select>
-                     </div>
-                     <div className="span2">
-                        <label htmlFor="wd-message-text">Message</label>
-                        <textarea
-                           id="wd-message-text"
-                           rows={3}
-                           value={messageText}
-                           onChange={(e) => setMessageText(e.target.value)}
-                           placeholder="Write something to your team…"
-                           required
-                           minLength={1}
-                           maxLength={4000}
-                        />
-                     </div>
-                     <div className="span2">
-                        <button className="primary" type="submit" disabled={busy || !messageTeam || !messageText.trim()}>
-                           Send message
-                        </button>
-                     </div>
-                  </form>
-               </section>
-
-               <section className="card">
-                  <div className="sectionHead">
-                     <h2>Recent team messages</h2>
-                     <span className="chip">{teamMessages.length}</span>
-                  </div>
-                  {teamMessages.length ? (
-                     teamMessages.map((msg) => (
-                        <div className="messageRow" key={msg.id}>
-                           <div>
-                              <strong>{directory.find((m) => m.user_id === msg.sender_id)?.display_name ?? "Member"}</strong>
-                              <small>
-                                 {" "}
-                                 · {teams.find((t) => t.id === msg.team_id)?.name ?? "Team"} ·{" "}
-                                 {new Date(msg.created_at).toLocaleString()}
-                              </small>
-                              <p>{msg.content}</p>
-                           </div>
-                        </div>
-                     ))
-                  ) : (
-                     <p className="muted">No team messages yet.</p>
+                     <p className="muted">No requests submitted yet.</p>
                   )}
                </section>
             </div>
@@ -825,20 +1121,23 @@ export default function WorkspaceDialog({
          {tab === "activity" && (
             <section className="card">
                <div className="sectionHead">
-                  <h2>Workspace activity</h2>
+                  <h2>Recent activity</h2>
                   <span className="chip">{activity.length}</span>
                </div>
                {activity.length ? (
                   activity.map((a) => (
-                     <div className="reportRow" key={a.id}>
-                        <span>
-                           {statusLabel(a.entity_type)} · {statusLabel(a.action)}
-                        </span>
-                        <strong>{new Date(a.created_at).toLocaleString()}</strong>
+                     <div className="taskLine" key={a.id}>
+                        <span className="taskDot" />
+                        <div>
+                           <strong>
+                              {statusLabel(a.entity_type.replace("tw_", ""))} · {statusLabel(a.action)}
+                           </strong>
+                           <small>{new Date(a.created_at).toLocaleString()}</small>
+                        </div>
                      </div>
                   ))
                ) : (
-                  <p className="muted">No activity recorded yet.</p>
+                  <p className="muted">Activity will appear as your team starts working.</p>
                )}
             </section>
          )}
@@ -852,6 +1151,10 @@ export default function WorkspaceDialog({
                organizationName={organizationName}
                organizationId={organizationId}
             />
+         )}
+
+         {tab === "backup" && isAdmin && (
+            <WorkspaceBackup organizationId={organizationId} organizationName={organizationName} userId={userId} />
          )}
       </DialogShell>
    );

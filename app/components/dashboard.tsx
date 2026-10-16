@@ -1,13 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { type User } from "@supabase/supabase-js";
+import {
+   DndContext,
+   DragOverlay,
+   PointerSensor,
+   closestCorners,
+   useDraggable,
+   useDroppable,
+   useSensor,
+   useSensors,
+   type DragEndEvent,
+   type DragStartEvent,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import DialogShell from "./dialog-shell";
 import TaskDialog from "./task-dialog";
 import UserDialog from "./user-dialog";
-import WorkspaceDialog from "./workspace-dialog";
+import WorkspaceDialog, { type WorkspaceDialogTab } from "./workspace-dialog";
 import Reports from "../reports";
-import { canCompleteTask, canManageOrganization, canOwnTask, taskStatusLabel } from "../../lib/task-rules";
+import ProfileAvatar from "../profile-avatar";
+import { supabase } from "../../lib/supabase";
+import { canManageOrganization, canOwnTask, taskStatusLabel } from "../../lib/task-rules";
 
 const statusLabel = (s: string) => s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const statuses = ["not_started", "underway", "awaiting_approval", "blocked", "rejected", "completed"] as const;
@@ -143,12 +158,12 @@ type DashboardProps = {
    onRemoveMember: (userId: string, displayName: string) => Promise<void>;
    onUpdateMemberRole: (userId: string, role: string) => Promise<void>;
    onDeleteOrganization: () => Promise<void>;
-   onLeaveOrganization: () => Promise<void>;
+   onLeaveOrganization: (orgId?: string) => Promise<boolean>;
    onCreateOrganization: (name: string) => Promise<string | undefined>;
    onCreateRequest: (title: string, details: string) => Promise<void>;
    onDecideRequest: (id: string, decision: string, reason: string) => Promise<void>;
    onAcceptInvite: (id: string) => Promise<void>;
-   onSaveProfile: (name: string) => Promise<void>;
+   onUserRefresh: () => Promise<void>;
    onChangePassword: (password: string) => Promise<void>;
    onSignOut: () => Promise<void>;
    onLoadTaskUpdates: (
@@ -161,7 +176,7 @@ type DashboardProps = {
    onCloseGuide: () => void;
 };
 
-type Tab = "summary" | "kanban" | "reports";
+type Tab = "summary" | "kanban" | "reports" | "messages";
 
 export default function Dashboard({
    user,
@@ -209,7 +224,7 @@ export default function Dashboard({
    onCreateRequest,
    onDecideRequest,
    onAcceptInvite,
-   onSaveProfile,
+   onUserRefresh,
    onChangePassword,
    onSignOut,
    onLoadTaskUpdates,
@@ -225,8 +240,10 @@ export default function Dashboard({
    const [statusFilter, setStatusFilter] = useState("all");
    const [myTasksOnly, setMyTasksOnly] = useState(false);
    const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
-   const [workspaceTab, setWorkspaceTab] = useState<"overview" | "members" | "teams" | "activity" | "reports">("overview");
+   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceDialogTab>("overview");
    const [userDialogOpen, setUserDialogOpen] = useState(false);
+   const [userTab, setUserTab] = useState<"profile" | "security" | "invitations" | "workspaces">("profile");
+   const [confirmSignOut, setConfirmSignOut] = useState(false);
    const [taskDialogOpen, setTaskDialogOpen] = useState(false);
    const [notificationOpen, setNotificationOpen] = useState(false);
    const [editingTask, setEditingTask] = useState<DashboardTask | null>(null);
@@ -241,6 +258,7 @@ export default function Dashboard({
    const [error, setError] = useState("");
    const [notice, setNotice] = useState("");
    const [profileName, setProfileName] = useState(String(user?.user_metadata?.display_name ?? ""));
+   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
    const [hideChecklist, setHideChecklist] = useState(() => {
       if (typeof window === "undefined" || !user?.id || !selected) return false;
       return window.localStorage.getItem("tw-setup-hidden:" + user.id + ":" + selected) === "yes";
@@ -252,21 +270,18 @@ export default function Dashboard({
    const [projectDescription, setProjectDescription] = useState("");
    const [projectGoal, setProjectGoal] = useState("");
    const [projectTeam, setProjectTeam] = useState("");
-   const [goalTitle, setGoalTitle] = useState("");
-   const [goalDescription, setGoalDescription] = useState("");
-   const [goalTarget, setGoalTarget] = useState("");
    const [editingProject, setEditingProject] = useState<string>("");
    const [editProjectName, setEditProjectName] = useState("");
    const [editProjectDescription, setEditProjectDescription] = useState("");
    const [editProjectGoal, setEditProjectGoal] = useState("");
    const [editProjectTeam, setEditProjectTeam] = useState("");
    const [editProjectStatus, setEditProjectStatus] = useState("active");
-   const [editingGoal, setEditingGoal] = useState<string>("");
-   const [editGoalTitle, setEditGoalTitle] = useState("");
-   const [editGoalDescription, setEditGoalDescription] = useState("");
-   const [editGoalDate, setEditGoalDate] = useState("");
-   const [editGoalStatus, setEditGoalStatus] = useState("active");
+   const [messageTeam, setMessageTeam] = useState("");
+   const [messageText, setMessageText] = useState("");
+   const [activeDragId, setActiveDragId] = useState<string | null>(null);
    const [busy, setBusy] = useState(false);
+
+   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
    const userId = user.id;
    const manager = canManageOrganization(role);
@@ -276,6 +291,28 @@ export default function Dashboard({
    }, [user?.id]);
 
    useEffect(() => {
+      const path = user?.user_metadata?.avatar_path;
+      if (!user?.id || typeof path !== "string" || !path.startsWith(user.id + "/")) {
+         setProfilePhotoUrl(null);
+         return;
+      }
+      let live = true;
+      setProfilePhotoUrl(null);
+      void supabase()
+         .storage.from("tw-profile-avatars")
+         .createSignedUrl(path, 3600)
+         .then(({ data, error }) => {
+            if (live) setProfilePhotoUrl(!error ? (data?.signedUrl ?? null) : null);
+         })
+         .catch(() => {
+            if (live) setProfilePhotoUrl(null);
+         });
+      return () => {
+         live = false;
+      };
+   }, [user?.id, user?.user_metadata?.avatar_path]);
+
+   useEffect(() => {
       setHideChecklist(() => {
          if (typeof window === "undefined" || !user?.id || !selected) return false;
          return window.localStorage.getItem("tw-setup-hidden:" + user.id + ":" + selected) === "yes";
@@ -283,32 +320,98 @@ export default function Dashboard({
       setProjectFilter("all");
    }, [selected, user?.id]);
 
+   useEffect(() => {
+      if (!messageTeam && teams.length > 0) {
+         setMessageTeam(teams[0].id);
+      }
+   }, [teams, messageTeam]);
+
+   const projectScopedTasks = useMemo(() => {
+      return tasks.filter((t) =>
+         projectFilter === "all" ? true : projectFilter === "none" ? !t.project_id : t.project_id === projectFilter,
+      );
+   }, [tasks, projectFilter]);
+
    const filteredTasks = useMemo(() => {
-      return tasks.filter((t) => {
-         const matchesProject = projectFilter === "all" || (projectFilter === "none" ? !t.project_id : t.project_id === projectFilter);
+      return projectScopedTasks.filter((t) => {
          const matchesSearch = t.title.toLowerCase().includes(search.trim().toLowerCase());
          const matchesStatus = statusFilter === "all" || t.status === statusFilter;
          const matchesOwner = !myTasksOnly || t.assignees?.some((a) => a.user_id === userId) || t.owner_id === userId;
-         return matchesProject && matchesSearch && matchesStatus && matchesOwner;
+         return matchesSearch && matchesStatus && matchesOwner;
       });
-   }, [tasks, projectFilter, search, statusFilter, myTasksOnly, userId]);
+   }, [projectScopedTasks, search, statusFilter, myTasksOnly, userId]);
 
-   const homeTasks = manager ? tasks : tasks.filter((t) => t.assignees?.some((a) => a.user_id === userId) || t.owner_id === userId);
+   const homeTasks = useMemo(
+      () =>
+         manager
+            ? projectScopedTasks
+            : projectScopedTasks.filter((t) => t.assignees?.some((a) => a.user_id === userId) || t.owner_id === userId),
+      [projectScopedTasks, manager, userId],
+   );
+
    const counts = useMemo(() => {
-      const source = homeTasks;
+      const source = projectScopedTasks;
       return {
          total: source.length,
-         active: source.filter((t) => t.status === "underway").length,
-         blocked: source.filter((t) => t.status === "blocked").length,
-         done: source.filter((t) => t.status === "completed").length,
+         assignedToMe: source.filter((t) => t.assignees?.some((a) => a.user_id === userId) || t.owner_id === userId).length,
          overdue: source.filter((t) => t.due_at && new Date(t.due_at) < new Date() && t.status !== "completed").length,
+         done: source.filter((t) => t.status === "completed").length,
+         unassigned: source.filter((t) => (!t.assignees || t.assignees.length === 0) && !t.owner_id && t.status !== "completed")
+            .length,
+         forReview: source.filter((t) => t.status === "awaiting_approval").length,
       };
-   }, [homeTasks]);
+   }, [projectScopedTasks, userId]);
+
+   function taskAllowedStatuses(t: DashboardTask): string[] {
+      const canUpdate = manager || (t.assignees ?? []).some((a) => a.user_id === userId) || t.owner_id === userId;
+      if (!canUpdate) return [];
+      return statuses.filter((st) =>
+         manager ? st === t.status || st !== "rejected" || t.status === "awaiting_approval" : st !== "completed" && st !== "rejected",
+      );
+   }
+
+   function taskAssigneeNames(t: DashboardTask) {
+      return t.assignees?.length
+         ? t.assignees.map((a) => directory.find((m) => m.user_id === a.user_id)?.display_name ?? "Member").join(", ")
+         : t.owner_id
+           ? (directory.find((m) => m.user_id === t.owner_id)?.display_name ?? "Assigned")
+           : "Unassigned";
+   }
+
+   function taskProjectName(t: DashboardTask) {
+      return t.project_id ? (projects.find((p) => p.id === t.project_id)?.name ?? "Project") : "No project";
+   }
+
+   const activeDragTask = activeDragId ? filteredTasks.find((t) => t.id === activeDragId) : null;
+
+   function handleDragStart(e: DragStartEvent) {
+      setActiveDragId(String(e.active.id));
+   }
+
+   function handleDragEnd(e: DragEndEvent) {
+      setActiveDragId(null);
+      const taskId = String(e.active.id);
+      const overId = e.over ? String(e.over.id) : null;
+      if (!overId) return;
+      const moving = filteredTasks.find((t) => t.id === taskId);
+      if (!moving) return;
+      const destination = overId.startsWith("column-")
+         ? overId.replace("column-", "")
+         : (filteredTasks.find((t) => t.id === overId)?.status ?? null);
+      if (!destination || destination === moving.status || !taskAllowedStatuses(moving).includes(destination)) return;
+      void onUpdateTaskStatus(taskId, destination);
+   }
 
    const clear = () => {
       setError("");
       setNotice("");
    };
+
+   function openWorkspaceSection(section: WorkspaceDialogTab) {
+      setWorkspaceTab(section);
+      setWorkspaceDialogOpen(true);
+      setMobileMenu(false);
+   }
 
    async function openTask(id: string) {
       setSelectedTask(id);
@@ -437,37 +540,18 @@ export default function Dashboard({
       }
    }
 
-   async function handleCreateGoal(e: FormEvent) {
+   async function handleSendMessage(e: FormEvent) {
       e.preventDefault();
-      if (!goalTitle.trim()) return;
+      if (!messageTeam || !messageText.trim()) return;
       setBusy(true);
       clear();
       try {
-         await onCreateGoal(goalTitle.trim(), goalDescription.trim() || null, goalTarget || null);
-         setGoalTitle("");
-         setGoalDescription("");
-         setGoalTarget("");
+         await onSendTeamMessage(messageTeam, messageText.trim());
+         setMessageText("");
+         setNotice("Message sent.");
          await onRefresh();
-         setNotice("Goal created.");
-      } catch (e) {
-         setError(e instanceof Error ? e.message : "Unable to create goal");
-      } finally {
-         setBusy(false);
-      }
-   }
-
-   async function handleSaveGoalEdit(e: FormEvent) {
-      e.preventDefault();
-      if (!editingGoal || !editGoalTitle.trim()) return;
-      setBusy(true);
-      clear();
-      try {
-         await onEditGoal(editingGoal, editGoalTitle.trim(), editGoalDescription.trim() || null, editGoalDate || null, editGoalStatus);
-         setEditingGoal("");
-         await onRefresh();
-         setNotice("Goal updated.");
-      } catch (e) {
-         setError(e instanceof Error ? e.message : "Unable to save goal changes");
+      } catch (err) {
+         setError(err instanceof Error ? err.message : "Unable to send message");
       } finally {
          setBusy(false);
       }
@@ -482,20 +566,22 @@ export default function Dashboard({
       setEditProjectStatus(p.status);
    }
 
-   function startGoalEdit(g: DashboardGoal) {
-      setEditingGoal(g.id);
-      setEditGoalTitle(g.title);
-      setEditGoalDescription(g.description ?? "");
-      setEditGoalDate(g.target_date ?? "");
-      setEditGoalStatus(g.status);
-   }
-
+   const selectedProject = projects.find((p) => p.id === projectFilter);
    const selectedProjectName =
       projectFilter === "all"
          ? "All projects"
          : projectFilter === "none"
-           ? "No project"
-           : (projects.find((p) => p.id === projectFilter)?.name ?? "Project");
+           ? "Unassigned project"
+           : (selectedProject?.name ?? "Project");
+
+   const headerSubtitle =
+      tab === "summary"
+         ? "Overview, analytics, projects, and goals."
+         : tab === "kanban"
+           ? "Track, assign, and update tasks."
+           : tab === "reports"
+             ? "Delivery metrics and workload breakdown."
+             : "Team conversations and updates.";
 
    if (!active) {
       return (
@@ -566,45 +652,6 @@ export default function Dashboard({
                <span className="mark">T</span> Trackwise
             </div>
 
-            <div className="sideLabel">QUICK ACTIONS</div>
-            <div className="sideQuickActions">
-               {manager && (
-                  <button
-                     type="button"
-                     className="primary"
-                     onClick={() => {
-                        setEditingTask(null);
-                        setTaskDialogOpen(true);
-                        setMobileMenu(false);
-                     }}
-                  >
-                     ＋ New task
-                  </button>
-               )}
-               <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                     setTab("summary");
-                     setTimeout(() => document.getElementById("projectCreator")?.scrollIntoView({ behavior: "smooth" }), 50);
-                     setMobileMenu(false);
-                  }}
-               >
-                  ＋ New project
-               </button>
-               <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                     setWorkspaceTab("overview");
-                     setWorkspaceDialogOpen(true);
-                     setMobileMenu(false);
-                  }}
-               >
-                  ＋ New workspace
-               </button>
-            </div>
-
             <div className="sideLabel">WORKSPACE</div>
             <select
                className="orgSelect"
@@ -623,20 +670,58 @@ export default function Dashboard({
                   </option>
                ))}
             </select>
+            <button
+               type="button"
+               className="navItem"
+               onClick={() => {
+                  setUserTab("workspaces");
+                  setUserDialogOpen(true);
+                  setMobileMenu(false);
+               }}
+            >
+               <span>＋</span> New workspace
+            </button>
+            {orgs.length >= 2 && (
+               <p className="muted" style={{ fontSize: 12, margin: "4px 4px 0" }}>
+                  You belong to 2 of 2 allowed workspaces.
+               </p>
+            )}
 
-            <div className="sideLabel">PROJECTS</div>
+            <div className="sideSectionHead">
+               <span className="sideLabel">PROJECTS</span>
+               {manager && (
+                  <button
+                     type="button"
+                     className="sideAddBtn"
+                     title="Add a project"
+                     onClick={() => {
+                        setTab("summary");
+                        setMobileMenu(false);
+                        setTimeout(() => document.getElementById("projectCreator")?.scrollIntoView({ behavior: "smooth" }), 60);
+                     }}
+                  >
+                     ＋ Add
+                  </button>
+               )}
+            </div>
             <nav aria-label="Projects">
                <button
                   type="button"
                   className={"navItem " + (projectFilter === "all" ? "selected" : "")}
-                  onClick={() => setProjectFilter("all")}
+                  onClick={() => {
+                     setProjectFilter("all");
+                     setMobileMenu(false);
+                  }}
                >
                   <span>▤</span> All projects
                </button>
                <button
                   type="button"
                   className={"navItem " + (projectFilter === "none" ? "selected" : "")}
-                  onClick={() => setProjectFilter("none")}
+                  onClick={() => {
+                     setProjectFilter("none");
+                     setMobileMenu(false);
+                  }}
                >
                   <span>—</span> No project
                </button>
@@ -645,7 +730,10 @@ export default function Dashboard({
                      type="button"
                      key={p.id}
                      className={"navItem " + (projectFilter === p.id ? "selected" : "")}
-                     onClick={() => setProjectFilter(p.id)}
+                     onClick={() => {
+                        setProjectFilter(p.id);
+                        setMobileMenu(false);
+                     }}
                   >
                      <span>▧</span> {p.name}
                   </button>
@@ -653,27 +741,39 @@ export default function Dashboard({
             </nav>
 
             <div className="sideFoot">
-               <button
-                  type="button"
-                  className="navItem"
-                  onClick={() => {
-                     setWorkspaceTab("overview");
-                     setWorkspaceDialogOpen(true);
-                     setMobileMenu(false);
-                  }}
-               >
-                  <span>⚙</span> Workspace
+               <button type="button" className="navItem" onClick={() => openWorkspaceSection("overview")}>
+                  <span>⚙</span> Workspace settings
                </button>
-               <button
-                  type="button"
-                  className="navItem"
-                  onClick={() => {
-                     setUserDialogOpen(true);
-                     setMobileMenu(false);
-                  }}
-               >
-                  <span>♙</span> Account
-               </button>
+               <div className="sideAccountRow">
+                  <button
+                     type="button"
+                     className="sideUserBtn"
+                     onClick={() => {
+                        setUserDialogOpen(true);
+                        setMobileMenu(false);
+                     }}
+                  >
+                     <ProfileAvatar
+                        size="md"
+                        name={profileName.trim() || user.email?.split("@")[0] || "Member"}
+                        photoUrl={profilePhotoUrl}
+                        styleName={user.user_metadata?.avatar_style}
+                     />
+                     <span className="userDetails">
+                        <strong>{profileName.trim() || user.email?.split("@")[0]}</strong>
+                        <small>{role ? statusLabel(role) : "Account"}</small>
+                     </span>
+                  </button>
+                  <button
+                     type="button"
+                     className="logout"
+                     title="Sign out"
+                     aria-label="Sign out"
+                     onClick={() => setConfirmSignOut(true)}
+                  >
+                     ↪
+                  </button>
+               </div>
             </div>
          </aside>
 
@@ -681,45 +781,16 @@ export default function Dashboard({
             <header className="appHeader">
                <div className="pageHeading">
                   <span className="eyebrow blue">TRACKWISE / {selectedProjectName.toUpperCase()}</span>
-                  <h1>{active.name}</h1>
-                  <p className="muted">Everything your team needs, organized in one place.</p>
+                  <h1>{selectedProject ? selectedProject.name : active.name}</h1>
+                  <p className="muted">{headerSubtitle}</p>
                </div>
                <div className="headerControls">
                   <button type="button" className="headerHelp" onClick={() => setNotificationOpen(true)} aria-label="Notifications">
                      🔔 <span>Notifications</span>
                      {notifications.some((n) => !n.read_at) && <span className="notificationBadge" aria-hidden="true" />}
                   </button>
-                  <button
-                     type="button"
-                     className="headerHelp"
-                     onClick={() => setWorkspaceDialogOpen(true)}
-                     aria-label="Workspace information"
-                  >
-                     ⚙ <span>Workspace</span>
-                  </button>
-                  {manager && (
-                     <button
-                        type="button"
-                        className="primary mainCreateButton"
-                        onClick={() => {
-                           setEditingTask(null);
-                           setTaskDialogOpen(true);
-                        }}
-                     >
-                        ＋ New task
-                     </button>
-                  )}
                   <button type="button" className="headerHelp" onClick={() => onOpenGuide()} aria-label="How to use Trackwise">
                      ? <span>Help</span>
-                  </button>
-                  <button
-                     type="button"
-                     className="headerHelp"
-                     onClick={() => setUserDialogOpen(true)}
-                     aria-label="Account"
-                     title={user.email ?? "Account"}
-                  >
-                     ♙ <span>Account</span>
                   </button>
                </div>
             </header>
@@ -731,9 +802,10 @@ export default function Dashboard({
 
                   <nav className="sectionTabs" aria-label="Dashboard sections">
                      {[
-                        { value: "summary" as Tab, label: "Summary" },
-                        { value: "kanban" as Tab, label: "Kanban" },
+                        { value: "summary" as Tab, label: "Summary & analytics" },
+                        { value: "kanban" as Tab, label: `Kanban (${projectScopedTasks.length})` },
                         { value: "reports" as Tab, label: "Reports" },
+                        { value: "messages" as Tab, label: "Team messages" },
                      ].map((t) => (
                         <button
                            type="button"
@@ -775,19 +847,49 @@ export default function Dashboard({
                               {manager ? (
                                  <div className="setupSteps">
                                     {[
-                                       { label: "Invite a person", done: members.length > 1 || outgoingInvites.length > 0 },
-                                       { label: "Create a project", done: projects.length > 0 },
-                                       { label: "Create a team", done: teams.length > 0 },
-                                       { label: "Add a task", done: tasks.length > 0 },
+                                       {
+                                          label: "Invite a person",
+                                          done: members.length > 1 || outgoingInvites.length > 0,
+                                          help: "Share a link so a teammate can join.",
+                                          action: () => openWorkspaceSection("invitations"),
+                                       },
+                                       {
+                                          label: "Create a project",
+                                          done: projects.length > 0,
+                                          help: "Group related tasks together.",
+                                          action: () =>
+                                             document.getElementById("projectCreator")?.scrollIntoView({ behavior: "smooth" }),
+                                       },
+                                       {
+                                          label: "Create a team",
+                                          done: teams.length > 0,
+                                          help: "Organize people working together.",
+                                          action: () => openWorkspaceSection("teams"),
+                                       },
+                                       {
+                                          label: "Add a task",
+                                          done: tasks.length > 0,
+                                          help: "Assign something and set a deadline.",
+                                          action: () => {
+                                             setEditingTask(null);
+                                             setTaskDialogOpen(true);
+                                          },
+                                       },
                                     ].map((item) => (
-                                       <button type="button" key={item.label} className={"setupStep " + (item.done ? "done" : "")}>
+                                       <button
+                                          type="button"
+                                          key={item.label}
+                                          className={"setupStep " + (item.done ? "done" : "")}
+                                          onClick={item.action}
+                                       >
                                           <span className="setupCheck" aria-hidden="true">
                                              {item.done ? "✓" : "○"}
                                           </span>
                                           <span>
                                              <strong>{item.label}</strong>
-                                             <small>{item.done ? "Done!" : "Get started"}</small>
+                                             <small>{item.done ? "Done!" : item.help}</small>
                                           </span>
+                                          <span aria-hidden="true">→</span>
                                        </button>
                                     ))}
                                  </div>
@@ -799,161 +901,54 @@ export default function Dashboard({
                                           <strong>Find your tasks</strong>
                                           <small>See what your team has assigned to you.</small>
                                        </span>
+                                       <span aria-hidden="true">→</span>
                                     </button>
-                                    <button type="button" className="setupStep" onClick={() => setTab("reports")}>
-                                       <span className="setupCheck">▤</span>
+                                    <button type="button" className="setupStep" onClick={() => setTab("messages")}>
+                                       <span className="setupCheck">◈</span>
                                        <span>
-                                          <strong>Check reports</strong>
-                                          <small>Track progress and workload.</small>
+                                          <strong>Team messages</strong>
+                                          <small>Stay in touch with your team.</small>
                                        </span>
+                                       <span aria-hidden="true">→</span>
                                     </button>
                                  </div>
                               )}
-                              <button type="button" className="textAction setupHelpLink" onClick={() => onCloseGuide()}>
+                              <button type="button" className="textAction setupHelpLink" onClick={() => onOpenGuide()}>
                                  How does Trackwise work? →
                               </button>
                            </section>
                         )}
 
-                        <div className="welcome">
-                           <div>
-                              <span className="eyebrow">YOUR WORKSPACE · {role ? statusLabel(role) : "Role pending"}</span>
-                              <h2>{active.name}</h2>
-                              <p>Everything your team needs, organized in one place.</p>
-                           </div>
-                           <button onClick={() => setTab("kanban")}>Open tasks ↗</button>
-                        </div>
-
-                        <section className="quickActions" aria-label="Quick actions">
-                           {manager ? (
-                              <>
-                                 <button type="button" onClick={() => setTaskDialogOpen(true)}>
-                                    <span className="quickIcon">＋</span>
-                                    <span>
-                                       <strong>New task</strong>
-                                       <small>Create & assign</small>
-                                    </span>
-                                 </button>
-                                 <button
-                                    type="button"
-                                    onClick={() => document.getElementById("projectCreator")?.scrollIntoView({ behavior: "smooth" })}
-                                 >
-                                    <span className="quickIcon">▧</span>
-                                    <span>
-                                       <strong>New project</strong>
-                                       <small>Organize work</small>
-                                    </span>
-                                 </button>
-                                 <button
-                                    type="button"
-                                    onClick={() => {
-                                       setWorkspaceTab("members");
-                                       setWorkspaceDialogOpen(true);
-                                    }}
-                                 >
-                                    <span className="quickIcon">✉</span>
-                                    <span>
-                                       <strong>Invite person</strong>
-                                       <small>Grow your team</small>
-                                    </span>
-                                 </button>
-                                 <button type="button" onClick={() => setTab("reports")}>
-                                    <span className="quickIcon">▤</span>
-                                    <span>
-                                       <strong>Reports</strong>
-                                       <small>Track results</small>
-                                    </span>
-                                 </button>
-                              </>
-                           ) : (
-                              <>
-                                 <button type="button" onClick={() => setTab("kanban")}>
-                                    <span className="quickIcon">☑</span>
-                                    <span>
-                                       <strong>My tasks</strong>
-                                       <small>See assignments</small>
-                                    </span>
-                                 </button>
-                                 <button type="button" onClick={() => setTab("reports")}>
-                                    <span className="quickIcon">▤</span>
-                                    <span>
-                                       <strong>Reports</strong>
-                                       <small>Track results</small>
-                                    </span>
-                                 </button>
-                              </>
-                           )}
-                        </section>
-
-                        <section className="card">
-                           <div className="sectionHead">
-                              <h2>My assignments</h2>
-                              <button type="button" onClick={() => setTab("kanban")}>
-                                 View my tasks →
-                              </button>
-                           </div>
-                           <div className="stats">
-                              <div className="stat">
-                                 <span>Assigned to me</span>
-                                 <strong>
-                                    {
-                                       tasks.filter((t) => t.assignees?.some((a) => a.user_id === userId) || t.owner_id === userId)
-                                          .length
-                                    }
-                                 </strong>
-                              </div>
-                              <div className="stat">
-                                 <span>Due soon</span>
-                                 <strong>
-                                    {
-                                       tasks.filter(
-                                          (t) =>
-                                             (t.assignees?.some((a) => a.user_id === userId) || t.owner_id === userId) &&
-                                             t.due_at &&
-                                             new Date(t.due_at).getTime() >= Date.now() &&
-                                             new Date(t.due_at).getTime() < Date.now() + 7 * 86400000 &&
-                                             t.status !== "completed",
-                                       ).length
-                                    }
-                                 </strong>
-                              </div>
-                              <div className="stat">
-                                 <span>Overdue</span>
-                                 <strong>
-                                    {
-                                       tasks.filter(
-                                          (t) =>
-                                             (t.assignees?.some((a) => a.user_id === userId) || t.owner_id === userId) &&
-                                             t.due_at &&
-                                             new Date(t.due_at) < new Date() &&
-                                             t.status !== "completed",
-                                       ).length
-                                    }
-                                 </strong>
-                              </div>
-                           </div>
-                        </section>
-
-                        <div className="stats">
+                        <div className="stats statsSix">
                            <div className="stat">
-                              <span>{manager ? "All tasks" : "My tasks"}</span>
+                              <span>Total tasks</span>
                               <strong>{counts.total}</strong>
-                              <small>{manager ? "Across your workspace" : "Assigned to you"}</small>
+                              <small>{projectFilter === "all" ? "Across this workspace" : selectedProjectName}</small>
                            </div>
                            <div className="stat">
-                              <span>In progress</span>
-                              <strong>{counts.active}</strong>
-                              <small>Currently underway</small>
+                              <span>Assigned to me</span>
+                              <strong>{counts.assignedToMe}</strong>
+                              <small>Your responsibilities</small>
                            </div>
                            <div className="stat">
-                              <span>Blocked</span>
-                              <strong>{counts.blocked}</strong>
-                              <small>Need attention</small>
+                              <span>Overdue</span>
+                              <strong>{counts.overdue}</strong>
+                              <small>Still awaiting completion</small>
                            </div>
                            <div className="stat">
                               <span>Completed</span>
                               <strong>{counts.done}</strong>
-                              <small>Finished tasks</small>
+                              <small>Approved work</small>
+                           </div>
+                           <div className="stat">
+                              <span>Unassigned</span>
+                              <strong>{counts.unassigned}</strong>
+                              <small>Needs an owner</small>
+                           </div>
+                           <div className="stat">
+                              <span>For review</span>
+                              <strong>{counts.forReview}</strong>
+                              <small>Awaiting approval</small>
                            </div>
                         </div>
 
@@ -962,7 +957,7 @@ export default function Dashboard({
                               <div className="sectionHead">
                                  <h2>{manager ? "Recent work" : "My recent tasks"}</h2>
                                  <button className="textAction" onClick={() => setTab("kanban")}>
-                                    View all →
+                                    Open Kanban →
                                  </button>
                               </div>
                               {homeTasks.slice(0, 5).length ? (
@@ -986,11 +981,12 @@ export default function Dashboard({
                               )}
                            </section>
 
-                           {manager && (
-                              <section className="card" id="projectCreator">
-                                 <div className="sectionHead">
-                                    <h2>＋ Add a project</h2>
-                                 </div>
+                           <section className="card" id="projectCreator">
+                              <div className="sectionHead">
+                                 <h2>{manager ? "＋ Add a project" : "Saved projects"}</h2>
+                                 <span className="chip">{projects.length}</span>
+                              </div>
+                              {manager ? (
                                  <form onSubmit={handleCreateProject} className="formGrid">
                                     <div className="span2">
                                        <label htmlFor="dash-project-name">Project name *</label>
@@ -1007,7 +1003,7 @@ export default function Dashboard({
                                        <label htmlFor="dash-project-description">Description (optional)</label>
                                        <textarea
                                           id="dash-project-description"
-                                          rows={3}
+                                          rows={2}
                                           maxLength={4000}
                                           value={projectDescription}
                                           onChange={(e) => setProjectDescription(e.target.value)}
@@ -1044,103 +1040,162 @@ export default function Dashboard({
                                           ))}
                                        </select>
                                     </div>
-                                    <div className="span2">
+                                    <div className="formAction span2">
                                        <button type="submit" className="primary" disabled={busy || !projectName.trim()}>
                                           Save project
                                        </button>
                                     </div>
                                  </form>
-                              </section>
-                           )}
-                        </div>
-
-                        {manager && goals.length > 0 && (
-                           <section className="card">
-                              <div className="sectionHead">
-                                 <h2>Goals</h2>
-                              </div>
-                              {goals.map((g) => (
-                                 <div className="goalRecord" key={g.id}>
-                                    <div className="taskLine">
+                              ) : projects.length ? (
+                                 projects.map((p) => (
+                                    <div className="taskLine" key={p.id}>
                                        <span className="taskDot underway" />
                                        <div>
-                                          <strong>{g.title}</strong>
+                                          <strong>{p.name}</strong>
                                           <small>
-                                             {statusLabel(g.status)}
-                                             {g.target_date
-                                                ? " · Target " + new Date(g.target_date + "T12:00:00").toLocaleDateString()
-                                                : ""}
+                                             {statusLabel(p.status)} · {tasks.filter((t) => t.project_id === p.id).length} tasks
                                           </small>
-                                          {g.description && <p className="muted">{g.description}</p>}
                                        </div>
                                     </div>
-                                    <button
-                                       type="button"
-                                       className="textAction"
-                                       onClick={() => (editingGoal === g.id ? setEditingGoal("") : startGoalEdit(g))}
-                                    >
-                                       {editingGoal === g.id ? "Cancel" : "✎ Edit goal"}
-                                    </button>
-                                    {editingGoal === g.id && (
-                                       <form className="goalEditForm" onSubmit={handleSaveGoalEdit}>
-                                          <input value={editGoalTitle} onChange={(e) => setEditGoalTitle(e.target.value)} required />
-                                          <textarea
-                                             value={editGoalDescription}
-                                             onChange={(e) => setEditGoalDescription(e.target.value)}
-                                             rows={2}
-                                          />
-                                          <input type="date" value={editGoalDate} onChange={(e) => setEditGoalDate(e.target.value)} />
-                                          <select value={editGoalStatus} onChange={(e) => setEditGoalStatus(e.target.value)}>
-                                             <option value="active">Active</option>
-                                             <option value="paused">Paused</option>
-                                             <option value="achieved">Achieved</option>
-                                          </select>
-                                          <button type="submit" className="primary" disabled={busy || !editGoalTitle.trim()}>
-                                             Save goal changes
-                                          </button>
-                                       </form>
-                                    )}
-                                 </div>
-                              ))}
+                                 ))
+                              ) : (
+                                 <p className="muted">Your workspace leaders have not created any projects yet.</p>
+                              )}
                            </section>
-                        )}
+                        </div>
 
-                        {manager && (
+                        {projects.length > 0 && (
                            <section className="card">
                               <div className="sectionHead">
-                                 <h2>Create a goal</h2>
-                              </div>
-                              <form onSubmit={handleCreateGoal}>
-                                 <label htmlFor="dash-goal-title">New goal</label>
-                                 <input
-                                    id="dash-goal-title"
-                                    value={goalTitle}
-                                    onChange={(e) => setGoalTitle(e.target.value)}
-                                    placeholder="e.g. Improve service response time"
-                                    required
-                                    minLength={2}
-                                    maxLength={180}
-                                 />
-                                 <label htmlFor="dash-goal-description">Description (optional)</label>
-                                 <textarea
-                                    id="dash-goal-description"
-                                    rows={2}
-                                    maxLength={4000}
-                                    value={goalDescription}
-                                    onChange={(e) => setGoalDescription(e.target.value)}
-                                    placeholder="What will success look like?"
-                                 />
-                                 <label htmlFor="dash-goal-target">Target date</label>
-                                 <input
-                                    id="dash-goal-target"
-                                    type="date"
-                                    value={goalTarget}
-                                    onChange={(e) => setGoalTarget(e.target.value)}
-                                 />
-                                 <button className="primary" style={{ marginTop: 14 }} disabled={busy || !goalTitle.trim()}>
-                                    Create goal
+                                 <h2>
+                                    Projects <span className="count">{projects.length}</span>
+                                 </h2>
+                                 <button type="button" className="textAction" onClick={() => openWorkspaceSection("planning")}>
+                                    Goals & planning →
                                  </button>
-                              </form>
+                              </div>
+                              <div className="projectGrid">
+                                 {projects.map((p) => (
+                                    <article className="projectCard" key={p.id}>
+                                       <div className="projectTop">
+                                          <strong>{p.name}</strong>
+                                          <span className="chip">{statusLabel(p.status)}</span>
+                                       </div>
+                                       {p.description && <p className="muted">{p.description}</p>}
+                                       <p className="muted">
+                                          {p.goal_id
+                                             ? "Goal: " + (goals.find((g) => g.id === p.goal_id)?.title ?? "Linked goal")
+                                             : "No linked goal"}{" "}
+                                          ·{" "}
+                                          {p.team_id
+                                             ? "Team: " + (teams.find((t) => t.id === p.team_id)?.name ?? "Assigned team")
+                                             : "No team assigned"}
+                                       </p>
+                                       <div className="projectFoot">
+                                          <span>
+                                             <strong>{tasks.filter((t) => t.project_id === p.id).length}</strong> saved tasks
+                                          </span>
+                                          <div className="projectActions">
+                                             <button
+                                                type="button"
+                                                onClick={() => {
+                                                   setProjectFilter(p.id);
+                                                   setTab("kanban");
+                                                }}
+                                             >
+                                                Filter tasks →
+                                             </button>
+                                             {manager && (
+                                                <button
+                                                   type="button"
+                                                   onClick={() =>
+                                                      editingProject === p.id ? setEditingProject("") : startProjectEdit(p)
+                                                   }
+                                                >
+                                                   {editingProject === p.id ? "Cancel" : "✎ Edit"}
+                                                </button>
+                                             )}
+                                          </div>
+                                       </div>
+                                       {manager && editingProject === p.id && (
+                                          <form className="projectEditForm formGrid" onSubmit={handleSaveProjectEdit}>
+                                             <div className="span2">
+                                                <h3>Edit project</h3>
+                                                <label htmlFor="editProjectName">Project name</label>
+                                                <input
+                                                   id="editProjectName"
+                                                   required
+                                                   minLength={2}
+                                                   maxLength={180}
+                                                   value={editProjectName}
+                                                   onChange={(e) => setEditProjectName(e.target.value)}
+                                                />
+                                             </div>
+                                             <div className="span2">
+                                                <label htmlFor="editProjectDescription">Description</label>
+                                                <textarea
+                                                   id="editProjectDescription"
+                                                   rows={3}
+                                                   maxLength={4000}
+                                                   value={editProjectDescription}
+                                                   onChange={(e) => setEditProjectDescription(e.target.value)}
+                                                />
+                                             </div>
+                                             <div>
+                                                <label htmlFor="editProjectStatus">Status</label>
+                                                <select
+                                                   id="editProjectStatus"
+                                                   value={editProjectStatus}
+                                                   onChange={(e) => setEditProjectStatus(e.target.value)}
+                                                >
+                                                   <option value="active">Active</option>
+                                                   <option value="on_hold">On hold</option>
+                                                   <option value="completed">Completed</option>
+                                                </select>
+                                             </div>
+                                             <div>
+                                                <label htmlFor="editProjectGoal">Goal</label>
+                                                <select
+                                                   id="editProjectGoal"
+                                                   value={editProjectGoal}
+                                                   onChange={(e) => setEditProjectGoal(e.target.value)}
+                                                >
+                                                   <option value="">No linked goal</option>
+                                                   {goals.map((g) => (
+                                                      <option key={g.id} value={g.id}>
+                                                         {g.title}
+                                                      </option>
+                                                   ))}
+                                                </select>
+                                             </div>
+                                             <div className="span2">
+                                                <label htmlFor="editProjectTeam">Team</label>
+                                                <select
+                                                   id="editProjectTeam"
+                                                   value={editProjectTeam}
+                                                   onChange={(e) => setEditProjectTeam(e.target.value)}
+                                                >
+                                                   <option value="">No team assigned</option>
+                                                   {teams.map((t) => (
+                                                      <option key={t.id} value={t.id}>
+                                                         {t.name}
+                                                      </option>
+                                                   ))}
+                                                </select>
+                                             </div>
+                                             <div className="span2">
+                                                <button type="submit" className="primary" disabled={busy}>
+                                                   {busy ? "Saving…" : "Save project changes"}
+                                                </button>
+                                                <button type="button" onClick={() => setEditingProject("")}>
+                                                   Cancel
+                                                </button>
+                                             </div>
+                                          </form>
+                                       )}
+                                    </article>
+                                 ))}
+                              </div>
                            </section>
                         )}
                      </>
@@ -1149,6 +1204,31 @@ export default function Dashboard({
                   {tab === "kanban" && (
                      <>
                         <section className="card">
+                           <div className="sectionHead">
+                              <div>
+                                 <h2>
+                                    {selectedProjectName} · Tasks <span className="count">{filteredTasks.length}</span>
+                                 </h2>
+                                 <p className="muted" style={{ margin: "4px 0 0" }}>
+                                    Drag cards between columns to change status, or use the menu on each card. Click a title to edit.
+                                 </p>
+                              </div>
+                              <div className="headerActions">
+                                 {manager && (
+                                    <button
+                                       type="button"
+                                       className="primary"
+                                       onClick={() => {
+                                          setEditingTask(null);
+                                          setTaskDialogOpen(true);
+                                       }}
+                                    >
+                                       ＋ Add task
+                                    </button>
+                                 )}
+                              </div>
+                           </div>
+
                            <div className="filterBar">
                               <label className="taskOwnerFilter">
                                  <input type="checkbox" checked={myTasksOnly} onChange={(e) => setMyTasksOnly(e.target.checked)} /> My
@@ -1178,9 +1258,24 @@ export default function Dashboard({
                               <div className="card taskComposer" style={{ marginBottom: 18 }}>
                                  <div className="sectionHead">
                                     <h2>{tasks.find((t) => t.id === selectedTask)?.title}</h2>
-                                    <button type="button" className="textAction" onClick={() => setSelectedTask("")}>
-                                       Close
-                                    </button>
+                                    <div className="headerActions">
+                                       <button
+                                          type="button"
+                                          className="secondary"
+                                          onClick={() => {
+                                             const found = tasks.find((t) => t.id === selectedTask);
+                                             if (found) {
+                                                setEditingTask(found);
+                                                setTaskDialogOpen(true);
+                                             }
+                                          }}
+                                       >
+                                          ✎ Edit details
+                                       </button>
+                                       <button type="button" className="textAction" onClick={() => setSelectedTask("")}>
+                                          Close ×
+                                       </button>
+                                    </div>
                                  </div>
                                  <div className="taskActionPanel">
                                     <p className="muted">
@@ -1305,160 +1400,154 @@ export default function Dashboard({
                               </div>
                            )}
 
-                           <div className="tablewrap">
-                              <table>
-                                 <thead>
-                                    <tr>
-                                       <th>Task</th>
-                                       <th>Priority</th>
-                                       <th>Due date</th>
-                                       <th>Project</th>
-                                       <th>Assignees</th>
-                                       <th>Status</th>
-                                    </tr>
-                                 </thead>
-                                 <tbody>
-                                    {filteredTasks.length ? (
-                                       filteredTasks.map((t) => (
-                                          <tr key={t.id}>
-                                             <td>
-                                                <button
-                                                   className="taskOpen"
-                                                   onClick={() => {
+                           <DndContext
+                              sensors={sensors}
+                              collisionDetection={closestCorners}
+                              onDragStart={handleDragStart}
+                              onDragEnd={handleDragEnd}
+                              onDragCancel={() => setActiveDragId(null)}
+                           >
+                              <div className="kanbanBoard">
+                                 {statuses.map((status) => {
+                                    const columnTasks = filteredTasks.filter((t) => t.status === status);
+                                    return (
+                                       <KanbanColumn key={status} status={status} count={columnTasks.length}>
+                                          {columnTasks.map((t) => {
+                                             const allowed = taskAllowedStatuses(t);
+                                             return (
+                                                <KanbanCard
+                                                   key={t.id}
+                                                   task={t}
+                                                   assigneeNames={taskAssigneeNames(t)}
+                                                   projectName={taskProjectName(t)}
+                                                   canDrag={allowed.some((s) => s !== t.status)}
+                                                   statusOptions={allowed}
+                                                   busy={busy}
+                                                   onEdit={() => {
                                                       setEditingTask(t);
                                                       setTaskDialogOpen(true);
                                                    }}
-                                                >
-                                                   {t.title}
-                                                </button>
-                                             </td>
-                                             <td>
-                                                <span className={"priority " + t.priority}>{statusLabel(t.priority)}</span>
-                                             </td>
-                                             <td>{t.due_at ? new Date(t.due_at).toLocaleDateString() : "—"}</td>
-                                             <td>
-                                                {t.project_id ? (projects.find((p) => p.id === t.project_id)?.name ?? "Project") : "—"}
-                                             </td>
-                                             <td>
-                                                {t.assignees?.length
-                                                   ? t.assignees
-                                                        .map(
-                                                           (a) =>
-                                                              directory.find((m) => m.user_id === a.user_id)?.display_name ?? "Member",
-                                                        )
-                                                        .join(", ")
-                                                   : t.owner_id
-                                                     ? (directory.find((m) => m.user_id === t.owner_id)?.display_name ?? "Assigned")
-                                                     : "Unassigned"}
-                                             </td>
-                                             <td>
-                                                {manager || t.assignees?.some((a) => a.user_id === userId) || t.owner_id === userId ? (
-                                                   <select
-                                                      aria-label={"Status for " + t.title}
-                                                      value={t.status}
-                                                      disabled={busy}
-                                                      onChange={(e) => void onUpdateTaskStatus(t.id, e.target.value)}
-                                                   >
-                                                      {statuses
-                                                         .filter((st) =>
-                                                            manager
-                                                               ? st === t.status ||
-                                                                 st !== "rejected" ||
-                                                                 t.status === "awaiting_approval"
-                                                               : st !== "completed" && st !== "rejected",
-                                                         )
-                                                         .map((st) => (
-                                                            <option key={st} value={st}>
-                                                               {st === t.status
-                                                                  ? taskStatusLabel(st)
-                                                                  : st === "awaiting_approval"
-                                                                    ? "Submit for approval"
-                                                                    : taskStatusLabel(st)}
-                                                            </option>
-                                                         ))}
-                                                   </select>
-                                                ) : (
-                                                   <span className="chip">{taskStatusLabel(t.status)}</span>
-                                                )}
-                                             </td>
-                                          </tr>
-                                       ))
-                                    ) : (
-                                       <tr>
-                                          <td colSpan={6} className="muted">
-                                             {workspaceLoading
-                                                ? "Loading saved tasks from the database…"
-                                                : "No saved tasks match your filters."}
-                                          </td>
-                                       </tr>
-                                    )}
-                                 </tbody>
-                              </table>
-                           </div>
-                           <div className="mobileTaskList">
-                              {filteredTasks.length ? (
-                                 filteredTasks.map((t) => (
-                                    <article className="mobileTaskCard" key={t.id}>
-                                       <div className="mobileTaskTop">
-                                          <span className={"priority " + t.priority}>{statusLabel(t.priority)}</span>
-                                          <span className="mobileTaskDate">
-                                             {t.due_at ? "Due " + new Date(t.due_at).toLocaleDateString() : "No deadline"}
+                                                   onProgress={() => void openTask(t.id)}
+                                                   onStatusChange={(s) => void onUpdateTaskStatus(t.id, s)}
+                                                />
+                                             );
+                                          })}
+                                       </KanbanColumn>
+                                    );
+                                 })}
+                              </div>
+                              <DragOverlay>
+                                 {activeDragTask ? (
+                                    <article className="kanbanCard kanbanOverlay">
+                                       <div className="kanbanCardTop">
+                                          <strong>{activeDragTask.title}</strong>
+                                          <span className={"priority " + activeDragTask.priority}>
+                                             {statusLabel(activeDragTask.priority)}
                                           </span>
-                                       </div>
-                                       <button
-                                          className="mobileTaskTitle"
-                                          onClick={() => {
-                                             setEditingTask(t);
-                                             setTaskDialogOpen(true);
-                                          }}
-                                       >
-                                          {t.title} <span aria-hidden="true">↗</span>
-                                       </button>
-                                       <div className="mobileTaskMeta">
-                                          <span>
-                                             {t.assignees?.length
-                                                ? t.assignees
-                                                     .map(
-                                                        (a) =>
-                                                           directory.find((m) => m.user_id === a.user_id)?.display_name ?? "Member",
-                                                     )
-                                                     .join(", ")
-                                                : t.owner_id
-                                                  ? (directory.find((m) => m.user_id === t.owner_id)?.display_name ?? "Assigned")
-                                                  : "Unassigned"}
-                                          </span>
-                                          <span>
-                                             {t.project_id
-                                                ? " · " + (projects.find((p) => p.id === t.project_id)?.name ?? "Project")
-                                                : " · No project"}
-                                          </span>
-                                       </div>
-                                       <div className="mobileTaskStatus">
-                                          <span className="chip">{taskStatusLabel(t.status)}</span>
                                        </div>
                                     </article>
-                                 ))
-                              ) : (
-                                 <div className="card">
-                                    <p className="muted">
-                                       {workspaceLoading ? "Loading saved tasks…" : "No saved tasks match these filters."}
-                                    </p>
-                                 </div>
-                              )}
-                           </div>
+                                 ) : null}
+                              </DragOverlay>
+                           </DndContext>
+                           {!filteredTasks.length && (
+                              <p className="muted">
+                                 {workspaceLoading
+                                    ? "Loading saved tasks from the database…"
+                                    : manager
+                                      ? "No saved tasks match your filters. Select ＋ Add task above to create one."
+                                      : "No saved tasks match your filters."}
+                              </p>
+                           )}
                         </section>
                      </>
                   )}
 
                   {tab === "reports" && (
                      <Reports
-                        tasks={tasks}
+                        tasks={projectScopedTasks}
                         projects={projects}
                         teams={teams}
                         directory={directory}
-                        organizationName={active.name}
+                        organizationName={selectedProject ? `${active.name} · ${selectedProject.name}` : active.name}
                         organizationId={selected}
                      />
+                  )}
+
+                  {tab === "messages" && (
+                     <div className="operations">
+                        <section className="card">
+                           <div className="sectionHead">
+                              <div>
+                                 <h2>Team messages</h2>
+                                 <p className="muted" style={{ margin: "4px 0 0" }}>
+                                    Messages are organized by team channel. Select a team to post and read updates.
+                                 </p>
+                              </div>
+                              {manager && teams.length === 0 && (
+                                 <button type="button" className="primary" onClick={() => openWorkspaceSection("teams")}>
+                                    ＋ Create a team
+                                 </button>
+                              )}
+                           </div>
+                           {teams.length > 0 ? (
+                              <>
+                                 <label htmlFor="dash-msg-team">Team channel</label>
+                                 <select id="dash-msg-team" value={messageTeam} onChange={(e) => setMessageTeam(e.target.value)}>
+                                    {teams.map((t) => (
+                                       <option key={t.id} value={t.id}>
+                                          {t.name}
+                                       </option>
+                                    ))}
+                                 </select>
+                                 <form onSubmit={handleSendMessage}>
+                                    <label htmlFor="dash-msg-text">New message</label>
+                                    <textarea
+                                       id="dash-msg-text"
+                                       rows={3}
+                                       maxLength={3000}
+                                       required
+                                       value={messageText}
+                                       onChange={(e) => setMessageText(e.target.value)}
+                                       placeholder="Share an update with your team"
+                                    />
+                                    <button className="primary" type="submit" disabled={busy || !messageTeam || !messageText.trim()}>
+                                       Post message
+                                    </button>
+                                 </form>
+                              </>
+                           ) : (
+                              <p className="muted">
+                                 No teams created yet.{" "}
+                                 {manager
+                                    ? "Create a team in Workspace settings to start messaging."
+                                    : "Ask a workspace leader to create a team and assign you."}
+                              </p>
+                           )}
+
+                           <div className="messageFeed">
+                              {teamMessages.filter((m) => !messageTeam || m.team_id === messageTeam).length ? (
+                                 teamMessages
+                                    .filter((m) => !messageTeam || m.team_id === messageTeam)
+                                    .map((msg) => (
+                                       <div className="messageItem" key={msg.id}>
+                                          <p>{msg.content}</p>
+                                          <small>
+                                             <strong>
+                                                {msg.sender_id === userId
+                                                   ? "You"
+                                                   : (directory.find((m) => m.user_id === msg.sender_id)?.display_name ?? "Member")}
+                                             </strong>{" "}
+                                             · {teams.find((t) => t.id === msg.team_id)?.name ?? "Team"} ·{" "}
+                                             {new Date(msg.created_at).toLocaleString()}
+                                          </small>
+                                       </div>
+                                    ))
+                              ) : (
+                                 <p className="muted">No messages in this channel yet.</p>
+                              )}
+                           </div>
+                        </section>
+                     </div>
                   )}
                </div>
             </main>
@@ -1466,12 +1555,11 @@ export default function Dashboard({
 
          <WorkspaceDialog
             open={workspaceDialogOpen}
-            onOpenChange={(open) => {
-               setWorkspaceDialogOpen(open);
-               if (open) setWorkspaceTab("overview");
-            }}
+            onOpenChange={setWorkspaceDialogOpen}
+            initialTab={workspaceTab}
             organizationId={selected}
             organizationName={active.name}
+            organizationCount={orgs.length}
             userId={userId}
             role={role}
             directory={directory}
@@ -1480,11 +1568,10 @@ export default function Dashboard({
             teamMembers={teamMembers}
             tasks={tasks}
             projects={projects}
+            goals={goals}
             activity={activity}
             outgoingInvites={outgoingInvites}
             requests={requests}
-            teamMessages={teamMessages}
-            onSendTeamMessage={onSendTeamMessage}
             createdAt={active.created_at}
             onRefresh={onRefresh}
             onCreateTeam={onCreateTeam}
@@ -1499,11 +1586,14 @@ export default function Dashboard({
             onCreateOrganization={onCreateOrganization}
             onCreateRequest={onCreateRequest}
             onDecideRequest={onDecideRequest}
+            onCreateGoal={onCreateGoal}
+            onEditGoal={onEditGoal}
          />
 
          <UserDialog
             open={userDialogOpen}
             onOpenChange={setUserDialogOpen}
+            initialTab={userTab}
             user={user}
             role={role}
             pendingInvites={pendingInvites}
@@ -1511,13 +1601,41 @@ export default function Dashboard({
             selectedOrg={selected}
             onSelectOrg={onSelectOrg}
             profileName={profileName}
-            onProfileNameChange={setProfileName}
-            onSaveProfile={onSaveProfile}
+            organizationName={active?.name ?? ""}
+            assignedTasks={
+               tasks.filter((t) => t.owner_id === user.id || (t.assignees ?? []).some((a) => a.user_id === user.id)).length
+            }
+            projectsCount={projects.length}
+            photoUrl={profilePhotoUrl}
+            onUserRefresh={onUserRefresh}
             onChangePassword={onChangePassword}
             onAcceptInvite={onAcceptInvite}
             onCreateOrganization={onCreateOrganization}
-            onSignOut={onSignOut}
+            onLeaveOrganization={onLeaveOrganization}
+            onSignOut={() => {
+               setUserDialogOpen(false);
+               setConfirmSignOut(true);
+            }}
          />
+
+         <DialogShell open={confirmSignOut} onOpenChange={setConfirmSignOut} title="Sign out" subtitle="Confirm">
+            <p className="muted">Are you sure you want to sign out of Trackwise?</p>
+            <div className="taskInlineActions" style={{ marginTop: 14 }}>
+               <button type="button" className="secondary" onClick={() => setConfirmSignOut(false)}>
+                  Stay signed in
+               </button>
+               <button
+                  type="button"
+                  className="dangerAction"
+                  onClick={() => {
+                     setConfirmSignOut(false);
+                     void onSignOut();
+                  }}
+               >
+                  Sign out ↪
+               </button>
+            </div>
+         </DialogShell>
 
          <TaskDialog
             open={taskDialogOpen}
@@ -1568,31 +1686,46 @@ export default function Dashboard({
             <div className="guideOverlay" role="dialog" aria-modal="true" aria-label="Trackwise quick-start guide">
                <div className="guidePanel">
                   <div className="guideTop">
-                     <h2>Welcome to Trackwise</h2>
+                     <span className="eyebrow blue">TRACKWISE QUICK START</span>
                      <button type="button" className="guideClose" onClick={onCloseGuide} aria-label="Close guide">
                         ×
                      </button>
                   </div>
-                  <p className="muted">Three things to know before you start.</p>
+                  <h2>{manager ? "Welcome! Let's organize your team 👋" : "Welcome to your workspace 👋"}</h2>
+                  <p className="muted">
+                     {manager
+                        ? "Here's a simple path from starting a project to getting things done."
+                        : "You can focus on your work while your leaders manage projects and assignments."}
+                  </p>
                   <div className="guideCards">
                      <div>
                         <span>1</span>
-                        <strong>Projects organize your work</strong>
-                        <p>Use the sidebar to pick a project, then view its tasks, reports, and summary in the tabs.</p>
+                        <strong>Projects live in the sidebar</strong>
+                        <p>Select any project on the left to filter its Summary, Kanban tasks, and Reports.</p>
                      </div>
                      <div>
                         <span>2</span>
-                        <strong>Tasks can have multiple assignees</strong>
-                        <p>Select everyone responsible when creating or editing a task so ownership is clear.</p>
+                        <strong>Assign multiple people to tasks</strong>
+                        <p>Open the Kanban tab and click ＋ Add task to assign one or more teammates and set deadlines.</p>
                      </div>
                      <div>
                         <span>3</span>
-                        <strong>Workspace details are one click away</strong>
-                        <p>Invite people, manage teams, and review activity from the Workspace dialog.</p>
+                        <strong>Workspace & account dialogs</strong>
+                        <p>Use Workspace settings in the bottom-left to invite people, manage teams, and review requests.</p>
                      </div>
                   </div>
                   <div className="guideActions">
-                     <button type="button" className="primary" onClick={onCloseGuide}>
+                     <button
+                        type="button"
+                        className="primary"
+                        onClick={() => {
+                           onCloseGuide();
+                           setTab("kanban");
+                        }}
+                     >
+                        Go to Kanban →
+                     </button>
+                     <button type="button" onClick={onCloseGuide}>
                         Got it
                      </button>
                   </div>
@@ -1600,5 +1733,111 @@ export default function Dashboard({
             </div>
          )}
       </div>
+   );
+}
+
+function KanbanColumn({ status, count, children }: { status: string; count: number; children: ReactNode }) {
+   const { setNodeRef, isOver } = useDroppable({ id: "column-" + status });
+   return (
+      <section
+         ref={setNodeRef}
+         className={"kanbanColumn" + (isOver ? " over" : "")}
+         aria-label={taskStatusLabel(status) + " column"}
+      >
+         <div className="kanbanColumnHead">
+            <h3>{taskStatusLabel(status)}</h3>
+            <span className="count">{count}</span>
+         </div>
+         <div className="kanbanCards">{count ? children : <div className="kanbanDropHint">Drop a task here</div>}</div>
+      </section>
+   );
+}
+
+type KanbanCardProps = {
+   task: DashboardTask;
+   assigneeNames: string;
+   projectName: string;
+   canDrag: boolean;
+   statusOptions: string[];
+   busy: boolean;
+   onEdit: () => void;
+   onProgress: () => void;
+   onStatusChange: (status: string) => void;
+};
+
+function KanbanCard({
+   task,
+   assigneeNames,
+   projectName,
+   canDrag,
+   statusOptions,
+   busy,
+   onEdit,
+   onProgress,
+   onStatusChange,
+}: KanbanCardProps) {
+   const { attributes, listeners, setNodeRef: setDragRef, setActivatorNodeRef, transform, isDragging } = useDraggable({
+      id: task.id,
+      disabled: !canDrag,
+   });
+   const { setNodeRef: setDropRef } = useDroppable({ id: task.id });
+   const setRefs = (el: HTMLElement | null) => {
+      setDragRef(el);
+      setDropRef(el);
+   };
+   return (
+      <article
+         ref={setRefs}
+         style={{ transform: CSS.Translate.toString(transform) }}
+         className={"kanbanCard" + (isDragging ? " dragging" : "")}
+      >
+         <div className="kanbanCardTop">
+            {canDrag && (
+               <button
+                  type="button"
+                  ref={setActivatorNodeRef}
+                  className="kanbanDragHandle"
+                  aria-label={"Drag " + task.title}
+                  {...attributes}
+                  {...listeners}
+               >
+                  ⠿
+               </button>
+            )}
+            <button type="button" className="kanbanCardTitle" onClick={onEdit}>
+               {task.title}
+            </button>
+            <span className={"priority " + task.priority}>{statusLabel(task.priority)}</span>
+         </div>
+         {task.description && <p className="kanbanCardDesc">{task.description}</p>}
+         <p className="kanbanCardMeta">
+            <span>{task.due_at ? "Due " + new Date(task.due_at).toLocaleDateString() : "No deadline"}</span>
+            <span aria-hidden="true">·</span>
+            <span>{assigneeNames}</span>
+            <span aria-hidden="true">·</span>
+            <span>{projectName}</span>
+         </p>
+         <div className="kanbanCardFoot">
+            <button type="button" className="textAction" onClick={onProgress}>
+               Progress
+            </button>
+            {statusOptions.length ? (
+               <select
+                  aria-label={"Status for " + task.title}
+                  value={task.status}
+                  disabled={busy}
+                  onChange={(e) => onStatusChange(e.target.value)}
+               >
+                  {statusOptions.map((st) => (
+                     <option key={st} value={st}>
+                        {st === task.status ? taskStatusLabel(st) : st === "awaiting_approval" ? "Submit for approval" : taskStatusLabel(st)}
+                     </option>
+                  ))}
+               </select>
+            ) : (
+               <span className="chip">{taskStatusLabel(task.status)}</span>
+            )}
+         </div>
+      </article>
    );
 }

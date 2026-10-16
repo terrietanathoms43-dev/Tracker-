@@ -202,7 +202,7 @@ export default function Home() {
                .eq("organization_id", orgId)
                .order("created_at", { ascending: false }),
             allTasks(),
-            db.from("tw_memberships").select("user_id,role").eq("organization_id", orgId).is("revoked_at", null),
+            db.from("tw_memberships").select("user_id,role").eq("organization_id", orgId),
             db.from("tw_team_members").select("team_id,user_id,role"),
             db
                .from("tw_requests")
@@ -413,17 +413,15 @@ export default function Home() {
       }
    }
 
-   async function saveProfile(name: string) {
-      if (!db || !user) throw new Error("Not signed in");
-      const trimmed = name.trim();
-      if (trimmed.length < 2 || trimmed.length > 80) throw new Error("Display name must be between 2 and 80 characters.");
-      const { error } = await db.auth.updateUser({ data: { display_name: trimmed } });
-      if (error) throw error;
-      await loadWorkspace(selected);
+   async function refreshUser() {
+      if (!db) return;
+      const { data } = await db.auth.getUser();
+      if (data.user) setUser(data.user);
    }
 
    async function createOrg(name: string) {
       if (!db) throw new Error("Database not ready");
+      if (orgs.length >= 2) throw new Error("You already belong to the maximum of two workspaces. Leave one before creating another.");
       const { data, error } = await db.rpc("tw_create_organization", { org_name: name.trim() });
       if (error) throw error;
       await loadOrgs();
@@ -432,6 +430,10 @@ export default function Home() {
 
    async function acceptInvite(id: string) {
       if (!db) return;
+      if (orgs.length >= 2) {
+         setError("You already belong to the maximum of two workspaces. Leave one before joining another.");
+         return;
+      }
       setInvitesLoading(true);
       clear();
       try {
@@ -592,12 +594,15 @@ export default function Home() {
       await loadOrgs();
    }
 
-   async function leaveOrganization() {
-      if (!db || !selected || !user) return;
-      if (!window.confirm("Leave this organization? You will lose access until invited back.")) return;
-      const { error } = await db.rpc("tw_leave_organization", { org_id: selected, member_id: user.id });
+   async function leaveOrganization(orgId?: string): Promise<boolean> {
+      const target = orgId ?? selected;
+      if (!db || !target || !user) return false;
+      const name = orgs.find((o) => o.id === target)?.name ?? "this organization";
+      if (!window.confirm(`Leave ${name}? You will lose access until invited back.`)) return false;
+      const { error } = await db.rpc("tw_leave_organization", { org_id: target, member_id: user.id });
       if (error) throw error;
       await loadOrgs();
+      return true;
    }
 
    async function createTask(values: {
@@ -997,7 +1002,7 @@ export default function Home() {
          onCreateRequest={createRequest}
          onDecideRequest={decideRequest}
          onAcceptInvite={acceptInvite}
-         onSaveProfile={saveProfile}
+         onUserRefresh={refreshUser}
          onChangePassword={async (pwd) => {
             setNewPassword(pwd);
             await changePassword({ preventDefault: () => {} } as FormEvent);

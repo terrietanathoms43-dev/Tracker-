@@ -6,11 +6,14 @@ type DialogShellProps = {
    open: boolean;
    onOpenChange: (open: boolean) => void;
    title: string;
+   subtitle?: string;
+   sidebar?: ReactNode;
+   wide?: boolean;
    children: ReactNode;
    footer?: ReactNode;
 };
 
-export default function DialogShell({ open, onOpenChange, title, children, footer }: DialogShellProps) {
+export default function DialogShell({ open, onOpenChange, title, subtitle, sidebar, wide, children, footer }: DialogShellProps) {
    const panelRef = useRef<HTMLDivElement>(null);
 
    useEffect(() => {
@@ -34,15 +37,43 @@ export default function DialogShell({ open, onOpenChange, title, children, foote
 
    return (
       <div className="dialogOverlay" role="dialog" aria-modal="true" aria-label={title}>
-         <div className="dialogPanel" ref={panelRef}>
-            <div className="dialogHeader">
-               <h2>{title}</h2>
-               <button type="button" className="dialogClose" onClick={() => onOpenChange(false)} aria-label="Close">
-                  ×
-               </button>
-            </div>
-            <div className="dialogBody">{children}</div>
-            {footer ? <div className="dialogFooter">{footer}</div> : null}
+         <div
+            className={"dialogPanel" + (wide || sidebar ? " dialogWide" : "") + (sidebar ? " dialogWithSidebar" : "")}
+            ref={panelRef}
+         >
+            {sidebar ? (
+               <div className="dialogSplit">
+                  <aside className="dialogSidebar">
+                     <div className="dialogSideHead">
+                        <span className="eyebrow blue">WORKSPACE</span>
+                        <h2>{title}</h2>
+                        {subtitle && <p className="muted">{subtitle}</p>}
+                     </div>
+                     {sidebar}
+                  </aside>
+                  <div className="dialogMain">
+                     <div className="dialogHeader">
+                        <h2>{subtitle || title}</h2>
+                        <button type="button" className="dialogClose" onClick={() => onOpenChange(false)} aria-label="Close">
+                           ×
+                        </button>
+                     </div>
+                     <div className="dialogBody">{children}</div>
+                     {footer ? <div className="dialogFooter">{footer}</div> : null}
+                  </div>
+               </div>
+            ) : (
+               <>
+                  <div className="dialogHeader">
+                     <h2>{title}</h2>
+                     <button type="button" className="dialogClose" onClick={() => onOpenChange(false)} aria-label="Close">
+                        ×
+                     </button>
+                  </div>
+                  <div className="dialogBody">{children}</div>
+                  {footer ? <div className="dialogFooter">{footer}</div> : null}
+               </>
+            )}
          </div>
       </div>
    );
