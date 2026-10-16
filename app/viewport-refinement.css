@@ -196,3 +196,6 @@
   .authV3Preview, .appShell .twSignatureWelcome,
   .appShell .stats.statsSix .stat, .appShell .projectCard { transition: none; }
 }
+
+/* Keep the session-preparation indicator centered on all screen sizes. */
+.authV3.authV3Loading { grid-template-columns: minmax(0, 1fr); }
