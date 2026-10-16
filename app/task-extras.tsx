@@ -35,24 +35,30 @@ export default function TaskExtras({organizationId,taskId,userId,manager,canComm
  const [busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
  const [error,setError]=useState(""),[notice,setNotice]=useState("");
  const fileInput=useRef<HTMLInputElement>(null);
+ const refreshSequence=useRef(0);
  const refresh=useCallback(async()=>{
+  const requestSequence=++refreshSequence.current;
   setLoading(true);setError("");
+  // Do not display another task\'s comments, checklist or files while switching.
+  setComments([]);setChecklist([]);setFiles([]);
   try{
    const [c,f,items]=await Promise.all([
     db.from("tw_task_comments").select("id,body,author_id,created_at").eq("organization_id",organizationId).eq("task_id",taskId).order("created_at",{ascending:false}).limit(100),
     db.from("tw_task_attachments").select("id,file_name,storage_path,file_size,mime_type,uploaded_by,created_at").eq("organization_id",organizationId).eq("task_id",taskId).order("created_at",{ascending:false}).limit(100),
     db.from("tw_task_checklist").select("id,label,is_done,sort_order,created_at,completed_at").eq("organization_id",organizationId).eq("task_id",taskId).order("sort_order",{ascending:true}).order("created_at",{ascending:true}).limit(100)
    ]);
+   // A newer task selection or refresh takes precedence over older responses.
+   if(requestSequence!==refreshSequence.current)return;
    if(c.error)throw c.error;
    if(f.error)throw f.error;
    if(items.error)throw items.error;
    setChecklist(items.data??[]);
    setComments((c.data??[]).reverse());
    setFiles(f.data??[]);
-  }catch(e){setError(e instanceof Error?e.message:"Could not load task conversations and attachments");}
-  finally{setLoading(false);}
+  }catch(e){if(requestSequence===refreshSequence.current)setError(e instanceof Error?e.message:"Could not load task conversations and attachments");}
+  finally{if(requestSequence===refreshSequence.current)setLoading(false);}
  },[organizationId,taskId]);
- useEffect(()=>{void refresh()},[refresh]);
+ useEffect(()=>{void refresh();return()=>{refreshSequence.current++;};},[refresh]);
  const author=(id:string)=>id===userId?"You":directory.find(m=>m.user_id===id)?.display_name??"Team member";
  const completedChecklist=checklist.filter(item=>item.is_done).length;
  async function addChecklist(event:FormEvent){
