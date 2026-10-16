@@ -71,6 +71,8 @@ export default function Home(){
  const [teamMembers,setTeamMembers]=useState<TeamMember[]>([]),[requests,setRequests]=useState<Request[]>([]),[activity,setActivity]=useState<Activity[]>([]),[requestTitle,setRequestTitle]=useState(""),[requestDetails,setRequestDetails]=useState(""),[assignTeam,setAssignTeam]=useState(""),[assignUser,setAssignUser]=useState(""),[assignRole,setAssignRole]=useState("member");
  const [pendingInvites,setPendingInvites]=useState<{id:string;email:string;role:string;organization_id:string;expires_at:string}[]>([]),[invitesLoading,setInvitesLoading]=useState(false);
  const inviteRequest=useRef(0);
+ const personalInvitesRequest=useRef(0);
+ const organizationsRequest=useRef(0);
  const [outgoingInvites,setOutgoingInvites]=useState<{id:string;email:string;role:string;expires_at:string;accepted_at:string|null}[]>([]),[inviteAction,setInviteAction]=useState("");
  const [inviteEmail,setInviteEmail]=useState(""),[inviteRole,setInviteRole]=useState("member"),[orgName,setOrgName]=useState(""),[teamName,setTeamName]=useState(""),[taskTitle,setTaskTitle]=useState(""),[taskDescription,setTaskDescription]=useState(""),[taskDue,setTaskDue]=useState(""),[taskFrequency,setTaskFrequency]=useState("none"),[recurringRefresh,setRecurringRefresh]=useState(0),[taskPriority,setTaskPriority]=useState("normal"),[taskOwner,setTaskOwner]=useState("");
  const [myTasksOnly,setMyTasksOnly]=useState(false),[workspaceLoading,setWorkspaceLoading]=useState(false);
@@ -104,7 +106,7 @@ export default function Home(){
   return()=>{live=false};
  },[user?.id,user?.user_metadata?.avatar_path]);
  const clear=()=>{setError("");setNotice("")};
- const loadOrgs=useCallback(async()=>{if(!db)return;const {data,error}=await db.from("tw_organizations").select("id,name,created_at").order("created_at",{ascending:false});if(error)setError(error.message);else {setOrgs(data??[]);setSelected(old=>(data??[]).some(o=>o.id===old)?old:(data?.[0]?.id??""))}},[]);
+ const loadOrgs=useCallback(async()=>{if(!db)return;const request=++organizationsRequest.current;const {data,error}=await db.from("tw_organizations").select("id,name,created_at").order("created_at",{ascending:false});if(request!==organizationsRequest.current)return;if(error)setError(error.message);else {setOrgs(data??[]);setSelected(old=>(data??[]).some(o=>o.id===old)?old:(data?.[0]?.id??""))}},[]);
  const loadWorkspace=useCallback(async(orgId:string)=>{
   if(!db||!orgId)return;
   const request=++workspaceRequest.current;
@@ -167,9 +169,19 @@ export default function Home(){
  async function revokeInvite(id:string){if(!db||!selected||!manager)return;if(!window.confirm("Revoke this invitation? Its link will stop working."))return;setInviteAction(id);clear();try{const {error}=await db.rpc("tw_revoke_invitation",{invitation_id:id});if(error)throw error;await loadOutgoingInvites(selected);if(inviteShareId===id){setInviteShareReady(false);setInviteShareId("")}setNotice("Invitation revoked.")}catch(e){setError(e instanceof Error?e.message:"Unable to revoke invitation")}finally{setInviteAction("")}}
  function shareExistingInvite(id:string,email:string){setInviteShareEmail(email);setInviteShareId(id);setInviteShareReady(true);setNotice("Invitation link ready to share.")}
  useEffect(()=>{if(!db){setInitial(false);return}let live=true;db.auth.getUser().then(({data,error})=>{if(live){if(error)setError(error.message);setUser(data.user);setInitial(false)}}).catch(()=>{if(live){setError("Unable to connect. Check your internet connection.");setInitial(false)}});const {data:{subscription}}=db.auth.onAuthStateChange((_event,session)=>{if(live)setUser(session?.user??null);if(_event==="PASSWORD_RECOVERY")setRecovery(true)});return()=>{live=false;subscription.unsubscribe()}},[]);
- useEffect(()=>{if(user){void db?.from("tw_invitations").select("id,email,role,organization_id,expires_at").eq("email",user.email?.toLowerCase()??"").is("accepted_at",null).gt("expires_at",new Date().toISOString()).then(({data})=>setPendingInvites(data??[]));}else setPendingInvites([])},[user]);
+ useEffect(()=>{
+  const request=++personalInvitesRequest.current;
+  setPendingInvites([]);
+  if(user?.email)void db?.from("tw_invitations").select("id,email,role,organization_id,expires_at")
+   .eq("email",user.email.toLowerCase()).is("accepted_at",null)
+   .gt("expires_at",new Date().toISOString())
+   .then(({data,error})=>{
+    if(request!==personalInvitesRequest.current)return;
+    if(!error)setPendingInvites(data??[]);
+   });
+ },[user?.id,user?.email]);
  useEffect(()=>{if(user&&typeof window!=="undefined"&&new URLSearchParams(window.location.search).has("invite"))setView("settings")},[user]);
- useEffect(()=>{if(user)void loadOrgs();else{workspaceRequest.current++;taskDetailRequest.current++;inviteRequest.current++;setOrgs([]);setSelected("");setTeams([]);setTasks([]);setTeamMembers([]);setRequests([]);setActivity([]);setHandovers([]);setOutgoingInvites([]);setQuickCreate(null);setWorkspaceInfoOpen(false)}},[user?.id,loadOrgs]);
+ useEffect(()=>{if(user)void loadOrgs();else{workspaceRequest.current++;taskDetailRequest.current++;inviteRequest.current++;personalInvitesRequest.current++;organizationsRequest.current++;setOrgs([]);setSelected("");setTeams([]);setTasks([]);setTeamMembers([]);setRequests([]);setActivity([]);setHandovers([]);setOutgoingInvites([]);setQuickCreate(null);setWorkspaceInfoOpen(false)}},[user?.id,loadOrgs]);
  useEffect(()=>{
   taskDetailRequest.current++;
   inviteRequest.current++;
