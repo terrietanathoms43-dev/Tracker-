@@ -1,0 +1,198 @@
+/*
+ * Trackwise: laptop verification return + restrained blue/gold welcome.
+ * Imported after signature-finish.css. These rules don't change app workflows.
+ */
+
+/* New email-confirmed accounts do not yet have an organization or sidebar.
+ * Do NOT place the only child into column 1 of the signed-in 2-column shell.
+ */
+.appShell.appShellOnboarding {
+  display: block;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: visible;
+}
+.appShellOnboarding > .content {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: clamp(20px, 4vh, 48px) clamp(16px, 4vw, 48px);
+}
+.appShellOnboarding .contentWidth {
+  width: min(100%, 860px);
+  max-width: 860px;
+  min-width: 0;
+  margin-inline: auto;
+}
+.appShellOnboarding .emptyState {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(24px, 4vw, 42px);
+  box-shadow: 0 12px 32px #102f6513;
+  overflow-wrap: anywhere;
+}
+.appShellOnboarding .inlineForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: stretch;
+  width: min(100%, 600px);
+  max-width: 100%;
+  gap: 12px;
+  margin: 23px auto 0;
+}
+.appShellOnboarding .inlineForm input {
+  min-width: 0;
+  width: 100%;
+  min-height: 48px;
+}
+.appShellOnboarding .inlineForm button {
+  min-width: 0;
+  min-height: 48px;
+  white-space: normal;
+}
+
+/* Email sign-in, registration, and recovery should always scroll naturally
+ * on shorter laptop windows and with browser zoom/text magnification.
+ */
+.authV3 {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: auto;
+  overflow: visible;
+  grid-template-columns: minmax(0, 1.04fr) minmax(360px, .96fr);
+  align-items: stretch;
+  background: #f5f7fc;
+}
+.authV3Story {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 2px solid #d5b56f;
+  background:
+    radial-gradient(420px 300px at 95% 8%, #365eab4c, transparent 88%),
+    linear-gradient(145deg, #132e63, #23477f);
+}
+.authV3Story::before {
+  width: 215px;
+  height: 215px;
+  border-color: #ffffff19;
+  right: -95px;
+}
+.authV3StoryMain { margin-block: 19px; }
+.authV3StoryMain h1 {
+  font-size: clamp(32px, 3vw, 50px);
+  line-height: 1.2;
+  letter-spacing: -1.4px;
+}
+.authV3StoryLead { color: #dce7fa; }
+.authV3Pill { background: #ffffff12; border-color: #e6ca875e; }
+.authV3Preview {
+  margin-block: 23px;
+  transform: none;
+  border-color: #e3e9f4;
+  box-shadow: 0 15px 33px #0b214332;
+}
+.authV3Right {
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  overflow: visible;
+  padding: clamp(22px, 3vw, 44px);
+  background: linear-gradient(160deg, #f6f9ff, #fff);
+}
+.authV3Right::before { height: 3px; }
+.authV3FormCard {
+  max-width: 100%;
+  margin-block: auto;
+  border-top-width: 3px;
+  border-radius: 18px;
+  box-shadow: 0 11px 29px #14396b14;
+}
+.authV3Form, .authV3Field, .authV3Control { min-width: 0; }
+.authV3Control input { min-width: 0; }
+.authV3Submit { box-shadow: 0 5px 15px #244dae23; }
+.authV3Footer { margin-top: 14px; }
+.recoveryPage { min-height: 100dvh; overflow: visible; }
+.recoveryCard { max-width: 100%; }
+
+/* A calmer signed-in welcome: less glow and less oversized decoration. */
+.appShell .twSignatureWelcome {
+  min-height: 262px;
+  padding: clamp(20px, 2.7vw, 32px);
+  border-color: #46659b;
+  background:
+    radial-gradient(310px 250px at 100% 0%, #4c73b43b, transparent 85%),
+    linear-gradient(125deg, #143366, #274e92);
+  box-shadow: 0 11px 26px #12376820;
+}
+.appShell .twSignatureWelcome::before {
+  width: 235px;
+  height: 235px;
+  top: -115px;
+  right: -75px;
+  border-color: #e7c98936;
+  box-shadow: 0 0 0 35px #ffffff07;
+}
+.appShell .twSignatureWelcome::after { opacity: .4; height: 2px; }
+.twSignatureWelcome h2 {
+  font-size: clamp(27px, 3vw, 39px);
+  margin-block: 12px 10px;
+  letter-spacing: -.9px;
+}
+.twSignatureWelcomePills { margin-top: 17px; }
+.twSignatureWelcomeAside {
+  box-shadow: 0 8px 19px #061a3e29;
+  background: #f9fbff;
+}
+.appShell .stats.statsSix .stat,
+.appShell .projectCard {
+  box-shadow: 0 4px 13px #183e770d;
+}
+.appShell .stats.statsSix .stat:hover,
+.appShell .projectCard:hover {
+  box-shadow: 0 8px 19px #183e771a;
+}
+
+/* Tablet/laptop widths and short displays. */
+@media (min-width: 761px) and (max-width: 1090px) {
+  .authV3 { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); }
+  .authV3Story { padding: 24px; }
+  .authV3Right { padding: 24px; }
+  .authV3FormCard { padding: 20px; }
+  .authV3StoryMain h1 { font-size: clamp(30px, 3.4vw, 39px); }
+  .authV3Preview { margin-block: 18px; }
+}
+@media (min-width: 761px) and (max-height: 750px) {
+  .authV3Story { padding-block: 23px; gap: 13px; }
+  .authV3StoryMain { margin-block: 12px; }
+  .authV3StoryMain h1 { margin-block: 12px; }
+  .authV3Preview { margin-block: 15px; }
+  .authV3Right { padding-block: 20px; }
+  .authV3FormCard { padding-block: 18px; }
+  .authV3Greeting>p { margin-bottom: 13px; }
+  .authV3Form { gap: 14px; }
+}
+@media (max-width: 760px) {
+  .authV3 { display: block; grid-template-columns: none; }
+  .authV3Right { min-height: 100dvh; padding: 20px 19px max(22px, env(safe-area-inset-bottom)); }
+  .authV3FormCard { margin-block: 0; }
+  .authV3MobileBrand { flex-shrink: 0; }
+  .appShellOnboarding .content { padding: 22px 15px; }
+  .appShellOnboarding .emptyState { padding: 25px 18px; }
+  .appShellOnboarding .inlineForm { grid-template-columns: minmax(0, 1fr); }
+  .appShell .twSignatureWelcome { min-height: 0; padding: 21px 18px; }
+}
+@media (max-width: 390px) {
+  .authV3Right { padding-inline: 12px; }
+  .appShellOnboarding .content { padding-inline: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .authV3Preview, .appShell .twSignatureWelcome,
+  .appShell .stats.statsSix .stat, .appShell .projectCard { transition: none; }
+}
