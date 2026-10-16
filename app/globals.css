@@ -1979,3 +1979,111 @@ body{font-size:16px;line-height:1.56}
 @media(max-width:760px){.appHeader{align-items:flex-start}.twDashboardActionStrip{padding:14px;gap:12px}.twDashboardActionIntro{flex-basis:100%}.twDashboardActionButtons{justify-content:flex-start;width:100%}.twDashboardActionButtons button{flex:1 1 140px;white-space:normal}.twDashboardAdvancedFilters{grid-template-columns:repeat(2,minmax(0,1fr))}.twDashboardFilters input[type="search"]{flex:1 1 100%}.twDashboardMetricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:510px){.twDashboardActionStrip{padding:12px}.twDashboardActionButtons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.twDashboardActionButtons button{padding:10px 8px;min-height:44px;font-size:12px}.twDashboardActionButtons button:first-child{grid-column:1/-1}.twDashboardFilters{gap:8px}.twDashboardFilters input[type="search"]{min-width:0}.twDashboardFilters .twDashboardFilterToggle{flex:1}.twDashboardAdvancedFilters{grid-template-columns:1fr;padding:12px}.twDashboardBelow .quickActions button strong{font-size:12px}}
 @media(prefers-reduced-motion:reduce){.sidebar .navItem{transition:none}}
+
+
+/* Restore the established royal-blue & gold Trackwise identity.
+ * The simplified navigation remains, but streamlined must not mean colourless.
+ * Scope brand accents to workspace surfaces so reports and forms remain legible.
+ */
+.twDashboard{
+ --tw-brand-navy:#102a63;
+ --tw-brand-royal:#234a9e;
+ --tw-brand-blue:#346bd5;
+ --tw-brand-gold:#f2c56f;
+ --tw-brand-pale-gold:#fff4d9;
+}
+.twDashboardActionStrip{
+ position:relative;
+ isolation:isolate;
+ overflow:hidden;
+ background:linear-gradient(108deg,#fff4d6 0%,#fffaf0 32%,#fff 67%,#f4f7ff 100%);
+ border:1px solid #e3cc91;
+ border-left:5px solid #e4ad46;
+ box-shadow:0 9px 24px #1b407f18;
+}
+.twDashboardActionStrip::after{
+ content:"";
+ pointer-events:none;
+ position:absolute;
+ inset:0 0 auto auto;
+ z-index:-1;
+ width:245px;
+ height:100%;
+ background:radial-gradient(circle at top right,#fff0b94f,transparent 74%);
+}
+.twDashboardActionIntro strong{color:#17396f;font-family:"Plus Jakarta Sans",sans-serif;font-size:clamp(14px,1.3vw,17px);letter-spacing:-.2px}
+.twDashboardActionIntro strong::before{content:"✦";color:#bb8633;margin-right:8px}
+.twDashboardActionIntro span{color:#566989;font-size:12.5px}
+.twDashboardActionButtons button{background:linear-gradient(145deg,#fff,#f8faff);border:1px solid #c8d9f5;color:#244b98;box-shadow:0 3px 10px #1d3f7a0b}
+.twDashboardActionButtons button:hover{background:#edf3ff;border-color:#8eace1}
+.twDashboardActionButtons button.primary{
+ background:linear-gradient(112deg,#173a82,#315fc4);
+ color:#fff;
+ border:1px solid #1f4ca5;
+ box-shadow:0 6px 14px #133a8433,0 0 0 2px #eac37575;
+}
+.twDashboardMetricGrid{gap:12px}
+.twDashboardMetric{border:1px solid #d7e2f5;border-radius:15px;min-height:116px}
+.twDashboardMetric:nth-child(1){
+ background:linear-gradient(130deg,#17346e 0%,#2250a2 70%,#3569cd 100%);
+ border-color:#234f9e;
+ box-shadow:0 9px 20px #173e8838;
+}
+.twDashboardMetric:nth-child(1)::before{background:#f5c56a;width:5px}
+.twDashboardMetric:nth-child(1)::after{background:#ffffff0b;border:1px solid #ffffff18}
+.twDashboardMetric:nth-child(1)>span,
+.twDashboardMetric:nth-child(1)>strong,
+.twDashboardMetric:nth-child(1)>small{color:#fff}
+.twDashboardMetric:nth-child(1)>span{color:#e4edff}
+.twDashboardMetric:nth-child(1)>small{color:#dae5fc}
+.twDashboardMetric:nth-child(2){background:linear-gradient(145deg,#fff,#eef4ff);border-color:#c7d9f8}
+.twDashboardMetric:nth-child(2)::before{background:#4976cc}
+.twDashboardMetric:nth-child(2)>strong{color:#16418c}
+.twDashboardMetric:nth-child(3){
+ background:linear-gradient(135deg,#fffbef,#fff0c8);
+ border-color:#e9d19b;
+ box-shadow:0 6px 18px #a56b2521;
+}
+.twDashboardMetric:nth-child(3)::before{background:#d79a31}
+.twDashboardMetric:nth-child(3)::after{background:#ffe4a356}
+.twDashboardMetric:nth-child(3)>span,
+.twDashboardMetric:nth-child(3)>strong{color:#173b78}
+.twDashboardMetric:nth-child(3)>small{color:#685c45}
+.twDashboardMetric:nth-child(4){background:linear-gradient(145deg,#fff,#edf3ff);border-color:#bfd2f4}
+.twDashboardMetric:nth-child(4)::before{background:#315cc2}
+.twDashboardMetric:nth-child(4)::after{background:#dce8ff8c}
+.twDashboardMetric:nth-child(4)>strong{color:#173f88}
+.twDashboardTaskPanel{border:1px solid #d7e3f5;border-top:4px solid #ebbf68;box-shadow:0 12px 28px #1b407d13}
+.twDashboardTaskHeading h2{color:#173b7c}
+.twDashboardTaskHeading .eyebrow{color:#c08c35}
+.twDashboardTaskHeadingActions .primary{background:linear-gradient(112deg,#21458e,#346bd5);color:#fff}
+.twDashboardFilters{background:linear-gradient(102deg,#f0f5ff,#fffaf0);border:1px solid #d5e3f8}
+.twDashboardFilters .twDashboardFilterToggle{border-color:#b8cbee;color:#18468d}
+.twDashboardFilters .twDashboardFilterToggle[aria-expanded="true"]{border-color:#c99d50;background:#fff1cc;color:#173b78}
+.twDashboardAdvancedFilters{background:linear-gradient(125deg,#fff,#fffaf1);border:1px solid #e6d9bb}
+.twDashboardBelow .twDashboardShortcuts{border:1px solid #d8e4f6;border-top:4px solid #e9bd62;background:linear-gradient(160deg,#fff,#fbfcff);box-shadow:0 9px 24px #1a3f8011}
+.twDashboardBelow .twDashboardShortcuts .sectionHead h2{color:#173e88}
+.twDashboardBelow .twDashboardShortcuts .quickActions button{border-color:#d6e3f6;background:linear-gradient(142deg,#fff,#f8faff)}
+.twDashboardBelow .twDashboardShortcuts .quickActions button:hover{border-color:#ddb568;background:linear-gradient(140deg,#fff,#fff9e8)}
+.twDashboardBelow .twDashboardShortcuts .quickActions .quickIcon{background:linear-gradient(130deg,#244b9e,#3869cf);color:#ffdf9b;border:1px solid #284e9b}
+.twDashboardBelow .reportShortcutCard{
+ border:1px solid #d8e5f9;
+ border-top:4px solid #3866cb;
+ background:radial-gradient(360px 160px at 95% 0%,#ffeac360,transparent 90%),linear-gradient(145deg,#fff,#f1f6ff);
+}
+.twDashboardBelow .reportShortcutCard h2{color:#173b7e}
+.twDashboardBelow .reportShortcutCard .primary{background:linear-gradient(110deg,#214aa4,#376cdb);color:#fff;box-shadow:0 6px 15px #204a9f29}
+.sidebarUtility .sidebarGuideButton{border:1px solid #e7bd6e68;background:linear-gradient(115deg,#29447f,#1c376f);box-shadow:inset 3px 0 #eec570}
+.sidebarUtility .sidebarGuideButton:hover{background:linear-gradient(115deg,#33559b,#274b92)}
+.sidebar .navItem.selected{box-shadow:inset 3px 0 #ffcf73,0 7px 16px #060f3140}
+@media(max-width:760px){
+ .twDashboardActionStrip{border-left-width:4px}
+ .twDashboardMetric{min-height:106px}
+ .twDashboardMetricGrid{gap:10px}
+ .twDashboardTaskPanel{border-top-width:3px}
+}
+@media(max-width:510px){
+ .twDashboardMetric{min-height:98px}
+ .twDashboardActionButtons button.primary{box-shadow:0 5px 12px #153d8828,0 0 0 1px #eac37563}
+ .twDashboardBelow .twDashboardShortcuts .quickActions .quickIcon{width:34px;height:34px}
+}
