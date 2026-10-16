@@ -42,3 +42,21 @@ export function userFacingError(cause:unknown,fallback:string):string{
   return "An item with those details already exists.";
  return message;
 }
+
+// Keep task status menus consistent with role permissions and the approval workflow.
+export function canChangeTaskStatus(
+ role:TrackwiseRole, ownerId:string|null|undefined,userId:string|null|undefined,status:string
+):boolean{
+ return canManageOrganization(role)||
+  (role==="member"&&!!userId&&ownerId===userId&&status!=="completed"&&status!=="awaiting_approval");
+}
+export function allowedTaskStatuses(role:TrackwiseRole,current:string):string[]{
+ const known=["not_started","underway","blocked","awaiting_approval","completed","rejected"];
+ if(canManageOrganization(role)){
+  // Reviewers can request changes only while work is awaiting approval.
+  return known.filter(s=>s!=="rejected"||current==="awaiting_approval"||s===current);
+ }
+ if(role==="member"&&current!=="completed"&&current!=="awaiting_approval")
+  return known.filter(s=>s===current||(s!=="completed"&&s!=="rejected"));
+ return [current];
+}

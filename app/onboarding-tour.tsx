@@ -122,7 +122,7 @@ export default function OnboardingTour({role,organizationName,progressKey,onClos
     </div>:
     <div className="twTourFeatureContent">
      <div className="twTourFeatureIntro"><div><h2 ref={headingRef} tabIndex={-1} id="twTourHeading">What can Trackwise do?</h2><p id="twTourDescription">A practical reference for every feature and why your organization might use it. Choose any item to open its workspace page.</p></div><button type="button" onClick={startOver} title="Restart guided walkthrough"><RotateCcw size={15}/> Restart tour</button></div>
-     <label className="twTourSearchLabel" htmlFor="twTourSearch"><Search size={18}/><input id="twTourSearch" type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Find tasks, teams, reports, budgets…" aria-label="Search Trackwise features"/></label>
+     <label className="twTourSearchLabel" htmlFor="twTourSearch"><Search size={18}/><input id="twTourSearch" type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Find tasks, teams, reports…" aria-label="Search Trackwise features"/></label>
      <small className="twTourResultCount">{featureGroupCount} feature{featureGroupCount===1?"":"s"} available to your role</small>
      <div className="twTourFeatureGroups">{GROUPS.map(group=>{
       const features=visible.filter(f=>f.group===group);

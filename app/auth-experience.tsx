@@ -8,14 +8,14 @@ import {
 type AuthMode="signin"|"signup"|"reset";
 type Props={
  mode:AuthMode;email:string;password:string;name:string;
- working:boolean;error:string;notice:string;
+ working:boolean;error:string;notice:string;inviteLinkPending?:boolean;
  onSubmit:(event:FormEvent<HTMLFormElement>)=>void;
  onModeChange:(mode:AuthMode)=>void;
  onEmailChange:(value:string)=>void;onPasswordChange:(value:string)=>void;
  onNameChange:(value:string)=>void;
 };
 export default function AuthExperience({
- mode,email,password,name,working,error,notice,
+ mode,email,password,name,working,error,notice,inviteLinkPending=false,
  onSubmit,onModeChange,onEmailChange,onPasswordChange,onNameChange
 }:Props){
  const [showPassword,setShowPassword]=useState(false);
@@ -44,6 +44,7 @@ export default function AuthExperience({
   <section className="authV3Right">
    <div className="authV3MobileBrand"><span className="authV3BrandMark">T</span><strong>trackwise</strong></div>
    <div className="authV3FormCard">
+    {inviteLinkPending&&<div className="authInviteBanner" role="status"><strong>Workspace invitation received</strong><span>Sign in or create your account to join your teammate’s workspace. No email-specific invitation is required.</span></div>}
     <div className="authV3Greeting"><span className="authV3GreetingIcon">{signup?<UserRound size={25}/>:reset?<LockKeyhole size={25}/>:<Sparkles size={25}/>}</span>
      <span className="authV3FormEyebrow">{signup?"GET STARTED":reset?"ACCOUNT RECOVERY":"WELCOME BACK"}</span>
      <h2>{signup?"Create your account":reset?"Reset your password":"Good to have you back."}</h2>

@@ -1,18 +1,20 @@
 "use client";
 import {useCallback,useEffect,useMemo,useRef,useState,type FormEvent} from "react";
 import type {User} from "@supabase/supabase-js";
-import Reports from "./reports";
-import Operations from "./operations";
 import useUnreadNotifications from "./use-unread-notifications";
-import {canManageOrganization,canEditTaskChecklist,canOwnTask,taskStatusLabel as taskLabel,userFacingError as displayError} from "../lib/task-rules";
+import {canManageOrganization,canEditTaskChecklist,canOwnTask,canChangeTaskStatus,allowedTaskStatuses,taskStatusLabel as taskLabel,userFacingError as displayError} from "../lib/task-rules";
 import dynamic from "next/dynamic";
-import {House,SquareCheckBig,FolderKanban,UsersRound,Inbox,Settings2,Menu,Search as SearchIcon,Sparkles,Plus,BarChart3,Mail} from "lucide-react";
+import {House,SquareCheckBig,FolderKanban,UsersRound,Inbox,Settings2,Menu,Search as SearchIcon,Sparkles,Plus,BarChart3,Mail,CheckCircle2} from "lucide-react";
+const Reports=dynamic(()=>import("./reports"),{ssr:false,loading:()=><p className="muted">Opening reports…</p>});
+const Operations=dynamic(()=>import("./operations"),{ssr:false,loading:()=><p className="muted">Loading your workspace…</p>});
 const TaskExtras=dynamic(()=>import("./task-extras"),{ssr:false,loading:()=>null});
 const TaskCalendar=dynamic(()=>import("./task-calendar"),{ssr:false,loading:()=><p className="muted">Opening calendar…</p>});
 const RecurringSchedules=dynamic(()=>import("./recurring-schedules"),{ssr:false,loading:()=>null});
 const WorkspaceBackup=dynamic(()=>import("./workspace-backup"),{ssr:false,loading:()=>null});
 const OnboardingTour=dynamic(()=>import("./onboarding-tour"),{ssr:false,loading:()=>null});
 const QuickCreate=dynamic(()=>import("./quick-create"),{ssr:false,loading:()=>null});
+const TaskBoard=dynamic(()=>import("./task-board"),{ssr:false,loading:()=>null});
+const WorkspaceInfo=dynamic(()=>import("./workspace-info"),{ssr:false,loading:()=>null});
 const AccountProfile=dynamic(()=>import("./account-profile"),{ssr:false,loading:()=>null});
 const AuthExperience=dynamic(()=>import("./auth-experience"),{ssr:false,loading:()=>null});
 import ProfileAvatar from "./profile-avatar";
@@ -36,7 +38,7 @@ type Activity={id:string;entity_type:string;action:string;created_at:string;deta
 const statuses=["not_started","underway","awaiting_approval","blocked","rejected","completed"];
 const statusLabel=(s:string)=>s.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase());
 const actionStatusLabel=(status:string)=>status==="awaiting_approval"?"Submit for approval":statusLabel(status);
-type View="overview"|"tasks"|"calendar"|"teams"|"people"|"planning"|"projects"|"meeting_ai"|"requests"|"activity"|"reports"|"collaboration"|"resources"|"notifications"|"settings"|"profile";
+type View="overview"|"tasks"|"calendar"|"teams"|"people"|"planning"|"projects"|"meeting_ai"|"requests"|"activity"|"reports"|"collaboration"|"notifications"|"settings"|"profile";
 type NavGroup={id:string;label:string;icon:string;defaultView:View;items:{view:View;label:string}[]};
 const NAV_GROUPS:NavGroup[]=[
  {id:"home",label:"Home",icon:"⌂",defaultView:"overview",items:[{view:"overview",label:"Overview"}]},
@@ -45,7 +47,7 @@ const NAV_GROUPS:NavGroup[]=[
  {id:"people",label:"People",icon:"♙",defaultView:"people",items:[{view:"people",label:"Members"},{view:"teams",label:"Teams"}]},
  {id:"inbox",label:"Inbox",icon:"◉",defaultView:"notifications",items:[{view:"notifications",label:"Notifications"},{view:"collaboration",label:"Team messages"},{view:"requests",label:"Requests & approvals"}]},
  {id:"reports",label:"Reports",icon:"▤",defaultView:"reports",items:[{view:"reports",label:"Reports"}]},
- {id:"more",label:"More",icon:"⚙",defaultView:"settings",items:[{view:"profile",label:"My profile"},{view:"settings",label:"Settings"},{view:"resources",label:"Budgets"},{view:"activity",label:"Activity history"}]}
+ {id:"more",label:"More",icon:"⚙",defaultView:"settings",items:[{view:"profile",label:"My profile"},{view:"settings",label:"Settings"},{view:"activity",label:"Activity history"}]}
 ];
 function navigationIcon(id:string){
  if(id==="home"||id==="overview")return <House size={19} strokeWidth={2.1}/>;
@@ -68,11 +70,22 @@ export default function Home(){
  const [goals,setGoals]=useState<Goal[]>([]),[projects,setProjects]=useState<Project[]>([]),[directory,setDirectory]=useState<DirectoryMember[]>([]),[goalTitle,setGoalTitle]=useState(""),[goalTarget,setGoalTarget]=useState(""),[projectName,setProjectName]=useState(""),[projectDescription,setProjectDescription]=useState(""),[projectFilter,setProjectFilter]=useState("all"),[projectGoal,setProjectGoal]=useState(""),[projectTeam,setProjectTeam]=useState(""),[taskProject,setTaskProject]=useState(""),[search,setSearch]=useState(""),[statusFilter,setStatusFilter]=useState("all");
  const [teamMembers,setTeamMembers]=useState<TeamMember[]>([]),[requests,setRequests]=useState<Request[]>([]),[activity,setActivity]=useState<Activity[]>([]),[requestTitle,setRequestTitle]=useState(""),[requestDetails,setRequestDetails]=useState(""),[assignTeam,setAssignTeam]=useState(""),[assignUser,setAssignUser]=useState(""),[assignRole,setAssignRole]=useState("member");
  const [pendingInvites,setPendingInvites]=useState<{id:string;email:string;role:string;organization_id:string;expires_at:string}[]>([]),[invitesLoading,setInvitesLoading]=useState(false);
+ const inviteRequest=useRef(0);
+ const shareLinkRequest=useRef(0);
+ const [inviteLinks,setInviteLinks]=useState<{id:string;role:string;expires_at:string;uses_count:number;max_uses:number;revoked_at:string|null}[]>([]);
+ const [shareRole,setShareRole]=useState("member"),[shareLinkId,setShareLinkId]=useState(""),[shareLinkWorking,setShareLinkWorking]=useState(false);
+ const [joinToken,setJoinToken]=useState(""),[joiningWorkspace,setJoiningWorkspace]=useState(false);
+ const personalInvitesRequest=useRef(0);
+ const organizationsRequest=useRef(0);
  const [outgoingInvites,setOutgoingInvites]=useState<{id:string;email:string;role:string;expires_at:string;accepted_at:string|null}[]>([]),[inviteAction,setInviteAction]=useState("");
  const [inviteEmail,setInviteEmail]=useState(""),[inviteRole,setInviteRole]=useState("member"),[orgName,setOrgName]=useState(""),[teamName,setTeamName]=useState(""),[taskTitle,setTaskTitle]=useState(""),[taskDescription,setTaskDescription]=useState(""),[taskDue,setTaskDue]=useState(""),[taskFrequency,setTaskFrequency]=useState("none"),[recurringRefresh,setRecurringRefresh]=useState(0),[taskPriority,setTaskPriority]=useState("normal"),[taskOwner,setTaskOwner]=useState("");
  const [myTasksOnly,setMyTasksOnly]=useState(false),[workspaceLoading,setWorkspaceLoading]=useState(false);
  const workspaceRequest=useRef(0);
- const [mobileMenu,setMobileMenu]=useState(false),[showTaskForm,setShowTaskForm]=useState(false),[showTaskHandover,setShowTaskHandover]=useState(false),[showAdvancedProject,setShowAdvancedProject]=useState(false);
+ const taskDetailRequest=useRef(0);
+ const [taskLayout,setTaskLayout]=useState<"board"|"list">("board"),[workspaceInfoOpen,setWorkspaceInfoOpen]=useState(false);
+ const [dashboardLayout,setDashboardLayout]=useState<"board"|"list">("board");
+ const [dashboardSearch,setDashboardSearch]=useState(""),[dashboardStatus,setDashboardStatus]=useState("all"),[dashboardPriority,setDashboardPriority]=useState("all"),[dashboardAssignee,setDashboardAssignee]=useState("all");
+  const [mobileMenu,setMobileMenu]=useState(false),[showTaskForm,setShowTaskForm]=useState(false),[showTaskHandover,setShowTaskHandover]=useState(false),[showAdvancedProject,setShowAdvancedProject]=useState(false);
  useEffect(()=>{if(!mobileMenu)return;const previous=document.body.style.overflow;document.body.style.overflow="hidden";const close=(event:KeyboardEvent)=>{if(event.key==="Escape")setMobileMenu(false)};window.addEventListener("keydown",close);return()=>{document.body.style.overflow=previous;window.removeEventListener("keydown",close)}},[mobileMenu]);
  const [view,setView]=useState<View>("overview"),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [createMenu,setCreateMenu]=useState(false),[showGuide,setShowGuide]=useState(false),[hideChecklist,setHideChecklist]=useState(false);
@@ -97,7 +110,7 @@ export default function Home(){
   return()=>{live=false};
  },[user?.id,user?.user_metadata?.avatar_path]);
  const clear=()=>{setError("");setNotice("")};
- const loadOrgs=useCallback(async()=>{if(!db)return;const {data,error}=await db.from("tw_organizations").select("id,name,created_at").order("created_at",{ascending:false});if(error)setError(error.message);else {setOrgs(data??[]);setSelected(old=>(data??[]).some(o=>o.id===old)?old:(data?.[0]?.id??""))}},[]);
+ const loadOrgs=useCallback(async()=>{if(!db)return;const request=++organizationsRequest.current;const {data,error}=await db.from("tw_organizations").select("id,name,created_at").order("created_at",{ascending:false});if(request!==organizationsRequest.current)return;if(error)setError(error.message);else {setOrgs(data??[]);setSelected(old=>(data??[]).some(o=>o.id===old)?old:(data?.[0]?.id??""))}},[]);
  const loadWorkspace=useCallback(async(orgId:string)=>{
   if(!db||!orgId)return;
   const request=++workspaceRequest.current;
@@ -136,17 +149,17 @@ export default function Home(){
     db.from("tw_task_handovers").select("id,task_id,from_user,to_user,note,created_at").eq("organization_id",orgId).order("created_at",{ascending:false}).limit(100)
    ]);
    if(request!==workspaceRequest.current)return;
-   // Keep the successful reads even if an unrelated feature has a query error.
-   if(!t.error)setTeams(t.data??[]);
-   if(!k.error)setTasks(k.data??[]);
-   if(!m.error)setMembers(m.data??[]);
-   if(!tm.error)setTeamMembers((tm.data??[]).filter(x=>(t.data??[]).some(team=>team.id===x.team_id)));
-   if(!r.error)setRequests(r.data??[]);
-   if(!a.error)setActivity(a.data??[]);
-   if(!g.error)setGoals(g.data??[]);
-   if(!p.error)setProjects(p.data??[]);
-   if(!d.error)setDirectory(d.data??[]);
-   if(!h.error)setHandovers(h.data??[]);
+   // Never reuse stale data after a failed workspace read.
+   setTeams(t.error?[]:t.data??[]);
+   setTasks(k.error?[]:k.data??[]);
+   setMembers(m.error?[]:m.data??[]);
+   setTeamMembers(t.error||tm.error?[]:(tm.data??[]).filter(x=>(t.data??[]).some(team=>team.id===x.team_id)));
+   setRequests(r.error?[]:r.data??[]);
+   setActivity(a.error?[]:a.data??[]);
+   setGoals(g.error?[]:g.data??[]);
+   setProjects(p.error?[]:p.data??[]);
+   setDirectory(d.error?[]:d.data??[]);
+   setHandovers(h.error?[]:h.data??[]);
    const failures=[["teams",t.error],["saved tasks",k.error],["members",m.error],["team membership",tm.error],["requests",r.error],["activity",a.error],["goals",g.error],["projects",p.error],["directory",d.error],["handover history",h.error]].filter((entry)=>entry[1]);
    if(failures.length)setError("Some workspace information could not be loaded: "+failures.map(entry=>entry[0]).join(", ")+". Refresh to try again.");
   }catch(e){
@@ -155,15 +168,118 @@ export default function Home(){
    if(request===workspaceRequest.current)setWorkspaceLoading(false);
   }
  },[]);
- const loadOutgoingInvites=useCallback(async(orgId:string)=>{if(!db||!orgId)return;const {data,error}=await db.from("tw_invitations").select("id,email,role,expires_at,accepted_at").eq("organization_id",orgId).order("created_at",{ascending:false});if(error)setError(error.message);else setOutgoingInvites(data??[])},[]);
- useEffect(()=>{if(selected&&members.some(m=>m.user_id===user?.id&&["admin","leader"].includes(m.role)))void loadOutgoingInvites(selected);else setOutgoingInvites([])},[selected,members,user?.id,loadOutgoingInvites]);
+ const loadShareLinks=useCallback(async(orgId:string)=>{
+  if(!db||!orgId)return;
+  const request=++shareLinkRequest.current;
+  const {data,error}=await db.from("tw_invite_links")
+   .select("id,role,expires_at,uses_count,max_uses,revoked_at")
+   .eq("organization_id",orgId).order("created_at",{ascending:false}).limit(30);
+  if(request!==shareLinkRequest.current)return;
+  if(error)setError(displayError(error,"Unable to load invitation links."));
+  else setInviteLinks(data??[]);
+ },[]);
+ useEffect(()=>{
+  if(selected&&members.some(m=>m.user_id===user?.id&&["admin","leader"].includes(m.role)))void loadShareLinks(selected);
+  else{shareLinkRequest.current++;setInviteLinks([])}
+ },[selected,members,user?.id,loadShareLinks]);
+ useEffect(()=>{
+  if(typeof window==="undefined")return;
+  const token=new URLSearchParams(window.location.search).get("join")??"";
+  if(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token))
+   setJoinToken(token);
+ },[]);
+ function dismissJoinLink(){
+  setJoinToken("");
+  if(typeof window==="undefined")return;
+  const url=new URL(window.location.href);
+  url.searchParams.delete("join");
+  window.history.replaceState(null,"",url.pathname+url.search+url.hash);
+ }
+ async function joinFromLink(){
+  if(!db||!user||!joinToken||joiningWorkspace)return;
+  setJoiningWorkspace(true);clear();
+  try{
+   const {data,error}=await db.rpc("tw_accept_invite_link",{link_id:joinToken});
+   if(error)throw error;
+   await loadOrgs();
+   if(typeof data==="string")setSelected(data);
+   setView("overview");dismissJoinLink();
+   setNotice("You have joined the workspace. Welcome!");
+  }catch(e){setError(displayError(e,"The invitation could not be accepted. Ask for a new link."))}
+  finally{setJoiningWorkspace(false)}
+ }
+ async function createShareLink(){
+  if(!db||!selected||!manager||shareLinkWorking)return;
+  setShareLinkWorking(true);clear();
+  try{
+   const {data,error}=await db.rpc("tw_create_invite_link",{org_id:selected,invite_role:shareRole});
+   if(error)throw error;
+   if(typeof data!=="string")throw new Error("Could not confirm the invitation link.");
+   setShareLinkId(data);await loadShareLinks(selected);
+   setNotice("Invite link created. Copy or share it with your teammates.");
+  }catch(e){setError(displayError(e,"Unable to create invitation link"))}
+  finally{setShareLinkWorking(false)}
+ }
+ async function revokeShareLink(linkId:string){
+  if(!db||!selected||!manager||shareLinkWorking)return;
+  if(!window.confirm("Disable this invite link? People who have already joined will keep their workspace access."))return;
+  setShareLinkWorking(true);clear();
+  try{
+   const {error}=await db.rpc("tw_revoke_invite_link",{link_id:linkId});
+   if(error)throw error;
+   if(shareLinkId===linkId)setShareLinkId("");
+   await loadShareLinks(selected);setNotice("Invitation link disabled.");
+  }catch(e){setError(displayError(e,"Unable to disable the link"))}
+  finally{setShareLinkWorking(false)}
+ }
+ function shareableInviteUrl(id:string){
+  return typeof window==="undefined"?"":window.location.origin+"/?join="+encodeURIComponent(id);
+ }
+ async function copyShareLink(id:string){
+  try{await navigator.clipboard.writeText(shareableInviteUrl(id));setNotice("Workspace invitation link copied.")}
+  catch{setError("Automatic copying was blocked. Select the link and copy it manually.")}
+ }
+ async function sendShareLink(id:string){
+  const url=shareableInviteUrl(id);
+  const title="Join "+(active?.name??"our workspace")+" on Trackwise";
+  const message="You're invited to join "+(active?.name??"a workspace")+" on Trackwise. Open the link and sign in or create an account.";
+  if(navigator.share){
+   try{await navigator.share({title,text:message,url})}
+   catch(e){if(!(e instanceof Error)||e.name!=="AbortError")setError("Sharing was interrupted. You can copy the link instead.")}
+  }else window.open("https://wa.me/?text="+encodeURIComponent(message+" "+url),"_blank","noopener,noreferrer");
+ }
+ const loadOutgoingInvites=useCallback(async(orgId:string)=>{if(!db||!orgId)return;const request=++inviteRequest.current;const {data,error}=await db.from("tw_invitations").select("id,email,role,expires_at,accepted_at").eq("organization_id",orgId).order("created_at",{ascending:false});if(request!==inviteRequest.current)return;if(error)setError(error.message);else setOutgoingInvites(data??[])},[]);
+ useEffect(()=>{if(selected&&members.some(m=>m.user_id===user?.id&&["admin","leader"].includes(m.role)))void loadOutgoingInvites(selected);else{inviteRequest.current++;setOutgoingInvites([])}},[selected,members,user?.id,loadOutgoingInvites]);
  async function revokeInvite(id:string){if(!db||!selected||!manager)return;if(!window.confirm("Revoke this invitation? Its link will stop working."))return;setInviteAction(id);clear();try{const {error}=await db.rpc("tw_revoke_invitation",{invitation_id:id});if(error)throw error;await loadOutgoingInvites(selected);if(inviteShareId===id){setInviteShareReady(false);setInviteShareId("")}setNotice("Invitation revoked.")}catch(e){setError(e instanceof Error?e.message:"Unable to revoke invitation")}finally{setInviteAction("")}}
  function shareExistingInvite(id:string,email:string){setInviteShareEmail(email);setInviteShareId(id);setInviteShareReady(true);setNotice("Invitation link ready to share.")}
  useEffect(()=>{if(!db){setInitial(false);return}let live=true;db.auth.getUser().then(({data,error})=>{if(live){if(error)setError(error.message);setUser(data.user);setInitial(false)}}).catch(()=>{if(live){setError("Unable to connect. Check your internet connection.");setInitial(false)}});const {data:{subscription}}=db.auth.onAuthStateChange((_event,session)=>{if(live)setUser(session?.user??null);if(_event==="PASSWORD_RECOVERY")setRecovery(true)});return()=>{live=false;subscription.unsubscribe()}},[]);
- useEffect(()=>{if(user){void db?.from("tw_invitations").select("id,email,role,organization_id,expires_at").eq("email",user.email?.toLowerCase()??"").is("accepted_at",null).gt("expires_at",new Date().toISOString()).then(({data})=>setPendingInvites(data??[]));}else setPendingInvites([])},[user]);
+ useEffect(()=>{
+  const request=++personalInvitesRequest.current;
+  setPendingInvites([]);
+  if(user?.email)void db?.from("tw_invitations").select("id,email,role,organization_id,expires_at")
+   .eq("email",user.email.toLowerCase()).is("accepted_at",null)
+   .gt("expires_at",new Date().toISOString())
+   .then(({data,error})=>{
+    if(request!==personalInvitesRequest.current)return;
+    if(!error)setPendingInvites(data??[]);
+   });
+ },[user?.id,user?.email]);
  useEffect(()=>{if(user&&typeof window!=="undefined"&&new URLSearchParams(window.location.search).has("invite"))setView("settings")},[user]);
- useEffect(()=>{if(user)void loadOrgs();else{setOrgs([]);setSelected("");setTeams([]);setTasks([])}},[user,loadOrgs]);
- useEffect(()=>{if(selected){setTasks([]);setProjects([]);setMembers([]);setTeams([]);setGoals([]);setDirectory([]);setProjectFilter("all");setSelectedTask("");void loadWorkspace(selected)}else{workspaceRequest.current++;setTeams([]);setTasks([]);setProjects([]);setMembers([]);setGoals([]);setDirectory([]);setWorkspaceLoading(false)}},[selected,loadWorkspace]);
+ useEffect(()=>{if(user)void loadOrgs();else{workspaceRequest.current++;taskDetailRequest.current++;inviteRequest.current++;shareLinkRequest.current++;personalInvitesRequest.current++;organizationsRequest.current++;setOrgs([]);setSelected("");setTeams([]);setTasks([]);setTeamMembers([]);setRequests([]);setActivity([]);setHandovers([]);setOutgoingInvites([]);setInviteLinks([]);setShareLinkId("");setQuickCreate(null);setWorkspaceInfoOpen(false)}},[user?.id,loadOrgs]);
+ useEffect(()=>{
+  taskDetailRequest.current++;
+  inviteRequest.current++;
+  shareLinkRequest.current++;
+  setShareLinkId("");setInviteLinks([]);
+  setTasks([]);setProjects([]);setMembers([]);setTeams([]);setGoals([]);setDirectory([]);
+  setTeamMembers([]);setRequests([]);setActivity([]);setHandovers([]);setOutgoingInvites([]);
+  setSelectedTask("");setTaskUpdates([]);setQuickCreate(null);setWorkspaceInfoOpen(false);
+  setEditingTask("");setEditingProject("");setEditingGoal("");
+  setInviteShareReady(false);setInviteShareId("");setProjectFilter("all");
+  setDashboardSearch("");setDashboardStatus("all");setDashboardPriority("all");setDashboardAssignee("all");
+  if(selected)void loadWorkspace(selected);
+  else{workspaceRequest.current++;setWorkspaceLoading(false)}
+ },[selected,loadWorkspace]);
  // Refresh persisted tasks and projects after returning to an open Trackwise tab.
  useEffect(()=>{
   if(!selected||!user)return;
@@ -245,6 +361,20 @@ export default function Home(){
  const peopleMatches=searchTerm?directory.filter(m=>m.display_name.toLocaleLowerCase().includes(searchTerm)).slice(0,6):[];
  function closeSearch(){setSearchOpen(false);setGlobalSearch("")}
  const homeTasks=manager?tasks:tasks.filter(t=>t.owner_id===user?.id);
+ const dashboardTasks=homeTasks.filter(t=>
+  (!dashboardSearch.trim()||t.title.toLowerCase().includes(dashboardSearch.trim().toLowerCase())||(t.description??"").toLowerCase().includes(dashboardSearch.trim().toLowerCase()))&&
+  (dashboardStatus==="all"||t.status===dashboardStatus)&&
+  (dashboardPriority==="all"||t.priority===dashboardPriority)&&
+  (dashboardAssignee==="all"||(dashboardAssignee==="unassigned"?!t.owner_id:t.owner_id===dashboardAssignee))
+ );
+ const dashboardStats=[
+  {label:manager?"Total tasks":"My tasks",value:homeTasks.length,help:manager?"Across this workspace":"Assigned to you"},
+  {label:"Assigned to me",value:tasks.filter(t=>t.owner_id===user?.id).length,help:"Your responsibilities"},
+  {label:"Overdue",value:homeTasks.filter(t=>t.due_at&&new Date(t.due_at).getTime()<Date.now()&&t.status!=="completed").length,help:"Still awaiting completion"},
+  {label:"Completed",value:homeTasks.filter(t=>t.status==="completed").length,help:"Approved work"},
+  {label:"Unassigned",value:homeTasks.filter(t=>!t.owner_id).length,help:"Needs an owner"},
+  {label:"For review",value:homeTasks.filter(t=>t.status==="awaiting_approval").length,help:"Awaiting approval"}
+ ];
  const counts=useMemo(()=>({total:homeTasks.length,active:homeTasks.filter(t=>t.status==="underway").length,blocked:homeTasks.filter(t=>t.status==="blocked").length,done:homeTasks.filter(t=>t.status==="completed").length,overdue:homeTasks.filter(t=>t.due_at&&new Date(t.due_at)<new Date()&&t.status!=="completed").length}),[tasks,manager,user?.id]);
  const setupCompleted=[projects.length>0,teams.length>0,members.length>1||outgoingInvites.length>0,tasks.length>0].filter(Boolean).length;
  function openFirstProjectTask(){
@@ -275,7 +405,7 @@ export default function Home(){
    const result=mode==="signin"
     ?await db.auth.signInWithPassword({email,password})
     :await db.auth.signUp({email,password,options:{
-      emailRedirectTo:window.location.origin,
+      emailRedirectTo:joinToken?shareableInviteUrl(joinToken):window.location.origin,
       data:{display_name:name,full_name:name}
      }});
    if(result.error)throw result.error;
@@ -313,7 +443,15 @@ export default function Home(){
   finally{setWorking(false)}
  }
  async function changePassword(e:FormEvent){e.preventDefault();if(!db)return;setWorking(true);clear();try{if(newPassword.length<10)throw new Error("Use at least 10 characters.");const {error}=await db.auth.updateUser({password:newPassword});if(error)throw error;setNewPassword("");setRecovery(false);setNotice("Password updated successfully.")}catch(e){setError(e instanceof Error?e.message:"Unable to update password")}finally{setWorking(false)}}
- async function openTask(id:string){if(!db)return;setSelectedTask(id);setTaskUpdates([]);const {data,error}=await db.from("tw_task_updates").select("id,progress,next_action,created_at,author_id").eq("task_id",id).order("created_at",{ascending:false}).limit(50);if(error)setError(error.message);else setTaskUpdates(data??[])}
+ async function openTask(id:string){
+  if(!db||!selected)return;
+  const request=++taskDetailRequest.current;
+  setSelectedTask(id);setTaskUpdates([]);
+  const {data,error}=await db.from("tw_task_updates").select("id,progress,next_action,created_at,author_id")
+   .eq("task_id",id).order("created_at",{ascending:false}).limit(50);
+  if(request!==taskDetailRequest.current)return;
+  if(error)setError(error.message);else setTaskUpdates(data??[]);
+ }
  async function addProgress(e:FormEvent){e.preventDefault();if(!db||!selectedTask)return;setWorking(true);clear();try{const {error}=await db.rpc("tw_add_task_update",{target_task:selectedTask,progress_text:progressText.trim(),next_step:nextStep.trim()||null});if(error)throw error;setProgressText("");setNextStep("");await Promise.all([openTask(selectedTask),loadWorkspace(selected)]);setNotice("Progress update recorded.")}catch(e){setError(e instanceof Error?e.message:"Unable to save progress")}finally{setWorking(false)}}
  async function reassignTask(e:FormEvent){e.preventDefault();if(!db||!selected||!selectedTask||!manager)return;setWorking(true);clear();try{const {error}=await db.rpc("tw_reassign_task",{target_task:selectedTask,new_owner:handoverOwner,handover_message:handoverNote.trim()});if(error)throw error;setHandoverOwner("");setHandoverNote("");await loadWorkspace(selected);setNotice("Task reassigned and handover recorded.")}catch(e){setError(e instanceof Error?e.message:"Unable to reassign task")}finally{setWorking(false)}}
  async function createOrg(e:FormEvent){e.preventDefault();if(!db)return;setWorking(true);clear();try{const {data,error}=await db.rpc("tw_create_organization",{org_name:orgName.trim()});if(error)throw error;setOrgName("");await loadOrgs();if(data)setSelected(data);setView("overview");setLastCreatedProject(null);setLastCreatedTeam(null);setNotice("Your organization is ready! Follow the setup checklist or take the guided tour.");}catch(e){setError(e instanceof Error?e.message:"Unable to create workspace")}finally{setWorking(false)}}
@@ -516,15 +654,16 @@ export default function Home(){
   }catch(e){setError(displayError(e,"Couldn't save project changes."));}
   finally{setWorking(false)}
  }
- const taskTable=<><div className="mobileTaskList">{visibleTasks.length?visibleTasks.map(t=><article className="mobileTaskCard" key={t.id}><div className="mobileTaskTop"><span className={"priority "+t.priority}>{statusLabel(t.priority)}</span><span className="mobileTaskDate">{t.due_at?"Due "+new Date(t.due_at).toLocaleDateString():"No deadline"}</span></div><button className="mobileTaskTitle" onClick={()=>void openTask(t.id)}>{t.title} <span aria-hidden="true">↗</span></button><div className="mobileTaskMeta"><span>{t.owner_id===user?.id?"Assigned to you":directory.find(m=>m.user_id===t.owner_id)?.display_name??"Unassigned"}</span><span>{t.project_id?" · "+(projects.find(p=>p.id===t.project_id)?.name??"Project"):" · No project"}</span></div><div className="mobileTaskStatus">{manager||(t.owner_id===user?.id&&t.status!=="completed")?<select aria-label={"Status for "+t.title} value={t.status} disabled={working} onChange={e=>void updateTask(t.id,e.target.value)}>{statuses.filter(st=>st===t.status||(manager?st!=="rejected"||t.status==="awaiting_approval":st!=="completed"&&st!=="rejected")).map(st=><option key={st} value={st}>{actionStatusLabel(st)}</option>)}</select>:<span className="chip">{taskLabel(t.status)}</span>}</div><div className="taskInlineActions">
+ const taskTable=<><div className="mobileTaskList">{visibleTasks.length?visibleTasks.map(t=><article className="mobileTaskCard" key={t.id}><div className="mobileTaskTop"><span className={"priority "+t.priority}>{statusLabel(t.priority)}</span><span className="mobileTaskDate">{t.due_at?"Due "+new Date(t.due_at).toLocaleDateString():"No deadline"}</span></div><button className="mobileTaskTitle" onClick={()=>void openTask(t.id)}>{t.title} <span aria-hidden="true">↗</span></button><div className="mobileTaskMeta"><span>{t.owner_id===user?.id?"Assigned to you":directory.find(m=>m.user_id===t.owner_id)?.display_name??"Unassigned"}</span><span>{t.project_id?" · "+(projects.find(p=>p.id===t.project_id)?.name??"Project"):" · No project"}</span></div><div className="mobileTaskStatus">{canChangeTaskStatus(role,t.owner_id,user?.id,t.status)?<select aria-label={"Status for "+t.title} value={t.status} disabled={working} onChange={e=>void updateTask(t.id,e.target.value)}>{allowedTaskStatuses(role,t.status).map(st=><option key={st} value={st}>{actionStatusLabel(st)}</option>)}</select>:<span className="chip">{taskLabel(t.status)}</span>}</div><div className="taskInlineActions">
  {manager&&t.status!=="completed"&&<button type="button" className="primary" disabled={working} onClick={()=>void updateTask(t.id,"completed")}>✓ Complete task</button>}
  {!manager&&t.owner_id===user?.id&&t.status!=="completed"&&t.status!=="awaiting_approval"&&<button type="button" className="primary" disabled={working} onClick={()=>void updateTask(t.id,"awaiting_approval")}>Submit for approval →</button>}
  {t.status==="awaiting_approval"&&<small className="muted">{manager?"Ready for your review":"Waiting for leader approval"}</small>}
-</div></article>):<div className="card"><p className="muted">{workspaceLoading?"Loading saved tasks…":manager?"No saved tasks match these filters. Add a task or change your filters.":"No tasks match these filters."}</p></div>}</div><div className="tablewrap"><table><thead><tr><th>Task</th><th>Priority</th><th>Due date</th><th>Project</th><th>Owner</th><th>Status</th></tr></thead><tbody>{visibleTasks.length?visibleTasks.map(t=><tr key={t.id}><td><button className="taskOpen" onClick={()=>void openTask(t.id)}>{t.title}</button></td><td><span className={"priority "+t.priority}>{statusLabel(t.priority)}</span></td><td>{t.due_at?new Date(t.due_at).toLocaleDateString():"—"}</td><td>{t.project_id?projects.find(p=>p.id===t.project_id)?.name??"Project":"—"}</td><td>{t.owner_id===user?.id?"You":directory.find(m=>m.user_id===t.owner_id)?.display_name??(t.owner_id?"Assigned":"Unassigned")}</td><td>{manager||(t.owner_id===user?.id&&t.status!=="completed")?<select aria-label={"Status for "+t.title} value={t.status} disabled={working} onChange={e=>void updateTask(t.id,e.target.value)}>{statuses.filter(st=>st===t.status||(manager?st!=="rejected"||t.status==="awaiting_approval":st!=="completed"&&st!=="rejected")).map(st=><option key={st} value={st}>{actionStatusLabel(st)}</option>)}</select>:<span className="chip">{taskLabel(t.status)}</span>}</td></tr>):<tr><td colSpan={6} className="muted">{workspaceLoading?"Loading saved tasks from the database…":manager?"No saved tasks match your filters. Select Add task to create one.":"No saved tasks match your filters."}</td></tr>}</tbody></table></div></>;
+</div></article>):<div className="card"><p className="muted">{workspaceLoading?"Loading saved tasks…":manager?"No saved tasks match these filters. Add a task or change your filters.":"No tasks match these filters."}</p></div>}</div><div className="tablewrap"><table><thead><tr><th>Task</th><th>Priority</th><th>Due date</th><th>Project</th><th>Owner</th><th>Status</th></tr></thead><tbody>{visibleTasks.length?visibleTasks.map(t=><tr key={t.id}><td><button className="taskOpen" onClick={()=>void openTask(t.id)}>{t.title}</button></td><td><span className={"priority "+t.priority}>{statusLabel(t.priority)}</span></td><td>{t.due_at?new Date(t.due_at).toLocaleDateString():"—"}</td><td>{t.project_id?projects.find(p=>p.id===t.project_id)?.name??"Project":"—"}</td><td>{t.owner_id===user?.id?"You":directory.find(m=>m.user_id===t.owner_id)?.display_name??(t.owner_id?"Assigned":"Unassigned")}</td><td>{canChangeTaskStatus(role,t.owner_id,user?.id,t.status)?<select aria-label={"Status for "+t.title} value={t.status} disabled={working} onChange={e=>void updateTask(t.id,e.target.value)}>{allowedTaskStatuses(role,t.status).map(st=><option key={st} value={st}>{actionStatusLabel(st)}</option>)}</select>:<span className="chip">{taskLabel(t.status)}</span>}</td></tr>):<tr><td colSpan={6} className="muted">{workspaceLoading?"Loading saved tasks from the database…":manager?"No saved tasks match your filters. Select Add task to create one.":"No saved tasks match your filters."}</td></tr>}</tbody></table></div></>;
  if(recovery&&user)return <main className="recoveryPage"><section className="card recoveryCard"><h1>Choose a new password</h1><p className="muted">Set a secure password for your Trackwise account.</p>{error&&<p role="alert" className="feedback bad">{error}</p>}{notice&&<p className="feedback good">{notice}</p>}<form onSubmit={changePassword}><label htmlFor="newPassword">New password</label><input id="newPassword" type="password" autoComplete="new-password" minLength={10} required value={newPassword} onChange={e=>setNewPassword(e.target.value)}/><button className="primary" disabled={working}>Update password</button></form></section></main>;
  if(!ready)return <main className="center"><div className="card"><h1>Trackwise</h1><h2>Setup required</h2><p>Supabase environment variables are missing from this deployment.</p></div></main>;
  if(initial)return <main className="center"><div className="spinner"/><p>Preparing your workspace…</p></main>;
  if(!user)return <AuthExperience
+  inviteLinkPending={!!joinToken}
   mode={mode} email={email} password={password} name={signupName}
   working={working} error={error} notice={notice}
   onSubmit={auth}
@@ -541,12 +680,13 @@ export default function Home(){
   <span className="userDetails"><strong>{String(user.user_metadata?.display_name??"").trim()||user.email?.split("@")[0]}</strong><small>{role?statusLabel(role):"Account"} · My profile →</small></span>
  </button><button className="logout" title="Sign out" aria-label="Sign out" onClick={()=>void db?.auth.signOut()}>↪</button></div></aside><div className="workspace"><header className="appHeader">
  <div className="pageHeading"><span className="eyebrow blue">TRACKWISE / {activeNav.label.toUpperCase()}</span>
-  <h1>{view==="overview"?"Your workspace":view==="profile"?"My profile":view==="tasks"?"Tasks":view==="calendar"?"Task calendar":view==="meeting_ai"?"Meeting assistant":view==="projects"?"Projects":view==="planning"?"Goals & planning":view==="people"?"People":view==="teams"?"Teams":view==="notifications"?"Inbox":view==="collaboration"?"Team messages":view==="requests"?"Requests & approvals":view==="reports"?"Reports":view==="resources"?"Budgets & resources":view==="activity"?"Activity history":"Settings"}</h1>
-  <p className="muted">{view==="overview"?"See what needs attention and keep work moving.":view==="profile"?"Your account, photo and personal settings.":view==="tasks"?"Find, assign, and finish work.":view==="calendar"?"See deadlines at a glance.":view==="meeting_ai"?"Turn meeting decisions into reviewed tasks and plans.":view==="projects"?"Group related tasks and see what's moving.":view==="people"?"Find your colleagues and manage your teams.":view==="teams"?"Bring people together around shared work.":view==="notifications"?"Your updates, requests, and conversations in one place.":view==="settings"?"Your account, organization, and invitations.":"Keep everything organized in one place."}</p>
+  <h1>{view==="overview"?"Good to see you, "+(String(user.user_metadata?.display_name??user.email?.split("@")[0]??"there").trim().split(/\s+/)[0]):view==="profile"?"My profile":view==="tasks"?"Tasks":view==="calendar"?"Task calendar":view==="meeting_ai"?"Meeting assistant":view==="projects"?"Projects":view==="planning"?"Goals & planning":view==="people"?"People":view==="teams"?"Teams":view==="notifications"?"Inbox":view==="collaboration"?"Team messages":view==="requests"?"Requests & approvals":view==="reports"?"Reports":view==="activity"?"Activity history":"Settings"}</h1>
+  <p className="muted">{view==="overview"?"See ownership, deadlines, and progress in one place.":view==="profile"?"Your account, photo and personal settings.":view==="tasks"?"Find, assign, and finish work.":view==="calendar"?"See deadlines at a glance.":view==="meeting_ai"?"Turn meeting decisions into reviewed tasks and plans.":view==="projects"?"Group related tasks and see what's moving.":view==="people"?"Find your colleagues and manage your teams.":view==="teams"?"Bring people together around shared work.":view==="notifications"?"Your updates, requests, and conversations in one place.":view==="settings"?"Your account, organization, and invitations.":"Keep everything organized in one place."}</p>
  </div>
  <div className="headerControls">
   {active&&<button type="button" className="headerSearch" aria-label="Search tasks, projects, and people" onClick={()=>{setSearchOpen(true);setCreateMenu(false)}}><SearchIcon size={18}/> <span>Search</span></button>}
   <button type="button" className="headerReports" onClick={()=>navigate("reports")} aria-label="Open workspace reports"><BarChart3 size={18}/><span>Reports</span></button>
+   {active&&<button type="button" className="headerWorkspaceInfo" onClick={()=>{setWorkspaceInfoOpen(true);setCreateMenu(false)}} aria-label="Open workspace information"><UsersRound size={18}/><span>Workspace info</span></button>}
    <button type="button" className="headerHelp" onClick={()=>{setShowGuide(true);setCreateMenu(false)}} aria-label="Open guided setup and feature explanations"><Sparkles size={18}/> <span>Guided help</span></button>
   {active&&<div className="createWrapper">
    <button type="button" className="primary mainCreateButton" onClick={()=>{if(manager)setQuickCreate("task");else launchCreate("request")}}><Plus size={18}/> {manager?"Quick create":"New request"}</button>
@@ -567,21 +707,43 @@ export default function Home(){
  </button>
  </div>
 </header><main className="content"><div className="contentWidth">
+ {joinToken&&<section className="card twJoinBanner" role="region" aria-label="Join workspace invitation"><div><strong>You've been invited to a Trackwise workspace.</strong><p className="muted">Choose Join workspace to accept. You'll have access based on the role your inviter selected.</p></div><div className="twJoinActions"><button type="button" className="primary" onClick={()=>void joinFromLink()} disabled={joiningWorkspace}>{joiningWorkspace?"Joining…":"Join workspace →"}</button><button type="button" onClick={dismissJoinLink} disabled={joiningWorkspace}>Dismiss</button></div></section>}
+ 
  {active&&activeNav.items.length>1&&<nav className="sectionTabs" aria-label={activeNav.label+" sections"}>{activeNav.items.filter(item=>item.view!=="meeting_ai"||manager).map(item=><button type="button" key={item.view} className={view===item.view?"active":""} aria-current={view===item.view?"page":undefined} onClick={()=>navigate(item.view)}>{item.label}</button>)}</nav>}
  {error&&<p role="alert" className="feedback bad">{error}</p>}{notice&&<p role="status" className="feedback good">{notice}</p>}{!active&&view!=="profile"?<div className="card emptyState">{pendingInvites.length>0&&<section><h2>Invitations for you</h2>{pendingInvites.map(i=><div className="reportRow" key={i.id}><span>Invitation to join as {statusLabel(i.role)}</span><button className="primary" disabled={invitesLoading} onClick={()=>void acceptInvite(i.id)}>Accept</button></div>)}</section>}<span className="bigIcon">✦</span><span className="eyebrow blue">WELCOME · STEP 1 OF 3</span><h2>Let's create your first workspace</h2>
  <p className="muted">You can create an organization to organize projects and tasks, or join someone else's organization through an invitation link.</p><button type="button" className="newUserGuideCTA" onClick={()=>setShowGuide(true)}>✦ First time here? Take the guided tour →</button>
  <div className="startChoices"><div className="startChoice"><strong>🏢 Start an organization</strong><p>You'll be its administrator, so you can invite people, create projects and assign tasks.</p></div><div className="startChoice"><strong>✉ Join an organization</strong><p>Ask your leader to share an invitation link with you. Sign in with your invited email and accept it here.</p></div></div><div className="organizationSetupForm"><label htmlFor="firstOrgName">Organization name</label>
  <form onSubmit={createOrg} className="inlineForm"><input id="firstOrgName" aria-label="Organization name" minLength={2} maxLength={120} value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="e.g. Volunteerism Club" required/><button type="submit" className="primary" disabled={working}>{working?"Creating…":"Create & start setup →"}</button></form>
- <small className="fieldHint">You'll be the administrator. Only approved members can see your organization's work.</small></div></div>:<>{view==="overview"&&<><div className="welcome dashboardHero">
- <div className="dashboardHeroCopy"><span className="eyebrow">TRACKWISE WORKSPACE · {active?.name??"Workspace"}</span>
-  <h2>Make progress.<br/><em>Stay in control.</em></h2>
-  <p>Keep your team, projects and priorities moving—all from one workspace.</p>
-  <div className="dashboardHeroCounts"><span><strong>{projects.length}</strong> Projects</span><span><strong>{teams.length}</strong> Teams</span><span><strong>{tasks.length}</strong> Tasks</span></div>
- </div>
- <div className="dashboardHeroSide"><span className="dashboardHeroLabel">YOUR NEXT STEP</span><strong>{manager?"Build something great.":"See what needs attention."}</strong><p>{manager?"Create a task, organize a project, or add your people in a few taps.":"Your assignments and updates are just a tap away."}</p>
-  <button type="button" onClick={()=>{if(manager){setQuickProjectId("");setQuickCreate("project")}else navigate("tasks")}}><Plus size={19}/>{manager?"Start a project":"Open my tasks"} →</button>
-  <button type="button" className="dashboardHeroGuide" onClick={()=>setShowGuide(true)}><Sparkles size={15}/> How Trackwise works</button>
- </div></div><section className="quickActions" aria-label="Quick actions">
+ <small className="fieldHint">You'll be the administrator. Only approved members can see your organization's work.</small></div></div>:<>{view==="overview"&&<div className="twDashboard">
+ <section className="twDashboardToolbar" aria-label="Workspace actions">
+  <div className="twDashboardWorkspaceSelect"><label htmlFor="twDashboardOrganization">Workspace</label><select id="twDashboardOrganization" value={selected} onChange={e=>{setSelected(e.target.value);setLastCreatedProject(null);setLastCreatedTeam(null);setProjectFilter("all");setDashboardSearch("");setDashboardStatus("all");setDashboardPriority("all");setDashboardAssignee("all");clear()}}>{orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
+  <button type="button" onClick={()=>setWorkspaceInfoOpen(true)}><UsersRound size={17}/> Workspace info</button>
+  {manager&&<button type="button" onClick={()=>navigate("people")}><UsersRound size={17}/> Manage people</button>}
+  {manager&&<button type="button" className="twDashboardInviteButton" onClick={()=>launchCreate("invite")}><Mail size={17}/> Invite people</button>}
+  <button type="button" onClick={()=>setQuickCreate("organization")}><Plus size={17}/> New workspace</button>
+  <button type="button" className="primary" onClick={()=>manager?launchCreate("task"):launchCreate("request")}><Plus size={17}/>{manager?"New task":"New request"}</button>
+ </section>
+ <section className="twDashboardMetricGrid" aria-label="Workspace task summary">
+  {dashboardStats.map(item=><div className="twDashboardMetric" key={item.label}>
+   <span>{item.label}</span><strong>{item.value}</strong><small>{item.help}</small>
+  </div>)}
+ </section>
+ <section className="card twDashboardTaskPanel" aria-label="Workspace task board">
+  <div className="twDashboardTaskHeading"><div><span className="eyebrow blue">TASK MANAGEMENT</span><h2>Tasks at a glance</h2><p className="muted">Move work forward without leaving your dashboard.</p></div>
+   <div className="twDashboardTaskHeadingActions"><button type="button" disabled={workspaceLoading} onClick={()=>void loadWorkspace(selected)}>{workspaceLoading?"Refreshing…":"↻ Refresh"}</button><button type="button" className="primary" onClick={()=>navigate("tasks")}>Open all tasks →</button></div>
+  </div>
+  <div className="twDashboardFilters">
+   <input type="search" aria-label="Search dashboard tasks" value={dashboardSearch} onChange={e=>setDashboardSearch(e.target.value)} placeholder="Search tasks…"/>
+   <select aria-label="Filter dashboard task status" value={dashboardStatus} onChange={e=>setDashboardStatus(e.target.value)}><option value="all">All statuses</option>{statuses.map(x=><option key={x} value={x}>{taskLabel(x)}</option>)}</select>
+   <select aria-label="Filter dashboard priority" value={dashboardPriority} onChange={e=>setDashboardPriority(e.target.value)}><option value="all">All priorities</option>{["low","normal","high","urgent"].map(x=><option key={x} value={x}>{statusLabel(x)}</option>)}</select>
+   {manager&&<select aria-label="Filter dashboard assignee" value={dashboardAssignee} onChange={e=>setDashboardAssignee(e.target.value)}><option value="all">All assignees</option><option value="unassigned">Unassigned</option>{directory.map(p=><option key={p.user_id} value={p.user_id}>{p.user_id===user.id?"Me":p.display_name}</option>)}</select>}
+  </div>
+  <div className="twDashboardTaskTools"><div className="twTaskViewSwitch" role="group" aria-label="Dashboard task display"><button type="button" aria-pressed={dashboardLayout==="board"} className={dashboardLayout==="board"?"selected":""} onClick={()=>setDashboardLayout("board")}>▦ Board</button><button type="button" aria-pressed={dashboardLayout==="list"} className={dashboardLayout==="list"?"selected":""} onClick={()=>setDashboardLayout("list")}>☷ List</button></div><span className="muted">{dashboardTasks.length} matching task{dashboardTasks.length===1?"":"s"}</span></div>
+  {dashboardLayout==="board"?<TaskBoard hideStats tasks={dashboardTasks} directory={directory} projects={projects} userId={user.id} role={role??null} manager={manager} working={working} onOpen={id=>{navigate("tasks");void openTask(id)}} onStatusChange={(id,status)=>void updateTask(id,status)} onCreate={()=>launchCreate("task")}/>:
+   <div className="tablewrap twDashboardList"><table><thead><tr><th>Task</th><th>Owner</th><th>Priority</th><th>Status</th><th>Deadline</th></tr></thead><tbody>{dashboardTasks.length?dashboardTasks.map(t=><tr key={t.id}><td><button type="button" className="taskOpen" onClick={()=>{navigate("tasks");void openTask(t.id)}}>{t.title}</button></td><td>{t.owner_id===user.id?"You":directory.find(m=>m.user_id===t.owner_id)?.display_name??"Unassigned"}</td><td>{statusLabel(t.priority)}</td><td>{taskLabel(t.status)}</td><td>{t.due_at?new Date(t.due_at).toLocaleDateString():"—"}</td></tr>):<tr><td colSpan={5} className="muted">No tasks match these filters.</td></tr>}</tbody></table></div>}
+ </section>
+ <div className="twDashboardBelow"><section className="card twDashboardShortcuts"><div className="sectionHead"><h2>Quick actions</h2><button className="textAction" type="button" onClick={()=>setShowGuide(true)}>Guided help →</button></div>
+ <section className="quickActions" aria-label="Quick actions">
  {manager?<><button type="button" onClick={()=>launchCreate("task")}><span className="quickIcon"><SquareCheckBig size={21}/></span><span><strong>New task</strong><small>Create & assign</small></span></button>
  <button type="button" onClick={()=>launchCreate("project")}><span className="quickIcon"><FolderKanban size={21}/></span><span><strong>New project</strong><small>Organize work</small></span></button>
  <button type="button" onClick={()=>launchCreate("team")}><span className="quickIcon"><UsersRound size={21}/></span><span><strong>New team</strong><small>Organize people</small></span></button>
@@ -590,7 +752,10 @@ export default function Home(){
  <button type="button" onClick={()=>navigate("collaboration")}><span className="quickIcon"><Inbox size={21}/></span><span><strong>Team chat</strong><small>Share an update</small></span></button>
  <button type="button" onClick={()=>launchCreate("request")}><span className="quickIcon"><Mail size={21}/></span><span><strong>New request</strong><small>Ask your leader</small></span></button>
  <button type="button" onClick={()=>navigate("people")}><span className="quickIcon"><UsersRound size={21}/></span><span><strong>My team</strong><small>Meet people</small></span></button></>}
- </section><section className="card reportShortcutCard" aria-label="Workspace reports"><div><span className="eyebrow blue">WORKSPACE INSIGHTS</span><h2>Reports & progress</h2><p className="muted">See completion rates, overdue work, team workload and project progress in one place.</p><div className="reportShortcutFacts"><span><strong>{tasks.filter(t=>t.status==="completed").length}</strong> completed</span><span><strong>{counts.overdue}</strong> overdue</span><span><strong>{projects.length}</strong> projects</span></div></div><button type="button" className="primary" onClick={()=>navigate("reports")}><BarChart3 size={18}/> View detailed reports →</button></section>{view==="overview"&&!hideChecklist&&<section className="card setupChecklist">
+ </section>
+ </section><section className="card reportShortcutCard" aria-label="Workspace reports"><div><span className="eyebrow blue">WORKSPACE INSIGHTS</span><h2>Reports & progress</h2><p className="muted">See completion rates, overdue work, team workload and project progress in one place.</p><div className="reportShortcutFacts"><span><strong>{tasks.filter(t=>t.status==="completed").length}</strong> completed</span><span><strong>{counts.overdue}</strong> overdue</span><span><strong>{projects.length}</strong> projects</span></div></div><button type="button" className="primary" onClick={()=>navigate("reports")}><BarChart3 size={18}/> View detailed reports →</button></section></div>
+ <details className="twDashboardGettingStarted"><summary><span>✦ Getting started & guided setup</span><span className="muted">{setupCompleted} of 4 setup steps</span></summary>
+  {!hideChecklist&&<section className="card setupChecklist">
  <div className="sectionHead"><div><span className="eyebrow blue">GETTING STARTED</span><h2>{manager?"Set up your workspace":"Make Trackwise your own"}</h2>{manager&&<span className="setupCount">{setupCompleted} of 4 steps complete</span>}</div><button type="button" className="textAction" onClick={()=>{setHideChecklist(true);if(user&&selected)window.localStorage.setItem("tw-setup-hidden:"+user.id+":"+selected,"yes")}}>Hide checklist ×</button></div>
  <p className="muted">{manager?"Complete these steps to organize your work. You can do them in any order.":"Trackwise helps you follow your tasks and stay in touch with your team."}</p>
  {manager&&<progress className="workspaceSetupProgress" value={setupCompleted} max={4} aria-label={"Workspace setup: "+setupCompleted+" out of 4 steps complete"}/>}
@@ -601,7 +766,9 @@ export default function Home(){
   {label:"Add a task",done:tasks.length>0,action:()=>launchCreate("task"),help:"Assign something and set a deadline."}]).map(item=><button type="button" key={item.label} className={"setupStep "+(item.done?"done":"")} onClick={item.action}><span className="setupCheck" aria-hidden="true">{item.done?"✓":"○"}</span><span><strong>{item.label}</strong><small>{item.done?"Done!":item.help}</small></span><span aria-hidden="true">→</span></button>)}</div>:
   <div className="setupSteps"><button type="button" className="setupStep" onClick={()=>{setMyTasksOnly(true);navigate("tasks")}}><span className="setupCheck">☑</span><span><strong>Find your tasks</strong><small>See what your team has assigned to you.</small></span><span>→</span></button><button type="button" className="setupStep" onClick={()=>navigate("notifications")}><span className="setupCheck">◉</span><span><strong>Check your inbox</strong><small>Find messages, updates and requests.</small></span><span>→</span></button><button type="button" className="setupStep" onClick={()=>navigate("people")}><span className="setupCheck">♙</span><span><strong>Meet your team</strong><small>See your organization and its members.</small></span><span>→</span></button></div>}
  <button type="button" className="textAction setupHelpLink" onClick={()=>setShowGuide(true)}>Learn each step with the guided tour →</button>
- </section>}<section className="card"><div className="sectionHead"><h2>My assignments</h2><button type="button" onClick={()=>{setMyTasksOnly(true);setView("tasks")}}>View my tasks →</button></div><div className="stats"><div className="stat"><span>Assigned to me</span><strong>{tasks.filter(t=>t.owner_id===user.id).length}</strong></div><div className="stat"><span>Due soon</span><strong>{tasks.filter(t=>t.owner_id===user.id&&t.due_at&&new Date(t.due_at).getTime()>=Date.now()&&new Date(t.due_at).getTime()<Date.now()+7*86400000&&t.status!=="completed").length}</strong></div><div className="stat"><span>Overdue</span><strong>{tasks.filter(t=>t.owner_id===user.id&&t.due_at&&new Date(t.due_at)<new Date()&&t.status!=="completed").length}</strong></div></div></section><div className="stats"><div className="stat"><span>{manager?"All tasks":"My tasks"}</span><strong>{counts.total}</strong><small>{manager?"Across your workspace":"Assigned to you"}</small></div><div className="stat"><span>In progress</span><strong>{counts.active}</strong><small>Currently underway</small></div><div className="stat"><span>Blocked</span><strong>{counts.blocked}</strong><small>Need attention</small></div><div className="stat"><span>Completed</span><strong>{counts.done}</strong><small>Finished tasks</small></div></div><div className="twoCol"><section className="card"><div className="sectionHead"><h2>{manager?"Recent work":"My recent tasks"}</h2><button className="textAction" onClick={()=>setView("tasks")}>View all →</button></div>{homeTasks.slice(0,5).length?homeTasks.slice(0,5).map(t=><div className="taskLine" key={t.id}><span className={"taskDot "+t.status}/><div><strong>{t.title}</strong><small>{taskLabel(t.status)} · {statusLabel(t.priority)} priority</small></div></div>):<p className="muted">{manager?"Tasks will appear here after you create them.":"Your leader can assign tasks to you. They will appear here when assigned."}</p>}</section><section className="card"><div className="sectionHead"><h2>At a glance</h2><button className="textAction" onClick={()=>setView("teams")}>Manage →</button></div><div className="snapshot"><strong>{teams.length}</strong><span>Active teams</span></div><div className="snapshot"><strong>{members.length}</strong><span>Organization members</span></div><div className="snapshot"><strong>{counts.overdue}</strong><span>Overdue tasks</span></div></section></div></>}{view==="calendar"&&<TaskCalendar tasks={tasks} projects={projects} onOpenTask={id=>{navigate("tasks");void openTask(id)}}/>}{view==="tasks"&&<>{selectedTask&&<section className="card"><div className="sectionHead"><h2>{tasks.find(t=>t.id===selectedTask)?.title??"Task details"}</h2><button className="textAction" onClick={()=>setSelectedTask("")}>Close ×</button></div><div className="taskDetailsSummary"><p><strong>Project: </strong>{projects.find(p=>p.id===tasks.find(t=>t.id===selectedTask)?.project_id)?.name??"Not linked"}</p><p><strong>Assigned to: </strong>{directory.find(m=>m.user_id===tasks.find(t=>t.id===selectedTask)?.owner_id)?.display_name??"Unassigned"}</p>{tasks.find(t=>t.id===selectedTask)?.description&&<p className="detailDescription">{tasks.find(t=>t.id===selectedTask)?.description}</p>}</div>
+ </section>}
+ </details>
+ </div>}{view==="calendar"&&<TaskCalendar tasks={tasks} projects={projects} onOpenTask={id=>{navigate("tasks");void openTask(id)}}/>}{view==="tasks"&&<>{selectedTask&&<section className="card"><div className="sectionHead"><h2>{tasks.find(t=>t.id===selectedTask)?.title??"Task details"}</h2><button className="textAction" onClick={()=>setSelectedTask("")}>Close ×</button></div><div className="taskDetailsSummary"><p><strong>Project: </strong>{projects.find(p=>p.id===tasks.find(t=>t.id===selectedTask)?.project_id)?.name??"Not linked"}</p><p><strong>Assigned to: </strong>{directory.find(m=>m.user_id===tasks.find(t=>t.id===selectedTask)?.owner_id)?.display_name??"Unassigned"}</p>{tasks.find(t=>t.id===selectedTask)?.description&&<p className="detailDescription">{tasks.find(t=>t.id===selectedTask)?.description}</p>}</div>
  {manager&&<div className="taskEditToggle"><button type="button" className="textAction" onClick={()=>{
  const task=tasks.find(t=>t.id===selectedTask);
  if(editingTask===selectedTask){setEditingTask("");return}
@@ -627,7 +794,7 @@ export default function Home(){
  <TaskExtras key={selectedTask} organizationId={selected} taskId={selectedTask} userId={user.id} manager={manager} canComment={manager||role==="member"} canEditChecklist={canEditTaskChecklist(role,tasks.find(t=>t.id===selectedTask)?.owner_id,user.id)} directory={directory}/>
  </details>{manager&&<div className="detailAction"><button className="textAction" onClick={()=>setShowTaskHandover(v=>!v)}>{showTaskHandover?"Hide reassignment":"↗ Reassign task"}</button></div>}{manager&&showTaskHandover&&<form onSubmit={reassignTask} className="handoverForm"><h3>Reassign task</h3><label htmlFor="handoverOwner">New owner</label><select id="handoverOwner" value={handoverOwner} onChange={e=>setHandoverOwner(e.target.value)} required><option value="">Choose a member</option>{directory.filter(m=>canOwnTask(m.role)&&m.user_id!==tasks.find(t=>t.id===selectedTask)?.owner_id).map(m=><option key={m.user_id} value={m.user_id}>{m.display_name}</option>)}</select><label htmlFor="handoverNote">Handover instructions</label><textarea id="handoverNote" rows={3} required minLength={3} maxLength={2000} value={handoverNote} onChange={e=>setHandoverNote(e.target.value)}/><button className="primary" style={{marginTop:12}} disabled={working}>Confirm handover</button></form>}<details className="detailDisclosure"><summary>Handover history ({handovers.filter(h=>h.task_id===selectedTask).length})</summary>{handovers.filter(h=>h.task_id===selectedTask).map(h=><div className="taskLine" key={h.id}><span className="taskDot"/><div><strong>{directory.find(m=>m.user_id===h.from_user)?.display_name??"Unassigned"} → {directory.find(m=>m.user_id===h.to_user)?.display_name??"Member"}</strong><p className="muted">{h.note}</p><small>{new Date(h.created_at).toLocaleString()}</small></div></div>)}</details><h3>Progress history</h3>{taskUpdates.length?taskUpdates.map(u=><div key={u.id} className="taskLine"><span className="taskDot"/><div><strong>{u.progress}</strong><small>{u.next_action?"Next: "+u.next_action+" · ":""}{new Date(u.created_at).toLocaleString()}</small></div></div>):<p className="muted">No progress updates recorded.</p>}{(manager||tasks.find(t=>t.id===selectedTask)?.owner_id===user?.id)&&<form onSubmit={addProgress}><label htmlFor="progressText">Progress update</label><textarea id="progressText" required minLength={2} maxLength={2000} rows={3} value={progressText} onChange={e=>setProgressText(e.target.value)} placeholder="What has been accomplished?"/><label htmlFor="nextStep">Next action</label><input id="nextStep" value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="What happens next?"/><button className="primary" style={{marginTop:14}} disabled={working}>Save progress</button></form>}</section>}{manager&&showTaskForm&&<section className="card taskComposer" id="taskComposer"><div className="sectionHead"><div><span className="eyebrow blue">ADD WORK · STEP 1</span><h2>Create a task</h2></div><button type="button" className="textAction" onClick={()=>setShowTaskForm(false)}>Close ×</button></div><p className="muted">Start with what needs doing. You can add the details later; only the title is required.</p><form onSubmit={createTask} className="formGrid friendlyForm">
  <div className="span2"><label htmlFor="taskTitle">What needs to be done? <span className="requiredMark">*</span></label>
-  <input id="taskTitle" value={taskTitle} minLength={2} maxLength={180} onChange={e=>setTaskTitle(e.target.value)} placeholder="e.g. Prepare the event budget" required autoComplete="off"/>
+  <input id="taskTitle" value={taskTitle} minLength={2} maxLength={180} onChange={e=>setTaskTitle(e.target.value)} placeholder="e.g. Prepare the meeting agenda" required autoComplete="off"/>
   <small className="fieldHint">One clear action makes a task easier to assign and finish.</small></div>
  <div><label htmlFor="owner">Who is responsible?</label><select id="owner" value={taskOwner} onChange={e=>setTaskOwner(e.target.value)}><option value="">Choose later (unassigned)</option>{directory.filter(m=>canOwnTask(m.role)).map(m=><option key={m.user_id} value={m.user_id}>{m.user_id===user.id?"Me":m.display_name}</option>)}</select>
   {directory.filter(m=>canOwnTask(m.role)).length<=1&&<small className="fieldHint">To assign someone else, invite them first in People.</small>}</div>
@@ -646,7 +813,7 @@ export default function Home(){
  <div className="span2 friendlyActions"><button className="primary" type="submit" disabled={working}>{working?"Saving task…":"Create task →"}</button><button type="button" onClick={()=>setShowTaskForm(false)} disabled={working}>Cancel</button></div></form></section>}<section className="card"><div className="sectionHead"><div><h2>Saved tasks <span className="count">{tasks.length}</span></h2><p className="muted">Tasks are stored in your organization database. Select Refresh to check for updates.</p></div><div className="headerActions">{manager&&<><button type="button" className="primary" onClick={()=>launchCreate("task")}><Plus size={17}/> New task</button><button type="button" className="textAction" onClick={()=>{setShowTaskForm(v=>!v);setTimeout(()=>document.getElementById("taskComposer")?.scrollIntoView({behavior:"smooth",block:"start"}),100)}}>{showTaskForm?"Hide advanced setup":"Advanced setup"}</button></>}<button type="button" className="textAction" onClick={()=>{setView("projects");setProjectFilter("all");setMobileMenu(false);setTimeout(()=>document.getElementById("projectCreator")?.scrollIntoView({behavior:"smooth",block:"start"}),80)}}>{manager?"＋ Add project":"View projects"} →</button><button className="textAction" disabled={workspaceLoading} onClick={()=>void loadWorkspace(selected)}>{workspaceLoading?"Loading…":"↻ Refresh"}</button></div></div><details className="workflowHelp"><summary>How do task statuses work?</summary>
  <p>To do → In progress → For review → Completed. Tasks can also be marked <strong>Blocked</strong> when you need help or <strong>Needs changes</strong> when a leader asks for revisions.</p>
  <p>{manager?"As a leader, you can mark a task complete after reviewing it.":"When you finish your task, select Submit for approval. A leader will review and complete it."}</p></details>
- <div className="filterBar"><label className="taskOwnerFilter"><input type="checkbox" checked={myTasksOnly} onChange={e=>setMyTasksOnly(e.target.checked)}/> My tasks only</label><input aria-label="Search tasks" placeholder="Search tasks…" value={search} onChange={e=>setSearch(e.target.value)}/><select aria-label="Filter by status" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="all">All statuses</option>{statuses.map(x=><option key={x} value={x}>{taskLabel(x)}</option>)}</select><select aria-label="Filter by project" value={projectFilter} onChange={e=>setProjectFilter(e.target.value)}><option value="all">All projects</option><option value="none">No project</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>{taskTable}</section><RecurringSchedules key={selected} organizationId={selected} manager={manager} refreshKey={recurringRefresh} directory={directory} projects={projects}/></>}{view==="people"&&<>
+ <div className="twTaskViewSwitch" role="group" aria-label="Task display"><button type="button" className={taskLayout==="board"?"selected":""} aria-pressed={taskLayout==="board"} onClick={()=>setTaskLayout("board")}>▦ Board view</button><button type="button" className={taskLayout==="list"?"selected":""} aria-pressed={taskLayout==="list"} onClick={()=>setTaskLayout("list")}>☷ List view</button></div><div className="filterBar"><label className="taskOwnerFilter"><input type="checkbox" checked={myTasksOnly} onChange={e=>setMyTasksOnly(e.target.checked)}/> My tasks only</label><input aria-label="Search tasks" placeholder="Search tasks…" value={search} onChange={e=>setSearch(e.target.value)}/><select aria-label="Filter by status" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="all">All statuses</option>{statuses.map(x=><option key={x} value={x}>{taskLabel(x)}</option>)}</select><select aria-label="Filter by project" value={projectFilter} onChange={e=>setProjectFilter(e.target.value)}><option value="all">All projects</option><option value="none">No project</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>{taskLayout==="board"?<TaskBoard tasks={visibleTasks} directory={directory} projects={projects} userId={user.id} role={role??null} manager={manager} working={working} onOpen={id=>void openTask(id)} onStatusChange={(id,status)=>void updateTask(id,status)} onCreate={()=>launchCreate("task")}/>:taskTable}</section><RecurringSchedules key={selected} organizationId={selected} manager={manager} refreshKey={recurringRefresh} directory={directory} projects={projects}/></>}{view==="people"&&<>
  <section className="card peopleIntro">
   <div className="sectionHead"><div><span className="eyebrow blue">WORK TOGETHER</span><h2>People in {active?.name??"Workspace"}</h2></div>{manager&&<button type="button" className="primary" onClick={()=>launchCreate("invite")}>＋ Invite a person</button>}</div>
   <p className="muted">Invite people before assigning them tasks or adding them to teams. Each person can join using the invitation link you share with them.</p>
@@ -726,7 +893,7 @@ export default function Home(){
  </div>}</div>):<p className="muted">No requests submitted yet.</p>}</section></>}
 {view==="meeting_ai"&&(manager?<MeetingAssistant key={selected} organizationId={selected} userId={user.id} tasks={tasks} projects={projects} members={directory} onSaved={async()=>{await loadWorkspace(selected)}}/>:<section className="card"><h2>Leader access required</h2><p className="muted">An administrator or leader must review and approve meeting suggestions before they can change the tracker.</p></section>)}
 {view==="activity"&&<section className="card"><h2>Recent activity</h2>{activity.length?activity.map(a=><div className="taskLine" key={a.id}><span className="taskDot"/><div><strong>{statusLabel(a.entity_type.replace("tw_",""))} · {statusLabel(a.action)}</strong><small>{new Date(a.created_at).toLocaleString()}</small></div></div>):<p className="muted">Activity will appear as your team starts working.</p>}</section>}
-{view==="reports"&&<Reports key={selected} tasks={tasks} projects={projects} teams={teams} directory={directory} organizationName={active?.name??"Organization"} organizationId={selected}/>}{(view==="collaboration"||view==="resources"||view==="notifications")&&user&&<Operations key={selected} organizationId={selected} userId={user.id} tasks={tasks} teams={manager?teams:teams.filter(t=>teamMembers.some(member=>member.team_id===t.id&&member.user_id===user.id))} projects={projects} manager={manager} section={view}/>}{view==="profile"&&<AccountProfile user={user} role={role??null}
+{view==="reports"&&<Reports key={selected} tasks={tasks} projects={projects} teams={teams} directory={directory} organizationName={active?.name??"Organization"} organizationId={selected}/>}{(view==="collaboration"||view==="notifications")&&user&&<Operations key={selected} organizationId={selected} userId={user.id} tasks={tasks} teams={manager?teams:teams.filter(t=>teamMembers.some(member=>member.team_id===t.id&&member.user_id===user.id))} projects={projects} manager={manager} section={view}/>}{view==="profile"&&<AccountProfile user={user} role={role??null}
  organizationName={active?.name??""} organizationCount={orgs.length}
  assignedTasks={tasks.filter(t=>t.owner_id===user.id).length}
  projectsCount={projects.length} photoUrl={profilePhotoUrl}
@@ -735,7 +902,25 @@ export default function Home(){
   if(result?.data.user)setUser(result.data.user);
   if(selected)await loadWorkspace(selected);
  }}/>}
- {view==="settings"&&<>{role==="admin"&&<WorkspaceBackup key={selected} organizationId={selected} organizationName={active?.name??"Workspace"} userId={user.id}/>}<section className="card setupHelpCard"><div className="sectionHead"><div><span className="eyebrow blue">LEARNING CENTER</span><h2>Get comfortable with Trackwise</h2></div><button type="button" className="primary" onClick={()=>setShowGuide(true)}>Open interactive guide ↗</button></div><p>Go through the setup walkthrough or browse a searchable explanation of all the features, their purpose, and where to find them.</p><div className="setupHelpActions"><button type="button" onClick={showSetup}>Show my setup checklist</button><button type="button" onClick={()=>{setShowGuide(true)}}>Explore features & uses</button></div></section><section className="card"><h2>Your organization role</h2><p className="muted">Your role belongs to this organization, not your login account. The person who creates a workspace becomes its administrator. Other people receive their roles when an administrator or leader invites them.</p><p className="readOnlyValue"><strong>{role?statusLabel(role):"No organization role assigned"}</strong> · {active?.name}</p>{!manager&&<p className="muted">Only administrators and leaders can invite members. Ask an organization leader if you need invitation permissions.</p>}</section><section className="card"><div className="sectionHead"><h2>Your account</h2><button type="button" className="primary" onClick={()=>navigate("profile")}>View & edit my profile →</button></div><p className="muted">Update your name, avatar, position and personal details on the My profile page.</p></section>{role==="admin"&&<section className="card"><h2>Manage member roles</h2><p className="muted">Only administrators can change roles or remove members. Changing someone to Observer or Stakeholder makes their tasks unassigned; removing a member revokes their access. Past work remains in the history.</p>{directory.map(m=><div className="memberManageRow" key={m.user_id}><div><strong>{m.display_name}</strong><small>{statusLabel(m.role)}{m.user_id===user.id?" · You":""}</small></div>{roleEditing===m.user_id?<div className="memberManageActions"><select aria-label={"New role for "+m.display_name} value={roleChoice} onChange={e=>setRoleChoice(e.target.value)}>{["admin","leader","member","stakeholder","observer"].map(x=><option key={x} value={x}>{statusLabel(x)}</option>)}</select><button className="primary" disabled={working} onClick={()=>void updateMemberRole(m.user_id)}>Save</button><button onClick={()=>setRoleEditing("")}>Cancel</button></div>:<div className="memberManageActions"><button type="button" disabled={working} onClick={()=>{setRoleEditing(m.user_id);setRoleChoice(m.role)}}>Change role</button>{m.user_id!==user.id&&<button type="button" disabled={working} className="dangerAction" onClick={()=>void removeMember(m.user_id,m.display_name)}>Remove member</button>}</div>}</div>)}</section>}{pendingInvites.length>0&&<section className="card"><h2>Invitations for you</h2>{pendingInvites.map(i=><div className="reportRow" key={i.id}><span>Invitation to join an organization as {statusLabel(i.role)}</span><button className="primary" disabled={invitesLoading} onClick={()=>void acceptInvite(i.id)}>Accept invitation</button></div>)}</section>}{manager&&<section className="card" id="inviteMembers"><h2>Invite organization members</h2><p className="muted">Choose a role, create an invitation, then copy its link or share it through WhatsApp and other apps. The invited person must sign in using the email you enter.</p><form onSubmit={addMember} className="formGrid"><div><label htmlFor="inviteEmail">Member email</label><input id="inviteEmail" type="email" required value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} placeholder="colleague@example.com"/></div><div><label htmlFor="inviteRole">Organization role</label><select id="inviteRole" value={inviteRole} onChange={e=>setInviteRole(e.target.value)}><option value="member">Member</option><option value="leader">Leader</option><option value="observer">Observer</option><option value="stakeholder">Stakeholder</option></select></div><div className="formAction"><button className="primary" disabled={working}>Create invitation</button></div></form>{inviteShareReady&&inviteShareId&&<div className="inviteShare"><p>Invitation ready for <strong>{inviteShareEmail}</strong>. It expires in 14 days and can only be accepted by that email address.</p><input aria-label="Invitation link" readOnly value={typeof window!=="undefined"?window.location.origin+"/?invite="+encodeURIComponent(inviteShareId):""}/><div className="inviteActions"><button className="primary" type="button" onClick={async()=>{try{await navigator.clipboard.writeText(window.location.origin+"/?invite="+encodeURIComponent(inviteShareId));setNotice("Invitation link copied.")}catch{setError("Could not copy automatically. Select and copy the invitation link above.")}}}>Copy invitation link</button><button type="button" onClick={async()=>{const url=window.location.origin+"/?invite="+encodeURIComponent(inviteShareId);const message="You're invited to join "+(active?.name??"an organization")+" on Trackwise. Sign in using "+inviteShareEmail+" and accept the invitation.";if(navigator.share){try{await navigator.share({title:"Trackwise invitation",text:message,url})}catch(e){if(e instanceof Error&&e.name!=="AbortError")setError("Sharing failed. Try copying the link.")}}else{window.open("https://wa.me/?text="+encodeURIComponent(message+" "+url),"_blank","noopener,noreferrer")}}}>Share invitation ↗</button><a href={"https://wa.me/?text="+encodeURIComponent("You're invited to join "+(active?.name??"an organization")+" on Trackwise. Sign in as "+inviteShareEmail+" to accept: "+(typeof window!=="undefined"?window.location.origin+"/?invite="+encodeURIComponent(inviteShareId):""))} target="_blank" rel="noopener noreferrer">Share on WhatsApp ↗</a></div></div>}</section>}{manager&&<section className="card"><div className="sectionHead"><h2>Manage invitations</h2><button type="button" onClick={()=>void loadOutgoingInvites(selected)}>Refresh</button></div><p className="muted">View invitations, share their links again, or revoke access before acceptance.</p>{outgoingInvites.length===0?<p className="muted">No invitations yet.</p>:outgoingInvites.map(inv=><div className="memberManageRow" key={inv.id}><div><strong>{inv.email}</strong><small>{statusLabel(inv.role)} · {inv.accepted_at?"Accepted":new Date(inv.expires_at).getTime()<Date.now()?"Expired":"Pending"} · Expires {new Date(inv.expires_at).toLocaleDateString()}</small></div><div className="memberManageActions">{!inv.accepted_at&&new Date(inv.expires_at).getTime()>=Date.now()&&<><button type="button" onClick={()=>shareExistingInvite(inv.id,inv.email)}>Share link</button><button type="button" disabled={inviteAction===inv.id} onClick={()=>void revokeInvite(inv.id)}>Revoke</button></>}{!inv.accepted_at&&new Date(inv.expires_at).getTime()<Date.now()&&<span className="muted">Create a new invitation to renew</span>}</div></div>)}</section>}<section className="card"><h2>Current organization</h2><p><strong>{active?.name??"Workspace"}</strong></p><p className="muted">Your role: {role?statusLabel(role):"Loading…"}</p><p className="muted">Organization ID: {active?.id??"Not selected"}</p></section><section className="card"><h2>Create another organization</h2><form onSubmit={createOrg} className="inlineForm"><input aria-label="New organization name" value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="Organization name" minLength={2} maxLength={120} required/><button className="primary" disabled={working}>Create workspace</button></form></section></>}</>}</div></main></div>{searchOpen&&active&&<div className="searchOverlay"><section className="searchPanel" role="dialog" aria-modal="true" aria-label="Search workspace">
+ {view==="settings"&&<>{role==="admin"&&<WorkspaceBackup key={selected} organizationId={selected} organizationName={active?.name??"Workspace"} userId={user.id}/>}<section className="card setupHelpCard"><div className="sectionHead"><div><span className="eyebrow blue">LEARNING CENTER</span><h2>Get comfortable with Trackwise</h2></div><button type="button" className="primary" onClick={()=>setShowGuide(true)}>Open interactive guide ↗</button></div><p>Go through the setup walkthrough or browse a searchable explanation of all the features, their purpose, and where to find them.</p><div className="setupHelpActions"><button type="button" onClick={showSetup}>Show my setup checklist</button><button type="button" onClick={()=>{setShowGuide(true)}}>Explore features & uses</button></div></section><section className="card"><h2>Your organization role</h2><p className="muted">Your role belongs to this organization, not your login account. The person who creates a workspace becomes its administrator. Other people receive their roles when an administrator or leader invites them.</p><p className="readOnlyValue"><strong>{role?statusLabel(role):"No organization role assigned"}</strong> · {active?.name}</p>{!manager&&<p className="muted">Only administrators and leaders can invite members. Ask an organization leader if you need invitation permissions.</p>}</section><section className="card"><div className="sectionHead"><h2>Your account</h2><button type="button" className="primary" onClick={()=>navigate("profile")}>View & edit my profile →</button></div><p className="muted">Update your name, avatar, position and personal details on the My profile page.</p></section>{role==="admin"&&<section className="card"><h2>Manage member roles</h2><p className="muted">Only administrators can change roles or remove members. Changing someone to Observer or Stakeholder makes their tasks unassigned; removing a member revokes their access. Past work remains in the history.</p>{directory.map(m=><div className="memberManageRow" key={m.user_id}><div><strong>{m.display_name}</strong><small>{statusLabel(m.role)}{m.user_id===user.id?" · You":""}</small></div>{roleEditing===m.user_id?<div className="memberManageActions"><select aria-label={"New role for "+m.display_name} value={roleChoice} onChange={e=>setRoleChoice(e.target.value)}>{["admin","leader","member","stakeholder","observer"].map(x=><option key={x} value={x}>{statusLabel(x)}</option>)}</select><button className="primary" disabled={working} onClick={()=>void updateMemberRole(m.user_id)}>Save</button><button onClick={()=>setRoleEditing("")}>Cancel</button></div>:<div className="memberManageActions"><button type="button" disabled={working} onClick={()=>{setRoleEditing(m.user_id);setRoleChoice(m.role)}}>Change role</button>{m.user_id!==user.id&&<button type="button" disabled={working} className="dangerAction" onClick={()=>void removeMember(m.user_id,m.display_name)}>Remove member</button>}</div>}</div>)}</section>}{pendingInvites.length>0&&<section className="card"><h2>Invitations for you</h2>{pendingInvites.map(i=><div className="reportRow" key={i.id}><span>Invitation to join an organization as {statusLabel(i.role)}</span><button className="primary" disabled={invitesLoading} onClick={()=>void acceptInvite(i.id)}>Accept invitation</button></div>)}</section>}{manager&&<section className="card twInviteSection" id="inviteMembers">
+ <div className="sectionHead"><div><span className="eyebrow blue">EASY TEAM ONBOARDING</span><h2>Invite people with a link</h2></div></div>
+ <p className="muted">No email addresses to enter. Create a link and send it through WhatsApp, messages, or any app. Teammates sign in or create a Trackwise account to join.</p>
+ <div className="twInviteCreate">
+  <label htmlFor="twShareRole">Access level<select id="twShareRole" value={shareRole} onChange={e=>setShareRole(e.target.value)}><option value="member">Member · collaborate on tasks</option><option value="observer">Observer · view only</option><option value="stakeholder">Stakeholder · view only</option></select></label>
+  <button className="primary" type="button" disabled={shareLinkWorking} onClick={()=>void createShareLink()}><Plus size={18}/>{shareLinkWorking?"Please wait…":"Create invite link"}</button>
+ </div>
+ {shareLinkId&&<div className="twInviteLinkReady" role="status"><strong><CheckCircle2 size={18}/> Your link is ready</strong><p>Anyone you share this link with can request to join using its access level. It expires after 14 days or 25 successful joins. You can disable it whenever you want.</p>
+  <input type="text" aria-label="Shareable workspace invite link" readOnly onFocus={e=>e.target.select()} value={shareableInviteUrl(shareLinkId)}/>
+  <div className="inviteActions"><button type="button" className="primary" onClick={()=>void copyShareLink(shareLinkId)}>Copy link</button><button type="button" onClick={()=>void sendShareLink(shareLinkId)}>Share / WhatsApp ↗</button></div>
+ </div>}
+ {inviteLinks.length>0&&<details className="twInviteManage"><summary>Active and previous invite links ({inviteLinks.length})</summary><div className="twInviteLinkList">{inviteLinks.map(link=>{
+  const valid=!link.revoked_at&&new Date(link.expires_at).getTime()>Date.now()&&link.uses_count<link.max_uses;
+  return <div key={link.id} className="twInviteLinkRow"><div><strong>{statusLabel(link.role)} · {valid?"Active":link.revoked_at?"Disabled":"Expired / used"}</strong><small>{link.uses_count} / {link.max_uses} joins · Expires {new Date(link.expires_at).toLocaleDateString()}</small></div><div className="inviteActions">{valid&&<><button type="button" onClick={()=>{setShareLinkId(link.id);void copyShareLink(link.id)}}>Copy</button><button type="button" onClick={()=>void revokeShareLink(link.id)} disabled={shareLinkWorking}>Disable</button></>}</div></div>;
+ })}</div></details>}
+ <details className="twInviteEmailAlternate"><summary>Prefer to invite a specific email? (Optional)</summary><p className="muted">Email-specific invitations are useful when you want access restricted to one email address, or need to invite a team leader.</p>
+ <form onSubmit={addMember} className="formGrid"><div><label htmlFor="inviteEmail">Member email</label><input id="inviteEmail" type="email" required value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} placeholder="colleague@example.com"/></div><div><label htmlFor="inviteRole">Organization role</label><select id="inviteRole" value={inviteRole} onChange={e=>setInviteRole(e.target.value)}><option value="member">Member</option><option value="leader">Leader</option><option value="observer">Observer</option><option value="stakeholder">Stakeholder</option></select></div><div className="formAction"><button className="primary" disabled={working}>Create invitation</button></div></form>{inviteShareReady&&inviteShareId&&<div className="inviteShare"><p>Invitation ready for <strong>{inviteShareEmail}</strong>. It expires in 14 days and can only be accepted by that email address.</p><input aria-label="Invitation link" readOnly value={typeof window!=="undefined"?window.location.origin+"/?invite="+encodeURIComponent(inviteShareId):""}/><div className="inviteActions"><button className="primary" type="button" onClick={async()=>{try{await navigator.clipboard.writeText(window.location.origin+"/?invite="+encodeURIComponent(inviteShareId));setNotice("Invitation link copied.")}catch{setError("Could not copy automatically. Select and copy the invitation link above.")}}}>Copy invitation link</button><button type="button" onClick={async()=>{const url=window.location.origin+"/?invite="+encodeURIComponent(inviteShareId);const message="You're invited to join "+(active?.name??"an organization")+" on Trackwise. Sign in using "+inviteShareEmail+" and accept the invitation.";if(navigator.share){try{await navigator.share({title:"Trackwise invitation",text:message,url})}catch(e){if(e instanceof Error&&e.name!=="AbortError")setError("Sharing failed. Try copying the link.")}}else{window.open("https://wa.me/?text="+encodeURIComponent(message+" "+url),"_blank","noopener,noreferrer")}}}>Share invitation ↗</button><a href={"https://wa.me/?text="+encodeURIComponent("You're invited to join "+(active?.name??"an organization")+" on Trackwise. Sign in as "+inviteShareEmail+" to accept: "+(typeof window!=="undefined"?window.location.origin+"/?invite="+encodeURIComponent(inviteShareId):""))} target="_blank" rel="noopener noreferrer">Share on WhatsApp ↗</a></div></div>}
+ </details>
+ </section>}{manager&&<section className="card"><div className="sectionHead"><h2>Manage invitations</h2><button type="button" onClick={()=>void loadOutgoingInvites(selected)}>Refresh</button></div><p className="muted">View invitations, share their links again, or revoke access before acceptance.</p>{outgoingInvites.length===0?<p className="muted">No invitations yet.</p>:outgoingInvites.map(inv=><div className="memberManageRow" key={inv.id}><div><strong>{inv.email}</strong><small>{statusLabel(inv.role)} · {inv.accepted_at?"Accepted":new Date(inv.expires_at).getTime()<Date.now()?"Expired":"Pending"} · Expires {new Date(inv.expires_at).toLocaleDateString()}</small></div><div className="memberManageActions">{!inv.accepted_at&&new Date(inv.expires_at).getTime()>=Date.now()&&<><button type="button" onClick={()=>shareExistingInvite(inv.id,inv.email)}>Share link</button><button type="button" disabled={inviteAction===inv.id} onClick={()=>void revokeInvite(inv.id)}>Revoke</button></>}{!inv.accepted_at&&new Date(inv.expires_at).getTime()<Date.now()&&<span className="muted">Create a new invitation to renew</span>}</div></div>)}</section>}<section className="card"><h2>Current organization</h2><p><strong>{active?.name??"Workspace"}</strong></p><p className="muted">Your role: {role?statusLabel(role):"Loading…"}</p><p className="muted">Organization ID: {active?.id??"Not selected"}</p></section><section className="card"><h2>Create another organization</h2><form onSubmit={createOrg} className="inlineForm"><input aria-label="New organization name" value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="Organization name" minLength={2} maxLength={120} required/><button className="primary" disabled={working}>Create workspace</button></form></section></>}</>}</div></main></div>{searchOpen&&active&&<div className="searchOverlay"><section className="searchPanel" role="dialog" aria-modal="true" aria-label="Search workspace">
   <div className="searchTop"><label htmlFor="globalSearch">Search this organization</label><button type="button" className="guideClose" onClick={closeSearch} aria-label="Close search">×</button></div>
   <input id="globalSearch" type="search" autoFocus placeholder="Find a task, project, or person…" value={globalSearch} maxLength={160} onChange={e=>setGlobalSearch(e.target.value)}/>
   {!searchTerm?<p className="muted">Type a name, task title, or project to find it quickly.</p>:
@@ -746,7 +931,7 @@ export default function Home(){
     {peopleMatches.length>0&&<div><h3>People</h3>{peopleMatches.map(p=><button type="button" key={p.user_id} onClick={()=>{closeSearch();navigate("people")}}><strong>♙ {p.display_name}</strong><small>{statusLabel(p.role)}</small></button>)}</div>}
    </div>}
   <p className="muted searchFoot">Searching tasks, projects and people in {active?.name??"Workspace"}. Press Escape to close.</p>
- </section></div>}{quickCreate&&user&&<QuickCreate key={quickCreate+":"+quickProjectId} initialKind={quickCreate} initialProjectId={quickProjectId}
+ </section></div>}{workspaceInfoOpen&&active&&user&&<WorkspaceInfo name={active.name} createdAt={active.created_at} role={role??null} members={directory} invites={outgoingInvites} activities={activity} taskCount={tasks.length} projectCount={projects.length} canManage={manager} userId={user.id} onClose={()=>setWorkspaceInfoOpen(false)} onNavigate={target=>{setWorkspaceInfoOpen(false);navigate(target)}}/>}{quickCreate&&user&&<QuickCreate key={quickCreate+":"+quickProjectId} initialKind={quickCreate} initialProjectId={quickProjectId}
   organizationId={selected} userId={user.id} canManage={manager}
   projects={projects} directory={directory}
   onClose={()=>setQuickCreate(null)} onSaved={onQuickSaved}
