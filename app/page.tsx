@@ -71,6 +71,10 @@ export default function Home(){
  const [teamMembers,setTeamMembers]=useState<TeamMember[]>([]),[requests,setRequests]=useState<Request[]>([]),[activity,setActivity]=useState<Activity[]>([]),[requestTitle,setRequestTitle]=useState(""),[requestDetails,setRequestDetails]=useState(""),[assignTeam,setAssignTeam]=useState(""),[assignUser,setAssignUser]=useState(""),[assignRole,setAssignRole]=useState("member");
  const [pendingInvites,setPendingInvites]=useState<{id:string;email:string;role:string;organization_id:string;expires_at:string}[]>([]),[invitesLoading,setInvitesLoading]=useState(false);
  const inviteRequest=useRef(0);
+ const shareLinkRequest=useRef(0);
+ const [inviteLinks,setInviteLinks]=useState<{id:string;role:string;expires_at:string;uses_count:number;max_uses:number;revoked_at:string|null}[]>([]);
+ const [shareRole,setShareRole]=useState("member"),[shareLinkId,setShareLinkId]=useState(""),[shareLinkWorking,setShareLinkWorking]=useState(false);
+ const [joinToken,setJoinToken]=useState(""),[joiningWorkspace,setJoiningWorkspace]=useState(false);
  const personalInvitesRequest=useRef(0);
  const organizationsRequest=useRef(0);
  const [outgoingInvites,setOutgoingInvites]=useState<{id:string;email:string;role:string;expires_at:string;accepted_at:string|null}[]>([]),[inviteAction,setInviteAction]=useState("");
@@ -164,6 +168,86 @@ export default function Home(){
    if(request===workspaceRequest.current)setWorkspaceLoading(false);
   }
  },[]);
+ const loadShareLinks=useCallback(async(orgId:string)=>{
+  if(!db||!orgId)return;
+  const request=++shareLinkRequest.current;
+  const {data,error}=await db.from("tw_invite_links")
+   .select("id,role,expires_at,uses_count,max_uses,revoked_at")
+   .eq("organization_id",orgId).order("created_at",{ascending:false}).limit(30);
+  if(request!==shareLinkRequest.current)return;
+  if(error)setError(displayError(error,"Unable to load invitation links."));
+  else setInviteLinks(data??[]);
+ },[]);
+ useEffect(()=>{
+  if(selected&&members.some(m=>m.user_id===user?.id&&["admin","leader"].includes(m.role)))void loadShareLinks(selected);
+  else{shareLinkRequest.current++;setInviteLinks([])}
+ },[selected,members,user?.id,loadShareLinks]);
+ useEffect(()=>{
+  if(typeof window==="undefined")return;
+  const token=new URLSearchParams(window.location.search).get("join")??"";
+  if(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token))
+   setJoinToken(token);
+ },[]);
+ function dismissJoinLink(){
+  setJoinToken("");
+  if(typeof window==="undefined")return;
+  const url=new URL(window.location.href);
+  url.searchParams.delete("join");
+  window.history.replaceState(null,"",url.pathname+url.search+url.hash);
+ }
+ async function joinFromLink(){
+  if(!db||!user||!joinToken||joiningWorkspace)return;
+  setJoiningWorkspace(true);clear();
+  try{
+   const {data,error}=await db.rpc("tw_accept_invite_link",{link_id:joinToken});
+   if(error)throw error;
+   await loadOrgs();
+   if(typeof data==="string")setSelected(data);
+   setView("overview");dismissJoinLink();
+   setNotice("You have joined the workspace. Welcome!");
+  }catch(e){setError(displayError(e,"The invitation could not be accepted. Ask for a new link."))}
+  finally{setJoiningWorkspace(false)}
+ }
+ async function createShareLink(){
+  if(!db||!selected||!manager||shareLinkWorking)return;
+  setShareLinkWorking(true);clear();
+  try{
+   const {data,error}=await db.rpc("tw_create_invite_link",{org_id:selected,invite_role:shareRole});
+   if(error)throw error;
+   if(typeof data!=="string")throw new Error("Could not confirm the invitation link.");
+   setShareLinkId(data);await loadShareLinks(selected);
+   setNotice("Invite link created. Copy or share it with your teammates.");
+  }catch(e){setError(displayError(e,"Unable to create invitation link"))}
+  finally{setShareLinkWorking(false)}
+ }
+ async function revokeShareLink(linkId:string){
+  if(!db||!selected||!manager||shareLinkWorking)return;
+  if(!window.confirm("Disable this invite link? People who have already joined will keep their workspace access."))return;
+  setShareLinkWorking(true);clear();
+  try{
+   const {error}=await db.rpc("tw_revoke_invite_link",{link_id:linkId});
+   if(error)throw error;
+   if(shareLinkId===linkId)setShareLinkId("");
+   await loadShareLinks(selected);setNotice("Invitation link disabled.");
+  }catch(e){setError(displayError(e,"Unable to disable the link"))}
+  finally{setShareLinkWorking(false)}
+ }
+ function shareableInviteUrl(id:string){
+  return typeof window==="undefined"?"":window.location.origin+"/?join="+encodeURIComponent(id);
+ }
+ async function copyShareLink(id:string){
+  try{await navigator.clipboard.writeText(shareableInviteUrl(id));setNotice("Workspace invitation link copied.")}
+  catch{setError("Automatic copying was blocked. Select the link and copy it manually.")}
+ }
+ async function sendShareLink(id:string){
+  const url=shareableInviteUrl(id);
+  const title="Join "+(active?.name??"our workspace")+" on Trackwise";
+  const message="You're invited to join "+(active?.name??"a workspace")+" on Trackwise. Open the link and sign in or create an account.";
+  if(navigator.share){
+   try{await navigator.share({title,text:message,url})}
+   catch(e){if(!(e instanceof Error)||e.name!=="AbortError")setError("Sharing was interrupted. You can copy the link instead.")}
+  }else window.open("https://wa.me/?text="+encodeURIComponent(message+" "+url),"_blank","noopener,noreferrer");
+ }
  const loadOutgoingInvites=useCallback(async(orgId:string)=>{if(!db||!orgId)return;const request=++inviteRequest.current;const {data,error}=await db.from("tw_invitations").select("id,email,role,expires_at,accepted_at").eq("organization_id",orgId).order("created_at",{ascending:false});if(request!==inviteRequest.current)return;if(error)setError(error.message);else setOutgoingInvites(data??[])},[]);
  useEffect(()=>{if(selected&&members.some(m=>m.user_id===user?.id&&["admin","leader"].includes(m.role)))void loadOutgoingInvites(selected);else{inviteRequest.current++;setOutgoingInvites([])}},[selected,members,user?.id,loadOutgoingInvites]);
  async function revokeInvite(id:string){if(!db||!selected||!manager)return;if(!window.confirm("Revoke this invitation? Its link will stop working."))return;setInviteAction(id);clear();try{const {error}=await db.rpc("tw_revoke_invitation",{invitation_id:id});if(error)throw error;await loadOutgoingInvites(selected);if(inviteShareId===id){setInviteShareReady(false);setInviteShareId("")}setNotice("Invitation revoked.")}catch(e){setError(e instanceof Error?e.message:"Unable to revoke invitation")}finally{setInviteAction("")}}
@@ -181,10 +265,12 @@ export default function Home(){
    });
  },[user?.id,user?.email]);
  useEffect(()=>{if(user&&typeof window!=="undefined"&&new URLSearchParams(window.location.search).has("invite"))setView("settings")},[user]);
- useEffect(()=>{if(user)void loadOrgs();else{workspaceRequest.current++;taskDetailRequest.current++;inviteRequest.current++;personalInvitesRequest.current++;organizationsRequest.current++;setOrgs([]);setSelected("");setTeams([]);setTasks([]);setTeamMembers([]);setRequests([]);setActivity([]);setHandovers([]);setOutgoingInvites([]);setQuickCreate(null);setWorkspaceInfoOpen(false)}},[user?.id,loadOrgs]);
+ useEffect(()=>{if(user)void loadOrgs();else{workspaceRequest.current++;taskDetailRequest.current++;inviteRequest.current++;shareLinkRequest.current++;personalInvitesRequest.current++;organizationsRequest.current++;setOrgs([]);setSelected("");setTeams([]);setTasks([]);setTeamMembers([]);setRequests([]);setActivity([]);setHandovers([]);setOutgoingInvites([]);setInviteLinks([]);setShareLinkId("");setQuickCreate(null);setWorkspaceInfoOpen(false)}},[user?.id,loadOrgs]);
  useEffect(()=>{
   taskDetailRequest.current++;
   inviteRequest.current++;
+  shareLinkRequest.current++;
+  setShareLinkId("");setInviteLinks([]);
   setTasks([]);setProjects([]);setMembers([]);setTeams([]);setGoals([]);setDirectory([]);
   setTeamMembers([]);setRequests([]);setActivity([]);setHandovers([]);setOutgoingInvites([]);
   setSelectedTask("");setTaskUpdates([]);setQuickCreate(null);setWorkspaceInfoOpen(false);
@@ -319,7 +405,7 @@ export default function Home(){
    const result=mode==="signin"
     ?await db.auth.signInWithPassword({email,password})
     :await db.auth.signUp({email,password,options:{
-      emailRedirectTo:window.location.origin,
+      emailRedirectTo:joinToken?shareableInviteUrl(joinToken):window.location.origin,
       data:{display_name:name,full_name:name}
      }});
    if(result.error)throw result.error;
@@ -577,6 +663,7 @@ export default function Home(){
  if(!ready)return <main className="center"><div className="card"><h1>Trackwise</h1><h2>Setup required</h2><p>Supabase environment variables are missing from this deployment.</p></div></main>;
  if(initial)return <main className="center"><div className="spinner"/><p>Preparing your workspace…</p></main>;
  if(!user)return <AuthExperience
+  inviteLinkPending={!!joinToken}
   mode={mode} email={email} password={password} name={signupName}
   working={working} error={error} notice={notice}
   onSubmit={auth}
@@ -620,6 +707,8 @@ export default function Home(){
  </button>
  </div>
 </header><main className="content"><div className="contentWidth">
+ {joinToken&&<section className="card twJoinBanner" role="region" aria-label="Join workspace invitation"><div><strong>You've been invited to a Trackwise workspace.</strong><p className="muted">Choose Join workspace to accept. You'll have access based on the role your inviter selected.</p></div><div className="twJoinActions"><button type="button" className="primary" onClick={()=>void joinFromLink()} disabled={joiningWorkspace}>{joiningWorkspace?"Joining…":"Join workspace →"}</button><button type="button" onClick={dismissJoinLink} disabled={joiningWorkspace}>Dismiss</button></div></section>}
+ 
  {active&&activeNav.items.length>1&&<nav className="sectionTabs" aria-label={activeNav.label+" sections"}>{activeNav.items.filter(item=>item.view!=="meeting_ai"||manager).map(item=><button type="button" key={item.view} className={view===item.view?"active":""} aria-current={view===item.view?"page":undefined} onClick={()=>navigate(item.view)}>{item.label}</button>)}</nav>}
  {error&&<p role="alert" className="feedback bad">{error}</p>}{notice&&<p role="status" className="feedback good">{notice}</p>}{!active&&view!=="profile"?<div className="card emptyState">{pendingInvites.length>0&&<section><h2>Invitations for you</h2>{pendingInvites.map(i=><div className="reportRow" key={i.id}><span>Invitation to join as {statusLabel(i.role)}</span><button className="primary" disabled={invitesLoading} onClick={()=>void acceptInvite(i.id)}>Accept</button></div>)}</section>}<span className="bigIcon">✦</span><span className="eyebrow blue">WELCOME · STEP 1 OF 3</span><h2>Let's create your first workspace</h2>
  <p className="muted">You can create an organization to organize projects and tasks, or join someone else's organization through an invitation link.</p><button type="button" className="newUserGuideCTA" onClick={()=>setShowGuide(true)}>✦ First time here? Take the guided tour →</button>
@@ -630,6 +719,7 @@ export default function Home(){
   <div className="twDashboardWorkspaceSelect"><label htmlFor="twDashboardOrganization">Workspace</label><select id="twDashboardOrganization" value={selected} onChange={e=>{setSelected(e.target.value);setLastCreatedProject(null);setLastCreatedTeam(null);setProjectFilter("all");setDashboardSearch("");setDashboardStatus("all");setDashboardPriority("all");setDashboardAssignee("all");clear()}}>{orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></div>
   <button type="button" onClick={()=>setWorkspaceInfoOpen(true)}><UsersRound size={17}/> Workspace info</button>
   {manager&&<button type="button" onClick={()=>navigate("people")}><UsersRound size={17}/> Manage people</button>}
+  {manager&&<button type="button" className="twDashboardInviteButton" onClick={()=>launchCreate("invite")}><Mail size={17}/> Invite people</button>}
   <button type="button" onClick={()=>setQuickCreate("organization")}><Plus size={17}/> New workspace</button>
   <button type="button" className="primary" onClick={()=>manager?launchCreate("task"):launchCreate("request")}><Plus size={17}/>{manager?"New task":"New request"}</button>
  </section>
@@ -812,7 +902,25 @@ export default function Home(){
   if(result?.data.user)setUser(result.data.user);
   if(selected)await loadWorkspace(selected);
  }}/>}
- {view==="settings"&&<>{role==="admin"&&<WorkspaceBackup key={selected} organizationId={selected} organizationName={active?.name??"Workspace"} userId={user.id}/>}<section className="card setupHelpCard"><div className="sectionHead"><div><span className="eyebrow blue">LEARNING CENTER</span><h2>Get comfortable with Trackwise</h2></div><button type="button" className="primary" onClick={()=>setShowGuide(true)}>Open interactive guide ↗</button></div><p>Go through the setup walkthrough or browse a searchable explanation of all the features, their purpose, and where to find them.</p><div className="setupHelpActions"><button type="button" onClick={showSetup}>Show my setup checklist</button><button type="button" onClick={()=>{setShowGuide(true)}}>Explore features & uses</button></div></section><section className="card"><h2>Your organization role</h2><p className="muted">Your role belongs to this organization, not your login account. The person who creates a workspace becomes its administrator. Other people receive their roles when an administrator or leader invites them.</p><p className="readOnlyValue"><strong>{role?statusLabel(role):"No organization role assigned"}</strong> · {active?.name}</p>{!manager&&<p className="muted">Only administrators and leaders can invite members. Ask an organization leader if you need invitation permissions.</p>}</section><section className="card"><div className="sectionHead"><h2>Your account</h2><button type="button" className="primary" onClick={()=>navigate("profile")}>View & edit my profile →</button></div><p className="muted">Update your name, avatar, position and personal details on the My profile page.</p></section>{role==="admin"&&<section className="card"><h2>Manage member roles</h2><p className="muted">Only administrators can change roles or remove members. Changing someone to Observer or Stakeholder makes their tasks unassigned; removing a member revokes their access. Past work remains in the history.</p>{directory.map(m=><div className="memberManageRow" key={m.user_id}><div><strong>{m.display_name}</strong><small>{statusLabel(m.role)}{m.user_id===user.id?" · You":""}</small></div>{roleEditing===m.user_id?<div className="memberManageActions"><select aria-label={"New role for "+m.display_name} value={roleChoice} onChange={e=>setRoleChoice(e.target.value)}>{["admin","leader","member","stakeholder","observer"].map(x=><option key={x} value={x}>{statusLabel(x)}</option>)}</select><button className="primary" disabled={working} onClick={()=>void updateMemberRole(m.user_id)}>Save</button><button onClick={()=>setRoleEditing("")}>Cancel</button></div>:<div className="memberManageActions"><button type="button" disabled={working} onClick={()=>{setRoleEditing(m.user_id);setRoleChoice(m.role)}}>Change role</button>{m.user_id!==user.id&&<button type="button" disabled={working} className="dangerAction" onClick={()=>void removeMember(m.user_id,m.display_name)}>Remove member</button>}</div>}</div>)}</section>}{pendingInvites.length>0&&<section className="card"><h2>Invitations for you</h2>{pendingInvites.map(i=><div className="reportRow" key={i.id}><span>Invitation to join an organization as {statusLabel(i.role)}</span><button className="primary" disabled={invitesLoading} onClick={()=>void acceptInvite(i.id)}>Accept invitation</button></div>)}</section>}{manager&&<section className="card" id="inviteMembers"><h2>Invite organization members</h2><p className="muted">Choose a role, create an invitation, then copy its link or share it through WhatsApp and other apps. The invited person must sign in using the email you enter.</p><form onSubmit={addMember} className="formGrid"><div><label htmlFor="inviteEmail">Member email</label><input id="inviteEmail" type="email" required value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} placeholder="colleague@example.com"/></div><div><label htmlFor="inviteRole">Organization role</label><select id="inviteRole" value={inviteRole} onChange={e=>setInviteRole(e.target.value)}><option value="member">Member</option><option value="leader">Leader</option><option value="observer">Observer</option><option value="stakeholder">Stakeholder</option></select></div><div className="formAction"><button className="primary" disabled={working}>Create invitation</button></div></form>{inviteShareReady&&inviteShareId&&<div className="inviteShare"><p>Invitation ready for <strong>{inviteShareEmail}</strong>. It expires in 14 days and can only be accepted by that email address.</p><input aria-label="Invitation link" readOnly value={typeof window!=="undefined"?window.location.origin+"/?invite="+encodeURIComponent(inviteShareId):""}/><div className="inviteActions"><button className="primary" type="button" onClick={async()=>{try{await navigator.clipboard.writeText(window.location.origin+"/?invite="+encodeURIComponent(inviteShareId));setNotice("Invitation link copied.")}catch{setError("Could not copy automatically. Select and copy the invitation link above.")}}}>Copy invitation link</button><button type="button" onClick={async()=>{const url=window.location.origin+"/?invite="+encodeURIComponent(inviteShareId);const message="You're invited to join "+(active?.name??"an organization")+" on Trackwise. Sign in using "+inviteShareEmail+" and accept the invitation.";if(navigator.share){try{await navigator.share({title:"Trackwise invitation",text:message,url})}catch(e){if(e instanceof Error&&e.name!=="AbortError")setError("Sharing failed. Try copying the link.")}}else{window.open("https://wa.me/?text="+encodeURIComponent(message+" "+url),"_blank","noopener,noreferrer")}}}>Share invitation ↗</button><a href={"https://wa.me/?text="+encodeURIComponent("You're invited to join "+(active?.name??"an organization")+" on Trackwise. Sign in as "+inviteShareEmail+" to accept: "+(typeof window!=="undefined"?window.location.origin+"/?invite="+encodeURIComponent(inviteShareId):""))} target="_blank" rel="noopener noreferrer">Share on WhatsApp ↗</a></div></div>}</section>}{manager&&<section className="card"><div className="sectionHead"><h2>Manage invitations</h2><button type="button" onClick={()=>void loadOutgoingInvites(selected)}>Refresh</button></div><p className="muted">View invitations, share their links again, or revoke access before acceptance.</p>{outgoingInvites.length===0?<p className="muted">No invitations yet.</p>:outgoingInvites.map(inv=><div className="memberManageRow" key={inv.id}><div><strong>{inv.email}</strong><small>{statusLabel(inv.role)} · {inv.accepted_at?"Accepted":new Date(inv.expires_at).getTime()<Date.now()?"Expired":"Pending"} · Expires {new Date(inv.expires_at).toLocaleDateString()}</small></div><div className="memberManageActions">{!inv.accepted_at&&new Date(inv.expires_at).getTime()>=Date.now()&&<><button type="button" onClick={()=>shareExistingInvite(inv.id,inv.email)}>Share link</button><button type="button" disabled={inviteAction===inv.id} onClick={()=>void revokeInvite(inv.id)}>Revoke</button></>}{!inv.accepted_at&&new Date(inv.expires_at).getTime()<Date.now()&&<span className="muted">Create a new invitation to renew</span>}</div></div>)}</section>}<section className="card"><h2>Current organization</h2><p><strong>{active?.name??"Workspace"}</strong></p><p className="muted">Your role: {role?statusLabel(role):"Loading…"}</p><p className="muted">Organization ID: {active?.id??"Not selected"}</p></section><section className="card"><h2>Create another organization</h2><form onSubmit={createOrg} className="inlineForm"><input aria-label="New organization name" value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="Organization name" minLength={2} maxLength={120} required/><button className="primary" disabled={working}>Create workspace</button></form></section></>}</>}</div></main></div>{searchOpen&&active&&<div className="searchOverlay"><section className="searchPanel" role="dialog" aria-modal="true" aria-label="Search workspace">
+ {view==="settings"&&<>{role==="admin"&&<WorkspaceBackup key={selected} organizationId={selected} organizationName={active?.name??"Workspace"} userId={user.id}/>}<section className="card setupHelpCard"><div className="sectionHead"><div><span className="eyebrow blue">LEARNING CENTER</span><h2>Get comfortable with Trackwise</h2></div><button type="button" className="primary" onClick={()=>setShowGuide(true)}>Open interactive guide ↗</button></div><p>Go through the setup walkthrough or browse a searchable explanation of all the features, their purpose, and where to find them.</p><div className="setupHelpActions"><button type="button" onClick={showSetup}>Show my setup checklist</button><button type="button" onClick={()=>{setShowGuide(true)}}>Explore features & uses</button></div></section><section className="card"><h2>Your organization role</h2><p className="muted">Your role belongs to this organization, not your login account. The person who creates a workspace becomes its administrator. Other people receive their roles when an administrator or leader invites them.</p><p className="readOnlyValue"><strong>{role?statusLabel(role):"No organization role assigned"}</strong> · {active?.name}</p>{!manager&&<p className="muted">Only administrators and leaders can invite members. Ask an organization leader if you need invitation permissions.</p>}</section><section className="card"><div className="sectionHead"><h2>Your account</h2><button type="button" className="primary" onClick={()=>navigate("profile")}>View & edit my profile →</button></div><p className="muted">Update your name, avatar, position and personal details on the My profile page.</p></section>{role==="admin"&&<section className="card"><h2>Manage member roles</h2><p className="muted">Only administrators can change roles or remove members. Changing someone to Observer or Stakeholder makes their tasks unassigned; removing a member revokes their access. Past work remains in the history.</p>{directory.map(m=><div className="memberManageRow" key={m.user_id}><div><strong>{m.display_name}</strong><small>{statusLabel(m.role)}{m.user_id===user.id?" · You":""}</small></div>{roleEditing===m.user_id?<div className="memberManageActions"><select aria-label={"New role for "+m.display_name} value={roleChoice} onChange={e=>setRoleChoice(e.target.value)}>{["admin","leader","member","stakeholder","observer"].map(x=><option key={x} value={x}>{statusLabel(x)}</option>)}</select><button className="primary" disabled={working} onClick={()=>void updateMemberRole(m.user_id)}>Save</button><button onClick={()=>setRoleEditing("")}>Cancel</button></div>:<div className="memberManageActions"><button type="button" disabled={working} onClick={()=>{setRoleEditing(m.user_id);setRoleChoice(m.role)}}>Change role</button>{m.user_id!==user.id&&<button type="button" disabled={working} className="dangerAction" onClick={()=>void removeMember(m.user_id,m.display_name)}>Remove member</button>}</div>}</div>)}</section>}{pendingInvites.length>0&&<section className="card"><h2>Invitations for you</h2>{pendingInvites.map(i=><div className="reportRow" key={i.id}><span>Invitation to join an organization as {statusLabel(i.role)}</span><button className="primary" disabled={invitesLoading} onClick={()=>void acceptInvite(i.id)}>Accept invitation</button></div>)}</section>}{manager&&<section className="card twInviteSection" id="inviteMembers">
+ <div className="sectionHead"><div><span className="eyebrow blue">EASY TEAM ONBOARDING</span><h2>Invite people with a link</h2></div></div>
+ <p className="muted">No email addresses to enter. Create a link and send it through WhatsApp, messages, or any app. Teammates sign in or create a Trackwise account to join.</p>
+ <div className="twInviteCreate">
+  <label htmlFor="twShareRole">Access level<select id="twShareRole" value={shareRole} onChange={e=>setShareRole(e.target.value)}><option value="member">Member · collaborate on tasks</option><option value="observer">Observer · view only</option><option value="stakeholder">Stakeholder · view only</option></select></label>
+  <button className="primary" type="button" disabled={shareLinkWorking} onClick={()=>void createShareLink()}><Plus size={18}/>{shareLinkWorking?"Please wait…":"Create invite link"}</button>
+ </div>
+ {shareLinkId&&<div className="twInviteLinkReady" role="status"><strong><CheckCircle2 size={18}/> Your link is ready</strong><p>Anyone you share this link with can request to join using its access level. It expires after 14 days or 25 successful joins. You can disable it whenever you want.</p>
+  <input type="text" aria-label="Shareable workspace invite link" readOnly onFocus={e=>e.target.select()} value={shareableInviteUrl(shareLinkId)}/>
+  <div className="inviteActions"><button type="button" className="primary" onClick={()=>void copyShareLink(shareLinkId)}>Copy link</button><button type="button" onClick={()=>void sendShareLink(shareLinkId)}>Share / WhatsApp ↗</button></div>
+ </div>}
+ {inviteLinks.length>0&&<details className="twInviteManage"><summary>Active and previous invite links ({inviteLinks.length})</summary><div className="twInviteLinkList">{inviteLinks.map(link=>{
+  const valid=!link.revoked_at&&new Date(link.expires_at).getTime()>Date.now()&&link.uses_count<link.max_uses;
+  return <div key={link.id} className="twInviteLinkRow"><div><strong>{statusLabel(link.role)} · {valid?"Active":link.revoked_at?"Disabled":"Expired / used"}</strong><small>{link.uses_count} / {link.max_uses} joins · Expires {new Date(link.expires_at).toLocaleDateString()}</small></div><div className="inviteActions">{valid&&<><button type="button" onClick={()=>{setShareLinkId(link.id);void copyShareLink(link.id)}}>Copy</button><button type="button" onClick={()=>void revokeShareLink(link.id)} disabled={shareLinkWorking}>Disable</button></>}</div></div>;
+ })}</div></details>}
+ <details className="twInviteEmailAlternate"><summary>Prefer to invite a specific email? (Optional)</summary><p className="muted">Email-specific invitations are useful when you want access restricted to one email address, or need to invite a team leader.</p>
+ <form onSubmit={addMember} className="formGrid"><div><label htmlFor="inviteEmail">Member email</label><input id="inviteEmail" type="email" required value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} placeholder="colleague@example.com"/></div><div><label htmlFor="inviteRole">Organization role</label><select id="inviteRole" value={inviteRole} onChange={e=>setInviteRole(e.target.value)}><option value="member">Member</option><option value="leader">Leader</option><option value="observer">Observer</option><option value="stakeholder">Stakeholder</option></select></div><div className="formAction"><button className="primary" disabled={working}>Create invitation</button></div></form>{inviteShareReady&&inviteShareId&&<div className="inviteShare"><p>Invitation ready for <strong>{inviteShareEmail}</strong>. It expires in 14 days and can only be accepted by that email address.</p><input aria-label="Invitation link" readOnly value={typeof window!=="undefined"?window.location.origin+"/?invite="+encodeURIComponent(inviteShareId):""}/><div className="inviteActions"><button className="primary" type="button" onClick={async()=>{try{await navigator.clipboard.writeText(window.location.origin+"/?invite="+encodeURIComponent(inviteShareId));setNotice("Invitation link copied.")}catch{setError("Could not copy automatically. Select and copy the invitation link above.")}}}>Copy invitation link</button><button type="button" onClick={async()=>{const url=window.location.origin+"/?invite="+encodeURIComponent(inviteShareId);const message="You're invited to join "+(active?.name??"an organization")+" on Trackwise. Sign in using "+inviteShareEmail+" and accept the invitation.";if(navigator.share){try{await navigator.share({title:"Trackwise invitation",text:message,url})}catch(e){if(e instanceof Error&&e.name!=="AbortError")setError("Sharing failed. Try copying the link.")}}else{window.open("https://wa.me/?text="+encodeURIComponent(message+" "+url),"_blank","noopener,noreferrer")}}}>Share invitation ↗</button><a href={"https://wa.me/?text="+encodeURIComponent("You're invited to join "+(active?.name??"an organization")+" on Trackwise. Sign in as "+inviteShareEmail+" to accept: "+(typeof window!=="undefined"?window.location.origin+"/?invite="+encodeURIComponent(inviteShareId):""))} target="_blank" rel="noopener noreferrer">Share on WhatsApp ↗</a></div></div>}
+ </details>
+ </section>}{manager&&<section className="card"><div className="sectionHead"><h2>Manage invitations</h2><button type="button" onClick={()=>void loadOutgoingInvites(selected)}>Refresh</button></div><p className="muted">View invitations, share their links again, or revoke access before acceptance.</p>{outgoingInvites.length===0?<p className="muted">No invitations yet.</p>:outgoingInvites.map(inv=><div className="memberManageRow" key={inv.id}><div><strong>{inv.email}</strong><small>{statusLabel(inv.role)} · {inv.accepted_at?"Accepted":new Date(inv.expires_at).getTime()<Date.now()?"Expired":"Pending"} · Expires {new Date(inv.expires_at).toLocaleDateString()}</small></div><div className="memberManageActions">{!inv.accepted_at&&new Date(inv.expires_at).getTime()>=Date.now()&&<><button type="button" onClick={()=>shareExistingInvite(inv.id,inv.email)}>Share link</button><button type="button" disabled={inviteAction===inv.id} onClick={()=>void revokeInvite(inv.id)}>Revoke</button></>}{!inv.accepted_at&&new Date(inv.expires_at).getTime()<Date.now()&&<span className="muted">Create a new invitation to renew</span>}</div></div>)}</section>}<section className="card"><h2>Current organization</h2><p><strong>{active?.name??"Workspace"}</strong></p><p className="muted">Your role: {role?statusLabel(role):"Loading…"}</p><p className="muted">Organization ID: {active?.id??"Not selected"}</p></section><section className="card"><h2>Create another organization</h2><form onSubmit={createOrg} className="inlineForm"><input aria-label="New organization name" value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="Organization name" minLength={2} maxLength={120} required/><button className="primary" disabled={working}>Create workspace</button></form></section></>}</>}</div></main></div>{searchOpen&&active&&<div className="searchOverlay"><section className="searchPanel" role="dialog" aria-modal="true" aria-label="Search workspace">
   <div className="searchTop"><label htmlFor="globalSearch">Search this organization</label><button type="button" className="guideClose" onClick={closeSearch} aria-label="Close search">×</button></div>
   <input id="globalSearch" type="search" autoFocus placeholder="Find a task, project, or person…" value={globalSearch} maxLength={160} onChange={e=>setGlobalSearch(e.target.value)}/>
   {!searchTerm?<p className="muted">Type a name, task title, or project to find it quickly.</p>:
