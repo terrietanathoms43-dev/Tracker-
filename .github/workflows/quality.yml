@@ -1,9 +1,9 @@
 name: Trackwise quality checks
 on:
   push:
-    branches: [main]
+    branches: [main, ux-onboarding-refresh]
   pull_request:
-    branches: [main]
+    branches: [main, ux-onboarding-refresh]
 permissions:
   contents: read
 jobs:
