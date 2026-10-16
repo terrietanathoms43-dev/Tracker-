@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { Bell, CheckCircle2, CircleHelp, ClipboardCheck, Clock3, FolderKanban, LayoutDashboard, ListTodo, MessageSquare, Plus, Settings2, UserRoundCheck, UserRoundX } from "lucide-react";
 import { type User } from "@supabase/supabase-js";
 import {
    DndContext,
@@ -177,6 +178,30 @@ type DashboardProps = {
 };
 
 type Tab = "summary" | "kanban" | "reports" | "messages";
+
+/** The task progress displayed on a project card reflects actual saved tasks. */
+function ProjectProgress({ name, tasks }: { name: string; tasks: DashboardTask[] }) {
+   const completed = tasks.filter((task) => task.status === "completed").length;
+   const percent = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
+   return (
+      <div className="twProjectProgress">
+         <div className="twProjectProgressLabel">
+            <span>Project progress</span>
+            <strong>{completed} of {tasks.length} complete</strong>
+         </div>
+         <div
+            className="twProjectProgressTrack"
+            role="progressbar"
+            aria-label={`Completion for ${name}`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+         >
+            <span style={{ width: `${percent}%` }} />
+         </div>
+      </div>
+   );
+}
 
 export default function Dashboard({
    user,
@@ -361,6 +386,7 @@ export default function Dashboard({
          forReview: source.filter((t) => t.status === "awaiting_approval").length,
       };
    }, [projectScopedTasks, userId]);
+   const completionPercent = counts.total > 0 ? Math.round((counts.done / counts.total) * 100) : 0;
 
    function taskAllowedStatuses(t: DashboardTask): string[] {
       const canUpdate = manager || (t.assignees ?? []).some((a) => a.user_id === userId) || t.owner_id === userId;
@@ -679,7 +705,7 @@ export default function Dashboard({
                   setMobileMenu(false);
                }}
             >
-               <span>＋</span> New workspace
+               <Plus size={18} aria-hidden="true" /> New workspace
             </button>
             {orgs.length >= 2 && (
                <p className="muted" style={{ fontSize: 12, margin: "4px 4px 0" }}>
@@ -713,7 +739,7 @@ export default function Dashboard({
                      setMobileMenu(false);
                   }}
                >
-                  <span>▤</span> All projects
+                  <LayoutDashboard size={17} aria-hidden="true" /> All projects
                </button>
                <button
                   type="button"
@@ -723,7 +749,7 @@ export default function Dashboard({
                      setMobileMenu(false);
                   }}
                >
-                  <span>—</span> No project
+                  <FolderKanban size={17} aria-hidden="true" /> No project
                </button>
                {projects.map((p) => (
                   <button
@@ -735,14 +761,14 @@ export default function Dashboard({
                         setMobileMenu(false);
                      }}
                   >
-                     <span>▧</span> {p.name}
+                     <FolderKanban size={17} aria-hidden="true" /> {p.name}
                   </button>
                ))}
             </nav>
 
             <div className="sideFoot">
                <button type="button" className="navItem" onClick={() => openWorkspaceSection("overview")}>
-                  <span>⚙</span> Workspace settings
+                  <Settings2 size={17} aria-hidden="true" /> Workspace settings
                </button>
                <div className="sideAccountRow">
                   <button
@@ -786,11 +812,11 @@ export default function Dashboard({
                </div>
                <div className="headerControls">
                   <button type="button" className="headerHelp" onClick={() => setNotificationOpen(true)} aria-label="Notifications">
-                     🔔 <span>Notifications</span>
+                     <Bell size={18} aria-hidden="true" /> <span>Notifications</span>
                      {notifications.some((n) => !n.read_at) && <span className="notificationBadge" aria-hidden="true" />}
                   </button>
                   <button type="button" className="headerHelp" onClick={() => onOpenGuide()} aria-label="How to use Trackwise">
-                     ? <span>Help</span>
+                     <CircleHelp size={18} aria-hidden="true" /> <span>Help</span>
                   </button>
                </div>
             </header>
@@ -802,10 +828,10 @@ export default function Dashboard({
 
                   <nav className="sectionTabs" aria-label="Dashboard sections">
                      {[
-                        { value: "summary" as Tab, label: "Summary & analytics" },
-                        { value: "kanban" as Tab, label: `Kanban (${projectScopedTasks.length})` },
-                        { value: "reports" as Tab, label: "Reports" },
-                        { value: "messages" as Tab, label: "Team messages" },
+                        { value: "summary" as Tab, label: "Overview", icon: <LayoutDashboard size={17} aria-hidden="true" /> },
+                        { value: "kanban" as Tab, label: `Kanban (${projectScopedTasks.length})`, icon: <FolderKanban size={17} aria-hidden="true" /> },
+                        { value: "reports" as Tab, label: "Reports", icon: <ClipboardCheck size={17} aria-hidden="true" /> },
+                        { value: "messages" as Tab, label: "Team messages", icon: <MessageSquare size={17} aria-hidden="true" /> },
                      ].map((t) => (
                         <button
                            type="button"
@@ -813,6 +839,7 @@ export default function Dashboard({
                            className={tab === t.value ? "active" : ""}
                            onClick={() => setTab(t.value)}
                         >
+                           {t.icon}
                            {t.label}
                         </button>
                      ))}
@@ -832,6 +859,13 @@ export default function Dashboard({
                               </div>
                            </div>
                            <div className="twSignatureWelcomeAside">
+                              <div className="twSignatureMomentum">
+                                 <div className="twSignatureProgressDial" style={{ "--tw-progress": `${completionPercent}%` } as CSSProperties} role="img" aria-label={`${completionPercent}% of tasks completed`}>
+                                    <div className="twSignatureProgressInner"><strong>{completionPercent}%</strong><span>complete</span></div>
+                                 </div>
+                                 <div className="twSignatureMomentumCopy"><span className="twSignatureNextLabel">WORKSPACE MOMENTUM</span><strong>{counts.done} of {counts.total} tasks finished</strong><small>{counts.total > 0 ? "Every completed task moves your team forward." : "Your progress will appear as you add tasks."}</small></div>
+                              </div>
+                              <div className="twSignatureAsideDivider" aria-hidden="true" />
                               <span className="twSignatureNextLabel">✧ YOUR NEXT STEP</span>
                               <strong>{counts.overdue > 0 ? "Bring your priorities back on track." : manager ? "Great work starts with one clear task." : "Your next win is on the board."}</strong>
                               <p>{counts.overdue > 0 ? `${counts.overdue} overdue task${counts.overdue === 1 ? " needs" : "s need"} your attention.` : manager ? "Create a task or jump straight into the work that matters." : "See what is assigned to you and follow your team's progress."}</p>
@@ -942,32 +976,32 @@ export default function Dashboard({
 
                         <div className="stats statsSix">
                            <div className="stat">
-                              <span>Total tasks</span>
+                              <div className="twStatTop"><span>Total tasks</span><ListTodo size={20} aria-hidden="true" /></div>
                               <strong>{counts.total}</strong>
                               <small>{projectFilter === "all" ? "Across this workspace" : selectedProjectName}</small>
                            </div>
                            <div className="stat">
-                              <span>Assigned to me</span>
+                              <div className="twStatTop"><span>Assigned to me</span><UserRoundCheck size={20} aria-hidden="true" /></div>
                               <strong>{counts.assignedToMe}</strong>
                               <small>Your responsibilities</small>
                            </div>
                            <div className="stat">
-                              <span>Overdue</span>
+                              <div className="twStatTop"><span>Overdue</span><Clock3 size={20} aria-hidden="true" /></div>
                               <strong>{counts.overdue}</strong>
                               <small>Still awaiting completion</small>
                            </div>
                            <div className="stat">
-                              <span>Completed</span>
+                              <div className="twStatTop"><span>Completed</span><CheckCircle2 size={20} aria-hidden="true" /></div>
                               <strong>{counts.done}</strong>
                               <small>Approved work</small>
                            </div>
                            <div className="stat">
-                              <span>Unassigned</span>
+                              <div className="twStatTop"><span>Unassigned</span><UserRoundX size={20} aria-hidden="true" /></div>
                               <strong>{counts.unassigned}</strong>
                               <small>Needs an owner</small>
                            </div>
                            <div className="stat">
-                              <span>For review</span>
+                              <div className="twStatTop"><span>For review</span><ClipboardCheck size={20} aria-hidden="true" /></div>
                               <strong>{counts.forReview}</strong>
                               <small>Awaiting approval</small>
                            </div>
@@ -1112,6 +1146,7 @@ export default function Dashboard({
                                              ? "Team: " + (teams.find((t) => t.id === p.team_id)?.name ?? "Assigned team")
                                              : "No team assigned"}
                                        </p>
+                                       <ProjectProgress name={p.name} tasks={tasks.filter((t) => t.project_id === p.id)} />
                                        <div className="projectFoot">
                                           <span>
                                              <strong>{tasks.filter((t) => t.project_id === p.id).length}</strong> saved tasks
