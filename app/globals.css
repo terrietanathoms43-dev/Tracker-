@@ -2087,3 +2087,79 @@ body{font-size:16px;line-height:1.56}
  .twDashboardActionButtons button.primary{box-shadow:0 5px 12px #153d8828,0 0 0 1px #eac37563}
  .twDashboardBelow .twDashboardShortcuts .quickActions .quickIcon{width:34px;height:34px}
 }
+
+
+/* Trackwise brand contract — all screens, including public authentication.
+ * When updating layouts, retain royal blue + warm gold and readable contrast.
+ * Use the same colors from sign-in and sign-up through the full workspace.
+ */
+:root{
+ --trackwise-brand-navy:#102a63;
+ --trackwise-brand-royal:#234a9e;
+ --trackwise-brand-blue:#346bd5;
+ --trackwise-brand-gold:#f2c56f;
+ --trackwise-brand-gold-light:#fff4d9;
+}
+.authV3{
+ --tw-brand-navy:var(--trackwise-brand-navy);
+ --tw-brand-royal:var(--trackwise-brand-royal);
+ --tw-brand-gold:var(--trackwise-brand-gold);
+}
+.authV3Right{
+ position:relative;
+ background:radial-gradient(280px 280px at 100% 0%,#fff3d98c,transparent 90%),#fbfcff;
+}
+.authV3Right::before{
+ content:"";
+ position:absolute;
+ top:0;left:0;right:0;height:5px;
+ background:linear-gradient(90deg,var(--trackwise-brand-royal) 0%,var(--trackwise-brand-gold) 52%,var(--trackwise-brand-royal) 100%);
+ pointer-events:none;
+}
+.authV3GreetingIcon{
+ background:linear-gradient(135deg,#153777,#346bd5);
+ color:#f7cf86;
+ box-shadow:0 6px 15px #183b7f28;
+}
+.authV3ModeTabs button.selected{
+ color:#173e88;
+ box-shadow:inset 0 -3px 0 var(--trackwise-brand-gold),0 3px 13px #1e457a17;
+}
+.authV3Submit{
+ background:linear-gradient(112deg,#173a82,#346bd5);
+ border:1px solid #244c9d;
+ box-shadow:0 8px 23px #244dae36,0 0 0 2px #f2c56f69;
+}
+.authV3Submit:hover:not(:disabled){
+ background:linear-gradient(112deg,#102a63,#2958c3);
+}
+.authV3Control:focus-within{
+ border-color:#b48c45;
+ box-shadow:0 0 0 3px #f2c56f52;
+}
+.authV3Loading{
+ display:grid;
+ grid-template-columns:1fr;
+ place-items:center;
+ background:linear-gradient(145deg,#102a63,#234a9e 65%,#346bd5);
+ min-height:100dvh;
+ padding:26px;
+}
+.authV3LoadingCard{
+ display:flex;align-items:center;justify-content:center;flex-wrap:wrap;
+ gap:13px;background:#ffffffee;color:#163978;border:1px solid #ecc677;
+ padding:20px 24px;border-radius:18px;box-shadow:0 16px 50px #05153742;
+}
+.authV3LoadingCard strong{font-size:21px;letter-spacing:-.4px}
+.authV3LoadingCard>span:last-child{width:100%;text-align:center;color:#5c6e90;font-size:13px}
+@media(max-width:760px){
+ .authV3Right{
+  background:radial-gradient(260px 180px at 100% 0%,#ffe8b06b,transparent 100%),linear-gradient(175deg,#f1f5ff,#fcfdff);
+ }
+ .authV3FormCard{border-top:4px solid var(--trackwise-brand-gold);box-shadow:0 10px 28px #17376b1e}
+ .authV3MobileBrand{color:var(--trackwise-brand-navy)}
+ .authV3MobileBrand .authV3BrandMark{background:linear-gradient(140deg,#fbe0a6,#e4b55f);color:#122757}
+}
+@media(prefers-reduced-motion:reduce){
+ .authV3LoadingCard{transition:none}
+}
