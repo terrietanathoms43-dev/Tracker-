@@ -1,0 +1,423 @@
+/*
+ * Trackwise visual identity: royal blue + warm gold on EVERY screen.
+ * Keep this file imported AFTER globals.css. The existing layout, accessibility,
+ * content hierarchy and task workflows remain unchanged.
+ * Official brand tokens are defined in globals.css and documented in
+ * docs/BRAND_GUIDELINES.md.
+ */
+
+:root {
+  --tw-brand-dark: var(--trackwise-brand-navy, #102a63);
+  --tw-brand-royal: var(--trackwise-brand-royal, #234a9e);
+  --tw-brand-blue: var(--trackwise-brand-blue, #346bd5);
+  --tw-brand-gold: var(--trackwise-brand-gold, #f2c56f);
+  --tw-brand-gold-soft: var(--trackwise-brand-gold-light, #fff4d9);
+  --tw-brand-blue-soft: #edf3ff;
+  --tw-brand-ink: #17376e;
+  --tw-brand-line: #d5e2f5;
+}
+
+/* Signed-out / sign-in / create account / password recovery */
+.authV3 {
+  background: linear-gradient(130deg, #102a63 0%, #234a9e 51%, #f5c56e 100%);
+}
+.authV3Story {
+  background:
+    radial-gradient(460px 360px at 90% 7%, #446fc478, transparent 80%),
+    radial-gradient(320px 230px at 3% 99%, #e9b64b2d, transparent 82%),
+    linear-gradient(141deg, #0c2455 2%, #173977 48%, #2d58af 100%);
+  border-right: 4px solid var(--tw-brand-gold);
+}
+.authV3StoryMain h1 em { color: #ffd889; }
+.authV3Pill { border-color: #f2c56f70; color: #ffdfa3; }
+.authV3Preview {
+  border: 1px solid #f2c56f85;
+  box-shadow: 0 24px 48px #061a4659, 0 0 0 4px #f2c56f1a;
+}
+.authV3BrandMark, .authV3MobileBrand .authV3BrandMark {
+  background: linear-gradient(145deg, #ffe9b6, #eab95b);
+  color: #122b5e;
+  border: 1px solid #fff0ca;
+}
+.authV3Right {
+  background:
+    radial-gradient(480px 350px at 100% 0%, #fff0c991, transparent 80%),
+    linear-gradient(165deg, #f6f9ff 0%, #fffdf8 100%);
+}
+.authV3Right::before {
+  height: 7px;
+  background: linear-gradient(90deg, var(--tw-brand-dark), var(--tw-brand-royal) 35%, var(--tw-brand-gold) 75%, #e3b453);
+}
+.authV3FormCard {
+  border: 1px solid #d6e3f9;
+  border-top: 5px solid var(--tw-brand-gold);
+  background: #fff;
+  border-radius: 20px;
+  padding: clamp(22px, 3vw, 34px);
+  box-shadow: 0 19px 48px #15336a16, 0 0 0 4px #234a9e07;
+}
+.authV3GreetingIcon {
+  background: linear-gradient(135deg, var(--tw-brand-dark), var(--tw-brand-blue));
+  color: #ffde98;
+}
+.authV3FormEyebrow {
+  color: #986825;
+}
+.authV3Greeting h2, .authV3LabelRow label, .authV3Field label {
+  color: var(--tw-brand-ink);
+}
+.authV3ModeTabs {
+  background: #eaf1ff;
+  border: 1px solid #cbdafa;
+}
+.authV3ModeTabs button.selected {
+  background: var(--tw-brand-dark);
+  color: #fff;
+  box-shadow: inset 0 -4px 0 var(--tw-brand-gold), 0 4px 14px #17356f20;
+}
+.authV3ModeTabs button.selected:hover { color: #fff; }
+.authV3Submit {
+  background: linear-gradient(105deg, #173b83, var(--tw-brand-blue));
+  border: 1px solid #234a9e;
+  box-shadow: 0 8px 21px #143f942c, 0 0 0 2px #f2c56f85;
+}
+.authV3Control:focus-within {
+  border-color: #bd8e3d;
+  box-shadow: 0 0 0 3px #f2c56f69;
+}
+.authV3BottomNote {
+  background: #f2f6ff;
+  border-radius: 10px;
+  padding: 12px;
+  color: #435b83;
+}
+.authV3Footer { color: #4a6390; }
+.authV3Loading { background: linear-gradient(130deg, #0e2a61, #2654b0 70%, #e3b55f); }
+
+/* Signed-in outer shell and predictable visual hierarchy */
+.appShell {
+  background:
+    radial-gradient(720px 330px at 96% 0%, #fff2d2b0, transparent 90%),
+    linear-gradient(170deg, #eef4ff, #f9fbff 46%, #fffdf8);
+}
+.appShell .sidebar {
+  background:
+    radial-gradient(320px 230px at 0% 0%, #3056a645, transparent 85%),
+    linear-gradient(170deg, #102a63 0%, #183b7f 52%, #0e285d 100%);
+  border-right: 3px solid #dfb253;
+  box-shadow: 5px 0 24px #0d275524;
+}
+.appShell .sidebar .logo { color: #fff; }
+.appShell .sidebar .logo .mark {
+  background: linear-gradient(135deg, #ffe6af, #ddb055);
+  color: #142d62;
+  box-shadow: 0 5px 14px #071b493b;
+}
+.appShell .sidebar .sideLabel {
+  color: #ffd58e;
+  letter-spacing: 1.2px;
+}
+.appShell .sidebar .orgSelect {
+  background: #f2f6ff;
+  color: #19396f;
+  border: 1px solid #e4bd6b;
+  box-shadow: 0 0 0 2px #e4bd6b20;
+}
+.appShell .sidebar .orgSelect option { color: #18396f; background: #fff; }
+.appShell .sidebarNewOrg, .appShell .sidebarUtility .sidebarWorkspaceInfo {
+  background: #234582;
+  color: #fff;
+  border: 1px solid #d9b365;
+}
+.appShell .sidebarNewOrg:hover, .appShell .sidebarUtility .sidebarWorkspaceInfo:hover {
+  background: #315bac;
+}
+.appShell .sidebar .navItem {
+  color: #d5e3ff;
+  border: 1px solid transparent;
+}
+.appShell .sidebar .navItem:hover {
+  background: #ffffff14;
+  color: #fff;
+}
+.appShell .sidebar .navItem.selected {
+  background: linear-gradient(100deg, #2855b4, #386bd0);
+  color: #fff;
+  border-color: #f2c56f5c;
+  box-shadow: inset 4px 0 0 var(--tw-brand-gold), 0 5px 14px #081d4847;
+}
+.appShell .sidebar .navItem.selected svg { color: #ffe09c; }
+.appShell .sidebarUtility .sidebarGuideButton {
+  border: 1px solid #e9c27b;
+  background: linear-gradient(115deg, #1a397a, #254d9c);
+  box-shadow: inset 3px 0 0 var(--tw-brand-gold);
+}
+.appShell .sidebar .sideFoot {
+  border-top-color: #f2c56f5c;
+}
+.appShell .workspace {
+  background: transparent;
+}
+.appShell .appHeader {
+  background:
+    radial-gradient(410px 140px at 95% 0%, #fff1c88a, transparent 85%),
+    linear-gradient(180deg, #fff 0%, #f8faff 100%);
+  border-bottom: 3px solid #e9bd63;
+  box-shadow: 0 7px 19px #143a6b0a;
+}
+.appShell .pageHeading h1 {
+  color: #153977;
+}
+.appShell .pageHeading .eyebrow {
+  color: #9c6b29;
+  letter-spacing: 1.55px;
+}
+.appShell .pageHeading .eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--tw-brand-gold);
+  border-radius: 50%;
+  margin-right: 9px;
+}
+.appShell .pageHeading .muted { color: #4d658b; }
+.appShell .headerSearch, .appShell .headerHelp {
+  background: #f0f5ff;
+  border: 1px solid #bcd0f1;
+  color: #1c478e;
+}
+.appShell .headerSearch:hover, .appShell .headerHelp:hover {
+  background: #fff4d9;
+  border-color: #e0b85f;
+}
+.appShell .userBadge {
+  background: #fff9e9;
+  border: 1px solid #ebce8f;
+  color: #193c7f;
+}
+.appShell .primary, .appShell button.primary {
+  background: linear-gradient(112deg, #19448f, #346bd5);
+  color: #fff;
+  border: 1px solid #2657af;
+  box-shadow: 0 5px 13px #174b9f1c;
+}
+.appShell .primary:hover:not(:disabled), .appShell button.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.appShell .sectionTabs {
+  border: 1px solid #d7e4f5;
+  border-bottom: 2px solid #e7bf72;
+  background: linear-gradient(100deg, #fff, #f6f9ff);
+}
+.appShell .sectionTabs button {
+  color: #345788;
+}
+.appShell .sectionTabs button.active {
+  color: #fff;
+  background: linear-gradient(110deg, #183d85, #346bd5);
+  border: 1px solid #2e58aa;
+  box-shadow: inset 0 -3px 0 var(--tw-brand-gold);
+}
+.appShell .contentWidth > .card {
+  border-top: 3px solid #eac77e;
+}
+.appShell .contentWidth .card .sectionHead h2,
+.appShell .contentWidth .card > h2,
+.appShell .contentWidth .sectionHead h2 {
+  color: #173e82;
+}
+.appShell .contentWidth .card {
+  border-color: #dce6f5;
+}
+.appShell .contentWidth .card .textAction,
+.appShell .textAction {
+  color: #214fa8;
+}
+
+/* Dashboard already has a blue hero; gold must remain visible below it. */
+.appShell .twDashboardActionStrip {
+  background: linear-gradient(110deg, #fff2ce, #fffaf0 54%, #f4f7ff);
+  border: 1px solid #d8b76e;
+  border-left: 5px solid #c79536;
+}
+.appShell .twDashboardMetricGrid .twDashboardMetric:first-child {
+  border: 2px solid #eac679;
+}
+.appShell .twDashboardTaskPanel {
+  border-top: 4px solid #e9bd63;
+}
+.appShell .twDashboardBelow .twDashboardShortcuts {
+  border-top: 4px solid #e9bd63;
+}
+
+/* Kanban is a first-class blue-and-gold workspace, not grey columns. */
+.appShell .twBoardLane {
+  background: #f2f6ff;
+  border-color: #d0def4;
+  box-shadow: 0 5px 16px #123e7d0c;
+}
+.appShell .twBoardLaneHead {
+  background: linear-gradient(110deg, #173d80, #2d60bf);
+  border-bottom: 3px solid #eac06b;
+}
+.appShell .twBoardLane:nth-child(2) .twBoardLaneHead {
+  background: linear-gradient(110deg, #24539b, #4775c8);
+}
+.appShell .twBoardLane:nth-child(3) .twBoardLaneHead {
+  background: linear-gradient(100deg, #ffe8b3, #f5ca75);
+  border-bottom-color: #234a9e;
+}
+.appShell .twBoardLane .twBoardLaneTitle { color: #fff; }
+.appShell .twBoardLane:nth-child(3) .twBoardLaneTitle { color: #173971; }
+.appShell .twBoardLane .twBoardLaneTitle span {
+  color: inherit;
+  background: #ffffff26;
+  border: 1px solid #ffffff57;
+}
+.appShell .twBoardLane:nth-child(3) .twBoardLaneTitle span {
+  background: #ffffffa8;
+  border-color: #b88630;
+}
+.appShell .twBoardLane .twBoardAdd {
+  background: #ffffff21;
+  color: #fff;
+  border: 1px solid #ffe2a1;
+}
+.appShell .twBoardLaneBody { background: #f7faff; }
+.appShell .twBoardCard {
+  border: 1px solid #d6e2f4;
+  border-left: 3px solid #e2b35b;
+  background: #fff;
+}
+.appShell .twBoardCardTitle { color: #183e85; }
+
+/* Reports, projects, collaboration and guided creation share the same identity. */
+.appShell .projectCard {
+  border: 1px solid #d9e5f6;
+  border-top: 3px solid #e6be72;
+  background: linear-gradient(165deg, #fff, #f7faff);
+}
+.appShell .projectCard .projectTop strong { color: #183b7a; }
+.appShell .reportHero {
+  background: radial-gradient(420px 130px at 100% 0%, #fff0c690, transparent 85%),
+    linear-gradient(110deg, #fff, #eef4ff);
+  border: 1px solid #d6e3f6;
+  border-left: 5px solid #e2b458;
+}
+.appShell .reportKpi {
+  background: linear-gradient(135deg, #fff, #eef4ff);
+  border: 1px solid #cadaf1;
+  border-top: 3px solid #2e5bb2;
+}
+.appShell .reportKpi:nth-child(3n) {
+  background: linear-gradient(135deg, #fffaf0, #fff0cc);
+  border-top-color: #d7a34d;
+}
+.quickCreateDialog {
+  border: 2px solid #dfb86d;
+}
+.quickCreateTop {
+  background: radial-gradient(260px 130px at 100% 0%, #5b80d4a8, transparent 95%),
+    linear-gradient(105deg, #112e68, #2857b1);
+  border-bottom: 4px solid var(--tw-brand-gold);
+}
+.quickCreateTypes {
+  background: linear-gradient(110deg, #edf3ff, #fffbf1);
+}
+.quickCreateKicker { color: #ffde9c; }
+
+/* Signed-in small screens keep a strong brand even without the sidebar. */
+@media(max-width:760px) {
+  .appShell .mobileTopbar {
+    background: linear-gradient(110deg, #102a63, #2d58ad);
+    color: #fff;
+    border-bottom: 3px solid var(--tw-brand-gold);
+    box-shadow: 0 5px 18px #0f347b2e;
+  }
+  .appShell .mobileTopbar .logo { color: #fff; }
+  .appShell .mobileTopbar .logo .mark {
+    background: linear-gradient(145deg, #ffe5a7, #e7b65c);
+    color: #173466;
+    box-shadow: 0 3px 9px #061a4644;
+  }
+  .appShell .mobileMenuToggle {
+    color: #fff;
+    background: #ffffff19;
+    border: 1px solid #f2c56f8a;
+  }
+  .appShell .mobileBottomNav {
+    background: #fff;
+    border-top: 3px solid var(--tw-brand-gold);
+    box-shadow: 0 -6px 22px #142f651a;
+  }
+  .appShell .mobileBottomNav button {
+    color: #3f5c8b;
+  }
+  .appShell .mobileBottomNav button.active {
+    color: #173d86;
+    background: #fff2ce;
+    box-shadow: inset 0 3px 0 #d4a34d;
+  }
+  .appShell .mobileCreateSymbol {
+    background: linear-gradient(140deg, #ffe6ab, #e7b65e);
+    color: #173971;
+    border: 2px solid #2b55ac;
+    box-shadow: 0 4px 13px #13377730;
+  }
+  .appShell .appHeader { border-bottom: 2px solid #e9bd63; }
+  .appShell .pageHeading h1 { font-size: clamp(26px, 6vw, 35px); }
+
+  .authV3 {
+    background: linear-gradient(170deg, #102a63, #234a9e 28%, #edf3ff 29%, #fffaf0);
+  }
+  .authV3Right {
+    background: linear-gradient(170deg, #edf3ff, #fffaf0 70%, #f8faff);
+  }
+  .authV3MobileBrand {
+    min-height: 74px;
+    width: calc(100% + 38px);
+    margin: -20px -19px 22px;
+    padding: 14px 23px;
+    color: #fff;
+    background: linear-gradient(105deg, #102a63, #2855aa);
+    border-bottom: 4px solid var(--tw-brand-gold);
+    border-radius: 0 0 14px 14px;
+  }
+  .authV3MobileBrand strong { color: #fff; }
+  .authV3FormCard {
+    padding: 21px 19px;
+    background: #fff;
+    border-top: 4px solid var(--tw-brand-gold);
+    border-radius: 18px;
+    box-shadow: 0 13px 32px #1433691c;
+  }
+}
+@media(max-width:400px) {
+  .authV3MobileBrand {
+    width: calc(100% + 24px);
+    margin: -20px -12px 18px;
+    padding: 12px 17px;
+  }
+  .authV3FormCard { padding: 18px 13px; }
+}
+
+/* Gold keyboard focus is visible on navy, white and pale-blue surfaces. */
+.appShell button:focus-visible,
+.appShell a:focus-visible,
+.appShell input:focus-visible,
+.appShell select:focus-visible,
+.appShell textarea:focus-visible,
+.authV3 button:focus-visible,
+.authV3 input:focus-visible {
+  outline: 3px solid #d29b37;
+  outline-offset: 3px;
+}
+@media print {
+  .appShell .sidebar, .appShell .mobileTopbar, .appShell .mobileBottomNav { display: none !important; }
+  .appShell, .appShell .workspace, .appShell .appHeader { background: #fff; box-shadow: none; }
+  .appShell .reportHero, .appShell .reportKpi, .appShell .reportPage .card { background: #fff; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .appShell .sidebar .navItem { transition: none; }
+}
