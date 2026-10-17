@@ -1,0 +1,19 @@
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vitest/config";
+
+const root = fileURLToPath(new URL(".", import.meta.url));
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      "@": root,
+      // Next implements `import "server-only"` in its compiler; outside Next it is a no-op.
+      "server-only": fileURLToPath(new URL("./node_modules/next/dist/compiled/server-only/empty.js", import.meta.url)),
+    },
+  },
+  test: {
+    include: ["**/*.test.ts"],
+    exclude: ["node_modules/**", ".next/**", "legacy/**"],
+    environment: "node",
+  },
+});

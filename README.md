@@ -1,31 +1,72 @@
-# Trackwise — Team Leadership & Accountability
+# Trackwise
 
-A team-leader-first work management application built around six principles: clear task ownership, honest statuses, actionable handovers, fair performance benchmarks, organizational goal alignment, and transparent request decisions.
+A small team's tracker for tasks and goals: who owns what, where it stopped, what happens next.
 
-## Technology
-Next.js App Router, TypeScript, Supabase Auth/Postgres with RLS, Tailwind CSS, Vercel.
+- **Intent**: `docs/BRIEF.md` · **Decisions (locked)**: `docs/PLAN.md` · **How to build on it**: `AGENTS.md` · **Operations**: `docs/RUNBOOK.md`
+- **Stack**: Next.js 16 (App Router, React Server Components, server actions) · PostgreSQL + Drizzle ORM · Auth.js (Google + email magic link) · Tailwind v4 + shadcn/ui · Zod · Nodemailer
+- **Conventions**: the Apex skills (`apex-architecture`, `apex-ui`, `apex-ux`, `apex-planning`), shared with the Clarity project.
 
-## Product capabilities
-- Organizations and teams; a user may lead one team and join another.
-- Projects, organizational goals, tasks, owners, dates and task dependencies.
-- Statuses: not_started, underway, awaiting_approval, blocked, rejected, completed.
-- Progress updates with next actions, blocker reasons, and handover notes.
-- Request inbox: submitted, approved, deferred, rejected; approved requests may become tasks.
-- Auditable activity history.
-- Fair, agreed performance benchmarks; never rank people by raw task counts alone.
+## Run it locally
 
-## Security
-Every organization-scoped record must be protected by PostgreSQL row-level security. Client input cannot determine permission. Service-role keys must never appear in browser code.
+```bash
+cp .env.example .env.local      # fill in DATABASE_URL, AUTH_SECRET; SMTP and Google are optional in development
+npm install
+npm run db:push                 # applies db/schema.ts to the database in DATABASE_URL
+npm run dev                     # http://localhost:3020
+```
 
-## Deployment
-The Supabase schema and organization-onboarding migration have been applied to the Trackwise database. Configure the two public Supabase environment variables in Vercel. Verify the build, authentication, access policies, and end-to-end workflows before a production launch.
+Without SMTP settings, sign-in links and every other email are printed to the dev server log instead of being sent, so you can sign in by copying the link from the terminal. Without Google credentials the Google button is hidden.
 
+### Test personas (development only)
 
-## Repository
-The active Trackwise repository is `terrietanathoms43-dev/Tracker-`. The previous `Tracker` repository is retained as an archive of earlier work.
+```bash
+npm run test:seed               # six .test personas, two workspaces, realistic tasks/goals/requests
+node scripts/test-browser.mjs leader /home --width=1280 --height=900   # screenshot, signed in as Morgan
+npm run test:walk               # every walkthrough script, then tidy
+```
 
-## Database
-Uses the existing Supabase project `lyxozmoqkljaflofupcs`. Switching GitHub repositories does **not** require creating or replacing database tables. Apply only migrations not yet present in the project.
+Set `TEST_MODE_SECRET` (16+ characters) in `.env.local` first. The roster and rules are in `AGENTS.md` and `docs/TEST-ACCOUNTS.md`.
 
-## Production reliability
-The automated quality workflow runs TypeScript checks, tests, and a production build on every push. See [Production operations and recovery](docs/PRODUCTION_RUNBOOK.md) for authentication redirects, incident handling, and a free manual backup procedure (database dumps do not include uploaded Storage file contents).
+### Checks
+
+```bash
+npm run typecheck && npm run lint && npm run test:unit && npm run build
+```
+
+## How the code is organised
+
+```
+app/            routes; (app)/layout.tsx is the shell, every segment has a loading.tsx skeleton
+actions/        server actions, one file per feature; each: zod → requireViewer → permission → transaction → ActionResult
+components/     ui/ (shadcn primitives), shell/, then one folder per feature; shared pieces at the top level
+db/             schema.ts (the whole database) and index.ts (the pool)
+lib/            viewer.ts (who is asking), permissions.ts (who may do what), dal/ (queries, all scoped by workspace),
+                tasks/ (pure domain logic with tests), mail/, notify.ts, time.ts, constants.ts
+scripts/        seed and test tooling (test-accounts.ts, test-browser.mjs, test-walkthrough/)
+docs/           BRIEF.md, PLAN.md, RUNBOOK.md, TEST-ACCOUNTS.md (generated)
+legacy/         the previous Supabase prototype, kept only until the team deletes it
+```
+
+Every workspace-scoped query carries `org_id`; permissions are pure functions; status changes go through one pure `planTransition`; history tables are append-only. Read `AGENTS.md` for the rest.
+
+## Deploying (Vercel + Postgres on the VPS)
+
+The app deploys to Vercel from `main`. **A push to `main` is a deploy**, so the environment must be ready first.
+
+1. Create the production database once on the VPS: `createdb trackwise` (any name; it goes in the URL). Make sure Postgres accepts connections from Vercel's IPs (or everywhere, with a strong password and SSL) in `postgresql.conf` / `pg_hba.conf`.
+2. In the Vercel project → Settings → Environment Variables, add for **Production**:
+
+   | Variable | Value |
+   | --- | --- |
+   | `DATABASE_URL` | `postgres://USER:PASSWORD@HOST:5432/trackwise` (add `?sslmode=require` when the server has TLS) |
+   | `AUTH_SECRET` | a fresh random value (`openssl rand -base64 32`), different from any other app |
+   | `AUTH_URL` | `https://<your production domain>` |
+   | `AUTH_TRUST_HOST` | `true` |
+   | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | the Google OAuth client; add `https://<domain>/api/auth/callback/google` to its authorised redirect URIs |
+   | `SMTP_HOST`, `SMTP_PORT`, `EMAIL`, `EMAIL_PASS`, `EMAIL_FROM` | the SMTP account that sends sign-in links, invitations and notifications |
+
+   Do **not** set `TEST_MODE_SECRET` in production. For Preview deployments set everything except `AUTH_URL` (previews use their own origin; Google sign-in is production-only, magic links work everywhere).
+3. Apply the schema from your machine with the production URL in `.env.local`: `npm run db:push`.
+4. Push `main`. Vercel builds with `next build`; the GitHub Actions workflow runs typecheck, lint, unit tests and a build on every push and pull request.
+
+Backups: a nightly `pg_dump` on the VPS, described in `docs/RUNBOOK.md`.

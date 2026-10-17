@@ -1,14 +1,21 @@
-node_modules
-.next
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# env files: secrets live only in .env.local (and on the server)
 .env*
 !.env.example
+
+# typescript
 *.tsbuildinfo
+next-env.d.ts
 
-# Never commit database exports, user records, or recovery snapshots
-backups/
-*.dump
-*.backup
-*.sql.gz
+# test mode screenshots (scripts/test-browser.mjs)
+/.test-shots/
 
-# Supabase CLI temp files
-supabase/.temp/
+# misc
+.DS_Store
+npm-debug.log*

@@ -7,28 +7,24 @@ on:
 permissions:
   contents: read
 jobs:
-  build-and-test:
-    name: TypeScript, automated tests and production build
+  checks:
+    name: Typecheck, lint, unit tests, build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      # Dummy public values only for compiling; tests never access production data.
-      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-build-only-placeholder
+      # Build-only placeholders: the build never connects, and tests use no database.
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+      AUTH_SECRET: ci-only-secret-not-used-in-production
+      AUTH_URL: http://localhost:3020
+      AUTH_TRUST_HOST: "true"
     steps:
-      - name: Check out application
-        uses: actions/checkout@v4
-      - name: Set up Node 22
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-      - name: Check TypeScript
-        run: npm run lint
-      - name: Run automated tests
-        run: npm test
-      - name: Validate backup helper syntax
-        run: bash -n scripts/backup-trackwise.sh
-      - name: Build Next.js application
-        run: npm run build
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: npm run build
