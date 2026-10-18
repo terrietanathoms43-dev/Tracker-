@@ -1,8 +1,11 @@
+import { relations } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   date,
   doublePrecision,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -122,6 +125,33 @@ export const verifications = pgTable(
   },
   (t) => [index("verifications_identifier_idx").on(t.identifier)],
 );
+
+/** Better Auth's rate limiter (`rateLimit.storage: "database"` in lib/auth.ts): one counter per client IP and auth path. */
+export const rateLimit = pgTable("rate_limit", {
+  id: id(),
+  /** Client IP plus the auth path, built and written by Better Auth. */
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  /** Unix milliseconds of the request that opened the current window. */
+  lastRequest: bigint("last_request", { mode: "number" }).notNull(),
+});
+
+// Drizzle relations for the auth tables (the `relations()` API of drizzle-orm 0.45; `defineRelations` is 1.x).
+// They make `db.query.users.findFirst({ with: { sessions: true } })` possible and let Better Auth use native joins
+// if `advanced.database.joins` is ever turned on. Nothing depends on them today. The rate-limit table has no foreign
+// key, so it has no relations.
+export const usersRelations = relations(users, ({ many }) => ({
+  sessions: many(sessions),
+  accounts: many(accounts),
+}));
+
+export const sessionsRelations = relations(sessions, ({ one }) => ({
+  user: one(users, { fields: [sessions.userId], references: [users.id] }),
+}));
+
+export const accountsRelations = relations(accounts, ({ one }) => ({
+  user: one(users, { fields: [accounts.userId], references: [users.id] }),
+}));
 
 // --- workspaces (organizations) -----------------------------------------------
 

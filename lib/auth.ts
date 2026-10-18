@@ -4,7 +4,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { magicLink } from "better-auth/plugins";
 import { db } from "@/db";
-import { accounts, sessions, users, verifications } from "@/db/schema";
+import { accounts, rateLimit, sessions, users, verifications } from "@/db/schema";
 import { allowedDomainsLabel, isAllowedEmail } from "@/lib/allowed-domains";
 import { log } from "@/lib/log";
 import { sendMail } from "@/lib/mail";
@@ -39,14 +39,26 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET ?? process.env.AUTH_SECRET,
   database: drizzleAdapter(db, {
     provider: "pg",
-    schema: { user: users, session: sessions, account: accounts, verification: verifications },
+    // Keyed by Better Auth's model names. rateLimit must be here for `rateLimit.storage: "database"` below: the
+    // adapter looks the table up by that key and throws on the first request if it is missing.
+    schema: { user: users, session: sessions, account: accounts, verification: verifications, rateLimit },
   }),
   user: {
     // Our own column on the users table; set from Settings, never from a sign-up form.
     additionalFields: { timezone: { type: "string", required: false, input: false } },
   },
   session: { expiresIn: 30 * DAY, updateAge: DAY },
-  socialProviders: googleEnabled ? { google: { clientId: googleClientId!, clientSecret: googleClientSecret! } } : {},
+  socialProviders: {
+    google: {
+      clientId: googleClientId!,
+      clientSecret: googleClientSecret!,
+      hd: "intellibus.com",
+      prompt: "select_account",
+    },
+  },
+  // Counters live in rate_limit (db/schema.ts) so they survive restarts and are shared by every process; `enabled: true`
+  // keeps the limiter on in development too (Better Auth's default is production only).
+  rateLimit: { enabled: true, storage: "database" },
   plugins: [
     magicLink({
       expiresIn: 60 * 60,
