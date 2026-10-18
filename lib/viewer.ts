@@ -1,10 +1,8 @@
 import "server-only";
-import { and, eq, gt, sql } from "drizzle-orm";
-import { cookies } from "next/headers";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { db } from "@/db";
-import { sessions, users } from "@/db/schema";
+import { auth } from "@/lib/auth";
 import { listMemberships, type Membership } from "@/lib/dal/orgs";
 import { readActiveOrgCookie, tryRewriteActiveOrgCookie } from "@/lib/org-cookie";
 import type { Viewer } from "@/lib/permissions";
@@ -25,25 +23,15 @@ export type ViewerContext = {
 
 type Resolved = { status: "signed-out" } | { status: "no-org"; user: SessionUser } | ({ status: "ok" } & ViewerContext);
 
-/** Auth.js's database-session cookie: the __Secure- name on https (production), the plain one on http. */
-const SESSION_COOKIES = ["__Secure-authjs.session-token", "authjs.session-token"];
-
 /**
- * The signed-in user, read straight from the session row (one query). Auth.js still handles sign-in, sign-out
- * and its route; reads skip it, so nothing here mints tokens or touches the clock.
+ * The signed-in user, from Better Auth's session (the signed cookie checked against the sessions table).
+ * `disableRefresh` keeps reads pure: a page render never extends a session or sets a cookie.
  */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
-  const store = await cookies();
-  const token = SESSION_COOKIES.map((name) => store.get(name)?.value).find((value) => value !== undefined && value !== "");
-  if (token === undefined) return null;
-  // Sessions last their original 30 days: reads never extend them.
-  const [row] = await db
-    .select({ id: users.id, name: users.name, email: users.email, image: users.image, timezone: users.timezone })
-    .from(sessions)
-    .innerJoin(users, eq(users.id, sessions.userId))
-    .where(and(eq(sessions.sessionToken, token), gt(sessions.expires, sql`now()`)));
-  if (!row || !row.email) return null;
-  return { ...row, email: row.email };
+  const result = await auth.api.getSession({ headers: await headers(), query: { disableRefresh: true, disableCookieCache: true } });
+  if (!result) return null;
+  const { user } = result;
+  return { id: user.id, name: user.name || null, email: user.email, image: user.image ?? null, timezone: user.timezone ?? null };
 });
 
 /**

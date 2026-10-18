@@ -2,13 +2,14 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 import { refresh } from "next/cache";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
 import { invitations, organizationMembers, users } from "@/db/schema";
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
-import { signOut } from "@/lib/auth";
+import { isAllowedEmail } from "@/lib/allowed-domains";
+import { auth, domainRuleMessage } from "@/lib/auth";
 import { ORG_COOKIE, ORG_ROLE_LABELS, ORG_ROLES, type OrgRole } from "@/lib/constants";
 import { hashInviteToken, inviteExpiry, inviteUrl, newInviteToken } from "@/lib/invite-token";
 import { errorFields, log } from "@/lib/log";
@@ -78,6 +79,9 @@ const inviteSchema = z.object({ emails: emailList, role: z.enum(ORG_ROLES).defau
 export async function inviteMembers(input: z.input<typeof inviteSchema>): Promise<ActionResult<InviteResult>> {
   return runAction("invitations.create", inviteSchema, input, async ({ emails, role }) => {
     const context = await requireViewerContext();
+    // The company email rule applies to invitations too: an outsider could never sign in to accept one.
+    const outside = emails.filter((email) => !isAllowedEmail(email));
+    if (outside.length > 0) return fail(`${outside.join(", ")}: ${domainRuleMessage()}`, { emails: [domainRuleMessage()] });
     const { viewer } = context;
     if (!canInvite(viewer, role)) throw new GuardError("forbidden");
 
@@ -230,12 +234,13 @@ export async function acceptInvitation(input: z.input<typeof acceptSchema>): Pro
 
 /**
  * "Sign out and switch account" on an invitation meant for another address. Like the sign-in actions in
- * actions/auth.ts this is a plain form action (Auth.js redirects, there is no result to show); it comes
+ * actions/auth.ts this is a plain form action (Better Auth signs out, then we redirect; there is no result to show); it comes
  * back to the invitation after the next sign-in.
  */
 export async function signOutToAcceptInvitation(form: FormData): Promise<void> {
   const token = tokenSchema.safeParse(form.get("token"));
   const callbackUrl = token.success ? `/invite/${token.data}` : "/home";
   (await cookies()).delete(ORG_COOKIE);
-  await signOut({ redirectTo: `/login?callbackUrl=${encodeURIComponent(callbackUrl)}` });
+  await auth.api.signOut({ headers: await headers() });
+  redirect(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
 }

@@ -14,9 +14,8 @@ jobs:
     env:
       # Build-only placeholders: the build never connects, and tests use no database.
       DATABASE_URL: postgres://ci:ci@localhost:5432/ci
-      AUTH_SECRET: ci-only-secret-not-used-in-production
-      AUTH_URL: http://localhost:3020
-      AUTH_TRUST_HOST: "true"
+      BETTER_AUTH_SECRET: ci-only-secret-not-used-in-production
+      BETTER_AUTH_URL: http://localhost:3015
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

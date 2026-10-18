@@ -10,8 +10,8 @@ const pool =
   globalForDb.trackwisePoolV1 ??
   new Pool({
     connectionString: process.env.DATABASE_URL,
-    // Small on purpose: on Vercel every warm function instance holds its own pool against the VPS database.
-    max: 5,
+    // One long-lived process under pm2, so a normal pool; keep it small if the database is ever remote and pooled.
+    max: 10,
     // The database is remote: a dropped connection must fail fast, not hang every request behind it.
     keepAlive: true,
     connectionTimeoutMillis: 10_000,

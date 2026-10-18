@@ -79,7 +79,7 @@ async function ensureUsers(tx: Tx): Promise<Ids> {
   for (const [person, account] of Object.entries(PEOPLE) as [Person, { email: string; name: string }][]) {
     const [row] = await tx
       .insert(users)
-      .values({ email: account.email, name: account.name, emailVerified: new Date() })
+      .values({ email: account.email, name: account.name, emailVerified: true })
       .onConflictDoUpdate({ target: users.email, set: { name: account.name, image: null, timezone: null } })
       .returning({ id: users.id });
     ids[person] = row.id;
@@ -486,7 +486,7 @@ async function reset(): Promise<{ seeded: SeededOrg[]; removed: number }> {
     await deleteOrgs(tx, extras);
     // No stale invitations to test addresses anywhere, and no pile of expired test sign-ins.
     await tx.delete(invitations).where(like(invitations.email, LIKE_TEST));
-    await tx.delete(sessions).where(and(inArray(sessions.userId, Object.values(ids)), lt(sessions.expires, new Date())));
+    await tx.delete(sessions).where(and(inArray(sessions.userId, Object.values(ids)), lt(sessions.expiresAt, new Date())));
     return { seeded, removed: extras.length };
   });
 }

@@ -200,7 +200,9 @@ if (only("signout")) {
     await browser.goto(HOME, 3500);
     await browser.waitFor(ORG.name, 20_000);
     const cookies = (await browser.send("Network.getCookies", { urls: [BASE_URL] })).result?.cookies ?? [];
-    const token = cookies.find((cookie) => cookie.name === SESSION_COOKIE)?.value;
+    const raw = cookies.find((cookie) => cookie.name === SESSION_COOKIE)?.value;
+    // The cookie carries "token.signature" (URL-encoded); the sessions table holds the token alone.
+    const token = raw === undefined ? undefined : decodeURIComponent(raw).split(".")[0];
     const opened = await browser.click("Account menu", { wait: 800 });
     const clicked = opened && (await browser.click("Sign out", { exact: true, wait: 500 }));
     const target = clicked ? await signOutTarget(browser) : null;
@@ -209,7 +211,7 @@ if (only("signout")) {
     if (target?.pathname === "/login" && !sameOrigin) {
       note(`Auth.js sent the browser to ${target.origin} because AUTH_URL names that origin; start this server with AUTH_URL=${BASE_URL} to stay on it.`);
     }
-    const [row] = token === undefined ? [undefined] : await query("select 1 as found from sessions where session_token = $1", [token]);
+    const [row] = token === undefined ? [undefined] : await query("select 1 as found from sessions where token = $1", [token]);
     step("the session row is gone from the database", token !== undefined && row === undefined, token === undefined ? "no session cookie seen" : "");
     await browser.goto(HOME, 2500);
     const after = pathOnly(await browser.settle());

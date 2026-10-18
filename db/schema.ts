@@ -1,10 +1,8 @@
-import type { AdapterAccountType } from "@auth/core/adapters";
 import {
   boolean,
   date,
   doublePrecision,
   index,
-  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -53,59 +51,76 @@ export const taskStatusEnum = pgEnum("task_status", TASK_STATUSES);
 export const taskUpdateKindEnum = pgEnum("task_update_kind", TASK_UPDATE_KINDS);
 export const taskActivityKindEnum = pgEnum("task_activity_kind", TASK_ACTIVITY_KINDS);
 
-// --- Auth.js (the shape @auth/drizzle-adapter expects) ----------------------
+// --- Better Auth (the core fields its Drizzle adapter expects, plus our timezone) ---------------------
+// Property names must match Better Auth's field names (emailVerified, expiresAt, userId, …); the column
+// names underneath follow the rest of the schema's snake_case.
 
 export const users = pgTable("users", {
   id: id(),
-  name: text("name"),
-  email: text("email").unique(),
-  emailVerified: tstz("email_verified"),
+  /** Never empty: lib/auth.ts fills it from the email's local part when a provider sends none. */
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
   /** Overrides the workspace's timezone when set. */
   timezone: text("timezone"),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
-
-export const accounts = pgTable(
-  "accounts",
-  {
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    type: text("type").$type<AdapterAccountType>().notNull(),
-    provider: text("provider").notNull(),
-    providerAccountId: text("provider_account_id").notNull(),
-    refresh_token: text("refresh_token"),
-    access_token: text("access_token"),
-    expires_at: integer("expires_at"),
-    token_type: text("token_type"),
-    scope: text("scope"),
-    id_token: text("id_token"),
-    session_state: text("session_state"),
-  },
-  (t) => [primaryKey({ columns: [t.provider, t.providerAccountId] }), index("accounts_user_idx").on(t.userId)],
-);
 
 export const sessions = pgTable(
   "sessions",
   {
-    sessionToken: text("session_token").primaryKey(),
+    id: id(),
+    /** The credential in the signed cookie; one row per signed-in browser. */
+    token: text("token").notNull().unique(),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    expires: tstz("expires").notNull(),
+    expiresAt: tstz("expires_at").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (t) => [index("sessions_user_idx").on(t.userId)],
 );
 
-export const verificationTokens = pgTable(
-  "verification_tokens",
+/** A sign-in method linked to a user: Google today; a password column exists because the core schema has one. */
+export const accounts = pgTable(
+  "accounts",
   {
-    identifier: text("identifier").notNull(),
-    token: text("token").notNull(),
-    expires: tstz("expires").notNull(),
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    idToken: text("id_token"),
+    accessTokenExpiresAt: tstz("access_token_expires_at"),
+    refreshTokenExpiresAt: tstz("refresh_token_expires_at"),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
-  (t) => [primaryKey({ columns: [t.identifier, t.token] })],
+  (t) => [index("accounts_user_idx").on(t.userId)],
+);
+
+/** Pending magic-link and verification tokens. */
+export const verifications = pgTable(
+  "verifications",
+  {
+    id: id(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: tstz("expires_at").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("verifications_identifier_idx").on(t.identifier)],
 );
 
 // --- workspaces (organizations) -----------------------------------------------

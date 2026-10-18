@@ -1,7 +1,7 @@
 // Sign in as a test persona in headless Chrome and look at a screen (test mode — see lib/test-mode.ts).
 // Needs `npm run dev` running (port 3020) and `npm run test:seed` done once.
 //
-// Usage: node scripts/test-browser.mjs <persona|public> [path] [--width=390] [--height=844] [--dark] [--wait=3500] [--out=name] [--full] [--base=http://localhost:3020]
+// Usage: node scripts/test-browser.mjs <persona|public> [path] [--width=390] [--height=844] [--dark] [--wait=3500] [--out=name] [--full] [--base=http://localhost:3015]
 //   personas: admin, lead, member, member2, stakeholder (Trackwise Demo) · other (Other Co admin) · public (nobody)
 //   --dark emulates prefers-color-scheme: dark (the app follows the system theme by default)
 //   e.g. node scripts/test-browser.mjs leader /home --width=1280 --height=900
@@ -45,7 +45,7 @@ export function cleanPath(given) {
   return given.replace(/^[A-Za-z]:[\\/]Program Files[\\/]Git/i, "");
 }
 
-export const DEFAULT_BASE_URL = process.env.TEST_BASE_URL ?? "http://localhost:3020";
+export const DEFAULT_BASE_URL = process.env.TEST_BASE_URL ?? "http://localhost:3015";
 
 // Keep in step with TEST_PERSONAS in lib/test-mode.ts (scripts cannot import TypeScript).
 export const PERSONAS = ["admin", "leader", "member", "member2", "stakeholder", "other"];

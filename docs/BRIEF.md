@@ -12,7 +12,7 @@ It should feel as calm as a well-kept notebook and as immediately useful to a te
 
 ## 2. Technology stack
 
-Next.js App Router + TypeScript · PostgreSQL on the team's VPS · Drizzle ORM/Kit · Auth.js (Google + email magic links) · Tailwind CSS + shadcn/ui on Radix · Lucide · Zod · Nodemailer · pm2. The same stack and conventions as the team's reference project, Clarity, so that anyone who knows one can work on the other, and so the codebase can be used to teach how Next.js works.
+Next.js App Router + TypeScript · PostgreSQL on the team's VPS · Drizzle ORM/Kit · Better Auth (Google + email magic links) · Tailwind CSS + shadcn/ui on Radix · Lucide · Zod · Nodemailer · pm2. The same stack and conventions as the team's reference project, Clarity, so that anyone who knows one can work on the other, and so the codebase can be used to teach how Next.js works.
 
 ## 3. Product philosophy
 

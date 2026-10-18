@@ -5,7 +5,7 @@
 > Deviations from this plan are recorded here, dated, with the reason.
 >
 > **Decision log (2026-10-17, during the rebuild):**
-> - Hosting is Vercel + Postgres on the VPS (§0), not pm2 on the VPS: the team deploys from a teammate's Vercel account.
+> - Hosting went to Vercel for an afternoon and came back to the VPS under pm2 on port 3015 (§0). The database is now **Neon** (pooled `DATABASE_URL` for the app, `DATABASE_URL_DIRECT` for `db:push`); the data layer stayed plain Drizzle over `pg`. **Better Auth** replaced Auth.js (§1): sessions in our own tables, Google plus the magic-link plugin, the dev-only persona sign-in mints Better Auth's signed cookie.
 > - Leaders may invite leaders, members and stakeholders; only admins may invite admins (`canInvite` in `lib/permissions.ts`). An admin or the inviting leader may resend, renew or revoke an invitation. Because only the token's hash is stored, "Copy new link" renews a link without sending email.
 > - Removing a member or leaving a workspace unassigns that person's open tasks (activity `assigned` with a note), so no open task stays with someone who can no longer see it.
 > - Stakeholders can read the workspace's member list under Settings → Workspace (read-only). §3 said "nothing else"; knowing who decides is useful and harmless.
@@ -26,15 +26,15 @@ Owner context: the owner's own dev team and their manager. One workspace in prac
 - Strict TypeScript. `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:unit` pass at the end of every step.
 - Dependencies stay minimal and match Clarity's versions. **No** react-hook-form, Redis, queues, cron workers, drag-and-drop libraries, file storage SDKs.
 - Schema with `drizzle-kit push` (`npm run db:push`), no migrations folder.
-- Dev server `npm run dev` → port **3020** (`AUTH_URL=http://localhost:3020`). Never read or print `.env*` values; scripts load them with `dotenv`.
-- Prod: the app runs on **Vercel** (a teammate's account, deploys from `main`); the database is Postgres `trackwise` on the team VPS, reached over the network with `DATABASE_URL`. Email goes out over SMTP (nodemailer) from Vercel functions. Environment variables live in the Vercel project (see README). Never push to `main` or run `db:push` against production unless asked: a push deploys.
+- Dev server `npm run dev` → port **3015** (`BETTER_AUTH_URL=http://localhost:3015`). Never read or print `.env*` values; scripts load them with `dotenv`.
+- Prod: the team VPS, pm2 via `ecosystem.config.js` on port **3015**, `deploy.sh` run by the owner. The database is Postgres reached through `DATABASE_URL` (the VPS's own, or a managed Neon database; `DATABASE_URL_DIRECT` for `db:push` when the main URL is pooled). Email over SMTP (nodemailer). Never deploy, push or run `db:push` against production unless asked.
 - Phone **and** desktop: every screenshot check runs at 390×844 and 1280×900, light and dark.
 
 ## 1. Stack (exact)
 
 | Concern | Choice |
 | --- | --- |
-| Auth | `next-auth@5.0.0-beta.32` + `@auth/drizzle-adapter`, database sessions, Google + Nodemailer magic link (SMTP from `SMTP_HOST`, `SMTP_PORT`, `EMAIL`, `EMAIL_PASS`). Google is shown only when `AUTH_GOOGLE_ID` is set. |
+| Auth | `better-auth` 1.7 with its Drizzle adapter: database sessions in our tables, Google (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, button hidden until set) and the magic-link plugin sending through `lib/mail` (SMTP from `SMTP_HOST`, `SMTP_PORT`, `EMAIL`, `EMAIL_PASS`). `BETTER_AUTH_URL` + `BETTER_AUTH_SECRET`. |
 | DB | `drizzle-orm` 0.45, `drizzle-kit` 0.31, `pg`. `DATABASE_URL` → Postgres 16, database `trackwise`. |
 | UI | Tailwind v4 via `@tailwindcss/turbopack`, shadcn/ui (new-york, neutral, CSS variables), `radix-ui`, `lucide-react`, `sonner`, `next-themes`, `cmdk`. |
 | Validation | `zod` v4 on the server in every action. |
@@ -77,6 +77,7 @@ Navigation: **Home · My Work · Tasks · Goals · Team · Requests** (sidebar, 
 ## 3. Tenancy, roles, visibility
 
 - Active workspace = cookie `trackwise.org` (orgId), validated against `organization_members` on every request; fallback to the oldest membership, cookie rewritten. Switcher = server action + redirect to `/home`.
+- Who may have an account: `ALLOWED_EMAIL_DOMAINS` (e.g. `intellibus.com`) limits sign-in and invitations to those domains, enforced in `lib/auth.ts` hooks (magic link request, user creation) and in `actions/invitations.ts`; test personas are exempt outside production. Unset means anyone.
 - Org role `organization_members.role`: `admin | leader | member | stakeholder`. No team tables.
 - Rules (`lib/permissions.ts`, used by every DAL query and action):
   - **admin**: everything in the workspace, plus settings, members, invitations, delete.
@@ -90,7 +91,7 @@ Navigation: **Home · My Work · Tasks · Goals · Team · Requests** (sidebar, 
 IDs are `text` UUIDs, timestamps `timestamptz` server-generated, enums as `pgEnum` from `lib/constants.ts`.
 
 ```
-users / accounts / sessions / verification_tokens     Auth.js shape; users + timezone, created_at
+users / sessions / accounts / verifications   Better Auth core shape (name, email, email_verified bool, image; session token + expires_at; provider accounts; pending tokens); users also carry timezone
 organizations         id, name, slug (unique), timezone, created_by, created_at
 organization_members  org_id, user_id, role, joined_at, invited_by                        PK(org_id, user_id)
 invitations           id, org_id, email (lower), role, token_hash (unique sha256), invited_by, expires_at (7d), accepted_at?, created_at
@@ -190,5 +191,4 @@ Each step ends with `typecheck`, `lint`, `build`, `test:unit` exit 0; the releva
 | Remote database latency | pool timeouts, keepalive, fail fast |
 | Cross-workspace leakage | `isolation.test.ts` against two seeded workspaces |
 | Google OAuth redirect for the new origin | documented in README; Google button hidden until configured |
-| Serverless connection count on Vercel | small pool per function (`max: 5`), short idle timeout; a pooler (pgbouncer) on the VPS if the team grows |
-| Preview deployments have no fixed origin | `lib/app-url.ts` falls back to `VERCEL_URL`; Google sign-in is production-only, previews use magic links |
+| A managed database (Neon) behind a pooler | `DATABASE_URL` pooled for the app, `DATABASE_URL_DIRECT` for `drizzle-kit push`; TLS on both |

@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/db";
@@ -10,8 +10,8 @@ import { isTestEmail, isTestPersona, OTHER_ORG, TEST_HOME, TEST_ORG, TEST_PERSON
 
 const SESSION_HOURS = 12;
 
-/** Auth.js v5's session cookie on http (the dev server; production is https and never has test mode on). */
-const SESSION_COOKIE = "authjs.session-token";
+/** Better Auth's session cookie on http (the dev server; production is https, with the __Secure- prefix, and never has test mode on). */
+const SESSION_COOKIE = "better-auth.session_token";
 
 const notFound = () => new NextResponse("Not found", { status: 404 });
 
@@ -21,13 +21,20 @@ function secretMatches(given: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** The cookie value Better Auth expects: the token, a dot, and a base64 HMAC-SHA256 of the token under the auth secret. */
+function signedSessionCookie(token: string): string {
+  const secret = process.env.BETTER_AUTH_SECRET ?? process.env.AUTH_SECRET ?? "";
+  const signature = createHmac("sha256", secret).update(token).digest("base64");
+  return `${token}.${signature}`;
+}
+
 /**
  * Dev-only sign-in for the seeded personas (rules in lib/test-mode.ts).
  *
  *   GET /api/test-login?as=<persona>&secret=<TEST_MODE_SECRET>[&to=/path]
  *
- * Auth uses database sessions, so "signing in" is a session row plus Auth.js's own cookie. The persona's
- * demo workspace also becomes the active workspace.
+ * Sessions live in the database, so "signing in" is a session row plus the signed cookie Better Auth reads.
+ * The persona's demo workspace also becomes the active workspace.
  */
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams;
@@ -53,14 +60,15 @@ export async function GET(request: NextRequest) {
     .where(eq(organizations.slug, slug));
   if (!membership) return NextResponse.json({ error: "Test account is out of shape. Run: npm run test:seed" }, { status: 409 });
 
-  const sessionToken = crypto.randomUUID();
-  const expires = new Date(Date.now() + SESSION_HOURS * 60 * 60 * 1000);
-  await db.insert(sessions).values({ sessionToken, userId: user.id, expires });
+  const now = new Date();
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(now.getTime() + SESSION_HOURS * 60 * 60 * 1000);
+  await db.insert(sessions).values({ token, userId: user.id, expiresAt, ipAddress: "", userAgent: "test-login", createdAt: now, updatedAt: now });
 
   // ?to=/settings lands on a specific page (same-site paths only).
   const destination = safePath(query.get("to") ?? "", TEST_HOME);
   const response = NextResponse.redirect(new URL(destination, request.url));
-  response.cookies.set(SESSION_COOKIE, sessionToken, { httpOnly: true, sameSite: "lax", path: "/", expires });
+  response.cookies.set(SESSION_COOKIE, signedSessionCookie(token), { httpOnly: true, sameSite: "lax", path: "/", expires: expiresAt });
   response.cookies.set(ORG_COOKIE, membership.orgId, orgCookieOptions);
   return response;
 }

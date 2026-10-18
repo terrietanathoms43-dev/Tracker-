@@ -7,19 +7,21 @@ import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { googleEnabled } from "@/lib/auth";
+import { allowedDomainsLabel } from "@/lib/allowed-domains";
+import { domainRuleMessage, googleEnabled } from "@/lib/auth";
 import { APP_NAME } from "@/lib/constants";
 import { safePath } from "@/lib/safe-path";
 import { getSessionUser } from "@/lib/viewer";
 
 export const metadata: Metadata = { title: "Sign in" };
 
-// Auth.js error codes, said in the user's words.
+// Better Auth's error codes (and our own from actions/auth.ts), said in the user's words.
 const ERRORS: Record<string, string> = {
-  OAuthAccountNotLinked: "That email already signs in another way. Use the email link instead.",
-  AccessDenied: "Sign-in wasn't allowed for that account.",
-  Verification: "That sign-in link has expired or was already used. Request a new one.",
-  Configuration: "Sign-in isn't configured correctly. Please contact your admin.",
+  INVALID_TOKEN: "That sign-in link has expired or was already used. Request a new one.",
+  EXPIRED_TOKEN: "That sign-in link has expired. Request a new one.",
+  magic_link: "That sign-in link didn't work. Request a new one.",
+  google: "Google sign-in didn't complete. Try again, or use the email link.",
+  access_denied: "Sign-in wasn't allowed for that account.",
   EmailSignInError: "We couldn't send the sign-in email. Check the address and try again.",
   EmailInvalid: "Enter a valid email address.",
 };
@@ -41,7 +43,7 @@ async function LoginForms({ searchParams }: Pick<PageProps<"/login">, "searchPar
   if ((await getSessionUser()) !== null) redirect(redirectTo);
 
   const code = typeof query.error === "string" ? query.error : null;
-  const error = code === null ? null : (ERRORS[code] ?? "Couldn't sign you in. Please try again.");
+  const error = code === null ? null : code === "domain" ? domainRuleMessage() : (ERRORS[code] ?? "Couldn't sign you in. Please try again.");
 
   return (
     <div className="grid gap-5">
@@ -94,11 +96,14 @@ function LoginSkeleton() {
 }
 
 export default function LoginPage(props: PageProps<"/login">) {
+  const domains = allowedDomainsLabel();
   return (
     <AuthShell>
       <div className="mb-8">
         <h1 className="text-2xl font-semibold">Sign in to {APP_NAME}</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">No password needed. New here? Signing in creates your account.</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          {domains ? `Use your ${domains} email. ` : ""}No password needed. New here? Signing in creates your account.
+        </p>
       </div>
       <Suspense fallback={<LoginSkeleton />}>
         <LoginForms searchParams={props.searchParams} />

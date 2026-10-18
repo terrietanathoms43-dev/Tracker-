@@ -3,16 +3,16 @@
 A small team's tracker for tasks and goals: who owns what, where it stopped, what happens next.
 
 - **Intent**: `docs/BRIEF.md` · **Decisions (locked)**: `docs/PLAN.md` · **How to build on it**: `AGENTS.md` · **Operations**: `docs/RUNBOOK.md`
-- **Stack**: Next.js 16 (App Router, React Server Components, server actions) · PostgreSQL + Drizzle ORM · Auth.js (Google + email magic link) · Tailwind v4 + shadcn/ui · Zod · Nodemailer
-- **Conventions**: the Apex skills (`apex-architecture`, `apex-ui`, `apex-ux`, `apex-planning`), shared with the Clarity project.
+- **Stack**: Next.js 16 (App Router, React Server Components, server actions) · PostgreSQL + Drizzle ORM over `pg` · Better Auth (Google + email magic link) · Tailwind v4 + shadcn/ui · Zod · Nodemailer · pm2 on the team VPS
+- **Conventions**: the Apex skills (`apex-architecture`, `apex-ui`, `apex-ux`, `apex-planning`, `apex-recursive-walkthrough`), shared with the Clarity project.
 
 ## Run it locally
 
 ```bash
-cp .env.example .env.local      # fill in DATABASE_URL, AUTH_SECRET; SMTP and Google are optional in development
+cp .env.example .env.local      # fill in DATABASE_URL and BETTER_AUTH_SECRET; SMTP and Google are optional in development
 npm install
-npm run db:push                 # applies db/schema.ts to the database in DATABASE_URL
-npm run dev                     # http://localhost:3020
+npm run db:push                 # applies db/schema.ts to the database in DATABASE_URL (DATABASE_URL_DIRECT if set)
+npm run dev                     # http://localhost:3015
 ```
 
 Without SMTP settings, sign-in links and every other email are printed to the dev server log instead of being sent, so you can sign in by copying the link from the terminal. Without Google credentials the Google button is hidden.
@@ -33,6 +33,8 @@ Set `TEST_MODE_SECRET` (16+ characters) in `.env.local` first. The roster and ru
 npm run typecheck && npm run lint && npm run test:unit && npm run build
 ```
 
+The unit tests are deliberately few: permissions, task status transitions, request decisions, the My Work grouping, CSV safety, and an opt-in cross-workspace isolation test. Flows are proven by the walkthroughs.
+
 ## How the code is organised
 
 ```
@@ -44,29 +46,26 @@ lib/            viewer.ts (who is asking), permissions.ts (who may do what), dal
                 tasks/ (pure domain logic with tests), mail/, notify.ts, time.ts, constants.ts
 scripts/        seed and test tooling (test-accounts.ts, test-browser.mjs, test-walkthrough/)
 docs/           BRIEF.md, PLAN.md, RUNBOOK.md, TEST-ACCOUNTS.md (generated)
-legacy/         the previous Supabase prototype, kept only until the team deletes it
 ```
 
 Every workspace-scoped query carries `org_id`; permissions are pure functions; status changes go through one pure `planTransition`; history tables are append-only. Read `AGENTS.md` for the rest.
 
-## Deploying (Vercel + Postgres on the VPS)
+## Deploying (VPS + pm2)
 
-The app deploys to Vercel from `main`. **A push to `main` is a deploy**, so the environment must be ready first.
+```bash
+# once, on the server
+npm i -g pm2
+git clone <repo> && cd Tracker-
+cp .env.example .env.local      # production values: BETTER_AUTH_URL=https://<domain>, BETTER_AUTH_SECRET, DATABASE_URL, SMTP, Google
+npm ci && npm run build
+pm2 start ecosystem.config.js && pm2 save
 
-1. Create the production database once on the VPS: `createdb trackwise` (any name; it goes in the URL). Make sure Postgres accepts connections from Vercel's IPs (or everywhere, with a strong password and SSL) in `postgresql.conf` / `pg_hba.conf`.
-2. In the Vercel project → Settings → Environment Variables, add for **Production**:
+# every release
+./deploy.sh                     # pull → npm ci → build → pm2 startOrRestart
+```
 
-   | Variable | Value |
-   | --- | --- |
-   | `DATABASE_URL` | `postgres://USER:PASSWORD@HOST:5432/trackwise` (add `?sslmode=require` when the server has TLS) |
-   | `AUTH_SECRET` | a fresh random value (`openssl rand -base64 32`), different from any other app |
-   | `AUTH_URL` | `https://<your production domain>` |
-   | `AUTH_TRUST_HOST` | `true` |
-   | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | the Google OAuth client; add `https://<domain>/api/auth/callback/google` to its authorised redirect URIs |
-   | `SMTP_HOST`, `SMTP_PORT`, `EMAIL`, `EMAIL_PASS`, `EMAIL_FROM` | the SMTP account that sends sign-in links, invitations and notifications |
+Set `ALLOWED_EMAIL_DOMAINS=intellibus.com` to allow only company addresses to sign in or be invited. The app listens on port 3015 behind your reverse proxy. Apply schema changes before the code that needs them: `npm run db:push` with the production `DATABASE_URL` (or `DATABASE_URL_DIRECT` for a pooled Neon database). Never set `TEST_MODE_SECRET` on the server. Backups and incident steps are in `docs/RUNBOOK.md`.
 
-   Do **not** set `TEST_MODE_SECRET` in production. For Preview deployments set everything except `AUTH_URL` (previews use their own origin; Google sign-in is production-only, magic links work everywhere).
-3. Apply the schema from your machine with the production URL in `.env.local`: `npm run db:push`.
-4. Push `main`. Vercel builds with `next build`; the GitHub Actions workflow runs typecheck, lint, unit tests and a build on every push and pull request.
+### Using Neon instead of the VPS's Postgres
 
-Backups: a nightly `pg_dump` on the VPS, described in `docs/RUNBOOK.md`.
+Nothing in the code changes. Put Neon's pooled connection string in `DATABASE_URL` and its direct one in `DATABASE_URL_DIRECT`, run `npm run db:push`, then `npm run test:seed` for a development copy. A "claimable" Neon database must be claimed to a Neon account before its expiry or it is deleted with everything in it.

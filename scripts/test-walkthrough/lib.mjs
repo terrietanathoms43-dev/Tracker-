@@ -41,7 +41,7 @@ export const OTHER_ORG = { name: "Other Co", slug: "other-co" };
 export const HOME = "/home";
 /** The active-workspace cookie (ORG_COOKIE in lib/constants.ts). */
 export const ORG_COOKIE = "trackwise.org";
-export const SESSION_COOKIE = "authjs.session-token";
+export const SESSION_COOKIE = "better-auth.session_token";
 
 export const firstName = (persona) => PEOPLE[persona].name.split(" ")[0];
 export const orgOf = (persona) => (PEOPLE[persona].org === "demo" ? ORG : OTHER_ORG);
