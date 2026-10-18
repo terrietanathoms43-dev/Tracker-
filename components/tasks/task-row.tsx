@@ -24,7 +24,8 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
   const [sheetOpen, setSheetOpen] = useState(false);
   const { handlers, swallowClick } = useLongPress(() => setSheetOpen(true));
   const rejected = task.status === "rejected";
-  const reason = showReason ? task.reason : undefined;
+  // "Overdue" is already said by the red due label, so that chip would say it twice.
+  const reason = showReason && task.reason !== "Overdue" ? task.reason : undefined;
 
   return (
     <li className="group relative flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-accent/60 sm:px-4" {...handlers}>

@@ -3,6 +3,18 @@
 > **Status (2026-10-17):** full rebuild of Trackwise from the Supabase prototype onto the Apex stack. The old code is in git history at `eac1fa7` and is not referenced by anything here. Steps A–D below are the scope of the rebuild; walkthroughs `01`–`05` and the vitest suites are the regression net.
 >
 > Deviations from this plan are recorded here, dated, with the reason.
+>
+> **Decision log (2026-10-17, during the rebuild):**
+> - Hosting is Vercel + Postgres on the VPS (§0), not pm2 on the VPS: the team deploys from a teammate's Vercel account.
+> - Leaders may invite leaders, members and stakeholders; only admins may invite admins (`canInvite` in `lib/permissions.ts`). An admin or the inviting leader may resend, renew or revoke an invitation. Because only the token's hash is stored, "Copy new link" renews a link without sending email.
+> - Removing a member or leaving a workspace unassigns that person's open tasks (activity `assigned` with a note), so no open task stays with someone who can no longer see it.
+> - Stakeholders can read the workspace's member list under Settings → Workspace (read-only). §3 said "nothing else"; knowing who decides is useful and harmless.
+> - A rejected task notifies its assignee with kind `approval_decided` ("Rejected: …"): the flow needs the notice and no `rejected` kind exists.
+> - Evidence links may be removed by anyone who may edit the task, or by whoever added the link.
+> - Goals and projects are never deleted (paused / archived instead) and keep no who/when history beyond `updated_at` and a log line: a planning activity table was not in the schema and is left for later.
+> - Request decisions appear in the Team and Home activity feeds (`teamFeed` in `lib/dal/team.ts`), since §8 lists "request decided" as important.
+> - Report tiles "Blocked now" and "Overdue now" count today's state, not the range. CSV exports start with a UTF-8 BOM and neutralise formula-leading cells.
+> - The board has no drag-and-drop (§5); status changes go through the card menu.
 
 This file is the hand-off for anyone building Trackwise. Read `docs/BRIEF.md` for intent; this file says *how*. Follow the `apex-architecture`, `apex-ui` and `apex-ux` skills for everything not spelled out here. If something is genuinely impossible, say so in the report rather than silently choosing differently.
 

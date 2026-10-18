@@ -37,6 +37,13 @@ export function TaskToolbar({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [q, setQ] = useState(filters.q);
+  // When the URL's search changes from outside the box (Clear filters, the back button), the box follows it
+  // instead of pushing its stale text back into the URL.
+  const [applied, setApplied] = useState(filters.q);
+  if (filters.q !== applied) {
+    setApplied(filters.q);
+    setQ(filters.q);
+  }
   const [open, setOpen] = useState(false);
   const apply = (patch: Partial<TaskFilters>) => startTransition(() => router.replace(tasksHref({ ...filters, ...patch }, view), { scroll: false }));
 
