@@ -3,8 +3,6 @@
 # Deploy on the VPS: run from the repo directory as the app user.
 # Pull, install, build, then (re)start under pm2. Schema changes are applied deliberately,
 # not on every deploy: run `npm run db:push` yourself when a release changes db/schema.ts.
-set -euo pipefail
-
 echo "==> Pulling latest (branch: main)"
 git pull origin main
 
