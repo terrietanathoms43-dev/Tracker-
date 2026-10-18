@@ -2,7 +2,7 @@
 
 import { ChevronDown, Pencil } from "lucide-react";
 import { useState, useTransition } from "react";
-import { editTask } from "@/actions/tasks";
+import { editTask, setAssignees } from "@/actions/tasks";
 import { NativeSelect } from "@/components/native-select";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/compon
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { TaskPriority, TaskStatus } from "@/lib/constants";
+import { idsOf, sameIds, type AssigneeIds } from "@/lib/tasks/assignees";
+import type { Assignees, Person, TeamRef } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
+import { AssigneePicker } from "../assignee-picker";
 import { StatusMenuItems, useChangeStatus } from "../status-menu";
 
 // The task page's inline editors: each saves one field through editTask (or a status through the shared
@@ -94,9 +97,33 @@ export function StatusEditor({ taskId, status, allowReject }: { taskId: string; 
   );
 }
 
-type PickField = "assigneeId" | "projectId" | "goalId" | "priority";
+/**
+ * The assignees picker on the task page: pick as many as you like, and the change is saved once the list closes
+ * (one history line, one round of notifications), not on every tick.
+ */
+export function AssigneesEditor({ taskId, assignees, people, teams, viewerId }: { taskId: string; assignees: Assignees; people: Person[]; teams: TeamRef[]; viewerId: string }) {
+  const [value, setValue] = useState<AssigneeIds>(() => idsOf(assignees));
+  const [pending, startTransition] = useTransition();
+  // Someone on the task who is no longer a worker here stays pickable, so saving doesn't silently drop them.
+  const options = {
+    people: [...assignees.people.filter((person) => !people.some((each) => each.id === person.id)), ...people],
+    teams: [...assignees.teams.filter((team) => !teams.some((each) => each.id === team.id)), ...teams],
+    viewerId,
+  };
+  function save() {
+    const current = idsOf(assignees);
+    if (sameIds(current.assigneeIds, value.assigneeIds) && sameIds(current.teamIds, value.teamIds)) return;
+    startTransition(async () => {
+      const result = await setAssignees({ taskId, ...value });
+      if (!toastResult(result)) setValue(current);
+    });
+  }
+  return <AssigneePicker label="Assigned to" value={value} onChange={setValue} options={options} onClose={save} disabled={pending} className="max-w-md" />;
+}
 
-/** A native select that saves on change: assignee, project, goal or priority. */
+type PickField = "projectId" | "goalId" | "priority";
+
+/** A native select that saves on change: project, goal or priority. */
 export function PickEditor({
   taskId,
   field,

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { invitations, organizations, users } from "@/db/schema";
@@ -42,6 +42,28 @@ export async function findInvitationByToken(token: string): Promise<InvitationBy
     .leftJoin(inviter, eq(inviter.id, invitations.invitedBy))
     .where(eq(invitations.tokenHash, hashInviteToken(token)));
   return row ? { ...row, expired: row.expiresAt.getTime() <= Date.now() } : null;
+}
+
+export type InvitationForEmail = {
+  id: string;
+  orgName: string;
+  role: OrgRole;
+  inviterName: string | null;
+  expiresAt: Date;
+};
+
+/**
+ * Invitations waiting for an email address (not accepted, not expired), newest first: what a signed-in person
+ * without a workspace sees on Home. Not viewer-scoped: there is no workspace yet; the email was proven at sign-in.
+ */
+export async function listInvitationsForEmail(email: string): Promise<InvitationForEmail[]> {
+  return db
+    .select({ id: invitations.id, orgName: organizations.name, role: invitations.role, inviterName: inviter.name, expiresAt: invitations.expiresAt })
+    .from(invitations)
+    .innerJoin(organizations, eq(organizations.id, invitations.orgId))
+    .leftJoin(inviter, eq(inviter.id, invitations.invitedBy))
+    .where(and(eq(invitations.email, email.toLowerCase()), isNull(invitations.acceptedAt), gt(invitations.expiresAt, new Date())))
+    .orderBy(desc(invitations.createdAt));
 }
 
 export type PendingInvitation = {

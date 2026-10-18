@@ -10,6 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "db:backfill-assignees": "tsx scripts/backfill-assignees.ts",
     "test:seed": "tsx scripts/test-accounts.ts seed",
     "test:status": "tsx scripts/test-accounts.ts status",
     "test:tidy": "tsx scripts/test-accounts.ts tidy",

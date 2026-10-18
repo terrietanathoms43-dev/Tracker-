@@ -1,23 +1,22 @@
 "use client";
 
 import { Field } from "@/components/field";
-import { NativeSelect } from "@/components/native-select";
 import { Segmented } from "@/components/segmented";
+import { AssigneePicker } from "@/components/tasks/assignee-picker";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
-import { nameOf } from "@/lib/tasks/people";
+import type { AssigneeIds } from "@/lib/tasks/assignees";
 import type { TaskFormOptions } from "@/lib/tasks/types";
 
 // The fields of the task a request becomes, inside the Approve ("Create the task now") and Convert dialogs.
 
 type Errors = Record<string, string[] | undefined>;
 
-/** Assignee, priority and due date for the task a request becomes. The workers load when the fields first show. */
+/** Assignees (people and teams), priority and due date for the task a request becomes. The pickers load when the fields first show. */
 export function TaskFields({
   options,
-  assigneeId,
-  onAssignee,
+  assignment,
+  onAssignment,
   priority,
   onPriority,
   dueDate,
@@ -25,8 +24,8 @@ export function TaskFields({
   errors,
 }: {
   options: TaskFormOptions | null;
-  assigneeId: string;
-  onAssignee: (value: string) => void;
+  assignment: AssigneeIds;
+  onAssignment: (value: AssigneeIds) => void;
   priority: TaskPriority;
   onPriority: (value: TaskPriority) => void;
   dueDate: string;
@@ -36,20 +35,14 @@ export function TaskFields({
   return (
     <div className="grid gap-4 rounded-lg border bg-muted/40 p-3">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field id="decision-assignee" label="Assignee" error={errors.assigneeId?.[0]}>
-          {options === null ? (
-            <Skeleton className="h-9 w-full" />
-          ) : (
-            <NativeSelect id="decision-assignee" value={assigneeId} onChange={(event) => onAssignee(event.target.value)}>
-              <option value="">Unassigned</option>
-              {options.people.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {nameOf(person)}
-                  {person.id === options.viewerId ? " (me)" : ""}
-                </option>
-              ))}
-            </NativeSelect>
-          )}
+        <Field id="decision-assignees" label="Assigned to" error={errors.assigneeIds?.[0] ?? errors.teamIds?.[0]}>
+          <AssigneePicker
+            id="decision-assignees"
+            value={assignment}
+            onChange={onAssignment}
+            options={options ? { people: options.people, teams: options.teams, viewerId: options.viewerId } : null}
+            className="bg-background"
+          />
         </Field>
         <Field id="decision-due" label="Due" error={errors.dueDate?.[0]}>
           <Input id="decision-due" type="date" value={dueDate} onChange={(event) => onDueDate(event.target.value)} />

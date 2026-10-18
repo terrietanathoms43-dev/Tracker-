@@ -7,6 +7,7 @@ import { TaskHistory } from "@/components/tasks/detail/task-history";
 import { CurrentTask } from "@/components/tasks/task-actions";
 import { listHistory } from "@/lib/dal/history";
 import { activePlanning, getTask, listLinks, taskPeople } from "@/lib/dal/tasks";
+import { teamOptions } from "@/lib/dal/teams";
 import { canApproveTask, canEditTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
 import { defaultApproverFor } from "@/lib/tasks/approver";
 import type { TaskAbilities, UpdateContext } from "@/lib/tasks/types";
@@ -26,11 +27,12 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const viewer = await requireViewer();
   const worker = isWorker(viewer);
   // One round trip; nothing is rendered unless the viewer may read the task (a foreign id is simply not found).
-  const [found, links, history, people, planning] = await Promise.all([
+  const [found, links, history, people, teams, planning] = await Promise.all([
     getTask(viewer, id),
     listLinks(viewer, id),
     listHistory(viewer, id, null),
     worker ? taskPeople(viewer) : [],
+    worker ? teamOptions(viewer) : [],
     worker ? activePlanning(viewer) : { projects: [], goals: [] },
   ]);
   if (found === null || !canReadTask(viewer, found.scope)) notFound();
@@ -50,13 +52,13 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           id: detail.id,
           title: detail.title,
           status: detail.status,
-          assigneeId: detail.assignee?.id ?? null,
+          assigneeIds: scope.assigneeIds,
           nextAction: detail.nextAction,
           blockedReason: detail.blockedReason,
           blockedBy: detail.blockedBy,
         },
         people,
-        defaultApprover: defaultApproverFor(people, detail.approver?.id ?? null, detail.assignee?.id ?? null),
+        defaultApprover: defaultApproverFor(people, detail.approver?.id ?? null, scope.assigneeIds),
         abilities,
       }
     : null;
@@ -71,6 +73,8 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           detail={detail}
           abilities={abilities}
           people={people.map(({ id: personId, name, email, image }) => ({ id: personId, name, email, image }))}
+          teams={teams}
+          viewerId={viewer.userId}
           projects={planning.projects}
           goals={planning.goals}
           today={today}

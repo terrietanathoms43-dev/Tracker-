@@ -1,31 +1,35 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { createTask, getTaskFormOptions } from "@/actions/tasks";
+import { createTask } from "@/actions/tasks";
 import { Field } from "@/components/field";
 import { NativeSelect } from "@/components/native-select";
 import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
-import { nameOf } from "@/lib/tasks/people";
-import type { CreateDefaults, TaskFormOptions } from "@/lib/tasks/types";
+import type { AssigneeIds } from "@/lib/tasks/assignees";
+import type { CreateDefaults } from "@/lib/tasks/types";
+import { AssigneePicker } from "./assignee-picker";
+import { loadTaskFormOptions, useTaskFormOptions } from "./use-task-form-options";
 
 // The New task form inside the create dialog (N, the New task button, the palette).
 
 type Errors = Record<string, string[] | undefined>;
 
-/** Title is all it needs (apex-ux §4); the assignee starts as you and the project as the page you came from. */
+/**
+ * Title is all it needs (apex-ux §4); the assignees start as you and the project as the page you came from. The
+ * form shows at once: its pickers fill in when the options arrive, and a submit that beats them waits for them.
+ */
 export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?: CreateDefaults; onDone?: (id: string) => void; onCancel?: () => void }) {
   const router = useRouter();
-  const [options, setOptions] = useState<TaskFormOptions | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { options, error: loadError } = useTaskFormOptions();
   const [title, setTitle] = useState("");
-  const [assigneeId, setAssigneeId] = useState<string | null>(null);
+  /** Null until the person touches the picker: "me" once the options say who that is. */
+  const [assignment, setAssignment] = useState<AssigneeIds | null>(null);
   const [projectId, setProjectId] = useState(defaults.projectId ?? "");
   const [goalId, setGoalId] = useState(defaults.goalId ?? "");
   const [priority, setPriority] = useState<TaskPriority>("normal");
@@ -35,35 +39,16 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
   const [errors, setErrors] = useState<Errors>({});
   const [pending, startTransition] = useTransition();
 
-  useEffect(() => {
-    let live = true;
-    getTaskFormOptions().then((result) => {
-      if (!live) return;
-      if (result.ok) setOptions(result.data);
-      else setLoadError(result.error);
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  if (loadError) return <p className="text-sm text-muted-foreground">{loadError}</p>;
-  if (options === null) {
-    return (
-      <div className="grid gap-4" aria-busy="true" aria-label="Loading">
-        <Skeleton className="h-9 w-full" />
-        <Skeleton className="h-9 w-2/3" />
-        <Skeleton className="h-20 w-full" />
-      </div>
-    );
-  }
-
-  const assignee = assigneeId ?? options.viewerId;
   const error = (key: string) => errors[key]?.[0];
+  const me = (viewerId: string | null): AssigneeIds => ({ assigneeIds: viewerId ? [viewerId] : [], teamIds: [] });
+  const value = assignment ?? me(options?.viewerId ?? null);
 
   function submit() {
     startTransition(async () => {
-      const result = await createTask({ title, assigneeId: assignee, projectId, goalId, priority, dueDate, nextAction, description });
+      // The default assignee is "me", which only the options can name: a quick Enter waits for them.
+      const ready = options ?? (await loadTaskFormOptions()).options;
+      const chosen = assignment ?? me(ready?.viewerId ?? null);
+      const result = await createTask({ title, ...chosen, projectId, goalId, priority, dueDate, nextAction, description });
       if (!result.ok) {
         setErrors(result.fieldErrors ?? { title: [result.error] });
         return;
@@ -73,6 +58,9 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
       onDone?.(id);
     });
   }
+
+  if (loadError) return <p className="text-sm text-muted-foreground">{loadError}</p>;
+  const loading = options === null;
 
   return (
     <form
@@ -101,25 +89,23 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field id="task-assignee" label="Assignee" error={error("assigneeId")}>
-          <NativeSelect id="task-assignee" value={assignee} onChange={(event) => setAssigneeId(event.target.value)}>
-            <option value="">Unassigned</option>
-            {options.people.map((person) => (
-              <option key={person.id} value={person.id}>
-                {nameOf(person)}
-                {person.id === options.viewerId ? " (me)" : ""}
-              </option>
-            ))}
-          </NativeSelect>
+        <Field id="task-assignees" label="Assigned to" error={error("assigneeIds") ?? error("teamIds")}>
+          <AssigneePicker
+            id="task-assignees"
+            value={value}
+            onChange={setAssignment}
+            options={options ? { people: options.people, teams: options.teams, viewerId: options.viewerId } : null}
+            assumeMe={assignment === null}
+          />
         </Field>
         <Field id="task-due" label="Due" error={error("dueDate")}>
           <Input id="task-due" type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
         </Field>
-        {options.projects.length > 0 || projectId ? (
+        {loading || options.projects.length > 0 || projectId ? (
           <Field id="task-project" label="Project" error={error("projectId")}>
-            <NativeSelect id="task-project" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-              <option value="">No project</option>
-              {options.projects.map((project) => (
+            <NativeSelect id="task-project" value={projectId} disabled={loading} onChange={(event) => setProjectId(event.target.value)}>
+              <option value="">{loading ? "Loading…" : "No project"}</option>
+              {(options?.projects ?? []).map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
                 </option>
@@ -127,11 +113,11 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
             </NativeSelect>
           </Field>
         ) : null}
-        {options.goals.length > 0 || goalId ? (
+        {loading || options.goals.length > 0 || goalId ? (
           <Field id="task-goal" label="Goal" error={error("goalId")}>
-            <NativeSelect id="task-goal" value={goalId} onChange={(event) => setGoalId(event.target.value)}>
-              <option value="">No goal</option>
-              {options.goals.map((goal) => (
+            <NativeSelect id="task-goal" value={goalId} disabled={loading} onChange={(event) => setGoalId(event.target.value)}>
+              <option value="">{loading ? "Loading…" : "No goal"}</option>
+              {(options?.goals ?? []).map((goal) => (
                 <option key={goal.id} value={goal.id}>
                   {goal.title}
                 </option>

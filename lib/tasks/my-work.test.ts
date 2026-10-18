@@ -9,7 +9,7 @@ const TODAY = "2026-10-15";
 let n = 0;
 function row(partial: Partial<TaskListItem> & Partial<Omit<MyWorkRow, "item">> = {}): MyWorkRow {
   n += 1;
-  const { approverId = null, assigneeId = ME, sortRank = 0, completedAt = null, sentBack = false, ...item } = partial;
+  const { approverId = null, mine = true, sortRank = 0, completedAt = null, sentBack = false, ...item } = partial;
   return {
     item: {
       id: `t${n}`,
@@ -18,13 +18,13 @@ function row(partial: Partial<TaskListItem> & Partial<Omit<MyWorkRow, "item">> =
       priority: "normal",
       dueDate: null,
       nextAction: null,
-      assignee: null,
+      assignees: { people: [], teams: [] },
       project: null,
       updatedAt: `2026-10-${String(10 + n).padStart(2, "0")}T00:00:00.000Z`,
       ...item,
     },
     approverId,
-    assigneeId,
+    mine,
     sortRank,
     completedAt,
     sentBack,
@@ -41,7 +41,7 @@ describe("groupMyWork", () => {
       row({ title: "plain" }),
       row({ title: "blocked", status: "blocked" }),
       row({ title: "awaiting mine", status: "awaiting_approval", approverId: "morgan" }),
-      row({ title: "to approve", status: "awaiting_approval", assigneeId: "other", approverId: ME }),
+      row({ title: "to approve", status: "awaiting_approval", mine: false, approverId: ME }),
       row({ title: "sent back", sentBack: true }),
       row({ title: "done", status: "completed", completedAt: new Date("2026-10-14T10:00:00Z") }),
     ];
@@ -61,13 +61,19 @@ describe("groupMyWork", () => {
         row({ dueDate: TODAY }),
         row({ dueDate: "2026-10-17" }),
         row({ status: "blocked", dueDate: "2026-10-16" }),
-        row({ status: "awaiting_approval", assigneeId: "other", approverId: ME }),
+        row({ status: "awaiting_approval", mine: false, approverId: ME }),
         row({ sentBack: true }),
       ],
       ME,
       TODAY,
     );
     expect(groups.attention.map((item) => item.reason)).toEqual(["Overdue", "Due soon", "Blocked", "Due soon", "Sent back", "Your approval"]);
+  });
+
+  it("treats work assigned through a team like my own, keeping the team's name on the row", () => {
+    const groups = groupMyWork([row({ title: "team work", via: "Frontend", dueDate: "2026-10-01" }), row({ title: "team plain", via: "Frontend" })], ME, TODAY);
+    expect(groups.attention.map((item) => [item.title, item.reason, item.via])).toEqual([["team work", "Overdue", "Frontend"]]);
+    expect(groups.continueWorking.map((item) => item.via)).toEqual(["Frontend"]);
   });
 
   it("orders continue-working by due date, then priority, then manual rank, then recency", () => {
@@ -102,7 +108,7 @@ describe("groupMyWork", () => {
       [
         row({ title: "older", status: "completed", completedAt: new Date("2026-10-10T00:00:00Z") }),
         row({ title: "newer", status: "completed", completedAt: new Date("2026-10-14T00:00:00Z") }),
-        row({ title: "someone else's", assigneeId: "other", dueDate: "2026-10-01" }),
+        row({ title: "someone else's", mine: false, dueDate: "2026-10-01" }),
         row({ title: "rejected", status: "rejected" }),
       ],
       ME,

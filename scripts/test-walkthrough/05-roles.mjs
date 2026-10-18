@@ -36,7 +36,7 @@ try {
 
   // --- stakeholder ------------------------------------------------------------------------------------------------
   const taylor = (browsers.taylor = await openBrowser({ role: "stakeholder", width: 390, height: 844 }));
-  for (const path of ["/tasks", "/my-work", "/goals", "/projects", "/team", "/reports"]) {
+  for (const path of ["/tasks", "/my-work", "/goals", "/projects", "/members", "/reports"]) {
     await taylor.goto(path, 4000);
     step(`a stakeholder asking for ${path} is sent home`, (await taylor.path()).startsWith("/home"), await taylor.path());
   }
@@ -66,6 +66,8 @@ try {
   step("a member cannot change roles, invite or delete", (await jordan.waitFor("Members")) && (await jordan.evaluate(`document.querySelectorAll("select[aria-label^='Role for']").length`)) === 0 && !(await jordan.has("Send invitations")) && !(await jordan.has("Delete workspace")));
   await jordan.goto(`/tasks/${rows.awaitingTask.id}`, 5000);
   step("a member who is not the approver sees no Approve button", (await jordan.waitFor("Next action")) && !(await buttonTexts(jordan)).some((text) => text === "Approve"));
+  await jordan.goto("/members", 5000);
+  step("a member reads the Members page without New team or Invite people", (await jordan.waitFor("Frontend")) && !(await buttonTexts(jordan)).some((text) => /^(New team|Invite people)$/.test(text)));
 
   // --- leader -----------------------------------------------------------------------------------------------------
   const morgan = (browsers.morgan = await openBrowser({ role: "leader", width: 1280, height: 900 }));
@@ -91,8 +93,8 @@ try {
   step("another workspace's task list holds none of ours", (await riley.waitFor("Tasks")) && !(await riley.has(rows.plainTask.title)) && !(await riley.has(rows.completedTitle)));
   const csv = await riley.evaluate(`fetch("/reports/export?table=delivered").then((r) => r.text())`);
   step("another workspace's CSV export holds none of ours", typeof csv === "string" && !csv.includes(rows.completedTitle), (csv ?? "").slice(0, 80));
-  await riley.goto("/team", 5000);
-  step("another workspace's Team page shows only its own people", (await riley.waitFor("Team")) && !(await riley.has("Jordan Dev")) && (await riley.has("Casey Other")));
+  await riley.goto("/members", 5000);
+  step("another workspace's Members page shows only its own people and teams", (await riley.waitFor("Members")) && !(await riley.has("Jordan Dev")) && !(await riley.has("Frontend")) && (await riley.has("Casey Other")));
 } catch (error) {
   await stoppedOn(error, "05", browsers);
   step("flow ran to the end", false);

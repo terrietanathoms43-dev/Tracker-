@@ -15,6 +15,7 @@ const ids = {
   task: (await one(`select id from tasks where org_id = (${org}) and request_id is null and status = 'in_progress' order by created_at limit 1`))?.id,
   project: (await one(`select id from projects where org_id = (${org}) and status = 'active' limit 1`))?.id,
   goal: (await one(`select id from goals where org_id = (${org}) and status = 'active' limit 1`))?.id,
+  team: (await one(`select id from teams where org_id = (${org}) order by name limit 1`))?.id,
   request: (await one(`select r.id from requests r join users u on u.id = r.requester_id where r.org_id = (${org}) and u.email <> 'taylor@trackwise.test' limit 1`))?.id,
   taylorRequest: (await one(`select r.id from requests r join users u on u.id = r.requester_id where r.org_id = (${org}) and u.email = 'taylor@trackwise.test' and r.converted_task_id is not null limit 1`))?.id,
 };
@@ -32,7 +33,8 @@ const WORKER_SCREENS = [
   `/projects/${ids.project}`,
   "/goals",
   `/goals/${ids.goal}`,
-  "/team",
+  "/members",
+  `/teams/${ids.team}`,
   "/requests",
   `/requests/${ids.request}`,
   "/reports",
@@ -43,11 +45,11 @@ const WORKER_SCREENS = [
 ];
 /** A stakeholder's screens, and where the worker-only ones send her. */
 const STAKEHOLDER_SCREENS = ["/home", "/requests", `/requests/${ids.taylorRequest}`, `/tasks/${ids.convertedTask}`, "/notifications", "/settings", "/settings/workspace"];
-const STAKEHOLDER_REDIRECTS = ["/my-work", "/tasks", "/projects", "/goals", "/team", "/reports"];
-const STAKEHOLDER_NOT_FOUND = [`/tasks/${ids.task}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/requests/${ids.request}`];
+const STAKEHOLDER_REDIRECTS = ["/my-work", "/tasks", "/projects", "/goals", "/members", "/reports"];
+const STAKEHOLDER_NOT_FOUND = [`/tasks/${ids.task}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/teams/${ids.team}`, `/requests/${ids.request}`];
 /** Riley's own screens, and the Trackwise Demo ids that must be invisible to Other Co. */
-const OTHER_SCREENS = ["/home", "/my-work", "/tasks", "/projects", "/goals", "/team", "/requests", "/reports", "/settings/workspace"];
-const OTHER_NOT_FOUND = [`/tasks/${ids.task}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/requests/${ids.request}`];
+const OTHER_SCREENS = ["/home", "/my-work", "/tasks", "/projects", "/goals", "/members", "/requests", "/reports", "/settings/workspace"];
+const OTHER_NOT_FOUND = [`/tasks/${ids.task}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/teams/${ids.team}`, `/requests/${ids.request}`];
 const PUBLIC_SCREENS = ["/", "/login", "/login/check-email", "/invite/not-a-token"];
 
 const slug = (path) => path.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60) || "root";

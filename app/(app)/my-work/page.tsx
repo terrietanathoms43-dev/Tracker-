@@ -34,7 +34,7 @@ export default async function MyWorkPage() {
         <EmptyState
           icon={ListChecks}
           title="Nothing is assigned to you yet"
-          description="Tasks assigned to you show up here, grouped by what needs doing next."
+          description="Tasks assigned to you, or to a team you're in, show up here, grouped by what needs doing next."
           action={<NewTaskButton variant="outline" />}
         />
       ) : (

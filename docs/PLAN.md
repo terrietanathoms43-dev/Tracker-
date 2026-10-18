@@ -15,6 +15,16 @@
 > - Request decisions appear in the Team and Home activity feeds (`teamFeed` in `lib/dal/team.ts`), since §8 lists "request decided" as important.
 > - Report tiles "Blocked now" and "Overdue now" count today's state, not the range. CSV exports start with a UTF-8 BOM and neutralise formula-leading cells.
 > - The board has no drag-and-drop (§5); status changes go through the card menu.
+>
+> **Decision log (2026-10-18, teams and multiple assignees):**
+> - **Terms.** The people in a workspace are its *members*. A *team* is a named group of members inside the workspace (e.g. "Frontend") that can be assigned work. The old `/team` dashboard is now `/members` (the roster and the teams); `/team` redirects there. There are still no sub-tenants: teams live under one workspace and do not change visibility.
+> - **Assignment is a set.** A task has any number of assignees: people (`task_assignees`) and teams (`task_teams`), all equal, with no "owner". Everyone assigned directly, or through a team they belong to, sees the task in My Work (team work is marked "via Frontend"), may edit it, and is told about assignment, approval decisions and comments. Workload per person and Contributions count direct assignments only; teams get their own rows. A goal may also name the teams that own it (`goal_teams`).
+> - `tasks.assignee_id` is **legacy**: kept because real data exists (§0: additive only), no longer read or written. `scripts/backfill-assignees.ts` copies it into `task_assignees` once (idempotent); run it after `db:push` on any database that has tasks.
+> - **Hand over to X** in Update progress makes X the task's only person (teams stay). "Approver must not be an assignee" means a direct assignee.
+> - Teams are created and changed (name, description, members) by admins and leaders (`canManageTeams`); everyone else reads them. Deleting a team removes it from every task and goal; the history keeps its name. The `Viewer` carries `teamIds` (the teams the person is in, in the active workspace) so permission checks stay pure.
+> - **Skipping the workspace.** A signed-in person without a workspace is no longer bounced to `/onboarding`: `/home` shows a no-workspace state (create one, or the invitations waiting for their email), the shell renders without a workspace, and the first onboarding step has "Skip for now". Every other `(app)` page still sends them to `/home`.
+> - Home's header action is always **New task**; an admin who is still alone gets an invite banner instead of an invite button. The account menu says "User settings" and "Workspace".
+> - The New task dialog renders at once; its pickers load behind it (and are prefetched once per session), so the title can be typed immediately.
 
 This file is the hand-off for anyone building Trackwise. Read `docs/BRIEF.md` for intent; this file says *how*. Follow the `apex-architecture`, `apex-ui` and `apex-ux` skills for everything not spelled out here. If something is genuinely impossible, say so in the report rather than silently choosing differently.
 
@@ -60,7 +70,8 @@ Fonts: Geist Sans + Geist Mono.
   /projects/[id]           project header + its tasks grouped by status
   /goals                   goals with progress (completed / total)
   /goals/[id]              goal header + projects and tasks under it
-  /team                    members, workload, attention list, important activity (leaders + admins; members read-only)
+  /members                 the roster (role, teams, open work) and the teams; invite, New team (workers; /team redirects here)
+  /teams/[id]              one team: members, open work, goals; edit or delete it (leaders + admins)
   /requests                list (stakeholders see their own) + New request
   /requests/[id]           request detail, decisions, linked task's Resume card
   /reports                 range → summary, delivered with evidence, outstanding, contributions, goals; print + CSV
@@ -72,19 +83,19 @@ Fonts: Geist Sans + Geist Mono.
 /api/test-login            dev-only persona sign-in (§9)
 ```
 
-Navigation: **Home · My Work · Tasks · Goals · Team · Requests** (sidebar, desktop). Phone bottom tabs: Home · My Work · Tasks · Goals · More (Team, Requests, Reports, Settings, Workspace, Sign out). Projects is reached from the Tasks page header (a secondary tab row: *List · Board · Projects*) and from goals. Reports is reached from Team and from the account menu. Stakeholders see Home · Requests only. Settings/Workspace live in the account menu.
+Navigation: **Home · My Work · Tasks · Goals · Members · Requests** (sidebar, desktop). Phone bottom tabs: Home · My Work · Tasks · Goals · More (Members, Requests, Reports, User settings, Workspace, Sign out). Projects is reached from the Tasks page header (a secondary tab row: *List · Board · Projects*) and from goals. Reports is reached from Members and from the account menu. Stakeholders see Home · Requests only. User settings and Workspace live in the account menu. A signed-in person with no workspace sees Home only.
 
 ## 3. Tenancy, roles, visibility
 
 - Active workspace = cookie `trackwise.org` (orgId), validated against `organization_members` on every request; fallback to the oldest membership, cookie rewritten. Switcher = server action + redirect to `/home`.
 - Who may have an account: `ALLOWED_EMAIL_DOMAINS` (e.g. `intellibus.com`) limits sign-in and invitations to those domains, enforced in `lib/auth.ts` hooks (magic link request, user creation) and in `actions/invitations.ts`; test personas are exempt outside production. Unset means anyone.
-- Org role `organization_members.role`: `admin | leader | member | stakeholder`. No team tables.
+- Org role `organization_members.role`: `admin | leader | member | stakeholder`. Teams (`teams`, `team_members`) are groups of members inside one workspace; they carry no role and change no visibility.
 - Rules (`lib/permissions.ts`, used by every DAL query and action):
   - **admin**: everything in the workspace, plus settings, members, invitations, delete.
-  - **leader**: read everything; create/edit/archive projects and goals; create/edit/assign any task; approve or send back; reject; decide requests; see Team and Reports.
-  - **member**: read all tasks, projects, goals and requests; create tasks; edit a task they created or are assigned to; update progress and comment on any task; hand over; submit requests. Team page read-only (no attention actions beyond their own tasks). Reports visible.
+  - **leader**: read everything; create/edit/archive projects and goals; create/edit/assign any task; approve or send back; reject; decide requests; create and change teams; see Members and Reports.
+  - **member**: read all tasks, projects, goals and requests; create tasks; edit a task they created or are assigned to (directly or through one of their teams); update progress and comment on any task; hand over; submit requests. Members page read-only (no team changes). Reports visible.
   - **stakeholder**: read only their own requests and the tasks converted from them; submit requests. Nothing else; nav shows Home and Requests.
-- `Viewer = { userId, orgId, orgRole, timezone }`. Every DAL function takes it and filters by `orgId` in SQL; lookups by id also check `orgId`.
+- `Viewer = { userId, orgId, orgRole, teamIds, timezone }`. Every DAL function takes it and filters by `orgId` in SQL; lookups by id also check `orgId`. `teamIds` are the viewer's teams in the active workspace, so "assigned through a team" is a pure check.
 
 ## 4. Schema
 
@@ -95,11 +106,16 @@ users / sessions / accounts / verifications   Better Auth core shape (name, emai
 organizations         id, name, slug (unique), timezone, created_by, created_at
 organization_members  org_id, user_id, role, joined_at, invited_by                        PK(org_id, user_id)
 invitations           id, org_id, email (lower), role, token_hash (unique sha256), invited_by, expires_at (7d), accepted_at?, created_at
+teams                 id, org_id, name (unique per org), description?, created_by?, created_at, updated_at
+team_members          team_id, user_id, added_by?, added_at                                 PK(team_id, user_id)
+task_assignees        task_id, user_id, assigned_by?, assigned_at                           PK(task_id, user_id)   the people assigned
+task_teams            task_id, team_id, assigned_by?, assigned_at                           PK(task_id, team_id)   the teams assigned
+goal_teams            goal_id, team_id, added_by?, added_at                                 PK(goal_id, team_id)
 goals                 id, org_id, title, description?, owner_id, target_date?, success_criteria?, status (active|achieved|paused), created_by, created_at, updated_at
 projects              id, org_id, goal_id?, name, description?, owner_id?, status (active|completed|archived), target_date?, created_by, created_at, updated_at
 requests              id, org_id, title, description?, desired_outcome?, urgency (low|normal|high|critical), link?, requester_id, status (new|approved|deferred|rejected|converted), decided_at?, decided_by?, decision_reason?, defer_until?, converted_task_id?, created_at, updated_at
 request_decisions     id, request_id, decider_id, decision (approved|deferred|rejected|converted|reopened), reason?, created_at   (append-only)
-tasks                 id, org_id, project_id?, goal_id?, request_id?, title, description?, assignee_id?, created_by, approver_id?, priority (low|normal|high|urgent), status (not_started|in_progress|awaiting_approval|blocked|rejected|completed), due_date?, started_at?, completed_at?, blocked_reason?, blocked_by?, rejection_reason?, latest_progress?, next_action?, completion_summary?, sort_rank (double, default 0), created_at, updated_at
+tasks                 id, org_id, project_id?, goal_id?, request_id?, title, description?, assignee_id? (legacy, see the 2026-10-18 log), created_by, approver_id?, priority (low|normal|high|urgent), status (not_started|in_progress|awaiting_approval|blocked|rejected|completed), due_date?, started_at?, completed_at?, blocked_reason?, blocked_by?, rejection_reason?, latest_progress?, next_action?, completion_summary?, sort_rank (double, default 0), created_at, updated_at
 task_updates          id, task_id, author_id, kind (progress|comment), body, next_action?, blocker?, created_at   (append-only)
 task_links            id, task_id, url, label?, added_by, created_at
 task_activity         id, org_id, task_id, actor_id, kind (created|edited|status_changed|assigned|handed_over|due_changed|priority_changed|blocked|unblocked|approval_requested|approved|sent_back|rejected|completed|reopened|progress_updated|commented|link_added|link_removed), before jsonb?, after jsonb?, note?, created_at   (append-only)
@@ -107,24 +123,24 @@ notifications         id, user_id, org_id, kind, title, body?, href, read_at?, c
 notification_preferences  user_id PK, email_assignment, email_approval, email_handover, email_blocked, email_request_decision, email_comment (bools)
 ```
 
-Indexes: `tasks(org_id, status)`, `tasks(org_id, assignee_id, status)`, `tasks(org_id, project_id)`, `tasks(org_id, goal_id)`, `tasks(org_id, due_date)`, `tasks(request_id)`, `task_updates(task_id, created_at desc)`, `task_activity(task_id, created_at desc)`, `task_activity(org_id, created_at desc)`, `requests(org_id, status)`, `requests(org_id, requester_id)`, `projects(org_id, status)`, `goals(org_id, status)`, `invitations(org_id)`, `organization_members(user_id)`, `notifications(user_id, read_at)`.
+Indexes: `tasks(org_id, status)`, `tasks(org_id, assignee_id, status)`, `task_assignees(user_id)`, `task_teams(team_id)`, `team_members(user_id)`, `goal_teams(team_id)`, `teams(org_id)`, `tasks(org_id, project_id)`, `tasks(org_id, goal_id)`, `tasks(org_id, due_date)`, `tasks(request_id)`, `task_updates(task_id, created_at desc)`, `task_activity(task_id, created_at desc)`, `task_activity(org_id, created_at desc)`, `requests(org_id, status)`, `requests(org_id, requester_id)`, `projects(org_id, status)`, `goals(org_id, status)`, `invitations(org_id)`, `organization_members(user_id)`, `notifications(user_id, read_at)`.
 
 ## 5. Task behaviour (the heart of the product)
 
-- **Create**: title required; assignee defaults to self; project optional (defaults to the one you came from); everything else optional. One dialog (`N` anywhere) and a `/tasks/[id]` page.
-- **Update progress** (signature; on the task page, in the row menu, from ⌘K): *Latest progress* (required), *Next action* (required unless completing), optional *I'm blocked* (reason required, who/what unblocks optional), *Evidence link*, *Hand over to*, *Mark as* (in progress / awaiting approval / completed). One transaction: `task_updates` row, denormalised `latest_progress`/`next_action` on the task, `task_activity` rows, notices.
+- **Create**: title required; assignees default to you (any number of people and teams, one picker); project optional (defaults to the one you came from); everything else optional. One dialog (`N` anywhere, shown at once while its pickers load) and a `/tasks/[id]` page. Assigning someone else, or a team, notifies each person (`assigned`); the history records the change with names (`assigned`, before → after).
+- **Update progress** (signature; on the task page, in the row menu, from ⌘K): *Latest progress* (required), *Next action* (required unless completing), optional *I'm blocked* (reason required, who/what unblocks optional), *Evidence link*, *Hand over to* (X becomes the only person on it; teams stay), *Mark as* (in progress / awaiting approval / completed). One transaction: `task_updates` row, denormalised `latest_progress`/`next_action` on the task, `task_activity` rows, notices.
 - **Comment**: a `task_updates` row with `kind=comment`; activity `commented`; notifies the assignee (and the creator if different) when the author is someone else.
 - **Transitions** via `lib/tasks/transitions.ts` (pure `planTransition`), same rules as Clarity: blocked needs a reason; awaiting approval needs an approver (defaults to a leader: the task's approver, else the first leader/admin who is not the assignee); approve → completed (`approved` + `completed`), send back → in progress (`sent_back`); completed sets `completed_at`, reopen clears it (`reopened`); rejected needs a reason; first in-progress sets `started_at`.
 - **Who may do what**: approve/send back = the approver or any leader/admin; reject = edit rights; the rest = progress rights (any member on a task in the workspace).
 - **Resume card** first on the task page: next action (large), latest progress, blocker strip, evidence chips, last update by/when, inline Update progress form. Then details (project, goal, assignee, due, priority, created by, request), then comments + history merged newest first, 20 at a time.
-- **Lists**: dense rows (status icon · title · next action · reason · due · priority · assignee) with hover "⋯" (Update progress · Change status · Copy link) and long-press sheet. Filters in the URL: `q`, `status`, `assignee` (me/none/id), `priority`, `project`, `goal`, `due` (overdue/week/none), `closed`, `sort` (smart/due/priority/updated/created). Closed hidden by default.
+- **Lists**: dense rows (status icon · title · next action · reason · due · priority · assignees as an avatar stack plus team chips) with hover "⋯" (Update progress · Change status · Copy link) and long-press sheet. Filters in the URL: `q`, `status`, `assignee` (me/none/id: a person directly or through a team they are in), `team` (id), `priority`, `project`, `goal`, `due` (overdue/week/none), `closed`, `sort` (smart/due/priority/updated/created). Closed hidden by default.
 - **Board** (`/tasks?view=board`): five columns (Not started · In progress · Awaiting approval · Blocked · Completed in the last 14 days), compact cards (title, assignee, due, priority), the same filters, card menu changes status. No drag-and-drop in this phase.
-- **My Work grouping**: *Needs attention* = overdue, due within 2 days, blocked, awaiting my approval, sent back; *Continue working* = my not_started/in_progress ordered overdue → due soonest → priority → sort_rank → updated; *Waiting on others* = my awaiting_approval + blocked; *Recently finished* = my completed in the last 14 days.
+- **My Work grouping**: "my" work is every task I am assigned to directly or through a team I am in (team work carries a "via Frontend" chip). *Needs attention* = overdue, due within 2 days, blocked, awaiting my approval, sent back; *Continue working* = my not_started/in_progress ordered overdue → due soonest → priority → sort_rank → updated; *Waiting on others* = my awaiting_approval + blocked; *Recently finished* = my completed in the last 14 days.
 
 ## 6. Projects and goals
 
 - Project: name required; description, owner, goal, target date optional; status `active | completed | archived`. Project page: header (owner, goal, target, counts), *New task* defaulting to this project, tasks grouped by status, archived shows a banner.
-- Goal: title required; description, owner (defaults to creator), target date, success criteria; status `active | achieved | paused`. Goal page: header with progress (completed / total tasks counting tasks linked directly and through its projects), projects list, tasks list, *New task* defaulting to this goal.
+- Goal: title required; description, owner (defaults to creator), teams (any number; the teams expected to deliver it), target date, success criteria; status `active | achieved | paused`. Goal page: header with progress (completed / total tasks counting tasks linked directly and through its projects), its teams, projects list, tasks list, *New task* defaulting to this goal.
 - Create/edit are dialogs for leaders and admins; members see read-only pages with the task actions they are allowed.
 
 ## 7. Requests
@@ -135,9 +151,9 @@ Indexes: `tasks(org_id, status)`, `tasks(org_id, assignee_id, status)`, `tasks(o
 
 ## 8. Home, Team, Reports, notifications
 
-- **Home**: greeting + workspace; a banner when requests await my decision (leaders); *Pick up where you left off* (My Work's first five); leaders also get count tiles (active · completed 30d · overdue · blocked · awaiting approval), *Needs attention*, *Goals* progress strip, *Recent decisions and activity*; stakeholders get *Your requests*.
-- **Team**: count tiles; *Needs attention*; *Workload* per member (active tasks with titles on hover, blocked and overdue counts, unassigned row); *Goals* progress; *Recent important activity* (completed, blocked/unblocked, approved, sent back, rejected, due changed, request decided; not edits or progress). Range 7 / 30 / 90 days in the URL.
-- **Reports**: `?from&to` (default last 30 days) → summary tiles, *Delivered* (completed tasks with evidence and assignee), *Open commitments* (open with due in range), *Blocked and overdue*, *Contributions per member* (completed, progress updates, blockers raised; counts only), *Goals* (progress). Print styles; `/reports/export?from&to&table=delivered|open|contributions` returns CSV.
+- **Home**: greeting + workspace; *New task* in the header; a banner when requests await my decision (leaders) and one inviting colleagues when an admin is still alone; *Pick up where you left off* (My Work's first five); leaders also get count tiles (active · completed 30d · overdue · blocked · awaiting approval), *Needs attention*, *Workload*, *Goals* progress strip, *Recent decisions and activity*; stakeholders get *Your requests*. Without a workspace: a welcome card with *Create a workspace* and the invitations waiting for that email.
+- **Members** (`/members`): the roster, one row per member with role, teams, open / blocked / overdue direct work (admins manage roles under Settings → Workspace); *Invite people* (admins, leaders); the *Teams* cards (members, open / blocked / overdue, goals) with *New team* (admins, leaders). `/teams/[id]`: the team's members, its open work (rows), the goals it owns, edit and delete.
+- **Reports**: `?from&to` (default last 30 days) → summary tiles, *Delivered* (completed tasks with evidence and assignees), *Open commitments* (open with due in range), *Blocked and overdue*, *Contributions per member* (completed, progress updates, blockers raised; direct assignments; counts only), *Teams* (per team: completed in range, open, blocked, overdue), *Goals* (progress). Print styles; `/reports/export?from&to&table=delivered|open|contributions|teams` returns CSV.
 - **Notifications**: kinds `assigned | handover | approval_requested | approval_decided | blocked | request_decided | commented`; in-app rows now, emails after the response per preferences (`lib/notify.ts`). `/notifications` lists them and marks read; the bell shows unread.
 
 ## 9. Design system
@@ -153,7 +169,7 @@ Follow `apex-ui`. Brand slots (Trackwise keeps its colours):
 | `sidebar-accent` | `oklch(0.95 0.025 262)` | `oklch(0.26 0.04 262)` |
 | `highlight` / `highlight-foreground` | `oklch(0.84 0.11 82)` gold / `oklch(0.32 0.08 70)` | `oklch(0.82 0.12 82)` / `oklch(0.2 0.05 70)` |
 
-Gold appears only as: the goal progress fill, the active-tab underline on the Tasks sub-tabs, the logo mark's dot, and the "highlight" badge for *Needs attention* counts. Everything else is the standard's neutrals and status colours. Nav icons: Home `House`, My Work `ListChecks`, Tasks `SquareCheckBig`, Goals `Target`, Team `Users`, Requests `Inbox`, Projects `FolderKanban`, Reports `BarChart3`, Settings `Settings`, Workspace `Building2`.
+Gold appears only as: the goal progress fill, the active-tab underline on the Tasks sub-tabs, the logo mark's dot, and the "highlight" badge for *Needs attention* counts. Everything else is the standard's neutrals and status colours. Nav icons: Home `House`, My Work `ListChecks`, Tasks `SquareCheckBig`, Goals `Target`, Members `Users`, Requests `Inbox`, Projects `FolderKanban`, Reports `BarChart3`, User settings `Settings`, Workspace `Building2`; a team is `UsersRound`.
 
 ## 10. Test personas and the AI dev loop
 
@@ -168,7 +184,7 @@ Domain `@trackwise.test`. Workspace **"Trackwise Demo"** (slug `trackwise-demo`,
 | `stakeholder` | Taylor Ops `taylor@trackwise.test` | stakeholder |
 | `other` | Riley Other `riley@trackwise.test` | admin of Other Co (+ Casey Other, member) |
 
-Seed (relative to now): 3 goals, 3 projects (one per goal, one completed), ~24 tasks across every status with 1–4 updates each, evidence links, two overdue, two awaiting Morgan's approval, three blocked with reasons, six completed in the last two weeks, a few comments; 6 requests across every state (two from Taylor, one converted). Scripts: `test:seed | test:status | test:tidy | test:clean`; `scripts/test-browser.mjs`; walkthroughs `01-sign-in`, `02-pages`, `03-task-flow`, `04-requests`, `05-roles`; vitest for `lib/permissions`, `lib/tasks/*`, `lib/time`, `lib/mail`, and `lib/dal/isolation.test.ts` behind `TRACKWISE_DB_TESTS=1`. `.claude/settings.json` denies reading `.env*`.
+Seed (relative to now): 3 goals, 3 projects (one per goal, one completed), two teams (**Frontend**: Jordan and Sam; **Platform**: Morgan and Jordan; the onboarding goal belongs to Frontend, incidents to Platform), ~24 tasks across every status with 1–4 updates each (two with two people on them, two assigned to a team), evidence links, two overdue, two awaiting Morgan's approval, three blocked with reasons, six completed in the last two weeks, a few comments; 6 requests across every state (two from Taylor, one converted). Scripts: `test:seed | test:status | test:tidy | test:clean`; `scripts/test-browser.mjs`; walkthroughs `01-sign-in`, `02-pages`, `03-task-flow`, `04-requests`, `05-roles`, `06-workspace`, `07-planning`, `08-teams`; vitest for `lib/permissions`, `lib/tasks/*`, `lib/time`, `lib/mail`, and `lib/dal/isolation.test.ts` behind `TRACKWISE_DB_TESTS=1`. `.claude/settings.json` denies reading `.env*`.
 
 ## 11. Code layout
 
@@ -180,6 +196,7 @@ As `apex-architecture`: `app/` routes with `loading.tsx` per segment; `actions/{
 - **B — Tasks**: list + filters + board, create dialog + `N` + ⌘K, detail with Resume card, Update progress, transitions, comments, history, My Work. Ends with `03-task-flow` green and screenshots of My Work and a task at both sizes and themes.
 - **C — Structure and decisions**: projects, goals, Team, Home, requests with decisions, `02-pages`, `04-requests`, `05-roles`, permission and isolation tests.
 - **D — Value and polish**: reports + CSV + print, notifications + preferences + emails, keyboard shortcuts, AGENTS.md, README, RUNBOOK.
+- **E — Teams and shared assignment** (2026-10-18): the five new tables and the backfill script; assignment as a set through every list, the task page, My Work, requests, reports and notifications; the Members page and team pages; teams on goals; the no-workspace Home and the skippable first step; the instant New task dialog. Ends with `08-teams` green, the isolation tests covering teams, and the whole suite green.
 
 Each step ends with `typecheck`, `lint`, `build`, `test:unit` exit 0; the relevant walkthrough green; screenshots reviewed at both sizes and themes.
 

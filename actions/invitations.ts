@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { db } from "@/db";
+import { db, type Tx } from "@/db";
 import { invitations, organizationMembers, users } from "@/db/schema";
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { isAllowedEmail } from "@/lib/allowed-domains";
@@ -200,32 +200,62 @@ export async function revokeInvitation(input: z.input<typeof idSchema>): Promise
 const tokenSchema = z.string().regex(/^[A-Za-z0-9_-]{20,200}$/, "This invitation link isn't valid.");
 const acceptSchema = z.object({ token: tokenSchema });
 
+type Claimable = typeof invitations.$inferSelect;
+
 /**
- * Joins the invitation's workspace. The signed-in email must match the invited address (case-insensitively):
- * a link alone never grants access to a different account. The invitation is claimed in the same
- * transaction that adds the member, so a double submit cannot join twice.
+ * Claims a locked invitation for the signed-in person: the invited address must be theirs (case-insensitively),
+ * and the invitation unused and unexpired. Claiming and joining happen in the caller's transaction, so a double
+ * submit cannot join twice. Someone who is already a member keeps the role they have.
+ */
+async function claimInvitation(tx: Tx, invite: Claimable | undefined, user: { id: string; email: string }): Promise<{ error: string } | { orgId: string }> {
+  if (!invite) return { error: "This invitation isn't valid. Ask for a new one." };
+  if (invite.acceptedAt !== null) return { error: "This invitation has already been used." };
+  if (invite.expiresAt.getTime() <= Date.now()) return { error: "This invitation has expired. Ask whoever invited you to resend it." };
+  if (invite.email !== user.email.toLowerCase()) return { error: "This invitation was sent to a different email address." };
+  await tx.update(invitations).set({ acceptedAt: new Date() }).where(eq(invitations.id, invite.id));
+  await tx
+    .insert(organizationMembers)
+    .values({ orgId: invite.orgId, userId: user.id, role: invite.role, invitedBy: invite.invitedBy })
+    .onConflictDoNothing();
+  return { orgId: invite.orgId };
+}
+
+/**
+ * Joins the invitation's workspace from its link. The signed-in email must match the invited address: a link
+ * alone never grants access to a different account.
  */
 export async function acceptInvitation(input: z.input<typeof acceptSchema>): Promise<ActionResult> {
   const result = await runAction("invitations.accept", acceptSchema, input, async ({ token }) => {
     const user = await requireUser();
-    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { orgId: string }> => {
+    const outcome = await db.transaction(async (tx) => {
       const [invite] = await tx.select().from(invitations).where(eq(invitations.tokenHash, hashInviteToken(token))).for("update");
-      if (!invite) return { error: "This invitation link isn't valid. Ask for a new one." };
-      if (invite.acceptedAt !== null) return { error: "This invitation has already been used." };
-      if (invite.expiresAt.getTime() <= Date.now()) return { error: "This invitation has expired. Ask whoever invited you to resend it." };
-      if (invite.email !== user.email.toLowerCase()) return { error: "This invitation was sent to a different email address." };
-
-      await tx.update(invitations).set({ acceptedAt: new Date() }).where(eq(invitations.id, invite.id));
-      // Someone who is already a member keeps the role they have.
-      await tx
-        .insert(organizationMembers)
-        .values({ orgId: invite.orgId, userId: user.id, role: invite.role, invitedBy: invite.invitedBy })
-        .onConflictDoNothing();
-      return { orgId: invite.orgId };
+      return claimInvitation(tx, invite, user);
     });
     if ("error" in outcome) return fail(outcome.error);
     await setActiveOrgCookie(outcome.orgId);
     log.info("invitations.accepted", { orgId: outcome.orgId, userId: user.id });
+    return ok(undefined);
+  });
+  if (result.ok) redirect("/home");
+  return result;
+}
+
+const acceptByIdSchema = z.object({ id: z.string().min(1).max(64) });
+
+/**
+ * Joins a workspace from an invitation listed on Home for someone without a workspace. No link is needed: the
+ * invitation is addressed to the signed-in email, which sign-in has already proven; the same checks as the link.
+ */
+export async function acceptListedInvitation(input: z.input<typeof acceptByIdSchema>): Promise<ActionResult> {
+  const result = await runAction("invitations.accept_listed", acceptByIdSchema, input, async ({ id }) => {
+    const user = await requireUser();
+    const outcome = await db.transaction(async (tx) => {
+      const [invite] = await tx.select().from(invitations).where(eq(invitations.id, id)).for("update");
+      return claimInvitation(tx, invite, user);
+    });
+    if ("error" in outcome) return fail(outcome.error);
+    await setActiveOrgCookie(outcome.orgId);
+    log.info("invitations.accepted", { orgId: outcome.orgId, userId: user.id, listed: true });
     return ok(undefined);
   });
   if (result.ok) redirect("/home");

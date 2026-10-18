@@ -1,5 +1,6 @@
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, type TaskActivityKind, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { calendarDaysBetween, dayKey, formatAbsolute, formatDay } from "@/lib/time";
+import { joinNames, listNames, type AssignmentSnapshot } from "./assignees";
 import type { ActivityFeedItem, HistoryItem } from "./types";
 
 // Task events in plain words: one function for a task's own history, one for the Home and Team feeds.
@@ -31,6 +32,30 @@ const statusLabel = (value: unknown) => (typeof value === "string" && value in T
 const priorityLabel = (value: unknown) => (typeof value === "string" && value in TASK_PRIORITY_LABELS ? TASK_PRIORITY_LABELS[value as TaskPriority] : null);
 const dayOrNone = (value: unknown, today: string) => (typeof value === "string" && value !== "" ? formatDay(value, today) : "No date");
 
+/** The names on one side of an assignment row written since assignment became a set; null for a legacy row. */
+function assignmentNames(side: Record<string, unknown>): string[] | null {
+  if (!Array.isArray(side.assignees) && !Array.isArray(side.teams)) return null;
+  return listNames(side as Partial<AssignmentSnapshot>);
+}
+
+/** "assigned it to Jordan Dev and Frontend", "changed who it's assigned to" (before → after), "unassigned it". */
+function assignedPhrase(row: HistoryRow, before: Record<string, unknown>, after: Record<string, unknown>): { phrase: string; change: HistoryItem["change"] } {
+  const to = assignmentNames(after);
+  const from = assignmentNames(before);
+  if (to === null && from === null) {
+    // A row from before assignment became a set: one person on each side.
+    return {
+      phrase: row.after_assignee ? `assigned it to ${row.after_assignee}` : "unassigned it",
+      change: row.before_assignee ? { before: row.before_assignee, after: row.after_assignee ?? "Unassigned" } : null,
+    };
+  }
+  const was = from ?? [];
+  const now = to ?? [];
+  if (now.length === 0) return { phrase: "unassigned it", change: was.length > 0 ? { before: joinNames(was), after: "Unassigned" } : null };
+  if (was.length === 0) return { phrase: `assigned it to ${joinNames(now)}`, change: null };
+  return { phrase: "changed who it's assigned to", change: { before: joinNames(was), after: joinNames(now) } };
+}
+
 function editedPhrase(before: Record<string, unknown>, after: Record<string, unknown>): { phrase: string; change: HistoryItem["change"] } {
   const field = Object.keys(after)[0] ?? Object.keys(before)[0] ?? "details";
   switch (field) {
@@ -58,12 +83,11 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
     case "status_changed":
       return { phrase: "changed the status", change: { before: statusLabel(before.status), after: statusLabel(after.status) } };
     case "assigned":
-      return {
-        phrase: row.after_assignee ? `assigned it to ${row.after_assignee}` : "unassigned it",
-        change: row.before_assignee ? { before: row.before_assignee, after: row.after_assignee ?? "Unassigned" } : null,
-      };
-    case "handed_over":
-      return { phrase: `handed it over to ${row.after_assignee ?? "someone"}`, change: null };
+      return assignedPhrase(row, before, after);
+    case "handed_over": {
+      const to = assignmentNames(after);
+      return { phrase: `handed it over to ${to ? joinNames(to) || "someone" : (row.after_assignee ?? "someone")}`, change: null };
+    }
     case "due_changed":
       return { phrase: "changed the due date", change: { before: dayOrNone(before.dueDate, today), after: dayOrNone(after.dueDate, today) } };
     case "priority_changed":

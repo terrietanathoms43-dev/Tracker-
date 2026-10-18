@@ -14,7 +14,7 @@ import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, TASK_STATUSE
 import { BOARD_STATUSES } from "@/lib/tasks/board";
 import { DEFAULT_FILTERS, isFiltered, SORT_LABELS, tasksHref, type DueFilter, type TaskFilters, type TaskSort, type TaskView } from "@/lib/tasks/filters";
 import { nameOf } from "@/lib/tasks/people";
-import type { Person } from "@/lib/tasks/types";
+import type { Person, TeamRef } from "@/lib/tasks/types";
 
 // The task list's search, filters and sort, all kept in the URL.
 
@@ -25,12 +25,14 @@ export function TaskToolbar({
   filters,
   view,
   people,
+  teams,
   projects,
   goals,
 }: {
   filters: TaskFilters;
   view: TaskView;
   people: Person[];
+  teams: TeamRef[];
   projects: { id: string; name: string }[];
   goals: { id: string; title: string }[];
 }) {
@@ -58,7 +60,7 @@ export function TaskToolbar({
   const statuses: readonly TaskStatus[] = view === "board" ? BOARD_STATUSES : TASK_STATUSES;
   const toggleStatus = (status: TaskStatus) =>
     apply({ status: filters.status.includes(status) ? filters.status.filter((each) => each !== status) : [...filters.status, status] });
-  const active = [filters.status.length > 0, filters.assignee, filters.priority, filters.project, filters.goal, filters.due, filters.closed].filter(Boolean).length;
+  const active = [filters.status.length > 0, filters.assignee, filters.team, filters.priority, filters.project, filters.goal, filters.due, filters.closed].filter(Boolean).length;
   const sortSelect = (className: string, label: string) => (
     <NativeSelect aria-label={label} className={className} value={filters.sort} onChange={(event) => apply({ sort: event.target.value as TaskSort })}>
       {Object.entries(SORT_LABELS).map(([value, text]) => (
@@ -126,6 +128,16 @@ export function TaskToolbar({
               </option>
             ))}
           </NativeSelect>
+          {teams.length > 0 || filters.team ? (
+            <NativeSelect aria-label="Team" className={cn(half, "sm:w-40")} value={filters.team} onChange={(event) => apply({ team: event.target.value })}>
+              <option value="">Any team</option>
+              {teams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </NativeSelect>
+          ) : null}
           <NativeSelect aria-label="Priority" className={cn(half, "sm:w-36")} value={filters.priority} onChange={(event) => apply({ priority: event.target.value as TaskPriority | "" })}>
             <option value="">Any priority</option>
             {[...TASK_PRIORITIES].reverse().map((priority) => (

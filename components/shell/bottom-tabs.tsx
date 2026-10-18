@@ -12,8 +12,8 @@ import { isActive, NAV_ITEMS } from "./nav-config";
 
 const TAB = "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors";
 
-/** Phone navigation: up to four destinations, then More (the rest, Reports, Settings, Workspace, Sign out). */
-export function BottomTabs({ items, canSeeReports }: { items: NavKey[]; canSeeReports: boolean }) {
+/** Phone navigation: up to four destinations, then More (the rest, Reports, User settings, Workspace, Sign out). */
+export function BottomTabs({ items, canSeeReports, hasWorkspace = true }: { items: NavKey[]; canSeeReports: boolean; hasWorkspace?: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [signingOut, startSignOut] = useTransition();
@@ -25,8 +25,12 @@ export function BottomTabs({ items, canSeeReports }: { items: NavKey[]; canSeeRe
   const more = [
     ...rest.map((key) => NAV_ITEMS[key]),
     ...(canSeeReports ? [{ href: "/reports", label: "Reports", icon: BarChart3 }] : []),
-    { href: "/settings", label: "Settings", icon: Settings },
-    { href: "/settings/workspace", label: "Workspace", icon: Building2 },
+    ...(hasWorkspace
+      ? [
+          { href: "/settings", label: "User settings", icon: Settings },
+          { href: "/settings/workspace", label: "Workspace", icon: Building2 },
+        ]
+      : []),
   ];
 
   return (

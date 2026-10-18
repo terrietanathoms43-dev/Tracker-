@@ -25,10 +25,10 @@ function OrgTile({ name, className }: { name: string; className?: string }) {
   );
 }
 
-/** The active workspace, and a menu to switch to another one or create one. */
-export function OrgSwitcher({ orgs, activeOrgId, compact = false }: { orgs: OrgOption[]; activeOrgId: string; compact?: boolean }) {
+/** The active workspace, and a menu to switch to another one or create one. Without any workspace it offers to create the first. */
+export function OrgSwitcher({ orgs, activeOrgId, compact = false }: { orgs: OrgOption[]; activeOrgId: string | null; compact?: boolean }) {
   const [pending, startTransition] = useTransition();
-  const active = orgs.find((org) => org.orgId === activeOrgId) ?? orgs[0];
+  const active = orgs.find((org) => org.orgId === activeOrgId) ?? orgs[0] ?? { orgId: "", name: "No workspace" };
 
   function choose(orgId: string) {
     if (orgId === activeOrgId) return;
@@ -47,13 +47,14 @@ export function OrgSwitcher({ orgs, activeOrgId, compact = false }: { orgs: OrgO
           compact ? "h-9 max-w-[60vw] px-1.5 text-sm" : "h-10 w-full px-2 text-sm",
         )}
       >
-        <OrgTile name={active.name} />
+        <OrgTile name={active.orgId === "" ? "?" : active.name} />
         <span className="truncate">{active.name}</span>
         <ChevronsUpDown className="ml-auto size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <span className="sr-only">Switch workspace</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-60">
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Workspaces</DropdownMenuLabel>
+        {orgs.length === 0 ? <DropdownMenuItem disabled>You&apos;re not in a workspace yet</DropdownMenuItem> : null}
         {orgs.map((org) => (
           <DropdownMenuItem key={org.orgId} onSelect={() => choose(org.orgId)} className="gap-2">
             <OrgTile name={org.name} className="size-5 text-[10px]" />

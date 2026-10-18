@@ -12,6 +12,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import {
@@ -200,6 +201,40 @@ export const invitations = pgTable(
   (t) => [index("invitations_org_idx").on(t.orgId)],
 );
 
+// --- teams (groups of members inside one workspace) ----------------------------------------------
+
+/** A named group of members ("Frontend") that work can be assigned to. Carries no role and changes no visibility. */
+export const teams = pgTable(
+  "teams",
+  {
+    id: id(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("teams_org_idx").on(t.orgId), unique("teams_org_name_unique").on(t.orgId, t.name)],
+);
+
+export const teamMembers = pgTable(
+  "team_members",
+  {
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    addedBy: text("added_by").references(() => users.id, { onDelete: "set null" }),
+    addedAt: tstz("added_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.teamId, t.userId] }), index("team_members_user_idx").on(t.userId)],
+);
+
 // --- goals and projects -------------------------------------------------------
 
 export const goals = pgTable(
@@ -222,6 +257,22 @@ export const goals = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("goals_org_status_idx").on(t.orgId, t.status)],
+);
+
+/** The teams expected to deliver a goal. */
+export const goalTeams = pgTable(
+  "goal_teams",
+  {
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => goals.id, { onDelete: "cascade" }),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    addedBy: text("added_by").references(() => users.id, { onDelete: "set null" }),
+    addedAt: tstz("added_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.goalId, t.teamId] }), index("goal_teams_team_idx").on(t.teamId)],
 );
 
 export const projects = pgTable(
@@ -307,6 +358,11 @@ export const tasks = pgTable(
     requestId: text("request_id").references((): AnyPgColumn => requests.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     description: text("description"),
+    /**
+     * Legacy (docs/PLAN.md, 2026-10-18 log): the single assignee from before assignment became a set. Neither read
+     * nor written any more; `task_assignees` and `task_teams` are the truth. Kept because dropping a column is not
+     * additive; `scripts/backfill-assignees.ts` copies it across once.
+     */
     assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
     createdBy: text("created_by")
       .notNull()
@@ -338,6 +394,38 @@ export const tasks = pgTable(
     index("tasks_org_due_idx").on(t.orgId, t.dueDate),
     index("tasks_request_idx").on(t.requestId),
   ],
+);
+
+/** The people a task is assigned to (any number; equals, no owner). */
+export const taskAssignees = pgTable(
+  "task_assignees",
+  {
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    assignedBy: text("assigned_by").references(() => users.id, { onDelete: "set null" }),
+    assignedAt: tstz("assigned_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.taskId, t.userId] }), index("task_assignees_user_idx").on(t.userId)],
+);
+
+/** The teams a task is assigned to: every member of the team is expected to deliver it. */
+export const taskTeams = pgTable(
+  "task_teams",
+  {
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    assignedBy: text("assigned_by").references(() => users.id, { onDelete: "set null" }),
+    assignedAt: tstz("assigned_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.taskId, t.teamId] }), index("task_teams_team_idx").on(t.teamId)],
 );
 
 /** Append-only: progress updates (the Resume history) and comments share one timeline. */
@@ -445,6 +533,7 @@ export type User = typeof users.$inferSelect;
 export type Organization = typeof organizations.$inferSelect;
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
+export type Team = typeof teams.$inferSelect;
 export type Goal = typeof goals.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type RequestRow = typeof requests.$inferSelect;

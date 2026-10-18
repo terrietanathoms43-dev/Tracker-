@@ -40,9 +40,16 @@ try {
   await jordan.type("#task-next", "Draft the rotation runbook");
   await jordan.click("Create task", { exact: true, wait: 2500 });
   step("creating shows the toast", await jordan.waitFor("Task created."));
-  const [created] = await query("select id, status, assignee_id, next_action from tasks where title = $1", [TITLE]);
+  const [created] = await query(
+    "select t.id, t.status, t.next_action, (select array_agg(ta.user_id) from task_assignees ta where ta.task_id = t.id) as assignees from tasks t where t.title = $1",
+    [TITLE],
+  );
   const [me] = await query("select id from users where email = 'jordan@trackwise.test'");
-  step("the task is Jordan's, not started, with its first next action", created?.status === "not_started" && created?.assignee_id === me?.id && created?.next_action === "Draft the rotation runbook", JSON.stringify(created));
+  step(
+    "the task is Jordan's alone, not started, with its first next action",
+    created?.status === "not_started" && Array.isArray(created?.assignees) && created.assignees.length === 1 && created.assignees[0] === me?.id && created?.next_action === "Draft the rotation runbook",
+    JSON.stringify(created),
+  );
   const taskPath = `/tasks/${created.id}`;
 
   // --- 2. update progress on the task page ------------------------------------------------------------------------

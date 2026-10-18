@@ -11,13 +11,18 @@ export type Viewer = {
   userId: string;
   orgId: string;
   orgRole: OrgRole;
+  /** The teams the viewer is in, in this workspace (lib/viewer.ts), so "assigned through a team" is a pure check. */
+  teamIds: string[];
   timezone: string;
 };
 
 type OrgScoped = { orgId: string };
 
 export type TaskScope = OrgScoped & {
-  assigneeId: string | null;
+  /** The people assigned directly. */
+  assigneeIds: string[];
+  /** The teams assigned; everyone in them counts as assigned. */
+  teamIds: string[];
   createdBy: string;
   approverId?: string | null;
   /** Requester of the request the task was converted from, if any. */
@@ -36,6 +41,11 @@ export const isWorker = (viewer: Viewer) => !isStakeholder(viewer);
 
 // --- tasks ------------------------------------------------------------------
 
+/** Assigned to the task directly, or through one of the viewer's teams. */
+export function isAssigned(viewer: Pick<Viewer, "userId" | "teamIds">, task: Pick<TaskScope, "assigneeIds" | "teamIds">): boolean {
+  return task.assigneeIds.includes(viewer.userId) || task.teamIds.some((teamId) => viewer.teamIds.includes(teamId));
+}
+
 /** Workers read every task; a stakeholder only the tasks created from their own requests. */
 export function canReadTask(viewer: Viewer, task: TaskScope): boolean {
   if (!inOrg(viewer, task)) return false;
@@ -45,10 +55,10 @@ export function canReadTask(viewer: Viewer, task: TaskScope): boolean {
 
 export const canCreateTask = (viewer: Viewer) => isWorker(viewer);
 
-/** Editing fields, assigning and rejecting: leaders, the assignee, or whoever created it. */
+/** Editing fields, assigning and rejecting: leaders, anyone assigned (directly or through a team), or whoever created it. */
 export function canEditTask(viewer: Viewer, task: TaskScope): boolean {
   if (!inOrg(viewer, task) || isStakeholder(viewer)) return false;
-  return isLeader(viewer) || task.assigneeId === viewer.userId || task.createdBy === viewer.userId;
+  return isLeader(viewer) || isAssigned(viewer, task) || task.createdBy === viewer.userId;
 }
 
 /** Progress, comments and quick status changes: any worker in the workspace. */
@@ -81,9 +91,12 @@ export const canSubmitRequest = (viewer: Viewer) => viewer.orgId.length > 0;
 
 export const canDecideRequest = (viewer: Viewer) => isLeader(viewer);
 
-// --- team, reports, administration -----------------------------------------------
+// --- members, teams, reports, administration ------------------------------------
 
-export const canSeeTeam = (viewer: Viewer) => isWorker(viewer);
+/** The Members page (roster and teams) is for the people who do the work; a stakeholder reads the roster under Settings. */
+export const canSeeMembers = (viewer: Viewer) => isWorker(viewer);
+/** Creating teams and changing their names and members: leaders and admins (docs/PLAN.md, 2026-10-18 log). */
+export const canManageTeams = (viewer: Viewer) => isLeader(viewer);
 export const canSeeReports = (viewer: Viewer) => isWorker(viewer);
 export const canManageOrg = (viewer: Viewer) => isAdmin(viewer);
 
@@ -105,10 +118,10 @@ export function canManageInvitation(viewer: Viewer, invitedBy: string | null): b
 
 // --- navigation ---------------------------------------------------------------
 
-export type NavKey = "home" | "my-work" | "tasks" | "goals" | "team" | "requests";
+export type NavKey = "home" | "my-work" | "tasks" | "goals" | "members" | "requests";
 
 /** What the navigation shows: stakeholders get the front door and requests, everyone else the lot. */
 export function navFor(viewer: Pick<Viewer, "orgRole">): NavKey[] {
   if (viewer.orgRole === "stakeholder") return ["home", "requests"];
-  return ["home", "my-work", "tasks", "goals", "team", "requests"];
+  return ["home", "my-work", "tasks", "goals", "members", "requests"];
 }

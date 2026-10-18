@@ -8,16 +8,17 @@ import { createGoal, updateGoal } from "@/actions/goals";
 import { Field } from "@/components/field";
 import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
+import { AssigneePicker } from "@/components/tasks/assignee-picker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-result";
 import { nameOf } from "@/lib/tasks/people";
-import type { Person } from "@/lib/tasks/types";
+import type { Person, TeamRef } from "@/lib/tasks/types";
 
 // New goal and Edit goal: one dialog, one form. Leaders and admins only; the page decides whether to render it.
 
-type Values = { title: string; description: string; successCriteria: string; ownerId: string; targetDate: string };
+type Values = { title: string; description: string; successCriteria: string; ownerId: string; teamIds: string[]; targetDate: string };
 type Errors = Record<string, string[] | undefined>;
 
 /** The goal being edited, as the goal page has it. */
@@ -27,6 +28,7 @@ export type EditableGoal = {
   description: string | null;
   successCriteria: string | null;
   ownerId: string | null;
+  teamIds: string[];
   targetDate: string | null;
 };
 
@@ -37,11 +39,13 @@ export type EditableGoal = {
 export function GoalDialog({
   goal,
   people,
+  teams,
   viewerId,
   variant = "default",
 }: {
   goal?: EditableGoal;
   people: Person[];
+  teams: TeamRef[];
   viewerId: string;
   variant?: "default" | "outline";
 }) {
@@ -52,13 +56,14 @@ export function GoalDialog({
     description: goal?.description ?? "",
     successCriteria: goal?.successCriteria ?? "",
     ownerId: editing ? (goal.ownerId ?? "") : viewerId,
+    teamIds: goal?.teamIds ?? [],
     targetDate: goal?.targetDate ?? "",
   });
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Values>(initial);
   const [errors, setErrors] = useState<Errors>({});
   const [pending, startTransition] = useTransition();
-  const set = (key: keyof Values, value: string) => setValues((current) => ({ ...current, [key]: value }));
+  const set = (key: keyof Values, value: Values[keyof Values]) => setValues((current) => ({ ...current, [key]: value }));
   const error = (key: keyof Values) => errors[key]?.[0];
 
   function show() {
@@ -172,6 +177,19 @@ export function GoalDialog({
                 />
               </Field>
             </div>
+            {teams.length > 0 || values.teamIds.length > 0 ? (
+              <Field id="goal-teams" label="Teams" hint="Optional: the teams expected to deliver it." error={error("teamIds")}>
+                <AssigneePicker
+                  id="goal-teams"
+                  mode="teams"
+                  placeholder="No team"
+                  value={{ assigneeIds: [], teamIds: values.teamIds }}
+                  onChange={(next) => set("teamIds", next.teamIds)}
+                  options={{ people: [], teams, viewerId: null }}
+                  invalid={Boolean(error("teamIds"))}
+                />
+              </Field>
+            ) : null}
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
                 Cancel

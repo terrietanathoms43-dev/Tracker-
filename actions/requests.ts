@@ -8,12 +8,13 @@ import { requestDecisions, requests, tasks, type RequestRow } from "@/db/schema"
 import { GuardError, fail, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { REQUEST_DECISIONS, REQUEST_URGENCIES, TASK_PRIORITIES, type RequestDecision, type RequestStatus } from "@/lib/constants";
 import { recordActivity } from "@/lib/dal/activity";
-import { findMembership } from "@/lib/dal/orgs";
+import { applyAssignment, responsibleIds, snapshotAssignment, validateAssignment } from "@/lib/dal/assignments";
 import { lockRequest } from "@/lib/dal/requests";
 import { log } from "@/lib/log";
 import { dispatch, type Notice } from "@/lib/notify";
 import { canDecideRequest, canSubmitRequest, type Viewer } from "@/lib/permissions";
 import { decisionProblem, DECISION_TOASTS, PRIORITY_FOR_URGENCY, STATUS_AFTER } from "@/lib/requests/decisions";
+import { sameIds } from "@/lib/tasks/assignees";
 import type { ActivityDraft } from "@/lib/tasks/transitions";
 import { dayKey, formatDay } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
@@ -68,7 +69,8 @@ export async function submitRequest(input: z.input<typeof submitSchema>): Promis
 // --- decide -----------------------------------------------------------------------------------------------------
 
 const taskFields = z.object({
-  assigneeId: z.string().max(64).default(""),
+  assigneeIds: z.array(id).max(50).default([]),
+  teamIds: z.array(id).max(50).default([]),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
   dueDate: day,
 });
@@ -97,12 +99,12 @@ const REQUESTER_TITLES: Record<RequestDecision, (title: string) => string> = {
   reopened: (title) => `Your request was reopened: ${title}`,
 };
 
-/** Inserts the task a request becomes, with its "created" (and "assigned") history, in the caller's transaction. */
-async function insertTaskFrom(tx: Tx, viewer: Viewer, request: RequestRow, fields: TaskFields, now: Date): Promise<string> {
-  if (fields.assigneeId) {
-    const membership = await findMembership(tx, viewer.orgId, fields.assigneeId);
-    if (membership === null || membership.role === "stakeholder") throw new GuardError("forbidden", "The assignee must be a member of this workspace.");
-  }
+/**
+ * Inserts the task a request becomes, with its assignment and its "created" (and "assigned") history, in the
+ * caller's transaction. Returns the task's id and everyone who should hear that it is theirs.
+ */
+async function insertTaskFrom(tx: Tx, viewer: Viewer, request: RequestRow, fields: TaskFields, now: Date): Promise<{ taskId: string; responsible: string[] }> {
+  const assignment = await validateAssignment(tx, viewer.orgId, { assigneeIds: fields.assigneeIds, teamIds: fields.teamIds });
   // The request's own words travel with the work, so whoever picks it up knows what was asked and why.
   const description = [request.description, request.desiredOutcome ? `Desired outcome: ${request.desiredOutcome}` : null].filter(Boolean).join("\n\n") || null;
   const [task] = await tx
@@ -112,7 +114,6 @@ async function insertTaskFrom(tx: Tx, viewer: Viewer, request: RequestRow, field
       requestId: request.id,
       title: request.title,
       description,
-      assigneeId: fields.assigneeId || null,
       createdBy: viewer.userId,
       priority: fields.priority,
       status: "not_started",
@@ -121,11 +122,13 @@ async function insertTaskFrom(tx: Tx, viewer: Viewer, request: RequestRow, field
       updatedAt: now,
     })
     .returning({ id: tasks.id });
-  // Same rule as createTask: assigning work to yourself is not news worth a history line.
+  await applyAssignment(tx, task.id, viewer.userId, { assigneeIds: [], teamIds: [] }, assignment, now);
+  // Same rule as createTask: assigning work to yourself alone is not news worth a history line.
   const drafts: ActivityDraft[] = [{ kind: "created", after: { title: request.title, fromRequest: request.id } }];
-  if (fields.assigneeId && fields.assigneeId !== viewer.userId) drafts.push({ kind: "assigned", after: { assigneeId: fields.assigneeId } });
+  const justMe = assignment.teamIds.length === 0 && sameIds(assignment.assigneeIds, [viewer.userId]);
+  if (!justMe && (assignment.assigneeIds.length > 0 || assignment.teamIds.length > 0)) drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
   await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
-  return task.id;
+  return { taskId: task.id, responsible: await responsibleIds(tx, task.id) };
 }
 
 /** The request's decision fields afterwards: who decided, when and why. Reopening clears them; it starts over. */
@@ -143,12 +146,12 @@ function decisionPatch(request: RequestRow, decision: RequestDecision, input: { 
   };
 }
 
-/** Who hears about a decision: the requester, with the reason (and the task, once there is one); the task's new owner. */
+/** Who hears about a decision: the requester, with the reason (and the task, once there is one); everyone the task is assigned to. */
 function decisionNotices(
   viewer: Viewer,
   request: RequestRow,
   outcome: RequestDecision,
-  input: { reason: string; deferUntil: string; today: string; taskId: string | null; assigneeId: string },
+  input: { reason: string; deferUntil: string; today: string; taskId: string | null; responsible: string[] },
 ): Notice[] {
   const base = { orgId: viewer.orgId, actorId: viewer.userId };
   const revisit = outcome === "deferred" && input.deferUntil ? `Revisit on ${formatDay(input.deferUntil, input.today)}.` : null;
@@ -162,8 +165,8 @@ function decisionNotices(
       href: input.taskId ? `/tasks/${input.taskId}` : `/requests/${request.id}`,
     },
   ];
-  if (input.taskId && input.assigneeId) {
-    notices.push({ ...base, recipients: [input.assigneeId], kind: "assigned", title: `New task for you: ${request.title}`, body: request.desiredOutcome, href: `/tasks/${input.taskId}` });
+  if (input.taskId && input.responsible.length > 0) {
+    notices.push({ ...base, recipients: input.responsible, kind: "assigned", title: `New task for you: ${request.title}`, body: request.desiredOutcome, href: `/tasks/${input.taskId}` });
   }
   return notices;
 }
@@ -185,15 +188,16 @@ export async function decideRequest(input: z.input<typeof decideSchema>): Promis
     const createsTask = data.decision === "converted" || (data.decision === "approved" && data.createTask !== undefined);
     const now = new Date();
 
-    const { request, taskId, fields } = await db.transaction(async (tx) => {
+    const { request, taskId, responsible } = await db.transaction(async (tx) => {
       const request = await lockRequest(tx, viewer.orgId, data.requestId);
       if (request === null) throw new GuardError("not_found");
       // A second leader deciding from a stale screen gets told what happened instead of overwriting it.
       const problem = decisionProblem(request.status, data.decision);
       if (problem !== null) throw new GuardError("conflict", problem);
 
-      const fields: TaskFields = data.createTask ?? { assigneeId: "", priority: PRIORITY_FOR_URGENCY[request.urgency], dueDate: "" };
-      const taskId = createsTask ? await insertTaskFrom(tx, viewer, request, fields, now) : null;
+      const fields: TaskFields = data.createTask ?? { assigneeIds: [], teamIds: [], priority: PRIORITY_FOR_URGENCY[request.urgency], dueDate: "" };
+      const made = createsTask ? await insertTaskFrom(tx, viewer, request, fields, now) : null;
+      const taskId = made?.taskId ?? null;
       await tx
         .update(requests)
         .set(decisionPatch(request, data.decision, { reason: data.reason, deferUntil: data.deferUntil, taskId }, viewer.userId, now))
@@ -204,12 +208,12 @@ export async function decideRequest(input: z.input<typeof decideSchema>): Promis
       await tx.insert(requestDecisions).values(
         rows.map((row, index) => ({ requestId: request.id, deciderId: viewer.userId, ...row, createdAt: new Date(now.getTime() + index) })),
       );
-      return { request, taskId, fields };
+      return { request, taskId, responsible: made?.responsible ?? [] };
     });
 
     const outcome: RequestDecision = taskId ? "converted" : data.decision;
     log.info("requests.decided", { orgId: viewer.orgId, requestId: request.id, decision: outcome, taskId, by: viewer.userId });
-    await dispatch(decisionNotices(viewer, request, outcome, { reason: data.reason, deferUntil: data.deferUntil, today, taskId, assigneeId: fields.assigneeId }));
+    await dispatch(decisionNotices(viewer, request, outcome, { reason: data.reason, deferUntil: data.deferUntil, today, taskId, responsible }));
     refresh();
     return ok({ status: STATUS_AFTER[outcome], taskId }, DECISION_TOASTS[outcome]);
   });

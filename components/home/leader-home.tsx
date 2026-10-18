@@ -4,7 +4,8 @@ import { CountTiles } from "@/components/team/count-tiles";
 import { GoalProgressList } from "@/components/team/goal-progress";
 import { Panel, PanelEmpty } from "@/components/team/panel";
 import { WorkloadCompact } from "@/components/team/workload";
-import type { FeedEntry, GoalProgress } from "@/lib/dal/team";
+import type { FeedEntry, GoalProgress } from "@/lib/dal/dashboard";
+import { tasksHref } from "@/lib/tasks/filters";
 import type { TaskCounts, TaskListItem, WorkloadRow } from "@/lib/tasks/types";
 import { PendingBanner } from "./pending-banner";
 import { ResumePanel } from "./resume-panel";
@@ -12,7 +13,7 @@ import { ResumePanel } from "./resume-panel";
 // A leader's or admin's Home (apex-ux flow B): requests waiting on them, the counts, what needs a hand, who holds
 // what, goals and recent decisions; then their own work, as a member's Home shows it.
 
-/** How many attention rows Home shows; the Team page has the rest. */
+/** How many attention rows Home shows; the task list has the rest. */
 const ATTENTION_ROWS = 8;
 
 export type LeaderHomeData = {
@@ -44,7 +45,7 @@ export function LeaderHome({
     <div className="grid gap-6">
       {data.pending > 0 ? <PendingBanner count={data.pending} /> : null}
       <CountTiles counts={data.counts} days={days} />
-      <Panel title="Needs attention" count={data.attention.length} highlight href="/team" hrefLabel="Team">
+      <Panel title="Needs attention" count={data.attention.length} highlight href={tasksHref({})} hrefLabel="All open tasks">
         {data.attention.length === 0 ? (
           <PanelEmpty>Nothing is overdue, blocked, waiting on approval, unassigned or due soon.</PanelEmpty>
         ) : (
@@ -54,7 +55,7 @@ export function LeaderHome({
       {/* Task rows need the full width; the shorter panels sit beside the feed. */}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <div className="grid min-w-0 gap-6">
-          <Panel title="Workload" href="/team" hrefLabel="Team">
+          <Panel title="Workload" href="/members" hrefLabel="Members">
             <WorkloadCompact rows={data.workload} />
           </Panel>
           <Panel title="Goals" href="/goals" hrefLabel="All goals">

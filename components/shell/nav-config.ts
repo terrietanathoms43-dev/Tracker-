@@ -7,12 +7,13 @@ export const NAV_ITEMS: Record<NavKey, { href: string; label: string; icon: Luci
   "my-work": { href: "/my-work", label: "My Work", icon: ListChecks },
   tasks: { href: "/tasks", label: "Tasks", icon: SquareCheckBig },
   goals: { href: "/goals", label: "Goals", icon: Target },
-  team: { href: "/team", label: "Team", icon: Users },
+  members: { href: "/members", label: "Members", icon: Users },
   requests: { href: "/requests", label: "Requests", icon: Inbox },
 };
 
-/** Projects live under Tasks in the navigation, so /projects lights up the Tasks item. */
+/** Projects live under Tasks and team pages under Members, so /projects lights up Tasks and /teams/… lights up Members. */
 export function isActive(pathname: string, href: string): boolean {
   if (pathname === href || pathname.startsWith(`${href}/`)) return true;
-  return href === "/tasks" && (pathname === "/projects" || pathname.startsWith("/projects/"));
+  if (href === "/tasks") return pathname === "/projects" || pathname.startsWith("/projects/");
+  return href === "/members" && pathname.startsWith("/teams/");
 }

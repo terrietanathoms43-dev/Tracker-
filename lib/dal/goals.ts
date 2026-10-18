@@ -1,12 +1,12 @@
 import "server-only";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { goals, users } from "@/db/schema";
+import { goalTeams, goals, users } from "@/db/schema";
 import type { GoalStatus } from "@/lib/constants";
 import { findMembership, listWorkers } from "@/lib/dal/orgs";
 import { progressForGoals } from "@/lib/dal/tasks";
 import { canReadPlanning, type Viewer } from "@/lib/permissions";
-import type { Person, TaskProgress } from "@/lib/tasks/types";
+import type { Person, TaskProgress, TeamRef } from "@/lib/tasks/types";
 
 // Reads of goals: the list with progress, one goal, the pickers that offer them, and the row lock the actions use.
 // Goals are workspace-wide; every worker reads them, stakeholders never do (an empty list, a goal that isn't found).
@@ -20,6 +20,8 @@ export type GoalListItem = {
   status: GoalStatus;
   /** Null only when the owner's account was deleted. */
   owner: Person | null;
+  /** The teams expected to deliver it, by name. */
+  teams: TeamRef[];
   targetDate: string | null;
   /** Tasks linked directly and through the goal's projects (rejected ones never count). */
   progress: TaskProgress;
@@ -40,6 +42,7 @@ const goalColumns = {
   ownerName: users.name,
   ownerEmail: users.email,
   ownerImage: users.image,
+  teams: sql<TeamRef[]>`coalesce((select json_agg(json_build_object('id', tm.id, 'name', tm.name) order by tm.name) from goal_teams gt join teams tm on tm.id = gt.team_id where gt.goal_id = ${goals.id}), '[]'::json)`,
 };
 
 type GoalRow = {
@@ -55,6 +58,7 @@ type GoalRow = {
   ownerName: string | null;
   ownerEmail: string | null;
   ownerImage: string | null;
+  teams: TeamRef[];
 };
 
 const EMPTY_PROGRESS: TaskProgress = { completed: 0, total: 0, blocked: 0, overdue: 0 };
@@ -67,6 +71,7 @@ function toItem(row: GoalRow, progress: Map<string, TaskProgress>): GoalListItem
     successCriteria: row.successCriteria,
     status: row.status,
     owner: row.ownerId ? { id: row.ownerId, name: row.ownerName, email: row.ownerEmail, image: row.ownerImage } : null,
+    teams: row.teams,
     targetDate: row.targetDate,
     progress: progress.get(row.id) ?? EMPTY_PROGRESS,
     createdAt: row.createdAt.toISOString(),
@@ -110,6 +115,32 @@ export async function getGoal(viewer: Viewer, id: string): Promise<GoalListItem 
     .where(and(eq(goals.id, id), eq(goals.orgId, viewer.orgId)));
   if (!row) return null;
   return toItem(row, await progressForGoals(viewer, [row.id]));
+}
+
+/** The active goals a team owns, with their progress (the team page). */
+export async function goalsForTeam(viewer: Viewer, teamId: string): Promise<GoalListItem[]> {
+  if (!canReadPlanning(viewer)) return [];
+  const rows = await db
+    .select(goalColumns)
+    .from(goals)
+    .innerJoin(goalTeams, eq(goalTeams.goalId, goals.id))
+    .leftJoin(users, eq(users.id, goals.ownerId))
+    .where(and(eq(goals.orgId, viewer.orgId), eq(goalTeams.teamId, teamId), sql`${goals.status} <> 'achieved'`))
+    .orderBy(...listOrder);
+  const progress = await progressForGoals(
+    viewer,
+    rows.map((row) => row.id),
+  );
+  return rows.map((row) => toItem(row, progress));
+}
+
+/** Replaces the teams on a goal with `teamIds` (already checked against the workspace), in the caller's transaction. */
+export async function setGoalTeams(tx: Tx, goalId: string, teamIds: string[], actorId: string): Promise<void> {
+  const current = (await tx.select({ teamId: goalTeams.teamId }).from(goalTeams).where(eq(goalTeams.goalId, goalId))).map((row) => row.teamId);
+  const removed = current.filter((id) => !teamIds.includes(id));
+  const added = teamIds.filter((id) => !current.includes(id));
+  if (removed.length > 0) await tx.delete(goalTeams).where(and(eq(goalTeams.goalId, goalId), inArray(goalTeams.teamId, removed)));
+  if (added.length > 0) await tx.insert(goalTeams).values(added.map((teamId) => ({ goalId, teamId, addedBy: actorId })));
 }
 
 /** The goals a project can point at: the active ones, by title. */

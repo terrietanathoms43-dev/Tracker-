@@ -11,10 +11,9 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { UserAvatar } from "@/components/user-avatar";
-import { nameOf } from "@/lib/tasks/people";
 import type { TaskAbilities, TaskDetail } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
+import { AssigneeStack } from "../assignee-stack";
 import { DueLabel } from "../due-label";
 import { FOCUS_UPDATE_EVENT } from "../task-actions";
 
@@ -113,14 +112,14 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
         <StatusBadge status={detail.status} />
-        <span className="inline-flex items-center gap-1.5">
-          {detail.assignee ? (
-            <UserAvatar name={detail.assignee.name} email={detail.assignee.email} image={detail.assignee.image} size="sm" className="size-5" />
-          ) : (
+        {detail.assignees.people.length + detail.assignees.teams.length > 0 ? (
+          <AssigneeStack assignees={detail.assignees} names />
+        ) : (
+          <span className="inline-flex items-center gap-1.5">
             <span className="size-5 rounded-full border border-dashed" aria-hidden />
-          )}
-          <span className="text-foreground">{detail.assignee ? nameOf(detail.assignee) : "Unassigned"}</span>
-        </span>
+            <span className="text-foreground">Unassigned</span>
+          </span>
+        )}
         {detail.dueDate ? (
           <span>
             Due <DueLabel due={detail.dueDate} today={today} status={detail.status} />

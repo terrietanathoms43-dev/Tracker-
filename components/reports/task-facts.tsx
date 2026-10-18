@@ -6,13 +6,13 @@ import { DueLabel } from "@/components/tasks/due-label";
 import { PanelEmpty } from "@/components/team/panel";
 import { TASK_STATUS_LABELS } from "@/lib/constants";
 import type { ReportTask } from "@/lib/reports/data";
-import { nameOf } from "@/lib/tasks/people";
+import { describeAssignees } from "@/lib/tasks/assignees";
 import { formatDay } from "@/lib/time";
 
 // The report's task sections as rows of facts: who, when, what was said, and the evidence. On paper the links
 // lose their colour and evidence chips print their address.
 
-const assigneeOf = (task: ReportTask) => nameOf(task.assignee, "Unassigned");
+const assigneeOf = (task: ReportTask) => describeAssignees(task.assignees);
 
 function hostOf(url: string): string {
   try {

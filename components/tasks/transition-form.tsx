@@ -72,7 +72,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
           <NativeSelect id="transition-approver" value={approverId} onChange={(event) => setApproverId(event.target.value)}>
             <option value="">Choose an approver…</option>
             {people
-              .filter((person) => person.id !== task.assigneeId)
+              .filter((person) => !task.assigneeIds.includes(person.id))
               .map((person) => (
                 <option key={person.id} value={person.id}>
                   {nameOf(person)}

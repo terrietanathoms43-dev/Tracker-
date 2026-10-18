@@ -43,7 +43,11 @@ export function WorkspaceStep({ zones, defaultTimezone, mode }: { zones: string[
     >
       <Heading
         title={mode === "first" ? "Create your workspace" : "Create another workspace"}
-        text="A workspace holds your team's tasks, goals and requests. You'll invite people next."
+        text={
+          mode === "first"
+            ? "A workspace holds your team's tasks, goals and requests. You'll invite people next. Joining a team that already has one? Skip this and wait for their invitation."
+            : "A workspace holds your team's tasks, goals and requests. You'll invite people next."
+        }
       />
       <Field id="workspace-name" label="Workspace name" hint="Your company or team, e.g. Apex Engineering." error={errors.name?.[0]}>
         <Input
@@ -69,9 +73,16 @@ export function WorkspaceStep({ zones, defaultTimezone, mode }: { zones: string[
           aria-invalid={errors.timezone ? true : undefined}
         />
       </Field>
-      <Button type="submit" className="h-10" disabled={pending || name.trim().length < 2}>
-        {pending ? "Creating…" : "Create workspace"}
-      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" className="h-10 flex-1" disabled={pending || name.trim().length < 2}>
+          {pending ? "Creating…" : "Create workspace"}
+        </Button>
+        {mode === "first" ? (
+          <Button asChild variant="ghost" className="h-10">
+            <Link href="/home">Skip for now</Link>
+          </Button>
+        ) : null}
+      </div>
     </form>
   );
 }

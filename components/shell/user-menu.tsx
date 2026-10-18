@@ -27,8 +27,11 @@ const THEMES = [
   { value: "system", label: "System", icon: Monitor },
 ] as const;
 
-/** Settings, workspace, reports, theme and sign out. `variant="avatar"` is the phone top bar's compact trigger. */
-export function UserMenu({ user, variant = "full", canSeeReports }: { user: MenuUser; variant?: "full" | "avatar"; canSeeReports: boolean }) {
+/**
+ * User settings, workspace, reports, theme and sign out. `variant="avatar"` is the phone top bar's compact
+ * trigger; without a workspace only the theme and sign out remain.
+ */
+export function UserMenu({ user, variant = "full", canSeeReports, hasWorkspace = true }: { user: MenuUser; variant?: "full" | "avatar"; canSeeReports: boolean; hasWorkspace?: boolean }) {
   const { theme, setTheme } = useTheme();
   const [signingOut, startSignOut] = useTransition();
 
@@ -70,18 +73,22 @@ export function UserMenu({ user, variant = "full", canSeeReports }: { user: Menu
             </Link>
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuItem asChild>
-          <Link href="/settings">
-            <Settings className="size-4" aria-hidden />
-            Settings
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/settings/workspace">
-            <Building2 className="size-4" aria-hidden />
-            Workspace
-          </Link>
-        </DropdownMenuItem>
+        {hasWorkspace ? (
+          <>
+            <DropdownMenuItem asChild>
+              <Link href="/settings">
+                <Settings className="size-4" aria-hidden />
+                User settings
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/settings/workspace">
+                <Building2 className="size-4" aria-hidden />
+                Workspace
+              </Link>
+            </DropdownMenuItem>
+          </>
+        ) : null}
         <DropdownMenuItem onSelect={openShortcutsHelp}>
           <Keyboard className="size-4" aria-hidden />
           Keyboard shortcuts

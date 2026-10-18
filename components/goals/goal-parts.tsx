@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import { CheckCircle2, CirclePause } from "lucide-react";
 import Link from "next/link";
+import { TeamChip } from "@/components/tasks/assignee-stack";
 import { UserAvatar } from "@/components/user-avatar";
 import { GOAL_STATUS_LABELS, type GoalStatus } from "@/lib/constants";
 import type { GoalListItem } from "@/lib/dal/goals";
@@ -75,6 +76,9 @@ export function GoalCard({ goal, today }: { goal: GoalListItem; today: string })
             <TargetLabel day={goal.targetDate} today={today} active={goal.status === "active"} />
           </>
         ) : null}
+        {goal.teams.map((team) => (
+          <TeamChip key={team.id} name={team.name} className="relative" />
+        ))}
       </div>
       <ProgressBar {...goal.progress} className="mt-auto pt-4" />
     </li>

@@ -1,9 +1,19 @@
 import "server-only";
 import { GuardError } from "@/lib/action-result";
-import { activeGoalProgress, type GoalProgress } from "@/lib/dal/team";
+import { activeGoalProgress, type GoalProgress } from "@/lib/dal/dashboard";
 import { canSeeReports, type Viewer } from "@/lib/permissions";
-import { contributionsTable, deliveredTable, openTable, toCsv } from "./csv";
-import { blockedOrOverdue, contributionCounts, deliveredTasks, openCommitments, progressUpdateCount, type ContributionRow, type ReportTask } from "./data";
+import { contributionsTable, deliveredTable, openTable, teamsTable, toCsv } from "./csv";
+import {
+  blockedOrOverdue,
+  contributionCounts,
+  deliveredTasks,
+  openCommitments,
+  progressUpdateCount,
+  teamCounts,
+  type ContributionRow,
+  type ReportTask,
+  type TeamReportRow,
+} from "./data";
 import type { ReportTable } from "./params";
 import type { ReportRange } from "./range";
 
@@ -26,6 +36,7 @@ export type Report = {
   open: ReportTask[];
   blockedOverdue: ReportTask[];
   contributions: ContributionRow[];
+  teams: TeamReportRow[];
   goals: GoalProgress[];
   /** Tasks under each goal completed in the range, by goal id. */
   goalsDeliveredInRange: Record<string, number>;
@@ -39,11 +50,12 @@ function assertCanSeeReports(viewer: Viewer): void {
 /** Everything /reports prints for a range. Blocked and overdue are as of `today`, whatever the range. */
 export async function buildReport(viewer: Viewer, range: ReportRange, today: string): Promise<Report> {
   assertCanSeeReports(viewer);
-  const [delivered, open, blockedOverdue, contributions, goals, progressUpdates] = await Promise.all([
+  const [delivered, open, blockedOverdue, contributions, teams, goals, progressUpdates] = await Promise.all([
     deliveredTasks(viewer, range),
     openCommitments(viewer, range, today),
     blockedOrOverdue(viewer, today),
     contributionCounts(viewer, range),
+    teamCounts(viewer, range, today),
     activeGoalProgress(viewer),
     progressUpdateCount(viewer, range),
   ]);
@@ -65,6 +77,7 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
     open,
     blockedOverdue,
     contributions,
+    teams,
     goals,
     goalsDeliveredInRange,
   };
@@ -80,5 +93,7 @@ export async function buildCsv(viewer: Viewer, table: ReportTable, range: Report
       return toCsv(openTable(await openCommitments(viewer, range, today), today));
     case "contributions":
       return toCsv(contributionsTable(await contributionCounts(viewer, range)));
+    case "teams":
+      return toCsv(teamsTable(await teamCounts(viewer, range, today)));
   }
 }

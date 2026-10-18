@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { GoalDialog } from "@/components/goals/goal-dialog";
 import { GoalStatusBadge, OwnerLabel, TargetLabel } from "@/components/goals/goal-parts";
@@ -7,10 +8,12 @@ import { GoalStatusActions } from "@/components/goals/goal-status-actions";
 import { PlanningHeader, PlanningSummary } from "@/components/goals/planning-header";
 import { ProjectDialog } from "@/components/projects/project-dialog";
 import { PlanningTasks } from "@/components/projects/task-groups";
+import { TeamChip } from "@/components/tasks/assignee-stack";
 import { NewTaskButton } from "@/components/tasks/new-task-button";
 import { activeGoalOptions, getGoal, ownerOptions } from "@/lib/dal/goals";
 import { projectsForGoal } from "@/lib/dal/projects";
 import { tasksForGoal } from "@/lib/dal/tasks";
+import { teamOptions } from "@/lib/dal/teams";
 import { canCreateTask, canManagePlanning } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
@@ -28,12 +31,13 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
   const viewer = await requireViewer();
   const manage = canManagePlanning(viewer);
   // One round trip; nothing renders unless getGoal finds the goal in this workspace for a viewer who may read it.
-  const [goal, projects, tasks, people, goalOptions] = await Promise.all([
+  const [goal, projects, tasks, people, goalOptions, teams] = await Promise.all([
     getGoal(viewer, id),
     projectsForGoal(viewer, id),
     tasksForGoal(viewer, id),
     manage ? ownerOptions(viewer) : [],
     manage ? activeGoalOptions(viewer) : [],
+    manage ? teamOptions(viewer) : [],
   ]);
   if (goal === null) notFound();
   const today = dayKey(new Date(), viewer.timezone);
@@ -48,8 +52,17 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
           manage ? (
             <>
               <GoalDialog
-                goal={{ id: goal.id, title: goal.title, description: goal.description, successCriteria: goal.successCriteria, ownerId: goal.owner?.id ?? null, targetDate: goal.targetDate }}
+                goal={{
+                  id: goal.id,
+                  title: goal.title,
+                  description: goal.description,
+                  successCriteria: goal.successCriteria,
+                  ownerId: goal.owner?.id ?? null,
+                  teamIds: goal.teams.map((team) => team.id),
+                  targetDate: goal.targetDate,
+                }}
                 people={people}
+                teams={teams}
                 viewerId={viewer.userId}
               />
               <GoalStatusActions goalId={goal.id} status={goal.status} />
@@ -61,6 +74,11 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
             <GoalStatusBadge status={goal.status} />
             <OwnerLabel owner={goal.owner} className="text-foreground" />
             {goal.targetDate ? <TargetLabel day={goal.targetDate} today={today} active={active} /> : null}
+            {goal.teams.map((team) => (
+              <Link key={team.id} href={`/teams/${team.id}`} className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <TeamChip name={team.name} />
+              </Link>
+            ))}
           </>
         }
       />

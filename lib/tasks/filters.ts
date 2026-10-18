@@ -23,8 +23,10 @@ export type TaskView = (typeof TASK_VIEWS)[number];
 export type TaskFilters = {
   q: string;
   status: TaskStatus[];
-  /** "" anyone · "me" · "none" (unassigned) · a user id */
+  /** "" anyone · "me" · "none" (unassigned) · a user id (assigned directly, or through a team they are in) */
   assignee: string;
+  /** "" any · a team id: tasks the team is assigned to */
+  team: string;
   priority: TaskPriority | "";
   project: string;
   /** Tasks linked to the goal directly or through one of its projects. */
@@ -39,6 +41,7 @@ export const DEFAULT_FILTERS: TaskFilters = {
   q: "",
   status: [],
   assignee: "",
+  team: "",
   priority: "",
   project: "",
   goal: "",
@@ -69,6 +72,7 @@ export function parseFilters(raw: Raw): TaskFilters {
     q: one(raw, "q").slice(0, 100),
     status: [...new Set(statuses)],
     assignee: idLike(one(raw, "assignee")),
+    team: idLike(one(raw, "team")),
     priority: pick(one(raw, "priority"), TASK_PRIORITIES),
     project: idLike(one(raw, "project")),
     goal: idLike(one(raw, "goal")),
@@ -89,6 +93,7 @@ export function filtersToParams(filters: TaskFilters): URLSearchParams {
   if (filters.q) params.set("q", filters.q);
   if (filters.status.length > 0) params.set("status", filters.status.join(","));
   if (filters.assignee) params.set("assignee", filters.assignee);
+  if (filters.team) params.set("team", filters.team);
   if (filters.priority) params.set("priority", filters.priority);
   if (filters.project) params.set("project", filters.project);
   if (filters.goal) params.set("goal", filters.goal);

@@ -3,7 +3,8 @@
  *
  * Every time is "days ago" (or "due in days") relative to the moment of seeding, so the dashboards always look
  * alive: in Trackwise Demo two tasks are overdue, two await Morgan's approval, three are blocked, six finished in
- * the last two weeks, two were rejected, two are unassigned, and the six requests cover every state.
+ * the last two weeks, two were rejected, one is unassigned, two have two people on them, two belong to a team,
+ * and the six requests cover every state. Two teams exist: Frontend (Jordan, Sam) and Platform (Morgan, Jordan).
  *
  * How a task spec becomes rows (taskRows in test-accounts.ts):
  *   - `updates` are progress updates, oldest first; the newest one's body / next action is copied onto the task
@@ -28,11 +29,22 @@ export const PEOPLE: Record<Person, { email: string; name: string }> = {
 
 // --- shapes ---------------------------------------------------------------------
 
+/** A team: a named group of members (by key) that tasks and goals can be assigned to. */
+export type SeedTeam = {
+  key: string;
+  name: string;
+  description: string;
+  members: Person[];
+  createdDaysAgo: number;
+};
+
 export type SeedGoal = {
   key: string;
   title: string;
   description: string;
   owner: Person;
+  /** The teams expected to deliver it, by key. */
+  teams?: string[];
   createdBy: Person;
   status: "active" | "achieved" | "paused";
   targetInDays: number;
@@ -84,7 +96,10 @@ export type SeedTask = {
   goal?: string;
   /** The request this task was converted from (the request's converted_task_id points back). */
   request?: string;
-  assignee: Person | null;
+  /** The people on it (any number; empty with no teams = unassigned). */
+  assignees: Person[];
+  /** The teams on it, by key: everyone in them sees it in My Work. */
+  teams?: string[];
   createdBy: Person;
   status: TaskStatus;
   priority: TaskPriority;
@@ -119,6 +134,7 @@ export type OrgSeed = {
   createdBy: Person;
   members: { person: Person; role: OrgRole }[];
   joinedDaysAgo: number;
+  teams: SeedTeam[];
   goals: SeedGoal[];
   projects: SeedProject[];
   requests: SeedRequest[];
@@ -131,12 +147,18 @@ const GRAFANA = "https://grafana.example.com/d";
 
 // --- Trackwise Demo ------------------------------------------------------------------
 
+const DEMO_TEAMS: SeedTeam[] = [
+  { key: "frontend", name: "Frontend", description: "The web app, onboarding and everything a customer clicks.", members: ["member", "member2"], createdDaysAgo: 26 },
+  { key: "platform", name: "Platform", description: "Paging, runbooks, dashboards and the infrastructure under the app.", members: ["leader", "member"], createdDaysAgo: 26 },
+];
+
 const DEMO_GOALS: SeedGoal[] = [
   {
     key: "onboarding",
     title: "Ship the self-serve onboarding",
     description: "New teams should get from sign-up to their first tracked task without a call with us.",
     owner: "leader",
+    teams: ["frontend"],
     createdBy: "admin",
     status: "active",
     targetInDays: 45,
@@ -148,6 +170,7 @@ const DEMO_GOALS: SeedGoal[] = [
     title: "Cut incident response time in half",
     description: "Median time from page to mitigation is 48 minutes; most of it goes on finding the right dashboard and person.",
     owner: "admin",
+    teams: ["platform"],
     createdBy: "admin",
     status: "active",
     targetInDays: 70,
@@ -290,7 +313,7 @@ const DEMO_TASKS: SeedTask[] = [
     description: "From Taylor's request: the timeline, the incident header and the digest email all print UTC.",
     project: "incidents",
     request: "timezones",
-    assignee: "member",
+    assignees: ["member"],
     createdBy: "leader",
     status: "in_progress",
     priority: "high",
@@ -307,7 +330,7 @@ const DEMO_TASKS: SeedTask[] = [
     title: "Rate-limit the public sign-up endpoint",
     description: "A bot created 400 workspaces in an hour last week.",
     project: "onboarding",
-    assignee: "member2",
+    assignees: ["member2"],
     createdBy: "leader",
     status: "in_progress",
     priority: "high",
@@ -324,7 +347,7 @@ const DEMO_TASKS: SeedTask[] = [
     title: "Route pages to the secondary on-call after 10 minutes",
     description: "Two incidents last month sat unacknowledged for over 20 minutes.",
     project: "incidents",
-    assignee: "member",
+    assignees: ["member"],
     createdBy: "leader",
     status: "in_progress",
     priority: "urgent",
@@ -345,7 +368,8 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Build the first-task checklist on the empty home screen",
     project: "onboarding",
-    assignee: "member2",
+    assignees: ["member2"],
+    teams: ["frontend"],
     createdBy: "leader",
     status: "in_progress",
     priority: "normal",
@@ -360,7 +384,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Add a runbook link to every alert",
     project: "incidents",
-    assignee: "member",
+    assignees: ["member", "member2"],
     createdBy: "member",
     status: "in_progress",
     priority: "normal",
@@ -373,7 +397,7 @@ const DEMO_TASKS: SeedTask[] = [
   },
   {
     title: "Rotate the staging database credentials",
-    assignee: "leader",
+    assignees: ["leader", "member2"],
     createdBy: "leader",
     status: "in_progress",
     priority: "normal",
@@ -386,7 +410,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Draft the incident review template",
     goal: "incidents",
-    assignee: "leader",
+    assignees: ["leader"],
     createdBy: "leader",
     status: "in_progress",
     priority: "low",
@@ -396,11 +420,11 @@ const DEMO_TASKS: SeedTask[] = [
   },
 
   // --- not started (two unassigned) ---------------------------------------------------
-  { title: "Archive unused staging buckets", assignee: "member2", createdBy: "leader", status: "not_started", priority: "low", createdDaysAgo: 4, dueInDays: 14, updates: [] },
+  { title: "Archive unused staging buckets", assignees: ["member2"], createdBy: "leader", status: "not_started", priority: "low", createdDaysAgo: 4, dueInDays: 14, updates: [] },
   {
     title: "Add an audit log for role changes",
     description: "Admins want to see who changed whose role, and when.",
-    assignee: "member",
+    assignees: ["member"],
     createdBy: "admin",
     status: "not_started",
     priority: "normal",
@@ -408,15 +432,15 @@ const DEMO_TASKS: SeedTask[] = [
     dueInDays: 2,
     updates: [],
   },
-  { title: "Evaluate a hosted status page provider", goal: "incidents", assignee: null, createdBy: "leader", status: "not_started", priority: "normal", createdDaysAgo: 1, dueInDays: null, updates: [] },
-  { title: "Translate the invitation email into Spanish", project: "onboarding", assignee: null, createdBy: "admin", status: "not_started", priority: "low", createdDaysAgo: 2, dueInDays: 12, updates: [] },
+  { title: "Evaluate a hosted status page provider", goal: "incidents", assignees: [], teams: ["platform"], createdBy: "leader", status: "not_started", priority: "normal", createdDaysAgo: 1, dueInDays: null, updates: [] },
+  { title: "Translate the invitation email into Spanish", project: "onboarding", assignees: [], createdBy: "admin", status: "not_started", priority: "low", createdDaysAgo: 2, dueInDays: 12, updates: [] },
 
   // --- blocked ------------------------------------------------------------------------
   {
     key: "sending-domain",
     title: "Verify the sending domain for invitation emails",
     project: "onboarding",
-    assignee: "member",
+    assignees: ["member"],
     createdBy: "leader",
     status: "blocked",
     priority: "high",
@@ -437,7 +461,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Upgrade the paging integration to the v2 API",
     project: "incidents",
-    assignee: "member2",
+    assignees: ["member2"],
     createdBy: "leader",
     status: "blocked",
     priority: "normal",
@@ -460,7 +484,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Send a welcome email after workspace creation",
     project: "onboarding",
-    assignee: "member",
+    assignees: ["member"],
     createdBy: "member",
     status: "blocked",
     priority: "high",
@@ -483,7 +507,7 @@ const DEMO_TASKS: SeedTask[] = [
     key: "invite-links",
     title: "Invite teammates by link from onboarding",
     project: "onboarding",
-    assignee: "member",
+    assignees: ["member"],
     createdBy: "leader",
     status: "awaiting_approval",
     priority: "high",
@@ -504,7 +528,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     key: "flags",
     title: "Clean up feature flags older than 90 days",
-    assignee: "member2",
+    assignees: ["member2"],
     createdBy: "member2",
     status: "awaiting_approval",
     priority: "low",
@@ -519,7 +543,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Add a second paging provider as a fallback",
     project: "incidents",
-    assignee: "member2",
+    assignees: ["member2"],
     createdBy: "member2",
     status: "rejected",
     priority: "normal",
@@ -531,7 +555,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Port the dunning emails to the old template engine",
     project: "billing",
-    assignee: "member",
+    assignees: ["member"],
     createdBy: "admin",
     status: "rejected",
     priority: "normal",
@@ -545,7 +569,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Move the invoice job to the queue workers",
     project: "billing",
-    assignee: "member2",
+    assignees: ["member2"],
     createdBy: "leader",
     status: "completed",
     priority: "normal",
@@ -562,7 +586,7 @@ const DEMO_TASKS: SeedTask[] = [
     key: "dunning",
     title: "Move the dunning emails to the new mailer",
     project: "billing",
-    assignee: "member",
+    assignees: ["member"],
     createdBy: "leader",
     status: "completed",
     priority: "high",
@@ -579,7 +603,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Shut down the legacy billing VM",
     project: "billing",
-    assignee: "member2",
+    assignees: ["member2"],
     createdBy: "admin",
     status: "completed",
     priority: "normal",
@@ -591,7 +615,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Fix the flaky sign-up integration test",
     project: "onboarding",
-    assignee: "member",
+    assignees: ["member"],
     createdBy: "member",
     status: "completed",
     priority: "normal",
@@ -604,7 +628,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Add p95 latency panels to the incident dashboard",
     project: "incidents",
-    assignee: "member2",
+    assignees: ["member2"],
     createdBy: "member",
     status: "completed",
     priority: "normal",
@@ -620,7 +644,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Onboard Sam to the on-call rotation",
     goal: "incidents",
-    assignee: "leader",
+    assignees: ["leader"],
     createdBy: "leader",
     status: "completed",
     priority: "low",
@@ -697,6 +721,7 @@ export const DEMO: OrgSeed = {
     { person: "stakeholder", role: "stakeholder" },
   ],
   joinedDaysAgo: 30,
+  teams: DEMO_TEAMS,
   goals: DEMO_GOALS,
   projects: DEMO_PROJECTS,
   requests: DEMO_REQUESTS,
@@ -714,6 +739,7 @@ export const OTHER: OrgSeed = {
     { person: "casey", role: "member" },
   ],
   joinedDaysAgo: 20,
+  teams: [],
   goals: [
     {
       key: "support",
@@ -757,7 +783,7 @@ export const OTHER: OrgSeed = {
     {
       title: "Reply to the Acme escalation",
       project: "help-center",
-      assignee: "casey",
+      assignees: ["casey"],
       createdBy: "other",
       status: "in_progress",
       priority: "high",
@@ -765,11 +791,11 @@ export const OTHER: OrgSeed = {
       dueInDays: 1,
       updates: [{ daysAgo: 1, author: "casey", body: "Drafted the reply with the full timeline.", next: "Send it after Riley reviews it." }],
     },
-    { title: "Refresh the help-center reply macros", project: "help-center", assignee: "other", createdBy: "other", status: "not_started", priority: "normal", createdDaysAgo: 3, dueInDays: 7, updates: [] },
+    { title: "Refresh the help-center reply macros", project: "help-center", assignees: ["other"], createdBy: "other", status: "not_started", priority: "normal", createdDaysAgo: 3, dueInDays: 7, updates: [] },
     {
       title: "Publish the holiday support hours",
       project: "help-center",
-      assignee: "casey",
+      assignees: ["casey"],
       createdBy: "other",
       status: "completed",
       priority: "normal",

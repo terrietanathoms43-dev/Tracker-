@@ -34,7 +34,7 @@ export function InlineUpdate({ context, fresh }: { context: UpdateContext; fresh
           <span className="hidden text-xs text-muted-foreground sm:inline">Press U from anywhere on this page.</span>
         )}
       </div>
-      <UpdateProgressForm key={`${context.task.status}-${context.task.assigneeId ?? ""}-${context.task.nextAction ?? ""}`} context={context} progressRef={progressRef} />
+      <UpdateProgressForm key={`${context.task.status}-${context.task.assigneeIds.join(",")}-${context.task.nextAction ?? ""}`} context={context} progressRef={progressRef} />
     </div>
   );
 }

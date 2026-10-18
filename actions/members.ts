@@ -1,12 +1,12 @@
 "use server";
 
-import { and, eq, notInArray } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db, type Tx } from "@/db";
-import { organizationMembers, taskActivity, tasks } from "@/db/schema";
+import { organizationMembers, taskActivity, taskAssignees, tasks, teamMembers, teams, users } from "@/db/schema";
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { CLOSED_STATUSES, ORG_COOKIE, ORG_ROLE_LABELS, ORG_ROLES } from "@/lib/constants";
 import { findMembership, lockAdminIds } from "@/lib/dal/orgs";
@@ -20,22 +20,29 @@ import { requireViewerContext } from "@/lib/viewer";
 const LAST_ADMIN = "A workspace needs at least one admin. Make someone else an admin first.";
 
 /**
- * Unassigns a departing person's open tasks in this workspace and records each change in the task's history
- * (kind "assigned", before → after), so the team sees the work is free to pick up. Closed tasks and all
- * past updates keep their name.
+ * Takes a departing person off the open tasks they are assigned to in this workspace, and off its teams, and
+ * records each task change in its history (kind "assigned", before → after, with the note), so the team sees the
+ * work is free to pick up. Closed tasks and all past updates keep their name.
  */
 async function unassignOpenTasks(tx: Tx, orgId: string, userId: string, actorId: string, note: string): Promise<number> {
-  const freed = await tx
-    .update(tasks)
-    .set({ assigneeId: null, updatedAt: new Date() })
-    .where(and(eq(tasks.orgId, orgId), eq(tasks.assigneeId, userId), notInArray(tasks.status, [...CLOSED_STATUSES])))
-    .returning({ id: tasks.id });
-  if (freed.length > 0) {
+  const now = new Date();
+  const [person] = await tx.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, userId));
+  const name = person?.name ?? person?.email ?? "Someone";
+  const open = await tx
+    .select({ id: tasks.id })
+    .from(taskAssignees)
+    .innerJoin(tasks, eq(tasks.id, taskAssignees.taskId))
+    .where(and(eq(taskAssignees.userId, userId), eq(tasks.orgId, orgId), notInArray(tasks.status, [...CLOSED_STATUSES])));
+  const ids = open.map((row) => row.id);
+  if (ids.length > 0) {
+    await tx.delete(taskAssignees).where(and(eq(taskAssignees.userId, userId), inArray(taskAssignees.taskId, ids)));
+    await tx.update(tasks).set({ updatedAt: now }).where(inArray(tasks.id, ids));
     await tx.insert(taskActivity).values(
-      freed.map(({ id }) => ({ orgId, taskId: id, actorId, kind: "assigned" as const, before: { assigneeId: userId }, after: { assigneeId: null }, note })),
+      ids.map((taskId) => ({ orgId, taskId, actorId, kind: "assigned" as const, before: { assignees: [{ id: userId, name }] }, after: { assignees: [] }, note, createdAt: now })),
     );
   }
-  return freed.length;
+  await tx.delete(teamMembers).where(and(eq(teamMembers.userId, userId), inArray(teamMembers.teamId, sql`(select ${teams.id} from ${teams} where ${teams.orgId} = ${orgId})`)));
+  return ids.length;
 }
 
 const roleSchema = z.object({ userId: z.string().min(1).max(64), role: z.enum(ORG_ROLES) });

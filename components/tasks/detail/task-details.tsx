@@ -3,12 +3,12 @@ import type { ReactNode } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "@/components/status-badge";
-import { UserAvatar } from "@/components/user-avatar";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS } from "@/lib/constants";
 import { nameOf } from "@/lib/tasks/people";
-import type { Person, TaskAbilities, TaskDetail } from "@/lib/tasks/types";
+import type { Person, TaskAbilities, TaskDetail, TeamRef } from "@/lib/tasks/types";
+import { AssigneeStack } from "../assignee-stack";
 import { DueLabel } from "../due-label";
-import { DescriptionEditor, DueEditor, PickEditor, StatusEditor } from "./detail-editors";
+import { AssigneesEditor, DescriptionEditor, DueEditor, PickEditor, StatusEditor } from "./detail-editors";
 
 // The task page's Details card: description and the facts that rarely change.
 
@@ -29,7 +29,7 @@ function withCurrent<T extends { id: string }>(options: T[], current: T | null):
 }
 
 /**
- * The facts that rarely change, below the Resume card: description, status, assignee, due, priority, project,
+ * The facts that rarely change, below the Resume card: description, status, assignees, due, priority, project,
  * goal, approver, the request it came from, and who created it when. Editors get inline controls; everyone else
  * reads text.
  */
@@ -37,6 +37,8 @@ export function TaskDetails({
   detail,
   abilities,
   people,
+  teams,
+  viewerId,
   projects,
   goals,
   today,
@@ -46,6 +48,8 @@ export function TaskDetails({
   detail: TaskDetail;
   abilities: TaskAbilities;
   people: Person[];
+  teams: TeamRef[];
+  viewerId: string;
   projects: { id: string; name: string }[];
   goals: { id: string; title: string }[];
   today: string;
@@ -64,21 +68,11 @@ export function TaskDetails({
         <DescriptionEditor key={detail.description ?? ""} taskId={detail.id} description={detail.description} editable={edit} />
         <dl className="divide-y border-t">
           <Row label="Status">{abilities.progress ? <StatusEditor taskId={detail.id} status={detail.status} allowReject={abilities.reject} /> : <StatusBadge status={detail.status} />}</Row>
-          <Row label="Assignee">
+          <Row label="Assigned to">
             {edit ? (
-              <PickEditor
-                taskId={detail.id}
-                field="assigneeId"
-                label="Assignee"
-                value={detail.assignee?.id ?? ""}
-                none="Unassigned"
-                options={withCurrent(people, detail.assignee).map((person) => ({ value: person.id, label: nameOf(person) }))}
-              />
-            ) : detail.assignee ? (
-              <span className="inline-flex items-center gap-2">
-                <UserAvatar name={detail.assignee.name} email={detail.assignee.email} image={detail.assignee.image} size="sm" />
-                {nameOf(detail.assignee)}
-              </span>
+              <AssigneesEditor key={JSON.stringify(detail.assignees)} taskId={detail.id} assignees={detail.assignees} people={people} teams={teams} viewerId={viewerId} />
+            ) : detail.assignees.people.length + detail.assignees.teams.length > 0 ? (
+              <AssigneeStack assignees={detail.assignees} names />
             ) : (
               <span className="text-muted-foreground">Unassigned</span>
             )}

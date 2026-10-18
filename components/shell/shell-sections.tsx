@@ -1,7 +1,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { unreadCount } from "@/lib/dal/notifications";
-import { canSeeReports, navFor } from "@/lib/permissions";
-import { requireViewerContext } from "@/lib/viewer";
+import { canSeeReports, navFor, type NavKey } from "@/lib/permissions";
+import { getViewerContext, requireUser } from "@/lib/viewer";
 import { BottomTabs } from "./bottom-tabs";
 import { NotificationBell } from "./notification-bell";
 import { OrgSwitcher } from "./org-switcher";
@@ -10,10 +10,19 @@ import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
 
 // The session-dependent parts of the shell. Each one sits in its own <Suspense> in app/(app)/layout.tsx;
-// requireViewerContext is React-cached, so together they cost one lookup per request.
+// the viewer is React-cached, so together they cost one lookup per request. A signed-in person without a
+// workspace (docs/PLAN.md, 2026-10-18 log) gets the frame with Home only: no switcher target, no bell.
+
+/** The navigation a person without a workspace gets. */
+const NO_WORKSPACE_NAV: NavKey[] = ["home"];
 
 async function context() {
-  const { viewer, user, orgs } = await requireViewerContext();
+  const resolved = await getViewerContext();
+  if (resolved === null) {
+    const user = await requireUser();
+    return { viewer: null, user: { name: user.name, email: user.email, image: user.image }, orgs: [] as { orgId: string; name: string }[] };
+  }
+  const { viewer, user, orgs } = resolved;
   return {
     viewer,
     user: { name: user.name, email: user.email, image: user.image },
@@ -23,34 +32,35 @@ async function context() {
 
 export async function SidebarOrg() {
   const { viewer, orgs } = await context();
-  return <OrgSwitcher orgs={orgs} activeOrgId={viewer.orgId} />;
+  return <OrgSwitcher orgs={orgs} activeOrgId={viewer?.orgId ?? null} />;
 }
 
 export async function SidebarMainNav() {
   const { viewer } = await context();
-  return <SidebarNav items={navFor(viewer)} />;
+  return <SidebarNav items={viewer ? navFor(viewer) : NO_WORKSPACE_NAV} />;
 }
 
 export async function SidebarNotifications() {
   const { viewer } = await context();
+  if (viewer === null) return null;
   return <NotificationBell unread={await unreadCount(viewer)} />;
 }
 
 export async function SidebarAccount() {
   const { viewer, user } = await context();
-  return <UserMenu user={user} canSeeReports={canSeeReports(viewer)} />;
+  return <UserMenu user={user} canSeeReports={viewer !== null && canSeeReports(viewer)} hasWorkspace={viewer !== null} />;
 }
 
 export async function MobileTopBar() {
   const { viewer, user, orgs } = await context();
-  const unread = await unreadCount(viewer);
+  const unread = viewer ? await unreadCount(viewer) : 0;
   return (
     <>
-      <OrgSwitcher orgs={orgs} activeOrgId={viewer.orgId} compact />
+      <OrgSwitcher orgs={orgs} activeOrgId={viewer?.orgId ?? null} compact />
       <div className="ml-auto flex items-center gap-1">
-        {viewer.orgRole !== "stakeholder" ? <SearchButton /> : null}
-        <NotificationBell unread={unread} variant="icon" />
-        <UserMenu user={user} variant="avatar" canSeeReports={canSeeReports(viewer)} />
+        {viewer && viewer.orgRole !== "stakeholder" ? <SearchButton /> : null}
+        {viewer ? <NotificationBell unread={unread} variant="icon" /> : null}
+        <UserMenu user={user} variant="avatar" canSeeReports={viewer !== null && canSeeReports(viewer)} hasWorkspace={viewer !== null} />
       </div>
     </>
   );
@@ -58,7 +68,7 @@ export async function MobileTopBar() {
 
 export async function MobileTabs() {
   const { viewer } = await context();
-  return <BottomTabs items={navFor(viewer)} canSeeReports={canSeeReports(viewer)} />;
+  return <BottomTabs items={viewer ? navFor(viewer) : NO_WORKSPACE_NAV} canSeeReports={viewer !== null && canSeeReports(viewer)} hasWorkspace={viewer !== null} />;
 }
 
 export function OrgSkeleton() {

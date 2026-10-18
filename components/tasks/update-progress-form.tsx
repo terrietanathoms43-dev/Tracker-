@@ -51,8 +51,10 @@ export function UpdateProgressForm({
   const [pending, startTransition] = useTransition();
 
   const field = (name: string) => `${name}-${task.id}`;
-  const current = people.find((person) => person.id === task.assigneeId);
-  const assigneeAfter = handOverTo || task.assigneeId;
+  const current = task.assigneeIds.map((id) => people.find((person) => person.id === id)).filter((person) => person !== undefined);
+  // Who will be on the task after this update: the handover target alone, or whoever is on it now.
+  const assigneesAfter = handOverTo ? [handOverTo] : task.assigneeIds;
+  const keepLabel = current.length === 0 ? "Keep unassigned" : current.length === 1 ? `Keep with ${nameOf(current[0])}` : `Keep with ${current.map((person) => nameOf(person)).join(", ")}`;
   const completing = !blocked && markAs === "completed";
   // Completing a task that waits for approval is approving it: only the approver may.
   const markOptions = (["in_progress", "awaiting_approval", "completed"] as const).filter(
@@ -205,10 +207,10 @@ export function UpdateProgressForm({
           <Label htmlFor={field("handover")} className="text-xs text-muted-foreground">
             Hand over to
           </Label>
-          <NativeSelect id={field("handover")} value={handOverTo} onChange={(event) => setHandOverTo(event.target.value)}>
-            <option value="">{current ? `Keep with ${nameOf(current)}` : "Keep unassigned"}</option>
+          <NativeSelect id={field("handover")} value={handOverTo} onChange={(event) => setHandOverTo(event.target.value)} title="Hands the task to one person; its teams stay.">
+            <option value="">{keepLabel}</option>
             {people
-              .filter((person) => person.id !== task.assigneeId)
+              .filter((person) => !(task.assigneeIds.length === 1 && task.assigneeIds[0] === person.id))
               .map((person) => (
                 <option key={person.id} value={person.id}>
                   {nameOf(person)}
@@ -240,7 +242,7 @@ export function UpdateProgressForm({
           <NativeSelect id={field("approver")} value={approverId} onChange={(event) => setApproverId(event.target.value)} aria-invalid={errors.approverId ? true : undefined}>
             <option value="">Choose an approver…</option>
             {people
-              .filter((person) => person.id !== assigneeAfter)
+              .filter((person) => !assigneesAfter.includes(person.id))
               .map((person) => (
                 <option key={person.id} value={person.id}>
                   {nameOf(person)}

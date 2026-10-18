@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { GoalProgress } from "@/lib/dal/team";
+import type { GoalProgress } from "@/lib/dal/dashboard";
 import { formatDay } from "@/lib/time";
 import { PanelEmpty } from "./panel";
 

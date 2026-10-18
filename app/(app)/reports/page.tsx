@@ -6,6 +6,7 @@ import { PrintButton } from "@/components/reports/print-button";
 import { CsvLink, ReportControls } from "@/components/reports/report-controls";
 import { ReportTiles } from "@/components/reports/report-tiles";
 import { BlockedList, DeliveredList, OpenList } from "@/components/reports/task-facts";
+import { TeamsTable } from "@/components/reports/teams-table";
 import { GoalProgressList } from "@/components/team/goal-progress";
 import { Panel } from "@/components/team/panel";
 import { canSeeReports } from "@/lib/permissions";
@@ -53,6 +54,9 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
         </Panel>
         <Panel title="Contributions" aside={<CsvLink range={range} table="contributions" label="Contributions" />}>
           <ContributionsTable rows={report.contributions} />
+        </Panel>
+        <Panel title="Teams" count={report.teams.length} aside={<CsvLink range={range} table="teams" label="Teams" />}>
+          <TeamsTable rows={report.teams} />
         </Panel>
         <Panel title="Goals" count={report.goals.length}>
           <GoalProgressList goals={report.goals} today={today} notes={goalNotes} empty="No active goals." />

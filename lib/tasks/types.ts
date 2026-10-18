@@ -6,6 +6,12 @@ import type { OrgRole, TaskActivityKind, TaskPriority, TaskStatus } from "@/lib/
 /** Someone shown with an avatar and a name. */
 export type Person = { id: string; name: string | null; email: string | null; image: string | null };
 
+/** A team as a chip or a picker row. */
+export type TeamRef = { id: string; name: string };
+
+/** Who a task (or a goal) is assigned to: any number of people and teams, all equal (docs/PLAN.md, 2026-10-18 log). */
+export type Assignees = { people: Person[]; teams: TeamRef[] };
+
 /** One row of any task list, board column or My Work group. */
 export type TaskListItem = {
   id: string;
@@ -14,11 +20,13 @@ export type TaskListItem = {
   priority: TaskPriority;
   dueDate: string | null;
   nextAction: string | null;
-  assignee: Person | null;
+  assignees: Assignees;
   project: { id: string; name: string } | null;
   updatedAt: string;
   /** Attention lists only: why it is there ("Overdue", "Your approval", …). */
   reason?: string;
+  /** My Work only: the team through which the viewer is on it ("Frontend") when they are not assigned directly. */
+  via?: string;
 };
 
 /** A page of the task list; `nextCursor` is the id of the last row, or null when there is no more. */
@@ -27,10 +35,11 @@ export type TaskPage = { items: TaskListItem[]; nextCursor: string | null };
 /** A worker in a picker, with the role that decides default approvers. */
 export type PersonOption = Person & { role: OrgRole };
 
-/** What the New task form needs: who you are, who can own work, and what it can belong to. */
+/** What the New task form needs: who you are, who and which teams can own work, and what it can belong to. */
 export type TaskFormOptions = {
   viewerId: string;
   people: Person[];
+  teams: TeamRef[];
   projects: { id: string; name: string }[];
   goals: { id: string; title: string }[];
 };
@@ -51,7 +60,7 @@ export type TaskDetail = {
   project: { id: string; name: string } | null;
   goal: { id: string; title: string } | null;
   request: { id: string; title: string } | null;
-  assignee: Person | null;
+  assignees: Assignees;
   approver: Person | null;
   creator: Person;
   createdAt: string;
@@ -77,7 +86,8 @@ export type UpdateContext = {
     id: string;
     title: string;
     status: TaskStatus;
-    assigneeId: string | null;
+    /** The people assigned directly (teams don't take part in hand-overs or approver rules). */
+    assigneeIds: string[];
     nextAction: string | null;
     blockedReason: string | null;
     blockedBy: string | null;
@@ -108,7 +118,7 @@ export type HistoryItem = {
 
 export type HistoryPage = { items: HistoryItem[]; nextCursor: string | null };
 
-/** An important change for the Home and Team feeds: "Jordan Dev completed Fix nightly backup". */
+/** An important change for the Home and Members feeds: "Jordan Dev completed Fix nightly backup". */
 export type ActivityFeedItem = {
   id: string;
   kind: TaskActivityKind;
@@ -128,5 +138,8 @@ export type TaskProgress = { completed: number; total: number; blocked: number; 
 
 export type TaskCounts = { active: number; completed: number; overdue: number; blocked: number; awaiting: number };
 
-/** One person's open work (person null = unassigned). */
+/** One person's open work, assigned to them directly (person null = nobody and no team). */
 export type WorkloadRow = { person: Person | null; active: TaskListItem[]; blocked: number; overdue: number };
+
+/** One team's open work: what it is expected to deliver. */
+export type TeamWorkloadRow = { team: TeamRef; active: number; blocked: number; overdue: number };

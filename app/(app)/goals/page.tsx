@@ -7,6 +7,7 @@ import { GoalCard } from "@/components/goals/goal-parts";
 import { ShowAllToggle } from "@/components/goals/show-all-toggle";
 import { PageHeader } from "@/components/page-header";
 import { listGoals, ownerOptions } from "@/lib/dal/goals";
+import { teamOptions } from "@/lib/dal/teams";
 import { canManagePlanning, canReadPlanning } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
@@ -25,11 +26,11 @@ export default async function GoalsPage(props: PageProps<"/goals">) {
   const showAll = (await props.searchParams).all === "1";
   const manage = canManagePlanning(viewer);
   // A workspace has a handful of goals: read them all once, so the toggle knows whether anything achieved exists.
-  const [goals, people] = await Promise.all([listGoals(viewer, { includeAchieved: true }), manage ? ownerOptions(viewer) : []]);
+  const [goals, people, teams] = await Promise.all([listGoals(viewer, { includeAchieved: true }), manage ? ownerOptions(viewer) : [], manage ? teamOptions(viewer) : []]);
   const today = dayKey(new Date(), viewer.timezone);
   const achievedCount = goals.filter((goal) => goal.status === "achieved").length;
   const shown = showAll ? goals : goals.filter((goal) => goal.status !== "achieved");
-  const newGoal = (variant: "default" | "outline") => (manage ? <GoalDialog people={people} viewerId={viewer.userId} variant={variant} /> : null);
+  const newGoal = (variant: "default" | "outline") => (manage ? <GoalDialog people={people} teams={teams} viewerId={viewer.userId} variant={variant} /> : null);
 
   return (
     <>

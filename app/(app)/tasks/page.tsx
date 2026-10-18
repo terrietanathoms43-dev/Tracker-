@@ -42,7 +42,7 @@ export default async function TasksPage(props: PageProps<"/tasks">) {
     <>
       <PageHeader title="Tasks" action={<NewTaskButton />} />
       <ViewTabs active={view} query={query.toString()} />
-      <TaskToolbar filters={filters} view={view} people={options.people} projects={options.projects} goals={options.goals} />
+      <TaskToolbar filters={filters} view={view} people={options.people} teams={options.teams} projects={options.projects} goals={options.goals} />
       <LastFilters current={query.toString()} view={view} />
       {empty ? (
         isFiltered(filters) ? (

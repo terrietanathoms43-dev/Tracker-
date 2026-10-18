@@ -4,9 +4,8 @@ import { cn } from "cn";
 import Link from "next/link";
 import { useState } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
-import { UserAvatar } from "@/components/user-avatar";
-import { nameOf } from "@/lib/tasks/people";
 import type { TaskListItem } from "@/lib/tasks/types";
+import { AssigneeStack } from "./assignee-stack";
 import { DueLabel } from "./due-label";
 import { TaskActionSheet, TaskMenu } from "./task-menu";
 import { useLongPress } from "./use-long-press";
@@ -35,13 +34,7 @@ function TaskCard({ task, today, readOnly }: { task: TaskListItem; today: string
         <DueLabel due={task.dueDate} today={today} status={task.status} />
         <PriorityGlyph priority={task.priority} className="relative" />
         <span className="ml-auto" />
-        {task.assignee ? (
-          <span className="relative shrink-0" title={nameOf(task.assignee)}>
-            <UserAvatar name={task.assignee.name} email={task.assignee.email} image={task.assignee.image} size="sm" />
-          </span>
-        ) : (
-          <span className="relative size-6 shrink-0 rounded-full border border-dashed" title="Unassigned" aria-label="Unassigned" role="img" />
-        )}
+        <AssigneeStack assignees={task.assignees} className="relative" />
       </div>
       <TaskActionSheet task={task} open={sheetOpen} onOpenChange={setSheetOpen} readOnly={readOnly} />
     </li>

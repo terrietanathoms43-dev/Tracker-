@@ -6,7 +6,7 @@ import { lastDays, type ReportRange } from "./range";
 
 export const DEFAULT_RANGE_DAYS = 30;
 
-export const REPORT_TABLES = ["delivered", "open", "contributions"] as const;
+export const REPORT_TABLES = ["delivered", "open", "contributions", "teams"] as const;
 export type ReportTable = (typeof REPORT_TABLES)[number];
 
 type Raw = Record<string, string | string[] | undefined>;
@@ -33,7 +33,7 @@ export function parseReportRange(raw: Raw, today: string): ReportRange {
 
 const tableSchema = z.enum(REPORT_TABLES);
 
-/** Which CSV the export route was asked for, or null when it isn't one of the three. */
+/** Which CSV the export route was asked for, or null when it isn't one of the four. */
 export function parseReportTable(raw: Raw): ReportTable | null {
   const parsed = tableSchema.safeParse(one(raw, "table"));
   return parsed.success ? parsed.data : null;

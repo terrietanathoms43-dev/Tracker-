@@ -2,8 +2,10 @@ import "server-only";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
+import { db } from "@/db";
 import { auth } from "@/lib/auth";
 import { listMemberships, type Membership } from "@/lib/dal/orgs";
+import { teamIdsFor } from "@/lib/dal/teams";
 import { readActiveOrgCookie, tryRewriteActiveOrgCookie } from "@/lib/org-cookie";
 import type { Viewer } from "@/lib/permissions";
 import { safeTimeZone } from "@/lib/time";
@@ -47,10 +49,12 @@ const resolve = cache(async (): Promise<Resolved> => {
 
   const org = memberships.find((membership) => membership.orgId === wanted) ?? memberships[0];
   if (org.orgId !== wanted) await tryRewriteActiveOrgCookie(org.orgId);
+  // The viewer's teams in this workspace: "assigned through a team" is then a pure check in lib/permissions.ts.
+  const teamIds = await teamIdsFor(db, org.orgId, user.id);
 
   return {
     status: "ok",
-    viewer: { userId: user.id, orgId: org.orgId, orgRole: org.role, timezone: safeTimeZone(user.timezone ?? org.timezone) },
+    viewer: { userId: user.id, orgId: org.orgId, orgRole: org.role, teamIds, timezone: safeTimeZone(user.timezone ?? org.timezone) },
     user,
     org,
     orgs: memberships,
@@ -69,11 +73,14 @@ export async function getViewerContext(): Promise<ViewerContext | null> {
   return resolved.status === "ok" ? { viewer: resolved.viewer, user: resolved.user, org: resolved.org, orgs: resolved.orgs } : null;
 }
 
-/** Signed-in user with a workspace, or a redirect to /login or /onboarding. */
+/**
+ * Signed-in user with a workspace, or a redirect to /login or, without a workspace, to /home (which shows how to
+ * get one: create it, or accept an invitation).
+ */
 export async function requireViewerContext(): Promise<ViewerContext> {
   const resolved = await resolve();
   if (resolved.status === "signed-out") redirect("/login");
-  if (resolved.status === "no-org") redirect("/onboarding");
+  if (resolved.status === "no-org") redirect("/home");
   return { viewer: resolved.viewer, user: resolved.user, org: resolved.org, orgs: resolved.orgs };
 }
 

@@ -29,11 +29,16 @@ const {
   organizations,
   organizationMembers,
   invitations,
+  teams,
+  teamMembers,
   goals,
+  goalTeams,
   projects,
   requests,
   requestDecisions,
   tasks,
+  taskAssignees,
+  taskTeams,
   taskUpdates,
   taskLinks,
   taskActivity,
@@ -137,11 +142,13 @@ async function claimOrg(tx: Tx, seed: OrgSeed, createdBy: string): Promise<strin
 async function wipeOrgContents(tx: Tx, orgId: string): Promise<void> {
   await tx.delete(notifications).where(eq(notifications.orgId, orgId));
   await tx.delete(taskActivity).where(eq(taskActivity.orgId, orgId));
-  // Tasks take their updates and links with them; requests take their decisions (cascades).
+  // Tasks take their updates, links and assignments with them; requests take their decisions; teams take their
+  // members and their links to tasks and goals (cascades).
   await tx.delete(tasks).where(eq(tasks.orgId, orgId));
   await tx.delete(requests).where(eq(requests.orgId, orgId));
   await tx.delete(projects).where(eq(projects.orgId, orgId));
   await tx.delete(goals).where(eq(goals.orgId, orgId));
+  await tx.delete(teams).where(eq(teams.orgId, orgId));
   await tx.delete(invitations).where(eq(invitations.orgId, orgId));
   await tx.delete(organizationMembers).where(eq(organizationMembers.orgId, orgId));
 }
@@ -158,11 +165,12 @@ function assertSelfContained(seed: OrgSeed): void {
   const members = new Set(seed.members.map((member) => member.person));
   const mentioned: (Person | null)[] = [
     seed.createdBy,
+    ...seed.teams.flatMap((team) => team.members),
     ...seed.goals.flatMap((goal) => [goal.owner, goal.createdBy]),
     ...seed.projects.flatMap((project) => [project.owner, project.createdBy]),
     ...seed.requests.flatMap((request) => [request.requester, ...request.decisions.map((decision) => decision.by)]),
     ...seed.tasks.flatMap((task) => [
-      task.assignee,
+      ...task.assignees,
       task.createdBy,
       ...task.updates.map((update) => update.author),
       ...(task.comments ?? []).map((comment) => comment.author),
@@ -205,39 +213,58 @@ type TaskRow = typeof tasks.$inferInsert;
 type UpdateRow = typeof taskUpdates.$inferInsert;
 type LinkRow = typeof taskLinks.$inferInsert;
 type ActivityRow = typeof taskActivity.$inferInsert;
+type AssigneeRow = typeof taskAssignees.$inferInsert;
+type TaskTeamRow = typeof taskTeams.$inferInsert;
 
 type TaskContext = {
   orgId: string;
   clock: Clock;
   who: (person: Person) => string;
+  nameOf: (person: Person) => string;
   projectId: (key: string) => string;
   goalId: (key: string) => string;
   requestId: (key: string) => string;
+  teamId: (key: string) => string;
+  teamName: (key: string) => string;
 };
 
 /**
- * Turns a task spec into the task row, its updates and links, and the activity trail that explains how it got
- * there: created → assigned → started → updates / comments / links → blocked | approval asked | approved +
- * completed | rejected. Same-instant events are a second apart so history reads in the right order.
+ * Turns a task spec into the task row, its assignment rows, its updates and links, and the activity trail that
+ * explains how it got there: created → assigned → started → updates / comments / links → blocked | approval
+ * asked | approved + completed | rejected. Same-instant events are a second apart so history reads in order.
  */
-function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: TaskRow; updates: UpdateRow[]; links: LinkRow[]; activity: ActivityRow[] } {
+function taskRows(
+  spec: SeedTask,
+  taskId: string,
+  ctx: TaskContext,
+): { task: TaskRow; assignees: AssigneeRow[]; teamLinks: TaskTeamRow[]; updates: UpdateRow[]; links: LinkRow[]; activity: ActivityRow[] } {
   const { at, due } = ctx.clock;
   const { orgId, who } = ctx;
   const createdAt = at(spec.createdDaysAgo);
   const creator = who(spec.createdBy);
   // Whoever moves the task along day to day.
-  const worker = who(spec.assignee ?? spec.createdBy);
+  const worker = who(spec.assignees[0] ?? spec.createdBy);
   const last = spec.updates.at(-1);
   const approverId = spec.approval ? who(spec.approval.approver) : spec.completed?.approvedBy ? who(spec.completed.approvedBy) : null;
+  const teamKeys = spec.teams ?? [];
 
   const activity: ActivityRow[] = [];
   const log = (kind: TaskActivityKind, actorId: string, when: Date, extra: Partial<ActivityRow> = {}) =>
     activity.push({ orgId, taskId, actorId, kind, createdAt: when, ...extra });
 
   log("created", creator, createdAt, spec.request ? { after: { requestId: ctx.requestId(spec.request) } } : {});
-  if (spec.assignee !== null && spec.assignee !== spec.createdBy) {
-    log("assigned", creator, at(spec.createdDaysAgo, 1), { before: { assigneeId: null }, after: { assigneeId: who(spec.assignee) } });
+  // Assigning work to yourself alone is not news worth a history line (the same rule as actions/tasks.ts).
+  const justCreator = teamKeys.length === 0 && spec.assignees.length === 1 && spec.assignees[0] === spec.createdBy;
+  if (!justCreator && (spec.assignees.length > 0 || teamKeys.length > 0)) {
+    log("assigned", creator, at(spec.createdDaysAgo, 1), {
+      after: {
+        assignees: spec.assignees.map((person) => ({ id: who(person), name: ctx.nameOf(person) })),
+        teams: teamKeys.map((key) => ({ id: ctx.teamId(key), name: ctx.teamName(key) })),
+      },
+    });
   }
+  const assignees: AssigneeRow[] = spec.assignees.map((person) => ({ taskId, userId: who(person), assignedBy: creator, assignedAt: at(spec.createdDaysAgo, 1) }));
+  const teamLinks: TaskTeamRow[] = teamKeys.map((key) => ({ taskId, teamId: ctx.teamId(key), assignedBy: creator, assignedAt: at(spec.createdDaysAgo, 1) }));
 
   // Started an hour before the first thing that happened to it (never before it existed).
   let startedAt: Date | null = null;
@@ -306,7 +333,6 @@ function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: Tas
     requestId: spec.request ? ctx.requestId(spec.request) : null,
     title: spec.title,
     description: spec.description ?? null,
-    assigneeId: spec.assignee ? who(spec.assignee) : null,
     createdBy: creator,
     approverId,
     priority: spec.priority,
@@ -325,7 +351,7 @@ function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: Tas
     createdAt,
     updatedAt: new Date(Math.max(...activity.map((row) => (row.createdAt as Date).getTime()))),
   };
-  return { task, updates, links, activity };
+  return { task, assignees, teamLinks, updates, links, activity };
 }
 
 // --- one workspace ------------------------------------------------------------------------------
@@ -351,14 +377,38 @@ async function seedOrg(tx: Tx, seed: OrgSeed, ids: Ids, now: number): Promise<Se
   );
 
   // Ids are chosen up front so rows can point at each other before they are written.
+  const teamIds = new Map(seed.teams.map((team) => [team.key, crypto.randomUUID()]));
   const goalIds = new Map(seed.goals.map((goal) => [goal.key, crypto.randomUUID()]));
   const projectIds = new Map(seed.projects.map((project) => [project.key, crypto.randomUUID()]));
   const requestIds = new Map(seed.requests.map((request) => [request.key, crypto.randomUUID()]));
   const taskIds = new Map(seed.tasks.map((task, index) => [task.key ?? `#${index}`, crypto.randomUUID()]));
+  const teamId = (key: string) => lookup(teamIds, key, "team");
+  const teamName = (key: string) => {
+    const team = seed.teams.find((each) => each.key === key);
+    if (team === undefined) throw new Error(`Seed data refers to an unknown team "${key}"`);
+    return team.name;
+  };
   const goalId = (key: string) => lookup(goalIds, key, "goal");
   const projectId = (key: string) => lookup(projectIds, key, "project");
   const requestId = (key: string) => lookup(requestIds, key, "request");
   const taskId = (key: string) => lookup(taskIds, key, "task");
+
+  // Teams first: goals and tasks point at them.
+  if (seed.teams.length > 0) {
+    await tx.insert(teams).values(
+      seed.teams.map((team) => ({
+        id: teamId(team.key),
+        orgId,
+        name: team.name,
+        description: team.description,
+        createdBy: who(seed.createdBy),
+        createdAt: at(team.createdDaysAgo),
+        updatedAt: at(team.createdDaysAgo),
+      })),
+    );
+    const memberRows = seed.teams.flatMap((team) => team.members.map((person) => ({ teamId: teamId(team.key), userId: who(person), addedBy: who(seed.createdBy), addedAt: at(team.createdDaysAgo) })));
+    if (memberRows.length > 0) await tx.insert(teamMembers).values(memberRows);
+  }
 
   if (seed.goals.length > 0) {
     await tx.insert(goals).values(
@@ -376,6 +426,8 @@ async function seedOrg(tx: Tx, seed: OrgSeed, ids: Ids, now: number): Promise<Se
         updatedAt: at(goal.updatedDaysAgo ?? goal.createdDaysAgo),
       })),
     );
+    const goalTeamRows = seed.goals.flatMap((goal) => (goal.teams ?? []).map((key) => ({ goalId: goalId(goal.key), teamId: teamId(key), addedBy: who(goal.createdBy), addedAt: at(goal.createdDaysAgo) })));
+    if (goalTeamRows.length > 0) await tx.insert(goalTeams).values(goalTeamRows);
   }
 
   if (seed.projects.length > 0) {
@@ -434,12 +486,16 @@ async function seedOrg(tx: Tx, seed: OrgSeed, ids: Ids, now: number): Promise<Se
     if (decisions.length > 0) await tx.insert(requestDecisions).values(decisions);
   }
 
-  const ctx: TaskContext = { orgId, clock, who, projectId, goalId, requestId };
+  const ctx: TaskContext = { orgId, clock, who, nameOf: (person) => PEOPLE[person].name, projectId, goalId, requestId, teamId, teamName };
   const rows = seed.tasks.map((spec, index) => taskRows(spec, taskId(spec.key ?? `#${index}`), ctx));
   if (rows.length > 0) {
     await tx.insert(tasks).values(rows.map((row) => row.task));
+    const assigneeRows = rows.flatMap((row) => row.assignees);
+    const teamLinkRows = rows.flatMap((row) => row.teamLinks);
     const updates = rows.flatMap((row) => row.updates);
     const links = rows.flatMap((row) => row.links);
+    if (assigneeRows.length > 0) await tx.insert(taskAssignees).values(assigneeRows);
+    if (teamLinkRows.length > 0) await tx.insert(taskTeams).values(teamLinkRows);
     if (updates.length > 0) await tx.insert(taskUpdates).values(updates);
     if (links.length > 0) await tx.insert(taskLinks).values(links);
     await tx.insert(taskActivity).values(rows.flatMap((row) => row.activity));
@@ -584,11 +640,18 @@ export async function clean(): Promise<void> {
 
 // --- docs/TEST-ACCOUNTS.md --------------------------------------------------------------------------
 
+/** The keys of the teams a person is in. */
+const teamsOf = (seed: OrgSeed, person: Person) => seed.teams.filter((team) => team.members.includes(person)).map((team) => team.key);
+
+/** Assigned to the person directly, or through one of their teams. */
+const assignedTo = (seed: OrgSeed, task: SeedTask, person: Person) => task.assignees.includes(person) || (task.teams ?? []).some((key) => teamsOf(seed, person).includes(key));
+
 /** What a persona finds waiting in its workspace, computed from the seed so the doc can never drift from it. */
 function startsWith(seed: OrgSeed, person: Person): string {
-  const open = seed.tasks.filter((task) => task.assignee === person && !CLOSED_STATUSES.includes(task.status));
+  const open = seed.tasks.filter((task) => assignedTo(seed, task, person) && !CLOSED_STATUSES.includes(task.status));
   const facts = [
     open.length > 0 ? `${open.length} open task${open.length === 1 ? "" : "s"}` : "",
+    ...seed.teams.filter((team) => team.members.includes(person)).map((team) => `in team "${team.name}"`),
     count(open.filter((task) => task.dueInDays !== null && task.dueInDays < 0).length, "overdue"),
     count(open.filter((task) => task.status === "blocked").length, "blocked"),
     count(seed.tasks.filter((task) => task.approval?.approver === person).length, "awaiting their approval"),
@@ -625,7 +688,8 @@ function contents(seed: OrgSeed): string[] {
   return [
     `**${seed.org.name}** (slug \`${seed.org.slug}\`, ${seed.org.timezone}): ${seed.members.map((member) => `${name(member.person)} (${member.role})`).join(", ")}.`,
     "",
-    ...seed.goals.map((goal) => `- Goal **${goal.title}** (${goal.status}), owner ${name(goal.owner)}.`),
+    ...seed.teams.map((team) => `- Team **${team.name}**: ${team.members.map(name).join(", ")}.`),
+    ...seed.goals.map((goal) => `- Goal **${goal.title}** (${goal.status}), owner ${name(goal.owner)}${goal.teams?.length ? `, teams ${goal.teams.map((key) => seed.teams.find((team) => team.key === key)?.name).join(", ")}` : ""}.`),
     ...seed.projects.map(
       (project) =>
         `- Project **${project.name}** (${project.status}), owner ${name(project.owner)}${project.goal ? `, under "${seed.goals.find((goal) => goal.key === project.goal)?.title}"` : ""}.`,
@@ -633,7 +697,7 @@ function contents(seed: OrgSeed): string[] {
     `- ${seed.tasks.length} tasks: ${tally(
       seed.tasks.map((task) => task.status),
       TASK_STATUS_LABELS,
-    )}. ${open.filter((task) => task.dueInDays !== null && task.dueInDays < 0).length} overdue, ${open.filter((task) => task.assignee === null).length} unassigned; ${comments} comments and ${links} evidence links.`,
+    )}. ${open.filter((task) => task.dueInDays !== null && task.dueInDays < 0).length} overdue, ${open.filter((task) => task.assignees.length === 0 && (task.teams ?? []).length === 0).length} unassigned, ${seed.tasks.filter((task) => task.assignees.length > 1).length} with two people on them, ${seed.tasks.filter((task) => (task.teams ?? []).length > 0).length} assigned to a team; ${comments} comments and ${links} evidence links.`,
     `- ${seed.requests.length} request${seed.requests.length === 1 ? "" : "s"}: ${tally(
       seed.requests.map((request) => request.status),
       REQUEST_STATUS_LABELS,

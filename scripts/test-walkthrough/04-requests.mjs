@@ -65,7 +65,10 @@ try {
   await morgan.click("Approve", { exact: true });
   await morgan.waitFor("Approve this request");
   await morgan.click("Create the task now");
-  step("the assignee picker loads", await morgan.select("#decision-assignee", "Jordan Dev"));
+  // The assignees picker: a button that opens a searchable list of people and teams (it is disabled until the options load).
+  step("the assignees picker opens", await morgan.click("Unassigned", { exact: true, within: "[role=dialog]", wait: 800 }));
+  step("and offers Jordan", await morgan.click("Jordan Dev", { within: "[cmdk-list]", wait: 400 }));
+  await morgan.press("Escape", 600);
   await morgan.type("#decision-due", DUE);
   await morgan.type("#decision-reason", "Budget landed; Finance needs it for the Q4 review.");
   await morgan.click("Approve and create task", { within: "[role=dialog]" });
@@ -75,7 +78,7 @@ try {
 
   const [after] = await query("select status, converted_task_id, decision_reason from requests where id = $1", [created.id]);
   const [task] = await query(
-    "select t.id, t.title, t.status, t.priority, t.due_date::text as due, t.request_id, u.name as assignee from tasks t left join users u on u.id = t.assignee_id where t.id = $1",
+    "select t.id, t.title, t.status, t.priority, t.due_date::text as due, t.request_id, (select string_agg(u.name, ', ' order by u.name) from task_assignees ta join users u on u.id = ta.user_id where ta.task_id = t.id) as assignee from tasks t where t.id = $1",
     [after?.converted_task_id],
   );
   step("the request is converted and points at its task", after?.status === "converted" && task?.request_id === created.id, JSON.stringify(after));

@@ -5,6 +5,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
+  // The Team dashboard became the Members page (docs/PLAN.md, 2026-10-18 log); old links still land somewhere.
+  async redirects() {
+    return [{ source: "/team", destination: "/members", permanent: false }];
+  },
   turbopack: {
     rules: {
       "*.css": {

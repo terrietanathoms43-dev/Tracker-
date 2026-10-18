@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { RelativeTime } from "@/components/relative-time";
 import { UserAvatar } from "@/components/user-avatar";
-import type { FeedEntry } from "@/lib/dal/team";
+import type { FeedEntry } from "@/lib/dal/dashboard";
 import { nameOf } from "@/lib/tasks/people";
 import { PanelEmpty } from "./panel";
 

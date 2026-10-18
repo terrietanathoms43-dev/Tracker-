@@ -6,6 +6,7 @@ import type { CreateDefaults } from "@/lib/tasks/types";
 import { CommandPalette } from "./command-palette";
 import { CreateTaskDialog, TransitionDialog, UpdateProgressDialog } from "./task-dialogs";
 import { useShortcuts } from "./use-shortcuts";
+import { prefetchTaskFormOptions } from "./use-task-form-options";
 
 // The task actions every screen can reach: New task (N), Update progress (U on a task page), the status
 // dialogs and the command palette (⌘K). One provider in app/(app)/layout.tsx owns the dialogs, so a row on
@@ -49,6 +50,12 @@ export function TaskActionsProvider({ children }: { children: ReactNode }) {
   const [updateTaskId, setUpdateTaskId] = useState<string | null>(null);
   const [transition, setTransition] = useState<{ taskId: string; status: TaskStatus } | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // The New task dialog's pickers are fetched once the page is idle, so the first N opens a ready form.
+  useEffect(() => {
+    const timer = window.setTimeout(prefetchTaskFormOptions, 1500);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const openUpdate = useCallback(
     (taskId: string) => {

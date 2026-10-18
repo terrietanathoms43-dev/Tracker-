@@ -93,7 +93,7 @@ export function Workload({ rows, today }: { rows: WorkloadRow[]; today: string }
   );
 }
 
-/** Home's short version: name, open count and trouble, each row a link to the Team page. */
+/** Home's short version: name, open count and trouble, each row a link to that person's open tasks. */
 export function WorkloadCompact({ rows }: { rows: WorkloadRow[] }) {
   if (rows.length === 0) return <PanelEmpty>Nobody in the workspace does work yet.</PanelEmpty>;
   return (
@@ -101,7 +101,7 @@ export function WorkloadCompact({ rows }: { rows: WorkloadRow[] }) {
       {rows.map((row) => (
         <li key={row.person?.id ?? "unassigned"}>
           <Link
-            href={row.person === null ? assigneeFilter(row) : "/team"}
+            href={assigneeFilter(row)}
             className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-accent/60"
             title={row.active.map((task) => task.title).join("\n") || undefined}
           >

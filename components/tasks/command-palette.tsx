@@ -21,7 +21,7 @@ const PLACES: { href: string; label: string; icon: LucideIcon; nav: NavKey }[] =
   { href: "/tasks?view=board", label: "Board", icon: Columns3, nav: "tasks" },
   { href: "/projects", label: "Projects", icon: FolderKanban, nav: "tasks" },
   { href: "/goals", label: "Goals", icon: Target, nav: "goals" },
-  { href: "/team", label: "Team", icon: Users, nav: "team" },
+  { href: "/members", label: "Members", icon: Users, nav: "members" },
   { href: "/requests", label: "Requests", icon: Inbox, nav: "requests" },
 ];
 

@@ -9,7 +9,8 @@ import type { TaskListItem } from "./types";
 export type MyWorkRow = {
   item: TaskListItem;
   approverId: string | null;
-  assigneeId: string | null;
+  /** Assigned to the viewer, directly or through one of their teams. */
+  mine: boolean;
   sortRank: number;
   completedAt: Date | null;
   /** In progress because an approver sent it back (its latest status event). */
@@ -53,7 +54,7 @@ export function smartCompare(today: string) {
 export function attentionReason(row: MyWorkRow, viewerId: string, today: string): AttentionReason | null {
   const { item } = row;
   if (item.status === "awaiting_approval" && row.approverId === viewerId) return "Your approval";
-  if (row.assigneeId !== viewerId || !OPEN.has(item.status)) return null;
+  if (!row.mine || !OPEN.has(item.status)) return null;
   if (row.sentBack) return "Sent back";
   // My own task waiting for someone else's approval is theirs to act on, whatever its date.
   if (item.status === "awaiting_approval") return null;
@@ -71,7 +72,7 @@ export function groupMyWork(rows: MyWorkRow[], viewerId: string, today: string):
   const groups: MyWorkGroups = { attention: [], continueWorking: [], waiting: [], finished: [] };
   const finished: MyWorkRow[] = [];
   for (const row of sorted) {
-    const mine = row.assigneeId === viewerId;
+    const { mine } = row;
     const reason = attentionReason(row, viewerId, today);
     if (reason !== null) groups.attention.push({ ...row.item, reason });
     else if (mine && (row.item.status === "awaiting_approval" || row.item.status === "blocked")) groups.waiting.push(row.item);

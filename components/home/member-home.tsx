@@ -1,7 +1,7 @@
 import { ActivityFeed } from "@/components/team/activity-feed";
 import { GoalProgressList } from "@/components/team/goal-progress";
 import { Panel } from "@/components/team/panel";
-import type { FeedEntry, GoalProgress } from "@/lib/dal/team";
+import type { FeedEntry, GoalProgress } from "@/lib/dal/dashboard";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { ResumePanel } from "./resume-panel";
 
