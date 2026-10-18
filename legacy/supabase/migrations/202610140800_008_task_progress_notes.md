@@ -1,6 +1,0 @@
--- Database changes already applied to Trackwise Supabase.
--- Creates tw_task_updates with organization, task and author foreign keys.
--- RLS permits organization members to read, while direct client writes are revoked.
--- tw_add_task_update validates ownership/management, records progress and next action.
--- tw_set_task_status enforces leader-only completion approval and rejection.
--- Source of truth for the applied SQL is the Supabase migration history.
