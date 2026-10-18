@@ -27,8 +27,15 @@ export const googleEnabled = Boolean(googleClientId && googleClientSecret);
 
 const DAY = 60 * 60 * 24;
 
+const baseURL = process.env.BETTER_AUTH_URL ?? process.env.AUTH_URL;
+// Every magic link and the Google redirect_uri are built from this; a localhost value on a server means
+// "redirect_uri_mismatch" from Google and sign-in links nobody can open.
+if (process.env.NODE_ENV === "production" && (!baseURL || /localhost|127\.0\.0\.1/.test(baseURL))) {
+  log.error("auth.base_url_misconfigured", { baseURL: baseURL ?? null, hint: "Set BETTER_AUTH_URL to the public https origin in .env.local on the server." });
+}
+
 export const auth = betterAuth({
-  baseURL: process.env.BETTER_AUTH_URL ?? process.env.AUTH_URL,
+  baseURL,
   secret: process.env.BETTER_AUTH_SECRET ?? process.env.AUTH_SECRET,
   database: drizzleAdapter(db, {
     provider: "pg",

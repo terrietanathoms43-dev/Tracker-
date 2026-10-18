@@ -21,6 +21,7 @@ const ERRORS: Record<string, string> = {
   EXPIRED_TOKEN: "That sign-in link has expired. Request a new one.",
   magic_link: "That sign-in link didn't work. Request a new one.",
   google: "Google sign-in didn't complete. Try again, or use the email link.",
+  unable_to_create_user: "We couldn't create an account for that Google sign-in. Try the email link instead.",
   access_denied: "Sign-in wasn't allowed for that account.",
   EmailSignInError: "We couldn't send the sign-in email. Check the address and try again.",
   EmailInvalid: "Enter a valid email address.",
@@ -42,8 +43,15 @@ async function LoginForms({ searchParams }: Pick<PageProps<"/login">, "searchPar
   const redirectTo = safePath(query.callbackUrl);
   if ((await getSessionUser()) !== null) redirect(redirectTo);
 
-  const code = typeof query.error === "string" ? query.error : null;
-  const error = code === null ? null : code === "domain" ? domainRuleMessage() : (ERRORS[code] ?? "Couldn't sign you in. Please try again.");
+  // Better Auth appends its own ?error= to ours, so the last value is the specific one.
+  const codes = Array.isArray(query.error) ? query.error : typeof query.error === "string" ? [query.error] : [];
+  const code = codes.at(-1) ?? null;
+  const error =
+    code === null
+      ? null
+      : code === "domain" || (code === "unable_to_create_user" && allowedDomainsLabel() !== null)
+        ? domainRuleMessage()
+        : (ERRORS[code] ?? "Couldn't sign you in. Please try again.");
 
   return (
     <div className="grid gap-5">

@@ -5,6 +5,24 @@ import type { MailMessage } from "./provider";
 // muted values, and Trackwise royal blue for the one button.
 const BRAND = "#234a9e";
 
+/**
+ * The button is a one-cell table with the colour on the cell AND the link (long-hand `background-color`,
+ * which every client keeps; the `background` shorthand gets stripped by some, leaving white text on white),
+ * and the raw link is printed underneath so the email works even where buttons are hidden or styles dropped.
+ */
+function button(action: { label: string; url: string }): string {
+  const url = escapeHtml(action.url);
+  return `
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:24px 0 8px;">
+        <tr>
+          <td align="center" bgcolor="${BRAND}" style="background-color:${BRAND};border-radius:8px;">
+            <a href="${url}" style="display:inline-block;padding:11px 20px;font-size:14px;font-weight:600;color:#ffffff;background-color:${BRAND};border:1px solid ${BRAND};border-radius:8px;text-decoration:none;">${escapeHtml(action.label)}</a>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0 0 24px;font-size:12px;line-height:1.6;color:#737373;word-break:break-all;">Or copy this link into your browser:<br><a href="${url}" style="color:${BRAND};">${url}</a></p>`;
+}
+
 function layout(heading: string, bodyHtml: string, action: { label: string; url: string }, footnote: string): string {
   return `
   <div style="background:#fafafa;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
@@ -12,9 +30,7 @@ function layout(heading: string, bodyHtml: string, action: { label: string; url:
       <p style="margin:0 0 20px;font-size:14px;font-weight:600;color:${BRAND};letter-spacing:-0.01em;">${APP_NAME}</p>
       <h1 style="margin:0 0 12px;font-size:20px;line-height:1.3;color:#262626;letter-spacing:-0.02em;">${escapeHtml(heading)}</h1>
       <div style="font-size:14px;line-height:1.6;color:#525252;">${bodyHtml}</div>
-      <p style="margin:24px 0;">
-        <a href="${escapeHtml(action.url)}" style="display:inline-block;background:${BRAND};color:#ffffff;text-decoration:none;font-size:14px;font-weight:500;padding:10px 18px;border-radius:8px;">${escapeHtml(action.label)}</a>
-      </p>
+      ${button(action)}
       <p style="margin:0;font-size:12px;line-height:1.5;color:#737373;">${escapeHtml(footnote)}</p>
     </div>
   </div>`;
