@@ -6,7 +6,7 @@ import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
 import { getSessionUser } from "@/lib/viewer";
-
+//Anything I want
 const POINTS = [
   {
     icon: RotateCcw,
