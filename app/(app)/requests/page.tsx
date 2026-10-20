@@ -36,10 +36,10 @@ async function YourRequests({ viewer, now, today }: { viewer: Viewer; now: Date;
       ) : (
         <section aria-labelledby="your-requests-heading">
           <div className="mb-2 flex items-baseline gap-2 px-0.5">
-            <h2 id="your-requests-heading" className="text-sm font-semibold">
+            <h2 id="your-requests-heading" className="text-base font-semibold">
               Your requests
             </h2>
-            <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
+            <span className="text-[13px] text-muted-foreground tabular-nums">{items.length}</span>
           </div>
           <RequestList items={items} now={now} today={today} timeZone={viewer.timezone} showControls={false} showRequester={false} />
         </section>

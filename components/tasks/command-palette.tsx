@@ -79,7 +79,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           <DialogTitle>Command palette</DialogTitle>
           <DialogDescription>Search tasks, start one, or go somewhere</DialogDescription>
         </DialogHeader>
-        <Command shouldFilter={false} className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-muted-foreground">
+        <Command shouldFilter={false} className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:text-[13px] [&_[cmdk-group-heading]]:text-muted-foreground">
           <CommandInput value={query} onValueChange={setQuery} placeholder="Search tasks or type a command…" />
           <CommandList className="max-h-[min(60dvh,420px)]">
             <CommandEmpty>{term === "" ? "Type to search tasks." : "Nothing matches."}</CommandEmpty>

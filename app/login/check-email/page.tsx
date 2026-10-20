@@ -13,7 +13,7 @@ export default function CheckEmailPage() {
         <MailCheck className="size-5 text-status-completed-fg" aria-hidden />
       </div>
       <h1 className="text-2xl font-semibold">Check your email</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
+      <p className="mt-2 text-base text-muted-foreground">
         We sent you a sign-in link. It works once and expires in 24 hours. If it doesn&apos;t arrive in a minute, check your spam folder.
       </p>
       <div className="mt-8">

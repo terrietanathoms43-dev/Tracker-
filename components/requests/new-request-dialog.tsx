@@ -83,7 +83,7 @@ function NewRequestForm({ onDone }: { onDone: () => void }) {
         <Textarea id="request-description" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={10_000} />
       </Field>
       <div className="grid gap-2">
-        <span className="text-sm leading-none font-medium">Urgency</span>
+        <span className="text-base leading-none font-medium">Urgency</span>
         <Segmented className="w-fit" label="Urgency" value={urgency} onChange={setUrgency} options={REQUEST_URGENCIES.map((value) => ({ value, label: REQUEST_URGENCY_LABELS[value] }))} />
       </div>
       <Field id="request-link" label="Supporting link" hint="Optional: a ticket, a document, a screenshot." error={error("link")}>

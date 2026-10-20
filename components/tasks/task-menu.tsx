@@ -79,7 +79,7 @@ function SheetButton({ children, onClick, disabled }: { children: ReactNode; onC
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex h-11 items-center gap-3 rounded-md px-3 text-left text-sm font-medium hover:bg-accent disabled:opacity-50"
+      className="flex h-11 items-center gap-3 rounded-md px-3 text-left text-base font-medium hover:bg-accent disabled:opacity-50"
     >
       {children}
     </button>
@@ -119,7 +119,7 @@ export function TaskActionSheet({ task, open, onOpenChange, readOnly = false }: 
           </SheetButton>
           {readOnly ? null : (
             <>
-              <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground">Change status</p>
+              <p className="px-3 pt-3 pb-1 text-[13px] text-muted-foreground">Change status</p>
               <div className="grid grid-cols-2 gap-1">
                 {TASK_STATUSES.map((status) => (
                   <SheetButton key={status} disabled={status === task.status} onClick={then(() => change(task.status, status))}>

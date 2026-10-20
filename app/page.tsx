@@ -65,14 +65,14 @@ export default function LandingPage() {
           {POINTS.map(({ icon: Icon, title, text }) => (
             <div key={title} className="bg-card p-6">
               <Icon className="size-5 text-primary" aria-hidden />
-              <h2 className="mt-4 text-sm font-semibold">{title}</h2>
-              <p className="mt-1.5 text-sm text-muted-foreground">{text}</p>
+              <h2 className="mt-4 text-base font-semibold">{title}</h2>
+              <p className="mt-1.5 text-base text-muted-foreground">{text}</p>
             </div>
           ))}
         </section>
       </main>
 
-      <footer className="mx-auto w-full max-w-5xl px-4 py-10 text-xs text-muted-foreground sm:px-6">
+      <footer className="mx-auto w-full max-w-5xl px-4 py-10 text-[13px] text-muted-foreground sm:px-6">
         No time tracking, no screenshots, no productivity scores. Just the work.
       </footer>
     </div>

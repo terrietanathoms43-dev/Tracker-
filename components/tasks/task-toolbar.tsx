@@ -107,7 +107,7 @@ export function TaskToolbar({
                 aria-pressed={on}
                 onClick={() => toggleStatus(status)}
                 className={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   on ? "border-foreground/20 bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
               >
@@ -176,7 +176,7 @@ export function TaskToolbar({
           {view === "list" ? (
             <div className="flex h-9 items-center gap-2 px-1">
               <Switch id="show-closed" checked={filters.closed} onCheckedChange={(closed) => apply({ closed })} />
-              <Label htmlFor="show-closed" className="text-xs font-normal text-muted-foreground">
+              <Label htmlFor="show-closed" className="text-[13px] font-normal text-muted-foreground">
                 Show closed
               </Label>
             </div>

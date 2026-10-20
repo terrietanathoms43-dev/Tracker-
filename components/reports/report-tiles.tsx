@@ -26,7 +26,7 @@ export function ReportTiles({ summary }: { summary: ReportSummary }) {
               index === 0 && "col-span-2 sm:col-span-1",
             )}
           >
-            <p className={cn("truncate text-xs", tinted ? "text-status-blocked-fg" : "text-muted-foreground")}>{label}</p>
+            <p className={cn("truncate text-[13px]", tinted ? "text-status-blocked-fg" : "text-muted-foreground")}>{label}</p>
             <p className={cn("mt-1 text-2xl font-semibold tabular-nums", tinted && "text-status-blocked-fg")}>{value}</p>
           </li>
         );

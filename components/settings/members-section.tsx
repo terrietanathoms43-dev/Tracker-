@@ -26,11 +26,11 @@ function MemberRow({ member, orgName, isSelf, canManage, roleLocked }: { member:
     <li className="grid grid-cols-[2rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 px-4 py-3 sm:flex sm:px-5">
       <UserAvatar name={member.name} email={member.email} image={member.image} />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium">
+        <p className="truncate text-sm font-medium">
           {label}
           {isSelf ? <span className="font-normal text-muted-foreground"> (you)</span> : null}
         </p>
-        <p className="truncate text-xs text-muted-foreground">
+        <p className="truncate text-[13px] text-muted-foreground">
           {member.email}
           <span className="hidden sm:inline"> · Joined {member.joined}</span>
         </p>
@@ -77,7 +77,7 @@ function MemberRow({ member, orgName, isSelf, canManage, roleLocked }: { member:
           )}
         </div>
       ) : (
-        <span className="col-start-2 text-xs text-muted-foreground sm:ml-auto">{ORG_ROLE_LABELS[member.role]}</span>
+        <span className="col-start-2 text-[13px] text-muted-foreground sm:ml-auto">{ORG_ROLE_LABELS[member.role]}</span>
       )}
     </li>
   );

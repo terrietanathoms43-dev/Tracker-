@@ -14,7 +14,7 @@ const MAX_AVATARS = 3;
 /** A team as a small chip: icon and name. */
 export function TeamChip({ name, className }: { name: string; className?: string }) {
   return (
-    <span className={cn("inline-flex h-6 max-w-40 items-center gap-1 rounded-md bg-secondary px-1.5 text-[11px] font-medium text-secondary-foreground", className)}>
+    <span className={cn("inline-flex h-6 max-w-40 items-center gap-1 rounded-md bg-secondary px-1.5 text-xs font-medium text-secondary-foreground", className)}>
       <UsersRound className="size-3 shrink-0" aria-hidden />
       <span className="truncate">{name}</span>
     </span>
@@ -57,11 +57,11 @@ export function AssigneeStack({ assignees, names = false, className }: { assigne
           ))}
         </span>
       ) : null}
-      {more > 0 ? <span className="text-[11px] font-medium text-muted-foreground tabular-nums">+{more}</span> : null}
+      {more > 0 ? <span className="text-xs font-medium text-muted-foreground tabular-nums">+{more}</span> : null}
       {teams.slice(0, 2).map((team) => (
         <TeamChip key={team.id} name={team.name} className="hidden sm:inline-flex" />
       ))}
-      {teams.length > 2 ? <span className="hidden text-[11px] font-medium text-muted-foreground tabular-nums sm:inline">+{teams.length - 2}</span> : null}
+      {teams.length > 2 ? <span className="hidden text-xs font-medium text-muted-foreground tabular-nums sm:inline">+{teams.length - 2}</span> : null}
       {teams.length > 0 ? <TeamChip name={teams.length === 1 ? teams[0].name : `${teams.length} teams`} className="sm:hidden" /> : null}
     </span>
   );

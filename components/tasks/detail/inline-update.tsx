@@ -27,11 +27,11 @@ export function InlineUpdate({ context, fresh }: { context: UpdateContext; fresh
   return (
     <div ref={sectionRef} id="update-progress" className="scroll-mt-20 border-t bg-muted/30 px-5 py-4 md:px-6">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 className="text-sm font-semibold">Update progress</h2>
+        <h2 className="text-base font-semibold">Update progress</h2>
         {fresh ? (
-          <span className="text-xs text-muted-foreground">Leave a note for whoever picks this up next, including you.</span>
+          <span className="text-[13px] text-muted-foreground">Leave a note for whoever picks this up next, including you.</span>
         ) : (
-          <span className="hidden text-xs text-muted-foreground sm:inline">Press U from anywhere on this page.</span>
+          <span className="hidden text-[13px] text-muted-foreground sm:inline">Press U from anywhere on this page.</span>
         )}
       </div>
       <UpdateProgressForm key={`${context.task.status}-${context.task.assigneeIds.join(",")}-${context.task.nextAction ?? ""}`} context={context} progressRef={progressRef} />

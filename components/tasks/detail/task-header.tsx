@@ -72,7 +72,7 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
   const back = !abilities.progress && detail.request ? { href: `/requests/${detail.request.id}`, label: "Request" } : { href: "/tasks", label: "Tasks" };
   return (
     <header className="mb-5">
-      <Link href={back.href} className="inline-flex items-center gap-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground">
+      <Link href={back.href} className="inline-flex items-center gap-1.5 rounded-md text-[13px] text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-3.5" aria-hidden />
         {back.label}
       </Link>
@@ -105,12 +105,12 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
             <Button variant="outline" className="hidden sm:inline-flex" onClick={() => window.dispatchEvent(new Event(FOCUS_UPDATE_EVENT))}>
               <NotebookPen aria-hidden />
               Update progress
-              <kbd className="ml-1 hidden rounded border border-current/20 px-1 font-sans text-[10px] opacity-60 sm:inline">U</kbd>
+              <kbd className="ml-1 hidden rounded border border-current/20 px-1 font-sans text-[11px] opacity-60 sm:inline">U</kbd>
             </Button>
           ) : null}
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-muted-foreground">
         <StatusBadge status={detail.status} />
         {detail.assignees.people.length + detail.assignees.teams.length > 0 ? (
           <AssigneeStack assignees={detail.assignees} names />

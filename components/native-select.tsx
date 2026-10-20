@@ -12,7 +12,7 @@ export function NativeSelect({ className, children, ...props }: ComponentProps<"
       <select
         {...props}
         className={cn(
-          "h-9 w-full min-w-0 appearance-none rounded-md border border-input bg-transparent pr-8 pl-3 text-base outline-none transition-[color,box-shadow] md:text-sm dark:bg-input/30",
+          "h-9 w-full min-w-0 appearance-none rounded-md border border-input bg-transparent pr-8 pl-3 text-base outline-none transition-[color,box-shadow] md:text-base dark:bg-input/30",
           "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
           "disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive",
           "[&>option]:bg-popover [&>option]:text-popover-foreground",

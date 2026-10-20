@@ -113,14 +113,14 @@ export function TeamDialog({ team, people, variant = "default", size = "default"
               <Textarea id="team-description" value={description} onChange={(event) => setDescription(event.target.value)} rows={2} maxLength={500} />
             </Field>
             <fieldset className="grid gap-2">
-              <legend className="text-sm leading-none font-medium">
+              <legend className="text-base leading-none font-medium">
                 Members <span className="font-normal text-muted-foreground">({memberIds.length})</span>
               </legend>
               {people.length >= SEARCH_FROM ? (
                 <Input aria-label="Search members" placeholder="Search members…" value={search} onChange={(event) => setSearch(event.target.value)} className="mt-1" />
               ) : null}
               {people.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nobody else does work in this workspace yet. Invite people first.</p>
+                <p className="text-base text-muted-foreground">Nobody else does work in this workspace yet. Invite people first.</p>
               ) : (
                 <ul className="mt-1 max-h-64 divide-y overflow-y-auto rounded-md border">
                   {shown.map((person) => {
@@ -131,15 +131,15 @@ export function TeamDialog({ team, people, variant = "default", size = "default"
                         <Label htmlFor={id} className="flex h-11 cursor-pointer items-center gap-3 px-3 font-normal hover:bg-accent/60">
                           <Checkbox id={id} checked={checked} onCheckedChange={() => toggle(person.id)} aria-label={`${checked ? "Remove" : "Add"} ${nameOf(person)}`} />
                           <UserAvatar name={person.name} email={person.email} image={person.image} size="sm" />
-                          <span className="min-w-0 flex-1 truncate text-[13px]">{nameOf(person)}</span>
+                          <span className="min-w-0 flex-1 truncate text-sm">{nameOf(person)}</span>
                         </Label>
                       </li>
                     );
                   })}
-                  {shown.length === 0 ? <li className="px-3 py-3 text-sm text-muted-foreground">Nobody matches.</li> : null}
+                  {shown.length === 0 ? <li className="px-3 py-3 text-base text-muted-foreground">Nobody matches.</li> : null}
                 </ul>
               )}
-              {errors.memberIds?.[0] ? <p className="text-xs text-destructive">{errors.memberIds[0]}</p> : null}
+              {errors.memberIds?.[0] ? <p className="text-[13px] text-destructive">{errors.memberIds[0]}</p> : null}
             </fieldset>
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="ghost" onClick={() => setOpen(false)}>

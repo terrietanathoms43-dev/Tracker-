@@ -23,7 +23,7 @@ function PersonMark({ person }: { person: Person | null }) {
 function TroubleCounts({ row, className }: { row: WorkloadRow; className?: string }) {
   if (row.blocked + row.overdue === 0) return null;
   return (
-    <span className={cn("flex flex-wrap gap-x-2 text-[11px] font-medium text-status-blocked-fg tabular-nums", className)}>
+    <span className={cn("flex flex-wrap gap-x-2 text-xs font-medium text-status-blocked-fg tabular-nums", className)}>
       {row.blocked > 0 ? <span>{row.blocked} blocked</span> : null}
       {row.overdue > 0 ? <span>{row.overdue} overdue</span> : null}
     </span>
@@ -46,10 +46,10 @@ export function Workload({ rows, today }: { rows: WorkloadRow[]; today: string }
           <>
             <PersonMark person={row.person} />
             <span className="min-w-0 flex-1">
-              <span className={cn("block truncate text-[13px] font-medium", row.person === null && "text-muted-foreground")}>{name}</span>
+              <span className={cn("block truncate text-sm font-medium", row.person === null && "text-muted-foreground")}>{name}</span>
               <TroubleCounts row={row} className="mt-0.5" />
             </span>
-            <span className={cn("shrink-0 text-xs tabular-nums", row.active.length === 0 ? "text-muted-foreground" : "font-medium")}>{row.active.length} active</span>
+            <span className={cn("shrink-0 text-[13px] tabular-nums", row.active.length === 0 ? "text-muted-foreground" : "font-medium")}>{row.active.length} active</span>
           </>
         );
         if (row.active.length === 0) {
@@ -72,7 +72,7 @@ export function Workload({ rows, today }: { rows: WorkloadRow[]; today: string }
                   <li key={task.id}>
                     <Link href={`/tasks/${task.id}`} prefetch={false} className="flex items-center gap-2.5 py-1.5 pr-4 pl-13 transition-colors hover:bg-accent/60">
                       <StatusIcon status={task.status} className="size-3.5" />
-                      <span className="min-w-0 flex-1 truncate text-xs">{task.title}</span>
+                      <span className="min-w-0 flex-1 truncate text-[13px]">{task.title}</span>
                       <DueLabel due={task.dueDate} today={today} status={task.status} className="shrink-0" />
                     </Link>
                   </li>
@@ -80,7 +80,7 @@ export function Workload({ rows, today }: { rows: WorkloadRow[]; today: string }
               </ul>
               <Link
                 href={assigneeFilter(row)}
-                className="flex items-center gap-1 pr-4 pb-2.5 pl-13 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                className="flex items-center gap-1 pr-4 pb-2.5 pl-13 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
               >
                 {row.person === null ? "All unassigned work in Tasks" : `All ${row.active.length} in Tasks`}
                 <ArrowRight className="size-3" aria-hidden />
@@ -106,9 +106,9 @@ export function WorkloadCompact({ rows }: { rows: WorkloadRow[] }) {
             title={row.active.map((task) => task.title).join("\n") || undefined}
           >
             <PersonMark person={row.person} />
-            <span className={cn("min-w-0 flex-1 truncate text-[13px] font-medium", row.person === null && "text-muted-foreground")}>{nameOf(row.person, "Unassigned")}</span>
+            <span className={cn("min-w-0 flex-1 truncate text-sm font-medium", row.person === null && "text-muted-foreground")}>{nameOf(row.person, "Unassigned")}</span>
             <TroubleCounts row={row} className="shrink-0" />
-            <span className={cn("w-16 shrink-0 text-right text-xs tabular-nums", row.active.length === 0 ? "text-muted-foreground" : "font-medium")}>{row.active.length} active</span>
+            <span className={cn("w-16 shrink-0 text-right text-[13px] tabular-nums", row.active.length === 0 ? "text-muted-foreground" : "font-medium")}>{row.active.length} active</span>
           </Link>
         </li>
       ))}

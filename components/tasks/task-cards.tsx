@@ -43,13 +43,13 @@ export function TaskCard({
                      prefetch={false}
                      data-task-link
                      onClick={swallowClick}
-                     className="line-clamp-3 min-w-0 flex-1 text-[13px] leading-snug font-medium outline-none after:absolute after:inset-0 after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring"
+                     className="line-clamp-3 min-w-0 flex-1 text-sm leading-snug font-medium outline-none after:absolute after:inset-0 after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring"
                   >
                      {task.title}
                   </Link>
                   {readOnly || overlay ? null : <TaskMenu task={task} className="-mt-1 -mr-1 size-6" />}
                </div>
-               {task.nextAction ? <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{task.nextAction}</p> : null}
+               {task.nextAction ? <p className="mt-1 line-clamp-1 text-[13px] text-muted-foreground">{task.nextAction}</p> : null}
                <div className="mt-2.5 flex items-center gap-2">
                   <DueLabel due={task.dueDate} today={today} status={task.status} />
                   <PriorityGlyph priority={task.priority} className="relative" />

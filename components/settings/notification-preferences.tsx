@@ -45,10 +45,10 @@ export function NotificationPreferences({ initial, email }: { initial: Preferenc
         {OPTIONS.map(({ key, label, hint }) => (
           <li key={key} className="flex items-start justify-between gap-4 px-4 py-3 sm:px-5">
             <div className="min-w-0">
-              <Label htmlFor={`pref-${key}`} className="text-[13px] font-medium">
+              <Label htmlFor={`pref-${key}`} className="text-sm font-medium">
                 {label}
               </Label>
-              <p id={`pref-${key}-hint`} className="mt-0.5 text-xs text-muted-foreground">
+              <p id={`pref-${key}-hint`} className="mt-0.5 text-[13px] text-muted-foreground">
                 {hint}
               </p>
             </div>

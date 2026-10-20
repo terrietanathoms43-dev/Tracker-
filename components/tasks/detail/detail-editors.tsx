@@ -65,9 +65,9 @@ export function DescriptionEditor({ taskId, description, editable }: { taskId: s
   return (
     <div className="flex items-start justify-between gap-3">
       {description ? (
-        <p className="min-w-0 text-sm leading-relaxed whitespace-pre-line">{description}</p>
+        <p className="min-w-0 text-base leading-relaxed whitespace-pre-line">{description}</p>
       ) : (
-        <p className="text-sm text-muted-foreground">{editable ? "No description. Add one if the title isn't enough." : "No description."}</p>
+        <p className="text-base text-muted-foreground">{editable ? "No description. Add one if the title isn't enough." : "No description."}</p>
       )}
       {editable ? (
         <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground" onClick={() => setEditing(true)} aria-label="Edit description">

@@ -76,15 +76,15 @@ export function TaskBoard({
                      >
                         <div className="flex items-center gap-2 px-1 pt-0.5 pb-2">
                            <StatusIcon status={status} />
-                           <h2 id={`column-${status}`} className="text-[13px] font-semibold">
+                           <h2 id={`column-${status}`} className="text-sm font-semibold">
                               {TASK_STATUS_LABELS[status]}
                            </h2>
-                           <span className="text-xs text-muted-foreground tabular-nums" aria-label={`${items.length} tasks`}>
+                           <span className="text-[13px] text-muted-foreground tabular-nums" aria-label={`${items.length} tasks`}>
                               {items.length}
                            </span>
                         </div>
                         {items.length === 0 ? (
-                           <p className="rounded-lg border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+                           <p className="rounded-lg border border-dashed px-3 py-4 text-center text-[13px] text-muted-foreground">
                               {status === "completed"
                                  ? `Nothing completed in the last ${RECENTLY_FINISHED_DAYS} days.`
                                  : "Nothing here."}

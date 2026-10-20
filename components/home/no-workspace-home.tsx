@@ -33,7 +33,7 @@ export function NoWorkspaceHome({ firstName, email, invitations, now, timeZone }
           <section aria-labelledby="invitations-heading" className="rounded-lg border bg-card">
             <div className="flex items-center gap-2 border-b px-4 py-2.5">
               <Mail className="size-4 text-muted-foreground" aria-hidden />
-              <h2 id="invitations-heading" className="text-sm font-semibold">
+              <h2 id="invitations-heading" className="text-base font-semibold">
                 You&apos;ve been invited
               </h2>
             </div>
@@ -41,8 +41,8 @@ export function NoWorkspaceHome({ firstName, email, invitations, now, timeZone }
               {invitations.map((invitation) => (
                 <li key={invitation.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium">{invitation.orgName}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-sm font-medium">{invitation.orgName}</p>
+                    <p className="text-[13px] text-muted-foreground">
                       As {ORG_ROLE_LABELS[invitation.role].toLowerCase()}
                       {invitation.inviterName ? ` · invited by ${invitation.inviterName}` : ""} · expires{" "}
                       <RelativeTime date={new Date(invitation.expiresAt)} now={now} timeZone={timeZone} />
@@ -59,17 +59,17 @@ export function NoWorkspaceHome({ firstName, email, invitations, now, timeZone }
           <div className="mb-3 grid size-9 place-items-center rounded-md bg-secondary">
             <Building2 className="size-4" aria-hidden />
           </div>
-          <h2 id="create-heading" className="text-sm font-semibold">
+          <h2 id="create-heading" className="text-base font-semibold">
             Start a workspace
           </h2>
-          <p className="mt-1 max-w-prose text-sm text-muted-foreground">Create one for your team and invite people to it. You become its admin.</p>
+          <p className="mt-1 max-w-prose text-base text-muted-foreground">Create one for your team and invite people to it. You become its admin.</p>
           <Button asChild variant={invitations.length > 0 ? "outline" : "default"} className="mt-4">
             <Link href="/onboarding">Create a workspace</Link>
           </Button>
         </section>
 
         {invitations.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-base text-muted-foreground">
             Joining a team that already uses Trackwise? Ask one of its admins or leaders to invite <span className="text-foreground">{email}</span>. The invitation
             shows up here, and the link in the email works too.
           </p>

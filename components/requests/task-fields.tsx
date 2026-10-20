@@ -49,7 +49,7 @@ export function TaskFields({
             </Field>
          </div>
          <div className="grid gap-2">
-            <span className="text-sm leading-none font-medium">Priority</span>
+            <span className="text-base leading-none font-medium">Priority</span>
             <Segmented
                className="w-fit"
                label="Priority"

@@ -17,10 +17,10 @@ export function ClosedTasks({ items, today }: { items: TaskListItem[]; today: st
   if (items.length === 0) return null;
   return (
     <details className="group min-w-0">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md px-0.5 text-sm font-semibold select-none [&::-webkit-details-marker]:hidden">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md px-0.5 text-base font-semibold select-none [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-4 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden />
         Completed and rejected
-        <span className="text-xs font-normal text-muted-foreground tabular-nums">{items.length}</span>
+        <span className="text-[13px] font-normal text-muted-foreground tabular-nums">{items.length}</span>
       </summary>
       <div className="mt-2 overflow-hidden rounded-lg border bg-card">
         <TaskList page={{ items, nextCursor: null }} today={today} showReason={false} />
@@ -54,16 +54,16 @@ export function PlanningTasks({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 id="tasks-heading" className="flex items-baseline gap-2 text-base font-semibold">
           Tasks
-          <span className="text-xs font-normal text-muted-foreground tabular-nums">{items.length}</span>
+          <span className="text-[13px] font-normal text-muted-foreground tabular-nums">{items.length}</span>
         </h2>
         {action}
       </div>
       {items.length === 0 ? (
-        <div className="rounded-lg border border-dashed bg-card px-4 py-5 text-sm text-muted-foreground">{empty}</div>
+        <div className="rounded-lg border border-dashed bg-card px-4 py-5 text-base text-muted-foreground">{empty}</div>
       ) : (
         <div className="grid gap-5">
           {open.length === 0 ? (
-            <p className="rounded-lg border border-dashed bg-card px-4 py-4 text-sm text-muted-foreground">Nothing open right now.</p>
+            <p className="rounded-lg border border-dashed bg-card px-4 py-4 text-base text-muted-foreground">Nothing open right now.</p>
           ) : groupByStatus ? (
             OPEN_STATUSES.map((status) => (
               <TaskSection key={status} title={TASK_STATUS_LABELS[status]} items={open.filter((task) => task.status === status)} today={today} reasonless />

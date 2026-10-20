@@ -11,7 +11,7 @@ import { ApprovalActions, UnblockButton } from "./resume-actions";
 // The Resume card: where a task stands, first on its page.
 
 function Label({ children }: { children: ReactNode }) {
-  return <p className="text-xs font-medium text-muted-foreground">{children}</p>;
+  return <p className="text-[13px] font-medium text-muted-foreground">{children}</p>;
 }
 
 /** The strip at the top of the card for the states that need someone: blocked, awaiting approval, or closed. */
@@ -20,12 +20,12 @@ function StatusStrip({ detail, abilities, timeZone, now }: { detail: TaskDetail;
     return (
       <div className="flex flex-wrap items-start gap-x-3 gap-y-2 border-b border-status-blocked-dot/30 bg-status-blocked-bg px-5 py-3 text-status-blocked-fg md:px-6">
         <OctagonAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-        <div className="min-w-0 flex-1 basis-48 text-sm">
+        <div className="min-w-0 flex-1 basis-48 text-base">
           <p>
             <span className="font-medium">Blocked</span>
             {detail.blockedReason ? ` · ${detail.blockedReason}` : ""}
           </p>
-          {detail.blockedBy ? <p className="mt-0.5 text-xs opacity-80">Who or what unblocks it: {detail.blockedBy}</p> : null}
+          {detail.blockedBy ? <p className="mt-0.5 text-[13px] opacity-80">Who or what unblocks it: {detail.blockedBy}</p> : null}
         </div>
         {abilities.progress ? <UnblockButton taskId={detail.id} /> : null}
       </div>
@@ -35,7 +35,7 @@ function StatusStrip({ detail, abilities, timeZone, now }: { detail: TaskDetail;
     return (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-status-awaiting-dot/30 bg-status-awaiting-bg px-5 py-3 text-status-awaiting-fg md:px-6">
         <Clock className="size-4 shrink-0" aria-hidden />
-        <p className="min-w-0 flex-1 basis-48 text-sm">
+        <p className="min-w-0 flex-1 basis-48 text-base">
           <span className="font-medium">Awaiting approval</span>
           {detail.approver ? ` from ${nameOf(detail.approver)}` : ""}
         </p>
@@ -45,7 +45,7 @@ function StatusStrip({ detail, abilities, timeZone, now }: { detail: TaskDetail;
   }
   if (detail.status === "completed") {
     return (
-      <div className="flex items-start gap-3 border-b border-status-completed-dot/30 bg-status-completed-bg px-5 py-3 text-sm text-status-completed-fg md:px-6">
+      <div className="flex items-start gap-3 border-b border-status-completed-dot/30 bg-status-completed-bg px-5 py-3 text-base text-status-completed-fg md:px-6">
         <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
         <div className="min-w-0">
           <p className="font-medium">
@@ -59,7 +59,7 @@ function StatusStrip({ detail, abilities, timeZone, now }: { detail: TaskDetail;
   }
   if (detail.status === "rejected") {
     return (
-      <div className="flex items-start gap-3 border-b bg-status-rejected-bg px-5 py-3 text-sm text-status-rejected-fg md:px-6">
+      <div className="flex items-start gap-3 border-b bg-status-rejected-bg px-5 py-3 text-base text-status-rejected-fg md:px-6">
         <XCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
         <p>
           <span className="font-medium">Rejected</span>
@@ -112,9 +112,9 @@ export function ResumeCard({
         <div className="grid gap-1.5">
           <Label>Latest progress</Label>
           {detail.latestProgress ? (
-            <p className="text-sm leading-relaxed whitespace-pre-line">{detail.latestProgress}</p>
+            <p className="text-base leading-relaxed whitespace-pre-line">{detail.latestProgress}</p>
           ) : (
-            <p className="text-sm text-muted-foreground">No progress recorded yet.</p>
+            <p className="text-base text-muted-foreground">No progress recorded yet.</p>
           )}
         </div>
         {links.length > 0 ? (
@@ -124,7 +124,7 @@ export function ResumeCard({
           </div>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             {detail.lastUpdate ? (
               <>
                 Updated by {nameOf(detail.lastUpdate.author)} · <RelativeTime date={new Date(detail.lastUpdate.at)} timeZone={timeZone} now={now} />

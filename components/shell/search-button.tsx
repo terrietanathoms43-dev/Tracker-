@@ -27,11 +27,11 @@ export function SidebarSearch() {
     <button
       type="button"
       onClick={openPalette}
-      className="flex h-8 w-full items-center gap-2.5 rounded-md border bg-background px-2.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+      className="flex h-8 w-full items-center gap-2.5 rounded-md border bg-background px-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
     >
       <Search className="size-3.5" aria-hidden />
       Search…
-      <kbd className="ml-auto rounded border px-1 font-sans text-[10px]">⌘K</kbd>
+      <kbd className="ml-auto rounded border px-1 font-sans text-[11px]">⌘K</kbd>
     </button>
   );
 }

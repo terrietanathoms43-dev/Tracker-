@@ -20,12 +20,12 @@ const STEPS = ["Workspace", "Invite"] as const;
 
 function Progress({ current }: { current: number }) {
   return (
-    <ol className="mb-8 flex items-center gap-2 text-xs" aria-label="Setup progress">
+    <ol className="mb-8 flex items-center gap-2 text-[13px]" aria-label="Setup progress">
       {STEPS.map((label, index) => (
         <li key={label} className="flex items-center gap-2" aria-current={index === current ? "step" : undefined}>
           <span
             className={cn(
-              "grid size-5 place-items-center rounded-full text-[11px] font-semibold",
+              "grid size-5 place-items-center rounded-full text-xs font-semibold",
               index <= current ? "bg-primary text-primary-foreground" : "border text-muted-foreground",
             )}
           >
@@ -41,7 +41,7 @@ function Progress({ current }: { current: number }) {
 
 function BackHome() {
   return (
-    <Link href="/home" className="mb-6 inline-flex items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground">
+    <Link href="/home" className="mb-6 inline-flex items-center gap-1.5 rounded-md text-base text-muted-foreground transition-colors hover:text-foreground">
       <ArrowLeft className="size-4" aria-hidden />
       Back
     </Link>
@@ -87,7 +87,7 @@ async function Onboarding({ searchParams }: Pick<PageProps<"/onboarding">, "sear
         <CheckCircle2 className="size-5 text-status-completed-fg" aria-hidden />
       </div>
       <h1 className="text-2xl font-semibold">You&apos;re set up{firstName ? `, ${firstName}` : ""}</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
+      <p className="mt-2 text-base text-muted-foreground">
         {context.org.name} is ready
         {setup.pendingInvitations > 0 ? ` and ${setup.pendingInvitations} ${setup.pendingInvitations === 1 ? "invitation is" : "invitations are"} on the way` : ""}.
         You can invite people, copy invitation links and change roles any time under Settings → Workspace.

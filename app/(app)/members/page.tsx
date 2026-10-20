@@ -63,7 +63,7 @@ export default async function MembersPage() {
           count={members.length}
           aside={
             isAdmin(viewer) ? (
-              <Link href="/settings/workspace#members" className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
+              <Link href="/settings/workspace#members" className="inline-flex items-center gap-1 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
                 <Settings2 className="size-3.5" aria-hidden />
                 Roles and invitations
               </Link>

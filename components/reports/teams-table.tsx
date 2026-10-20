@@ -17,9 +17,9 @@ export function TeamsTable({ rows }: { rows: TeamReportRow[] }) {
   if (rows.length === 0) return <PanelEmpty>No teams yet. Teams are made on the Members page and can be assigned work.</PanelEmpty>;
   return (
     <>
-      <table className="w-full text-[13px]">
+      <table className="w-full text-sm">
         <thead>
-          <tr className="border-b text-xs text-muted-foreground">
+          <tr className="border-b text-[13px] text-muted-foreground">
             <th scope="col" className="px-4 py-2 text-left font-medium">
               Team
             </th>
@@ -48,7 +48,7 @@ export function TeamsTable({ rows }: { rows: TeamReportRow[] }) {
           ))}
         </tbody>
       </table>
-      <p className="border-t px-4 py-3 text-xs text-muted-foreground">Completed counts the range; open, blocked and overdue are as of today. Work assigned to a team counts for the team, not for each member.</p>
+      <p className="border-t px-4 py-3 text-[13px] text-muted-foreground">Completed counts the range; open, blocked and overdue are as of today. Work assigned to a team counts for the team, not for each member.</p>
     </>
   );
 }

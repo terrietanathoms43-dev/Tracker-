@@ -15,9 +15,9 @@ export function ContributionsTable({ rows }: { rows: ContributionRow[] }) {
   if (rows.length === 0) return <PanelEmpty>Nobody in the workspace does work yet.</PanelEmpty>;
   return (
     <>
-      <table className="w-full text-[13px]">
+      <table className="w-full text-sm">
         <thead>
-          <tr className="border-b text-xs text-muted-foreground">
+          <tr className="border-b text-[13px] text-muted-foreground">
             <th scope="col" className="px-4 py-2 text-left font-medium">
               Person
             </th>
@@ -47,7 +47,7 @@ export function ContributionsTable({ rows }: { rows: ContributionRow[] }) {
           ))}
         </tbody>
       </table>
-      <p className="border-t px-4 py-3 text-xs text-muted-foreground">
+      <p className="border-t px-4 py-3 text-[13px] text-muted-foreground">
         Counts of what was recorded, listed alphabetically. They are not a comparison or a ranking: one large delivery can matter more than many small ones.
       </p>
     </>

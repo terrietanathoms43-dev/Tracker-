@@ -59,8 +59,8 @@ function InvitationRow({ invite, link, onLink }: { invite: InvitationRowData; li
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:px-5">
       <div className="min-w-48 flex-1">
-        <p className="truncate text-[13px] font-medium">{invite.email}</p>
-        <p className="truncate text-xs text-muted-foreground">
+        <p className="truncate text-sm font-medium">{invite.email}</p>
+        <p className="truncate text-[13px] text-muted-foreground">
           {meta} ·{" "}
           {invite.expired ? <span className="font-medium text-status-blocked-fg">Expired</span> : <>Expires {invite.expires}</>}
         </p>
@@ -117,10 +117,10 @@ export function InvitationsSection({ invitations, roles }: { invitations: Invita
     <Section id="invitations" title="Invitations" description="Each link works for 7 days. If an email doesn't arrive, copy the link and send it yourself.">
       <InviteForm roles={roles} onInvited={remember} className="border-b p-4 sm:p-5" />
       {invitations.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-muted-foreground sm:px-5">No pending invitations.</p>
+        <p className="px-4 py-4 text-base text-muted-foreground sm:px-5">No pending invitations.</p>
       ) : (
         <>
-          <h3 className="px-4 pt-3 text-xs font-medium text-muted-foreground sm:px-5">Pending ({invitations.length})</h3>
+          <h3 className="px-4 pt-3 text-[13px] font-medium text-muted-foreground sm:px-5">Pending ({invitations.length})</h3>
           <ul className="divide-y">
             {invitations.map((invite) => (
               <InvitationRow key={invite.id} invite={invite} link={links[invite.id]} onLink={(link) => remember([link])} />

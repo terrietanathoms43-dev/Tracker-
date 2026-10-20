@@ -41,24 +41,24 @@ export function TaskSection({
     <section aria-labelledby={`${id}-heading`} className="min-w-0">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-0.5">
         <div className="flex items-baseline gap-2">
-          <h2 id={`${id}-heading`} className="text-sm font-semibold">
+          <h2 id={`${id}-heading`} className="text-base font-semibold">
             {title}
           </h2>
-          <span className="text-xs text-muted-foreground tabular-nums" aria-label={`${total} tasks`}>
+          <span className="text-[13px] text-muted-foreground tabular-nums" aria-label={`${total} tasks`}>
             {total}
           </span>
         </div>
-        {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+        {description ? <p className="text-[13px] text-muted-foreground">{description}</p> : null}
       </div>
       {items.length === 0 ? (
-        <div className="rounded-lg border border-dashed bg-card px-4 py-5 text-sm text-muted-foreground">{empty}</div>
+        <div className="rounded-lg border border-dashed bg-card px-4 py-5 text-base text-muted-foreground">{empty}</div>
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
           <TaskList page={{ items, nextCursor: null }} today={today} showReason={!reasonless} readOnly={readOnly} />
           {seeAllHref && total > items.length ? (
             <Link
               href={seeAllHref}
-              className="flex items-center justify-center gap-1.5 border-t px-4 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="flex items-center justify-center gap-1.5 border-t px-4 py-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               See all {total}
               <ArrowRight className="size-3.5" aria-hidden />

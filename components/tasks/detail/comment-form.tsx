@@ -46,7 +46,7 @@ export function CommentForm({ taskId }: { taskId: string }) {
           }
         }}
       />
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
       {body.trim() !== "" ? (
         <div className="flex justify-end">
           <Button type="submit" size="sm" variant="outline" disabled={pending}>

@@ -18,22 +18,22 @@ function Entry({ item }: { item: HistoryItem }) {
       <UserAvatar name={item.actor.name} email={item.actor.email} image={item.actor.image} size="sm" className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
-          <p className="min-w-0 text-sm">
+          <p className="min-w-0 text-base">
             <span className="font-medium">{nameOf(item.actor)}</span> <span className="text-muted-foreground">{item.phrase}</span>
           </p>
-          <time dateTime={item.at} title={item.absolute} className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
+          <time dateTime={item.at} title={item.absolute} className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
             {item.time}
           </time>
         </div>
         {item.change ? (
-          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[13px] text-muted-foreground">
             <span>{item.change.before ?? "None"}</span>
             <ArrowRight className="size-3" aria-label="to" />
             <span className="text-foreground">{item.change.after ?? "None"}</span>
           </p>
         ) : null}
         {item.type === "progress" ? (
-          <div className="mt-1.5 grid gap-1 rounded-md bg-muted/60 px-3 py-2 text-sm">
+          <div className="mt-1.5 grid gap-1 rounded-md bg-muted/60 px-3 py-2 text-base">
             {item.body ? <p className="whitespace-pre-line">{item.body}</p> : null}
             {item.nextAction ? (
               <p className="text-muted-foreground">
@@ -47,9 +47,9 @@ function Entry({ item }: { item: HistoryItem }) {
             ) : null}
           </div>
         ) : item.type === "comment" ? (
-          <p className="mt-1 rounded-md border px-3 py-2 text-sm whitespace-pre-line">{item.body}</p>
+          <p className="mt-1 rounded-md border px-3 py-2 text-base whitespace-pre-line">{item.body}</p>
         ) : item.note ? (
-          <p className="mt-1 text-sm text-muted-foreground">“{item.note}”</p>
+          <p className="mt-1 text-base text-muted-foreground">“{item.note}”</p>
         ) : null}
       </div>
     </li>
@@ -71,7 +71,7 @@ export function TaskHistory({ taskId, initial, canComment }: { taskId: string; i
 
   return (
     <section aria-labelledby="history-heading" className="rounded-xl border bg-card">
-      <h2 id="history-heading" className="border-b px-5 py-3 text-sm font-semibold md:px-6">
+      <h2 id="history-heading" className="border-b px-5 py-3 text-base font-semibold md:px-6">
         Comments and history
       </h2>
       {canComment ? (
@@ -80,14 +80,14 @@ export function TaskHistory({ taskId, initial, canComment }: { taskId: string; i
         </div>
       ) : null}
       {items.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-muted-foreground md:px-6">Nothing has happened yet.</p>
+        <p className="px-5 py-4 text-base text-muted-foreground md:px-6">Nothing has happened yet.</p>
       ) : (
         <ol className="px-5 py-2 md:px-6">
           {items.map((item, index) => (
             <Fragment key={item.id}>
               {index === 0 || items[index - 1].day !== item.day ? (
                 <li className={index === 0 ? "pt-1" : "pt-4"} aria-hidden>
-                  <p className="text-xs font-medium text-muted-foreground">{item.dayLabel}</p>
+                  <p className="text-[13px] font-medium text-muted-foreground">{item.dayLabel}</p>
                 </li>
               ) : null}
               <Entry item={item} />

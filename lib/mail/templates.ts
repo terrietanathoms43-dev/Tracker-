@@ -16,22 +16,22 @@ function button(action: { label: string; url: string }): string {
       <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:24px 0 8px;">
         <tr>
           <td align="center" bgcolor="${BRAND}" style="background-color:${BRAND};border-radius:8px;">
-            <a href="${url}" style="display:inline-block;padding:11px 20px;font-size:14px;font-weight:600;color:#ffffff;background-color:${BRAND};border:1px solid ${BRAND};border-radius:8px;text-decoration:none;">${escapeHtml(action.label)}</a>
+            <a href="${url}" style="display:inline-block;padding:11px 20px;font-size:16px;font-weight:600;color:#ffffff;background-color:${BRAND};border:1px solid ${BRAND};border-radius:8px;text-decoration:none;">${escapeHtml(action.label)}</a>
           </td>
         </tr>
       </table>
-      <p style="margin:0 0 24px;font-size:12px;line-height:1.6;color:#737373;word-break:break-all;">Or copy this link into your browser:<br><a href="${url}" style="color:${BRAND};">${url}</a></p>`;
+      <p style="margin:0 0 24px;font-size:13px;line-height:1.6;color:#737373;word-break:break-all;">Or copy this link into your browser:<br><a href="${url}" style="color:${BRAND};">${url}</a></p>`;
 }
 
 function layout(heading: string, bodyHtml: string, action: { label: string; url: string }, footnote: string): string {
   return `
   <div style="background:#fafafa;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
     <div style="max-width:480px;margin:0 auto;background:#ffffff;border:1px solid #e5e5e5;border-radius:10px;padding:28px 28px 24px;">
-      <p style="margin:0 0 20px;font-size:14px;font-weight:600;color:${BRAND};letter-spacing:-0.01em;">${APP_NAME}</p>
+      <p style="margin:0 0 20px;font-size:16px;font-weight:600;color:${BRAND};letter-spacing:-0.01em;">${APP_NAME}</p>
       <h1 style="margin:0 0 12px;font-size:20px;line-height:1.3;color:#262626;letter-spacing:-0.02em;">${escapeHtml(heading)}</h1>
-      <div style="font-size:14px;line-height:1.6;color:#525252;">${bodyHtml}</div>
+      <div style="font-size:16px;line-height:1.6;color:#525252;">${bodyHtml}</div>
       ${button(action)}
-      <p style="margin:0;font-size:12px;line-height:1.5;color:#737373;">${escapeHtml(footnote)}</p>
+      <p style="margin:0;font-size:13px;line-height:1.5;color:#737373;">${escapeHtml(footnote)}</p>
     </div>
   </div>`;
 }

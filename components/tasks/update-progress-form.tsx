@@ -102,7 +102,7 @@ export function UpdateProgressForm({
 
    const error = (key: string) =>
       errors[key]?.[0] ? (
-         <p className="text-xs text-destructive" id={`${field(key)}-error`}>
+         <p className="text-[13px] text-destructive" id={`${field(key)}-error`}>
             {errors[key]?.[0]}
          </p>
       ) : null;
@@ -214,7 +214,7 @@ export function UpdateProgressForm({
 
          <div className="grid items-start gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
-               <Label htmlFor={field("handover")} className="text-xs text-muted-foreground">
+               <Label htmlFor={field("handover")} className="text-[13px] text-muted-foreground">
                   Hand over to
                </Label>
                <NativeSelect
@@ -234,7 +234,7 @@ export function UpdateProgressForm({
                </NativeSelect>
             </div>
             <div className={cn("grid gap-1.5", blocked && "opacity-50")}>
-               <Label htmlFor={field("mark")} className="text-xs text-muted-foreground">
+               <Label htmlFor={field("mark")} className="text-[13px] text-muted-foreground">
                   Mark as
                </Label>
                <NativeSelect
@@ -256,7 +256,7 @@ export function UpdateProgressForm({
 
          {!blocked && markAs === "awaiting_approval" ? (
             <div className="grid gap-1.5">
-               <Label htmlFor={field("approver")} className="text-xs text-muted-foreground">
+               <Label htmlFor={field("approver")} className="text-[13px] text-muted-foreground">
                   Who approves it?
                </Label>
                <NativeSelect
@@ -289,7 +289,7 @@ export function UpdateProgressForm({
          ) : null}
 
          <div className="flex items-center justify-end gap-3">
-            <span className="hidden text-xs text-muted-foreground sm:inline">Ctrl+Enter to save</span>
+            <span className="hidden text-[13px] text-muted-foreground sm:inline">Ctrl+Enter to save</span>
             <Button type="submit" disabled={pending || progress.trim() === ""}>
                {pending ? "Saving…" : "Save update"}
             </Button>

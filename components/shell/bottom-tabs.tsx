@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import type { NavKey } from "@/lib/permissions";
 import { isActive, NAV_ITEMS } from "./nav-config";
 
-const TAB = "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors";
+const TAB = "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 text-xs font-medium transition-colors";
 
 /** Phone navigation: up to four destinations, then More (the rest, Reports, User settings, Workspace, Sign out). */
 export function BottomTabs({ items, canSeeReports, hasWorkspace = true }: { items: NavKey[]; canSeeReports: boolean; hasWorkspace?: boolean }) {
@@ -57,7 +57,7 @@ export function BottomTabs({ items, canSeeReports, hasWorkspace = true }: { item
           </SheetHeader>
           <div className="flex flex-col gap-1 px-4">
             {more.map(({ href, label, icon: Icon }) => (
-              <Link key={href} href={href} onClick={() => setOpen(false)} className="flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium hover:bg-accent">
+              <Link key={href} href={href} onClick={() => setOpen(false)} className="flex h-11 items-center gap-3 rounded-md px-3 text-base font-medium hover:bg-accent">
                 <Icon className="size-4 text-muted-foreground" aria-hidden />
                 {label}
               </Link>
@@ -66,7 +66,7 @@ export function BottomTabs({ items, canSeeReports, hasWorkspace = true }: { item
               type="button"
               disabled={signingOut}
               onClick={() => startSignOut(() => signOutAction())}
-              className="flex h-11 items-center gap-3 rounded-md px-3 text-left text-sm font-medium hover:bg-accent disabled:opacity-50"
+              className="flex h-11 items-center gap-3 rounded-md px-3 text-left text-base font-medium hover:bg-accent disabled:opacity-50"
             >
               <LogOut className="size-4 text-muted-foreground" aria-hidden />
               Sign out

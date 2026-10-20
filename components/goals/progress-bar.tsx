@@ -29,7 +29,7 @@ export function ProgressBar({
 
   return (
     <div className={className}>
-      <div className={cn("flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5", large ? "text-sm" : "text-xs")}>
+      <div className={cn("flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5", large ? "text-base" : "text-[13px]")}>
         <p className="text-muted-foreground">
           {total === 0 ? (
             "No tasks yet"

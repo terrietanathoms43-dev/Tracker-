@@ -72,7 +72,7 @@ export function RequestToolbar({ filters }: { filters: RequestFilters }) {
       </NativeSelect>
       <div className="flex h-9 items-center gap-2 px-1">
         <Switch id="requests-mine" checked={filters.mine} onCheckedChange={(mine) => apply({ mine })} />
-        <Label htmlFor="requests-mine" className="text-xs font-normal text-muted-foreground">
+        <Label htmlFor="requests-mine" className="text-[13px] font-normal text-muted-foreground">
           Only mine
         </Label>
       </div>

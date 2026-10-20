@@ -56,7 +56,7 @@ async function LoginForms({ searchParams }: Pick<PageProps<"/login">, "searchPar
   return (
     <div className="grid gap-5">
       {error ? (
-        <p role="alert" className="rounded-md border border-status-blocked-dot/30 bg-status-blocked-bg px-3 py-2.5 text-sm text-status-blocked-fg">
+        <p role="alert" className="rounded-md border border-status-blocked-dot/30 bg-status-blocked-bg px-3 py-2.5 text-base text-status-blocked-fg">
           {error}
         </p>
       ) : null}
@@ -70,7 +70,7 @@ async function LoginForms({ searchParams }: Pick<PageProps<"/login">, "searchPar
               Continue with Google
             </SubmitButton>
           </form>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <div className="flex items-center gap-3 text-[13px] text-muted-foreground">
             <span className="h-px flex-1 bg-border" />
             or
             <span className="h-px flex-1 bg-border" />
@@ -109,7 +109,7 @@ export default function LoginPage(props: PageProps<"/login">) {
     <AuthShell>
       <div className="mb-8">
         <h1 className="text-2xl font-semibold">Sign in to {APP_NAME}</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
+        <p className="mt-1.5 text-base text-muted-foreground">
           {domains ? `Use your ${domains} email. ` : ""}No password needed. New here? Signing in creates your account.
         </p>
       </div>

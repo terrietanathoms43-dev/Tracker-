@@ -16,7 +16,7 @@ const STATUS: Record<RequestStatus, { icon: LucideIcon; tone: string }> = {
 export function RequestStatusBadge({ status, className }: { status: RequestStatus; className?: string }) {
   const { icon: Icon, tone } = STATUS[status];
   return (
-    <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium whitespace-nowrap", tone, className)}>
+    <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium whitespace-nowrap", tone, className)}>
       <Icon className="size-3.5" aria-hidden />
       {REQUEST_STATUS_LABELS[status]}
     </span>
@@ -43,7 +43,7 @@ export function UrgencyBadge({ urgency, className }: { urgency: RequestUrgency; 
   const glyph = urgency === "normal" ? null : URGENCY[urgency];
   const loud = urgency === "critical" || urgency === "high";
   return (
-    <span className={cn("inline-flex items-center gap-1 text-xs whitespace-nowrap", loud && glyph ? `font-medium ${glyph.color}` : "text-muted-foreground", className)}>
+    <span className={cn("inline-flex items-center gap-1 text-[13px] whitespace-nowrap", loud && glyph ? `font-medium ${glyph.color}` : "text-muted-foreground", className)}>
       {glyph ? <glyph.icon className="size-3.5 shrink-0" aria-hidden /> : null}
       {REQUEST_URGENCY_LABELS[urgency]} urgency
     </span>

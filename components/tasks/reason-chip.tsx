@@ -8,7 +8,7 @@ export function ReasonChip({ reason, className }: { reason: string; className?: 
   return (
     <span
       className={cn(
-        "inline-flex h-5 shrink-0 items-center rounded-md px-1.5 text-[11px] font-medium whitespace-nowrap",
+        "inline-flex h-5 shrink-0 items-center rounded-md px-1.5 text-xs font-medium whitespace-nowrap",
         urgent ? "bg-status-blocked-bg text-status-blocked-fg" : reason === "Your approval" ? "bg-status-awaiting-bg text-status-awaiting-fg" : "bg-muted text-muted-foreground",
         className,
       )}

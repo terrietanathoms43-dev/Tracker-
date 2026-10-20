@@ -13,10 +13,10 @@ import { nameOf } from "@/lib/tasks/people";
 
 /** "2 open · 1 overdue" for a person; stakeholders and idle people say so in words. */
 function Work({ row }: { row: MemberDirectoryRow }) {
-  if (row.role === "stakeholder") return <span className="text-xs text-muted-foreground">Submits requests</span>;
-  if (row.work.active === 0) return <span className="text-xs text-muted-foreground">Nothing open</span>;
+  if (row.role === "stakeholder") return <span className="text-[13px] text-muted-foreground">Submits requests</span>;
+  if (row.work.active === 0) return <span className="text-[13px] text-muted-foreground">Nothing open</span>;
   return (
-    <span className="flex flex-wrap justify-end gap-x-2 text-xs tabular-nums">
+    <span className="flex flex-wrap justify-end gap-x-2 text-[13px] tabular-nums">
       <span className="font-medium">{row.work.active} open</span>
       {row.work.blocked > 0 ? <span className="font-medium text-status-blocked-fg">{row.work.blocked} blocked</span> : null}
       {row.work.overdue > 0 ? <span className="font-medium text-status-blocked-fg">{row.work.overdue} overdue</span> : null}
@@ -34,7 +34,7 @@ export function MemberDirectory({ rows, viewerId }: { rows: MemberDirectoryRow[]
           <li key={row.id} className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3">
             <UserAvatar name={row.name} email={row.email} image={row.image} />
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-medium">
+              <p className="truncate text-sm font-medium">
                 {worker ? (
                   <Link href={tasksHref({ assignee: row.id })} className="rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring" title="Their open tasks">
                     {nameOf(row)}
@@ -44,7 +44,7 @@ export function MemberDirectory({ rows, viewerId }: { rows: MemberDirectoryRow[]
                 )}
                 {row.id === viewerId ? <span className="font-normal text-muted-foreground"> (you)</span> : null}
               </p>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-[13px] text-muted-foreground">
                 {ORG_ROLE_LABELS[row.role]}
                 <span className="hidden sm:inline"> · {row.email}</span>
               </p>

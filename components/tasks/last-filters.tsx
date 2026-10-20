@@ -49,7 +49,7 @@ export function LastFilters({ current, view }: { current: string; view: TaskView
   if (current !== "" || !saved) return null;
   const href = view === "board" ? `/tasks?${saved}&view=board` : `/tasks?${saved}`;
   return (
-    <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+    <div className="mb-3 flex items-center gap-2 text-[13px] text-muted-foreground">
       <History className="size-3.5 shrink-0" aria-hidden />
       <Link href={href} className="font-medium text-link underline-offset-4 hover:underline">
         Back to your last view

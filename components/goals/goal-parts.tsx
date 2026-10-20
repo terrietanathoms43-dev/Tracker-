@@ -13,7 +13,7 @@ import { ProgressBar } from "./progress-bar";
 // Small server-rendered pieces of the goal screens: the status badge, the owner and target labels (projects reuse
 // both), and the card the goals list is made of.
 
-const BADGE = "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-xs font-medium whitespace-nowrap";
+const BADGE = "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium whitespace-nowrap";
 
 /** Achieved or Paused; an active goal needs no badge, so it renders nothing. */
 export function GoalStatusBadge({ status, className }: { status: GoalStatus; className?: string }) {
@@ -62,13 +62,13 @@ export function GoalCard({ goal, today }: { goal: GoalListItem; today: string })
       <div className="flex items-start justify-between gap-3">
         <Link
           href={`/goals/${goal.id}`}
-          className="min-w-0 text-sm leading-snug font-medium outline-none after:absolute after:inset-0 after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring"
+          className="min-w-0 text-base leading-snug font-medium outline-none after:absolute after:inset-0 after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring"
         >
           {goal.title}
         </Link>
         <GoalStatusBadge status={goal.status} className="shrink-0" />
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
         <OwnerLabel owner={goal.owner} />
         {goal.targetDate ? (
           <>

@@ -38,13 +38,13 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
         onClick={swallowClick}
         className="flex min-w-0 flex-1 flex-col gap-0.5 outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-ring md:flex-row md:items-baseline md:gap-3"
       >
-        <span className={cn("truncate text-[13px] font-medium md:max-w-[55%] md:shrink-0", rejected && "text-muted-foreground line-through")}>{task.title}</span>
+        <span className={cn("truncate text-sm font-medium md:max-w-[55%] md:shrink-0", rejected && "text-muted-foreground line-through")}>{task.title}</span>
         {task.nextAction || reason || via ? (
           <span className="flex min-w-0 items-center gap-1.5">
             {/* On a phone the reason leads the second line; from sm up it sits beside the due date. */}
             {reason ? <ReasonChip reason={reason} className="sm:hidden" /> : null}
             {via ? <ReasonChip reason={via} className="sm:hidden" /> : null}
-            {task.nextAction ? <span className="truncate text-xs text-muted-foreground md:text-[13px]">{task.nextAction}</span> : null}
+            {task.nextAction ? <span className="truncate text-[13px] text-muted-foreground md:text-sm">{task.nextAction}</span> : null}
           </span>
         ) : null}
       </Link>

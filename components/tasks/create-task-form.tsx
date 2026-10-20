@@ -67,7 +67,7 @@ export function CreateTaskForm({
       });
    }
 
-   if (loadError) return <p className="text-sm text-muted-foreground">{loadError}</p>;
+   if (loadError) return <p className="text-base text-muted-foreground">{loadError}</p>;
    const loading = options === null;
 
    return (
@@ -141,7 +141,7 @@ export function CreateTaskForm({
          </div>
 
          <div className="grid gap-2">
-            <span className="text-sm leading-none font-medium">Priority</span>
+            <span className="text-base leading-none font-medium">Priority</span>
             <Segmented
                className="w-fit"
                label="Priority"

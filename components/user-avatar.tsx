@@ -25,7 +25,7 @@ export function UserAvatar({
     <Avatar size={size} className={className}>
       {image ? <AvatarImage src={image} alt="" /> : null}
       <AvatarFallback
-        className={cn("bg-secondary font-medium text-secondary-foreground", size === "sm" ? "text-[10px]" : "text-xs")}
+        className={cn("bg-secondary font-medium text-secondary-foreground", size === "sm" ? "text-[11px]" : "text-[13px]")}
       >
         {initialsOf(name, email)}
       </AvatarFallback>

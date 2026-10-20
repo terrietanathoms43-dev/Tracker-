@@ -8,7 +8,7 @@ import type { ProjectListItem } from "@/lib/dal/projects";
 
 // Small server-rendered pieces of the project screens: the status badge, the goal link and the project card.
 
-const BADGE = "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-xs font-medium whitespace-nowrap";
+const BADGE = "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium whitespace-nowrap";
 
 /** Completed or Archived; an active project needs no badge, so it renders nothing. */
 export function ProjectStatusBadge({ status, className }: { status: ProjectStatus; className?: string }) {
@@ -47,18 +47,18 @@ export function ProjectCard({ project, today, showGoal = true }: { project: Proj
       <div className="flex items-start justify-between gap-3">
         <Link
           href={`/projects/${project.id}`}
-          className="min-w-0 text-sm leading-snug font-medium outline-none after:absolute after:inset-0 after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring"
+          className="min-w-0 text-base leading-snug font-medium outline-none after:absolute after:inset-0 after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring"
         >
           {project.name}
         </Link>
         <ProjectStatusBadge status={project.status} className="shrink-0" />
       </div>
       {showGoal && project.goal ? (
-        <div className="mt-1 flex min-w-0 text-xs text-muted-foreground">
+        <div className="mt-1 flex min-w-0 text-[13px] text-muted-foreground">
           <GoalLink goal={project.goal} className="max-w-full" />
         </div>
       ) : null}
-      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
         <OwnerLabel owner={project.owner} />
         {project.targetDate ? (
           <>

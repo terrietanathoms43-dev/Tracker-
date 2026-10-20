@@ -14,21 +14,21 @@ export function LinkedTask({ detail, links, now, timeZone }: { detail: TaskDetai
   const nobody = detail.assignees.people.length === 0 && detail.assignees.teams.length === 0;
   return (
     <section aria-labelledby="linked-task-heading" className="grid gap-2">
-      <h2 id="linked-task-heading" className="px-0.5 text-sm font-semibold">
+      <h2 id="linked-task-heading" className="px-0.5 text-base font-semibold">
         Linked task
       </h2>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-0.5">
-        <Link href={`/tasks/${detail.id}`} className="min-w-0 text-sm font-medium text-link underline-offset-4 hover:underline">
+        <Link href={`/tasks/${detail.id}`} className="min-w-0 text-base font-medium text-link underline-offset-4 hover:underline">
           {detail.title}
         </Link>
         <StatusBadge status={detail.status} />
         {nobody ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
             <span className="size-5 rounded-full border border-dashed" aria-hidden />
             Unassigned
           </span>
         ) : (
-          <AssigneeStack assignees={detail.assignees} names className="text-xs text-muted-foreground" />
+          <AssigneeStack assignees={detail.assignees} names className="text-[13px] text-muted-foreground" />
         )}
       </div>
       <ResumeCard detail={detail} links={links} removableLinks={[]} abilities={READ_ONLY} updateContext={null} timeZone={timeZone} now={now} />

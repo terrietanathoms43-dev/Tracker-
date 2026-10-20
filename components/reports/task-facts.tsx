@@ -24,7 +24,7 @@ function hostOf(url: string): string {
 
 function TaskTitle({ task }: { task: ReportTask }) {
   return (
-    <Link href={`/tasks/${task.id}`} prefetch={false} className="text-[13px] font-medium break-words underline-offset-4 hover:underline">
+    <Link href={`/tasks/${task.id}`} prefetch={false} className="text-sm font-medium break-words underline-offset-4 hover:underline">
       {task.title}
     </Link>
   );
@@ -41,7 +41,7 @@ function EvidenceLinks({ evidence }: { evidence: ReportTask["evidence"] }) {
             target="_blank"
             rel="noopener noreferrer"
             title={link.url}
-            className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-background px-2 py-0.5 text-xs transition-colors hover:bg-accent"
+            className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-background px-2 py-0.5 text-[13px] transition-colors hover:bg-accent"
           >
             <ExternalLink className="size-3 shrink-0 text-muted-foreground" aria-hidden />
             <span className="truncate">{link.label ?? hostOf(link.url)}</span>
@@ -62,11 +62,11 @@ export function DeliveredList({ tasks, today }: { tasks: ReportTask[]; today: st
         <li key={task.id} className="px-4 py-3 break-inside-avoid">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
             <TaskTitle task={task} />
-            <span className="text-xs whitespace-nowrap text-muted-foreground">
+            <span className="text-[13px] whitespace-nowrap text-muted-foreground">
               {assigneeOf(task)} · Completed {task.completedDay ? formatDay(task.completedDay, today) : ""}
             </span>
           </div>
-          {task.completionSummary ? <p className="mt-1 text-[13px] text-muted-foreground">{task.completionSummary}</p> : null}
+          {task.completionSummary ? <p className="mt-1 text-sm text-muted-foreground">{task.completionSummary}</p> : null}
           <EvidenceLinks evidence={task.evidence} />
         </li>
       ))}
@@ -81,7 +81,7 @@ function OpenRow({ task, today, detail }: { task: ReportTask; today: string; det
       <StatusIcon status={task.status} className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <TaskTitle task={task} />
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           {assigneeOf(task)} · {TASK_STATUS_LABELS[task.status]}
         </p>
         {detail}
@@ -101,7 +101,7 @@ export function OpenList({ tasks, today }: { tasks: ReportTask[]; today: string 
           key={task.id}
           task={task}
           today={today}
-          detail={task.nextAction ? <p className="mt-1 text-[13px] text-muted-foreground">Next: {task.nextAction}</p> : null}
+          detail={task.nextAction ? <p className="mt-1 text-sm text-muted-foreground">Next: {task.nextAction}</p> : null}
         />
       ))}
     </ul>
@@ -120,12 +120,12 @@ export function BlockedList({ tasks, today }: { tasks: ReportTask[]; today: stri
           today={today}
           detail={
             task.status === "blocked" ? (
-              <p className="mt-1 text-[13px] text-status-blocked-fg">
+              <p className="mt-1 text-sm text-status-blocked-fg">
                 {task.blockedReason ?? "Blocked"}
                 {task.blockedBy ? <span className="text-muted-foreground"> · Waiting on {task.blockedBy}</span> : null}
               </p>
             ) : task.nextAction ? (
-              <p className="mt-1 text-[13px] text-muted-foreground">Next: {task.nextAction}</p>
+              <p className="mt-1 text-sm text-muted-foreground">Next: {task.nextAction}</p>
             ) : null
           }
         />

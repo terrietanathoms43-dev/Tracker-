@@ -22,7 +22,7 @@ export function ShowAllToggle({ path, checked, label }: { path: string; checked:
         disabled={pending}
         onCheckedChange={(next) => startTransition(() => router.replace(next ? `${path}?all=1` : path, { scroll: false }))}
       />
-      <Label htmlFor="show-all" className="text-xs font-normal text-muted-foreground">
+      <Label htmlFor="show-all" className="text-[13px] font-normal text-muted-foreground">
         {label}
       </Label>
     </div>

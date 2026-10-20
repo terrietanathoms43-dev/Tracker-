@@ -34,7 +34,7 @@ export function CountTiles({ counts, days }: { counts: TaskCounts; days: number 
                 tinted ? "border-status-blocked-dot/30 bg-status-blocked-bg hover:bg-status-blocked-bg/70" : "bg-card hover:bg-accent/60",
               )}
             >
-              <p className={cn("truncate text-xs", tinted ? "text-status-blocked-fg" : "text-muted-foreground")}>{label}</p>
+              <p className={cn("truncate text-[13px]", tinted ? "text-status-blocked-fg" : "text-muted-foreground")}>{label}</p>
               <p className={cn("mt-1 text-2xl font-semibold tabular-nums", tinted && "text-status-blocked-fg")}>{value}</p>
             </Link>
           </li>

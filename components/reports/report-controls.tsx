@@ -26,7 +26,7 @@ export function ReportControls({ range, today }: { range: ReportRange; today: st
               scroll={false}
               aria-current={on ? "page" : undefined}
               className={cn(
-                "inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "inline-flex h-8 items-center rounded-md border px-2.5 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 on ? "border-primary bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
             >
@@ -38,13 +38,13 @@ export function ReportControls({ range, today }: { range: ReportRange; today: st
       {/* Keyed by the range, so choosing a preset resets the inputs to the range it chose. */}
       <Form key={`${range.from}:${range.to}`} action="/reports" scroll={false} className="grid w-full grid-cols-2 items-end gap-2 sm:flex sm:w-auto">
         <div className="grid gap-1.5">
-          <Label htmlFor="report-from" className="text-xs font-normal text-muted-foreground">
+          <Label htmlFor="report-from" className="text-[13px] font-normal text-muted-foreground">
             From
           </Label>
           <Input id="report-from" name="from" type="date" required defaultValue={range.from} className="h-8 sm:w-40" />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="report-to" className="text-xs font-normal text-muted-foreground">
+          <Label htmlFor="report-to" className="text-[13px] font-normal text-muted-foreground">
             To
           </Label>
           <Input id="report-to" name="to" type="date" required defaultValue={range.to} className="h-8 sm:w-40" />
@@ -65,7 +65,7 @@ export function CsvLink({ range, table, label }: { range: ReportRange; table: Re
       download
       data-print-hide
       aria-label={`Download ${label} as CSV`}
-      className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      className="inline-flex shrink-0 items-center gap-1 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
     >
       <Download className="size-3" aria-hidden />
       CSV

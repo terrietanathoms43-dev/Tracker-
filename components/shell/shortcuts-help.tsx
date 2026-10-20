@@ -54,13 +54,13 @@ export function ShortcutsHelp() {
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription>Everything here also works with a mouse.</DialogDescription>
         </DialogHeader>
-        <ul className="grid gap-2 text-sm">
+        <ul className="grid gap-2 text-base">
           {SHORTCUTS.map(({ keys, does }) => (
             <li key={does} className="flex items-center justify-between gap-4">
               <span className="text-muted-foreground">{does}</span>
               <span className="flex shrink-0 gap-1">
                 {keys.map((key) => (
-                  <kbd key={key} className="rounded-md border bg-muted px-1.5 py-0.5 font-sans text-[11px] font-medium">
+                  <kbd key={key} className="rounded-md border bg-muted px-1.5 py-0.5 font-sans text-xs font-medium">
                     {key}
                   </kbd>
                 ))}

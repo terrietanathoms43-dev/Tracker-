@@ -69,7 +69,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
       <div className="grid gap-8">
         <div className="grid gap-3">
           {project.status === "archived" ? (
-            <p className="flex items-center gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+            <p className="flex items-center gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-base text-muted-foreground">
               <Archive className="size-4 shrink-0" aria-hidden />
               This project is archived. Its tasks stay readable.
             </p>

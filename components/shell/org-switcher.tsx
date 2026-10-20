@@ -19,7 +19,7 @@ export type OrgOption = { orgId: string; name: string };
 
 function OrgTile({ name, className }: { name: string; className?: string }) {
   return (
-    <span aria-hidden className={cn("grid size-6 shrink-0 place-items-center rounded-md bg-primary text-[11px] font-semibold text-primary-foreground", className)}>
+    <span aria-hidden className={cn("grid size-6 shrink-0 place-items-center rounded-md bg-primary text-xs font-semibold text-primary-foreground", className)}>
       {name.trim().charAt(0).toUpperCase() || "?"}
     </span>
   );
@@ -44,7 +44,7 @@ export function OrgSwitcher({ orgs, activeOrgId, compact = false }: { orgs: OrgO
         disabled={pending}
         className={cn(
           "flex min-w-0 items-center gap-2 rounded-md text-left font-medium outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring",
-          compact ? "h-9 max-w-[60vw] px-1.5 text-sm" : "h-10 w-full px-2 text-sm",
+          compact ? "h-9 max-w-[60vw] px-1.5 text-base" : "h-10 w-full px-2 text-base",
         )}
       >
         <OrgTile name={active.orgId === "" ? "?" : active.name} />
@@ -53,11 +53,11 @@ export function OrgSwitcher({ orgs, activeOrgId, compact = false }: { orgs: OrgO
         <span className="sr-only">Switch workspace</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-60">
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Workspaces</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-[13px] font-normal text-muted-foreground">Workspaces</DropdownMenuLabel>
         {orgs.length === 0 ? <DropdownMenuItem disabled>You&apos;re not in a workspace yet</DropdownMenuItem> : null}
         {orgs.map((org) => (
           <DropdownMenuItem key={org.orgId} onSelect={() => choose(org.orgId)} className="gap-2">
-            <OrgTile name={org.name} className="size-5 text-[10px]" />
+            <OrgTile name={org.name} className="size-5 text-[11px]" />
             <span className="truncate">{org.name}</span>
             {org.orgId === activeOrgId ? <Check className="ml-auto size-4" aria-label="Current" /> : null}
           </DropdownMenuItem>

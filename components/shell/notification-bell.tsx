@@ -17,12 +17,12 @@ export function NotificationBell({ unread, variant = "row" }: { unread: number; 
     <Link
       href="/notifications"
       aria-label={label}
-      className={cn("flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground")}
+      className={cn("flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground")}
     >
       <Bell className="size-4 shrink-0" aria-hidden />
       Notifications
       {unread > 0 ? (
-        <span className="ml-auto rounded-md bg-highlight px-1.5 text-[11px] font-semibold tabular-nums text-highlight-foreground">{unread > 99 ? "99+" : unread}</span>
+        <span className="ml-auto rounded-md bg-highlight px-1.5 text-xs font-semibold tabular-nums text-highlight-foreground">{unread > 99 ? "99+" : unread}</span>
       ) : null}
     </Link>
   );

@@ -21,7 +21,7 @@ export function StatusIcon({ status, className }: { status: TaskStatus; classNam
 export function StatusBadge({ status, className }: { status: TaskStatus; className?: string }) {
   const { icon: Icon, badge } = STYLES[status];
   return (
-    <span className={cn("inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-xs font-medium whitespace-nowrap", badge, className)}>
+    <span className={cn("inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium whitespace-nowrap", badge, className)}>
       <Icon className="size-3.5" aria-hidden />
       {TASK_STATUS_LABELS[status]}
     </span>

@@ -38,7 +38,7 @@ export function Panel({
 }) {
   const id = `${slug(title)}-panel`;
   const link = href ? (
-    <Link href={href} className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
+    <Link href={href} className="inline-flex shrink-0 items-center gap-1 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
       {hrefLabel}
       <ArrowRight className="size-3" aria-hidden />
     </Link>
@@ -47,13 +47,13 @@ export function Panel({
     <section aria-labelledby={id} className={cn("min-w-0 overflow-hidden rounded-lg border bg-card", className)}>
       <div className="flex items-center justify-between gap-3 border-b px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 id={id} className="truncate text-sm font-semibold">
+          <h2 id={id} className="truncate text-base font-semibold">
             {title}
           </h2>
           {count !== undefined ? (
             <span
               className={cn(
-                "inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1.5 text-[11px] font-medium tabular-nums",
+                "inline-flex h-5 min-w-5 items-center justify-center rounded-md px-1.5 text-xs font-medium tabular-nums",
                 highlight && count > 0 ? "bg-highlight text-highlight-foreground" : "bg-muted text-muted-foreground",
               )}
             >
@@ -70,5 +70,5 @@ export function Panel({
 
 /** The quiet sentence a panel shows when it has nothing to list (the lighter EmptyState of the recipe). */
 export function PanelEmpty({ children }: { children: ReactNode }) {
-  return <p className="px-4 py-5 text-sm text-muted-foreground">{children}</p>;
+  return <p className="px-4 py-5 text-base text-muted-foreground">{children}</p>;
 }

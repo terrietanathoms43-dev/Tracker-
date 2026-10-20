@@ -47,9 +47,9 @@ export function UpdateProgressDialog({ taskId, onClose }: { taskId: string | nul
         {state === null ? (
           <Loading />
         ) : state.context === null ? (
-          <p className="text-sm text-destructive">{state.error}</p>
+          <p className="text-base text-destructive">{state.error}</p>
         ) : !state.context.abilities.progress ? (
-          <p className="text-sm text-muted-foreground">You can follow this task, but only people who work in this workspace can update it.</p>
+          <p className="text-base text-muted-foreground">You can follow this task, but only people who work in this workspace can update it.</p>
         ) : (
           <UpdateProgressForm context={state.context} autoFocus onSaved={onClose} />
         )}
@@ -70,7 +70,7 @@ export function TransitionDialog({ target, onClose }: { target: { taskId: string
         {target === null || state === null ? (
           <Loading />
         ) : state.context === null ? (
-          <p className="text-sm text-destructive">{state.error}</p>
+          <p className="text-base text-destructive">{state.error}</p>
         ) : (
           <TransitionForm context={state.context} status={target.status} onDone={onClose} />
         )}

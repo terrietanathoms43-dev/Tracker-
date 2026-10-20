@@ -61,7 +61,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
         <Panel title="Goals" count={report.goals.length}>
           <GoalProgressList goals={report.goals} today={today} notes={goalNotes} empty="No active goals." />
         </Panel>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           Generated {formatAbsolute(now, viewer.timezone)} from {org.name}&apos;s task records. Blocked and overdue are as of today; everything else
           falls inside the range.
         </p>

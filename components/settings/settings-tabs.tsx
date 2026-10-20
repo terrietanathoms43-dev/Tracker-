@@ -23,7 +23,7 @@ export function SettingsTabs() {
             href={tab.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "-mb-px rounded-t-md border-b-2 px-3 pb-2.5 text-sm font-medium transition-colors",
+              "-mb-px rounded-t-md border-b-2 px-3 pb-2.5 text-base font-medium transition-colors",
               active ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >

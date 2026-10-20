@@ -25,16 +25,16 @@ function RequestSection({ id, title, description, items, empty, ...row }: { id: 
     <section aria-labelledby={`${id}-heading`} className="min-w-0">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-0.5">
         <div className="flex items-baseline gap-2">
-          <h2 id={`${id}-heading`} className="text-sm font-semibold">
+          <h2 id={`${id}-heading`} className="text-base font-semibold">
             {title}
           </h2>
-          <span className="text-xs text-muted-foreground tabular-nums" aria-label={`${items.length} requests`}>
+          <span className="text-[13px] text-muted-foreground tabular-nums" aria-label={`${items.length} requests`}>
             {items.length}
           </span>
         </div>
-        <p className="text-xs text-muted-foreground">{description}</p>
+        <p className="text-[13px] text-muted-foreground">{description}</p>
       </div>
-      {items.length === 0 ? <p className="rounded-lg border border-dashed bg-card px-4 py-5 text-sm text-muted-foreground">{empty}</p> : <RequestList items={items} {...row} />}
+      {items.length === 0 ? <p className="rounded-lg border border-dashed bg-card px-4 py-5 text-base text-muted-foreground">{empty}</p> : <RequestList items={items} {...row} />}
     </section>
   );
 }

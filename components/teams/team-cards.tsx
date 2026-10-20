@@ -9,9 +9,9 @@ import type { TeamListItem } from "@/lib/dal/teams";
 
 /** "3 open · 1 blocked · 2 overdue", trouble in the status colour; "Nothing open" when idle. */
 export function WorkCounts({ work, className }: { work: TeamListItem["work"]; className?: string }) {
-  if (work.active === 0) return <span className={cn("text-xs text-muted-foreground", className)}>Nothing open</span>;
+  if (work.active === 0) return <span className={cn("text-[13px] text-muted-foreground", className)}>Nothing open</span>;
   return (
-    <span className={cn("flex flex-wrap gap-x-2 text-xs tabular-nums", className)}>
+    <span className={cn("flex flex-wrap gap-x-2 text-[13px] tabular-nums", className)}>
       <span className="font-medium">{work.active} open</span>
       {work.blocked > 0 ? <span className="font-medium text-status-blocked-fg">{work.blocked} blocked</span> : null}
       {work.overdue > 0 ? <span className="font-medium text-status-blocked-fg">{work.overdue} overdue</span> : null}
@@ -33,19 +33,19 @@ export function TeamCards({ teams, empty }: { teams: TeamListItem[]; empty: stri
             <div className="min-w-0 flex-1">
               <Link
                 href={`/teams/${team.id}`}
-                className="block truncate text-[13px] font-medium outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring"
+                className="block truncate text-sm font-medium outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring"
               >
                 {team.name}
               </Link>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-[13px] text-muted-foreground">
                 {team.members.length} {team.members.length === 1 ? "member" : "members"}
                 {team.goals > 0 ? ` · ${team.goals} ${team.goals === 1 ? "goal" : "goals"}` : ""}
               </p>
             </div>
           </div>
-          {team.description ? <p className="line-clamp-2 text-xs text-muted-foreground">{team.description}</p> : null}
+          {team.description ? <p className="line-clamp-2 text-[13px] text-muted-foreground">{team.description}</p> : null}
           <div className="mt-auto flex items-center justify-between gap-3">
-            {team.members.length > 0 ? <AssigneeStack assignees={{ people: team.members, teams: [] }} /> : <span className="text-xs text-muted-foreground">No members yet</span>}
+            {team.members.length > 0 ? <AssigneeStack assignees={{ people: team.members, teams: [] }} /> : <span className="text-[13px] text-muted-foreground">No members yet</span>}
             <WorkCounts work={team.work} className="justify-end text-right" />
           </div>
         </li>

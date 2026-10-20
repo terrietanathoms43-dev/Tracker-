@@ -25,10 +25,10 @@ export function Section({
     >
       <div className={cn("flex flex-wrap items-start justify-between gap-3 px-4 py-3.5 sm:px-5", children ? "border-b" : null)}>
         <div className="min-w-0">
-          <h2 id={`${id}-title`} className="text-sm font-semibold">
+          <h2 id={`${id}-title`} className="text-base font-semibold">
             {title}
           </h2>
-          {description ? <p className="mt-0.5 max-w-prose text-sm text-muted-foreground">{description}</p> : null}
+          {description ? <p className="mt-0.5 max-w-prose text-base text-muted-foreground">{description}</p> : null}
         </div>
         {action}
       </div>

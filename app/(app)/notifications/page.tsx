@@ -46,7 +46,7 @@ export default async function NotificationsPage() {
         <div className="grid gap-6">
           {groupByDay(items, now, viewer.timezone).map((group) => (
             <section key={group.label} aria-labelledby={`notifications-${group.label}`}>
-              <h2 id={`notifications-${group.label}`} className="mb-2 text-xs font-medium text-muted-foreground">
+              <h2 id={`notifications-${group.label}`} className="mb-2 text-[13px] font-medium text-muted-foreground">
                 {group.label}
               </h2>
               <ul className="divide-y overflow-hidden rounded-lg border bg-card">

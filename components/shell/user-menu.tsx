@@ -48,8 +48,8 @@ export function UserMenu({ user, variant = "full", canSeeReports, hasWorkspace =
         {variant === "full" ? (
           <>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium">{user.name ?? user.email}</span>
-              <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
+              <span className="block truncate text-sm font-medium">{user.name ?? user.email}</span>
+              <span className="block truncate text-[13px] text-muted-foreground">{user.email}</span>
             </span>
             <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           </>
@@ -59,8 +59,8 @@ export function UserMenu({ user, variant = "full", canSeeReports, hasWorkspace =
         {variant === "avatar" ? (
           <>
             <DropdownMenuLabel className="font-normal">
-              <span className="block truncate text-sm font-medium">{user.name ?? user.email}</span>
-              <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
+              <span className="block truncate text-base font-medium">{user.name ?? user.email}</span>
+              <span className="block truncate text-[13px] text-muted-foreground">{user.email}</span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
           </>
@@ -92,10 +92,10 @@ export function UserMenu({ user, variant = "full", canSeeReports, hasWorkspace =
         <DropdownMenuItem onSelect={openShortcutsHelp}>
           <Keyboard className="size-4" aria-hidden />
           Keyboard shortcuts
-          <kbd className="ml-auto rounded border px-1 font-sans text-[10px] text-muted-foreground">?</kbd>
+          <kbd className="ml-auto rounded border px-1 font-sans text-[11px] text-muted-foreground">?</kbd>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Theme</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-[13px] font-normal text-muted-foreground">Theme</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={setTheme}>
           {THEMES.map(({ value, label, icon: Icon }) => (
             <DropdownMenuRadioItem key={value} value={value} className="gap-2">

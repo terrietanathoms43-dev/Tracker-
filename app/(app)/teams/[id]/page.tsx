@@ -61,7 +61,7 @@ export default async function TeamPage(props: PageProps<"/teams/[id]">) {
           </>
         }
       />
-      {team.description ? <p className="mb-6 max-w-prose text-sm text-muted-foreground">{team.description}</p> : null}
+      {team.description ? <p className="mb-6 max-w-prose text-base text-muted-foreground">{team.description}</p> : null}
 
       <div className="grid gap-6">
         <Panel title="Open work" count={tasks.length} href={tasksHref({ team: team.id })} hrefLabel="All in Tasks">
@@ -88,7 +88,7 @@ export default async function TeamPage(props: PageProps<"/teams/[id]">) {
               {team.members.map((member) => (
                 <li key={member.id} className="flex items-center gap-3 px-4 py-2.5">
                   <UserAvatar name={member.name} email={member.email} image={member.image} size="sm" />
-                  <Link href={tasksHref({ assignee: member.id })} className="min-w-0 flex-1 truncate text-[13px] font-medium underline-offset-4 hover:underline" title="Their open tasks">
+                  <Link href={tasksHref({ assignee: member.id })} className="min-w-0 flex-1 truncate text-sm font-medium underline-offset-4 hover:underline" title="Their open tasks">
                     {nameOf(member)}
                     {member.id === viewer.userId ? <span className="font-normal text-muted-foreground"> (you)</span> : null}
                   </Link>

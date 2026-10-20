@@ -16,15 +16,15 @@ export function ActivityFeed({ items, now, timeZone, empty }: { items: FeedEntry
         <li key={item.id} className="flex gap-3 px-4 py-2.5">
           <UserAvatar name={item.actor.name} email={item.actor.email} image={item.actor.image} size="sm" className="mt-0.5" />
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] leading-5">
+            <p className="text-sm leading-5">
               <span className="font-medium">{nameOf(item.actor)}</span> <span className="text-muted-foreground">{item.verb}</span>{" "}
               <Link href={item.subject.href} prefetch={false} className="font-medium break-words underline-offset-4 hover:underline">
                 {item.subject.title}
               </Link>
             </p>
-            {item.note ? <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.note}</p> : null}
+            {item.note ? <p className="mt-0.5 line-clamp-2 text-[13px] text-muted-foreground">{item.note}</p> : null}
           </div>
-          <RelativeTime date={new Date(item.at)} now={now} timeZone={timeZone} className="mt-0.5 shrink-0 text-xs text-muted-foreground" />
+          <RelativeTime date={new Date(item.at)} now={now} timeZone={timeZone} className="mt-0.5 shrink-0 text-[13px] text-muted-foreground" />
         </li>
       ))}
     </ol>

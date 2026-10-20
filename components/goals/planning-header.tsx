@@ -12,7 +12,7 @@ import { ProgressBar } from "./progress-bar";
 export function PlanningHeader({ back, title, actions, meta }: { back: { href: string; label: string }; title: string; actions?: ReactNode; meta: ReactNode }) {
   return (
     <header className="mb-5">
-      <Link href={back.href} className="inline-flex items-center gap-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground">
+      <Link href={back.href} className="inline-flex items-center gap-1.5 rounded-md text-[13px] text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-3.5" aria-hidden />
         {back.label}
       </Link>
@@ -20,7 +20,7 @@ export function PlanningHeader({ back, title, actions, meta }: { back: { href: s
         <h1 className="min-w-0 flex-1 basis-72 text-xl leading-snug font-semibold tracking-tight break-words md:text-2xl">{title}</h1>
         {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
-      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">{meta}</div>
+      <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-muted-foreground">{meta}</div>
     </header>
   );
 }
@@ -35,11 +35,11 @@ export function PlanningSummary({ successCriteria, description, progress }: { su
     <section aria-label="Progress" className="rounded-lg border bg-card p-4 md:p-5">
       {successCriteria ? (
         <>
-          <p className="text-xs text-muted-foreground">Success looks like</p>
+          <p className="text-[13px] text-muted-foreground">Success looks like</p>
           <p className="mt-1 max-w-prose text-base font-medium whitespace-pre-line">{successCriteria}</p>
         </>
       ) : null}
-      {description ? <p className={cn("max-w-prose text-sm whitespace-pre-line", successCriteria && "mt-3 text-muted-foreground")}>{description}</p> : null}
+      {description ? <p className={cn("max-w-prose text-base whitespace-pre-line", successCriteria && "mt-3 text-muted-foreground")}>{description}</p> : null}
       <ProgressBar {...progress} size="lg" className={hasText ? "mt-5" : undefined} />
     </section>
   );

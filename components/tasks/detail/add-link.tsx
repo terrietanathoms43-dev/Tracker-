@@ -19,7 +19,7 @@ export function AddLink({ taskId }: { taskId: string }) {
 
   if (!open) {
     return (
-      <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => setOpen(true)}>
+      <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[13px] text-muted-foreground" onClick={() => setOpen(true)}>
         <Plus aria-hidden />
         Add link
       </Button>
@@ -49,7 +49,7 @@ export function AddLink({ taskId }: { taskId: string }) {
     >
       <div className="grid gap-1">
         <Input aria-label="Evidence link" placeholder="https://…" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} autoFocus aria-invalid={error ? true : undefined} />
-        {error ? <p className="text-xs text-destructive">{error}</p> : null}
+        {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
       </div>
       <Input aria-label="Evidence label" placeholder="Label (optional)" value={label} onChange={(event) => setLabel(event.target.value)} />
       <div className="flex gap-2">

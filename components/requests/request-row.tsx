@@ -47,10 +47,10 @@ export function RequestRow({
           prefetch={false}
           className="min-w-0 outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-ring"
         >
-          <span className="block truncate text-[13px] leading-5 font-medium">{request.title}</span>
+          <span className="block truncate text-sm leading-5 font-medium">{request.title}</span>
         </Link>
-        <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-          <RequestStatusBadge status={request.status} className="h-5 px-1.5 text-[11px] sm:hidden" />
+        <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-muted-foreground">
+          <RequestStatusBadge status={request.status} className="h-5 px-1.5 text-xs sm:hidden" />
           {showRequester ? (
             <>
               <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -71,13 +71,13 @@ export function RequestRow({
             </>
           ) : null}
         </p>
-        {reason ? <p className="truncate text-xs text-muted-foreground">“{reason}”</p> : null}
+        {reason ? <p className="truncate text-[13px] text-muted-foreground">“{reason}”</p> : null}
       </div>
       {request.task ? (
         <Link
           href={`/tasks/${request.task.id}`}
           prefetch={false}
-          className="relative z-10 hidden h-6 shrink-0 items-center gap-1.5 rounded-md border bg-background px-2 text-xs text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
+          className="relative z-10 hidden h-6 shrink-0 items-center gap-1.5 rounded-md border bg-background px-2 text-[13px] text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
           title={`Task: ${TASK_STATUS_LABELS[request.task.status]}`}
         >
           <StatusIcon status={request.task.status} className="size-3.5" />

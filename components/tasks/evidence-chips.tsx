@@ -28,7 +28,7 @@ export function EvidenceChips({ taskId, links, removable = [] }: { taskId: strin
       {links.map((link) => {
         const name = link.label ?? hostOf(link.url);
         return (
-          <li key={link.id} className="flex max-w-full items-center overflow-hidden rounded-md border bg-background text-xs">
+          <li key={link.id} className="flex max-w-full items-center overflow-hidden rounded-md border bg-background text-[13px]">
             <a href={link.url} target="_blank" rel="noopener noreferrer" className="flex min-w-0 items-center gap-1.5 px-2 py-1 hover:bg-accent" title={link.url}>
               <ExternalLink className="size-3 shrink-0 text-muted-foreground" aria-hidden />
               <span className="truncate">{name}</span>

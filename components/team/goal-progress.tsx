@@ -51,8 +51,8 @@ export function GoalProgressList({
           <li key={goal.id}>
             <Link href={`/goals/${goal.id}`} className="block px-4 py-3 transition-colors hover:bg-accent/60">
               <span className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0 truncate text-[13px] font-medium">{goal.title}</span>
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                <span className="min-w-0 truncate text-sm font-medium">{goal.title}</span>
+                <span className="shrink-0 text-[13px] text-muted-foreground tabular-nums">
                   {goal.completed}/{goal.total}
                   <span className="sr-only"> tasks completed</span>
                 </span>
@@ -60,7 +60,7 @@ export function GoalProgressList({
               <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
                 <span className="block h-full rounded-full bg-highlight" style={{ width: `${filled}%` }} />
               </span>
-              {meta ? <span className="mt-1.5 block truncate text-xs text-muted-foreground">{meta}</span> : null}
+              {meta ? <span className="mt-1.5 block truncate text-[13px] text-muted-foreground">{meta}</span> : null}
             </Link>
           </li>
         );

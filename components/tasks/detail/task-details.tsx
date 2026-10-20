@@ -14,8 +14,8 @@ import { AssigneesEditor, DescriptionEditor, DueEditor, PickEditor, StatusEditor
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid gap-1 py-2.5 text-sm sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-4">
-      <dt className="text-xs text-muted-foreground sm:text-sm">{label}</dt>
+    <div className="grid gap-1 py-2.5 text-base sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center sm:gap-4">
+      <dt className="text-[13px] text-muted-foreground sm:text-base">{label}</dt>
       <dd className="min-w-0">{children}</dd>
     </div>
   );
@@ -61,7 +61,7 @@ export function TaskDetails({
   const planning = abilities.progress;
   return (
     <section aria-labelledby="details-heading" className="rounded-xl border bg-card">
-      <h2 id="details-heading" className="border-b px-5 py-3 text-sm font-semibold md:px-6">
+      <h2 id="details-heading" className="border-b px-5 py-3 text-base font-semibold md:px-6">
         Details
       </h2>
       <div className="grid gap-3 px-5 py-4 md:px-6">
@@ -78,7 +78,7 @@ export function TaskDetails({
             )}
           </Row>
           <Row label="Due">
-            {edit ? <DueEditor taskId={detail.id} due={detail.dueDate} /> : detail.dueDate ? <DueLabel due={detail.dueDate} today={today} status={detail.status} className="text-sm" /> : <span className="text-muted-foreground">No due date</span>}
+            {edit ? <DueEditor taskId={detail.id} due={detail.dueDate} /> : detail.dueDate ? <DueLabel due={detail.dueDate} today={today} status={detail.status} className="text-base" /> : <span className="text-muted-foreground">No due date</span>}
           </Row>
           <Row label="Priority">
             {edit ? (
@@ -105,7 +105,7 @@ export function TaskDetails({
               )}
               {detail.project && !planning ? <span>{detail.project.name}</span> : null}
               {detail.project && planning ? (
-                <Link href={`/projects/${detail.project.id}`} className={edit ? `text-xs ${link}` : link}>
+                <Link href={`/projects/${detail.project.id}`} className={edit ? `text-[13px] ${link}` : link}>
                   {edit ? "Open" : detail.project.name}
                 </Link>
               ) : null}
@@ -120,7 +120,7 @@ export function TaskDetails({
               )}
               {detail.goal && !planning ? <span>{detail.goal.title}</span> : null}
               {detail.goal && planning ? (
-                <Link href={`/goals/${detail.goal.id}`} className={edit ? `text-xs ${link}` : link}>
+                <Link href={`/goals/${detail.goal.id}`} className={edit ? `text-[13px] ${link}` : link}>
                   {edit ? "Open" : detail.goal.title}
                 </Link>
               ) : null}

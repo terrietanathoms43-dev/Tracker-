@@ -18,7 +18,7 @@ export function PeriodPicker({ days }: { days: Period }) {
             scroll={false}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "inline-flex h-7 items-center rounded-[5px] px-2.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "inline-flex h-7 items-center rounded-[5px] px-2.5 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
               active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
             )}
           >

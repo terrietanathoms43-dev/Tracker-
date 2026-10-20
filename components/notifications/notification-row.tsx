@@ -41,10 +41,10 @@ export function NotificationRow({ item, time }: { item: NotificationRowData; tim
           {item.unread ? <span className="sr-only">Unread: </span> : null}
         </span>
         <span className="min-w-0 flex-1">
-          <span className={cn("block text-[13px]", item.unread ? "font-semibold" : "font-medium text-muted-foreground")}>{item.title}</span>
-          {item.body ? <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">{item.body}</span> : null}
+          <span className={cn("block text-sm", item.unread ? "font-semibold" : "font-medium text-muted-foreground")}>{item.title}</span>
+          {item.body ? <span className="mt-0.5 line-clamp-2 block text-[13px] text-muted-foreground">{item.body}</span> : null}
         </span>
-        <span className="shrink-0 pt-px text-xs text-muted-foreground">{time}</span>
+        <span className="shrink-0 pt-px text-[13px] text-muted-foreground">{time}</span>
       </Link>
     </li>
   );

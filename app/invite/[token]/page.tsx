@@ -22,7 +22,7 @@ function Notice({ title, children, action }: { title: string; children: ReactNod
         <CircleAlert className="size-5 text-muted-foreground" aria-hidden />
       </div>
       <h1 className="text-2xl font-semibold">{title}</h1>
-      <div className="mt-2 text-sm text-muted-foreground">{children}</div>
+      <div className="mt-2 text-base text-muted-foreground">{children}</div>
       {action ? <div className="mt-8">{action}</div> : null}
     </div>
   );
@@ -35,8 +35,8 @@ function WorkspaceCard({ orgName, role }: { orgName: string; role: string }) {
         <Building2 className="size-5 text-muted-foreground" aria-hidden />
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-sm font-medium">{orgName}</span>
-        <span className="block truncate text-xs text-muted-foreground">Join as {role}</span>
+        <span className="block truncate text-base font-medium">{orgName}</span>
+        <span className="block truncate text-[13px] text-muted-foreground">Join as {role}</span>
       </span>
     </div>
   );
@@ -92,7 +92,7 @@ async function Invitation({ params }: Pick<PageProps<"/invite/[token]">, "params
     return (
       <div>
         <h1 className="mb-2 text-2xl font-semibold">You&apos;re invited</h1>
-        <p className="mb-6 text-sm text-muted-foreground">
+        <p className="mb-6 text-base text-muted-foreground">
           {invite.inviterName ?? "Someone"} invited <strong className="font-medium text-foreground">{invite.email}</strong> to {APP_NAME}. Sign
           in with that address to accept.
         </p>
@@ -126,7 +126,7 @@ async function Invitation({ params }: Pick<PageProps<"/invite/[token]">, "params
   return (
     <div>
       <h1 className="mb-2 text-2xl font-semibold">Join {invite.orgName}</h1>
-      <p className="mb-6 text-sm text-muted-foreground">
+      <p className="mb-6 text-base text-muted-foreground">
         {invite.inviterName ?? "An admin"} invited you as {role}.
       </p>
       <WorkspaceCard orgName={invite.orgName} role={role} />
