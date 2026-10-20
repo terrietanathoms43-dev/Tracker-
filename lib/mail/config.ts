@@ -5,10 +5,10 @@ const user = process.env.EMAIL ?? process.env.SMTP_USER ?? process.env.EMAIL_SER
 const pass = process.env.EMAIL_PASS ?? process.env.SMTP_PASS ?? process.env.EMAIL_SERVER_PASSWORD;
 
 export const smtpConfig = {
-  host: process.env.SMTP_HOST ?? process.env.EMAIL_SERVER_HOST ?? "smtp.gmail.com",
-  port,
-  secure: (process.env.SMTP_SECURE ?? "").toLowerCase() === "true" || port === 465,
-  auth: { user, pass },
+   host: process.env.SMTP_HOST ?? process.env.EMAIL_SERVER_HOST ?? "smtp.gmail.com",
+   port,
+   secure: (process.env.SMTP_SECURE ?? "").toLowerCase() === "true" || port === 465,
+   auth: { user, pass },
 };
 
 export const smtpConfigured = Boolean(user && pass);
