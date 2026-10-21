@@ -7,7 +7,7 @@ import { ProjectDialog } from "@/components/projects/project-dialog";
 import { GoalLink, ProjectStatusBadge } from "@/components/projects/project-parts";
 import { ProjectStatusActions } from "@/components/projects/project-status-actions";
 import { PlanningTasks } from "@/components/projects/task-groups";
-import { NewTaskButton } from "@/components/tasks/new-task-button";
+import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { activeGoalOptions, ownerOptions } from "@/lib/dal/goals";
 import { getProject } from "@/lib/dal/projects";
 import { tasksForProject } from "@/lib/dal/tasks";
@@ -66,6 +66,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
           </>
         }
       />
+      {active && canCreateTask(viewer) ? <QuickAddTask today={today} defaults={{ projectId: project.id }} /> : null}
       <div className="grid gap-8">
         <div className="grid gap-3">
           {project.status === "archived" ? (
@@ -80,8 +81,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
           items={tasks}
           today={today}
           groupByStatus
-          action={active && canCreateTask(viewer) ? <NewTaskButton defaults={{ projectId: project.id }} /> : null}
-          empty={active ? "No tasks in this project yet. Add the first one with New task." : "No tasks in this project."}
+          empty={active ? "No tasks in this project yet. Add the first one above." : "No tasks in this project."}
         />
       </div>
     </div>

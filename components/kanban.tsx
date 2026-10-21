@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ComponentProps } from "react";
 
 import type {
    DragEndEvent,
@@ -352,9 +352,13 @@ function Kanban<T>({ value, onValueChange, getItemValue, children, className, on
       [columns, setColumns, stableGetItemId, columnIds, activeId, findContainer, isColumn, modifiers, onMove],
    );
 
+   // dnd-kit numbers its screen-reader ids from a module counter; a React id keeps server and client in step.
+   const dndId = useId();
+
    return (
       <KanbanContext.Provider value={contextValue}>
          <DndContext
+            id={dndId}
             sensors={sensors}
             modifiers={modifiers}
             measuring={measuringConfig}

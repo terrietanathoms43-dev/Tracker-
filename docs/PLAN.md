@@ -27,6 +27,11 @@
 > - **Skipping the workspace.** A signed-in person without a workspace is no longer bounced to `/onboarding`: `/home` shows a no-workspace state (create one, or the invitations waiting for their email), the shell renders without a workspace, and the first onboarding step has "Skip for now". Every other `(app)` page still sends them to `/home`.
 > - Home's header action is always **New task**; an admin who is still alone gets an invite banner instead of an invite button. The account menu says "User settings" and "Workspace".
 > - The New task dialog renders at once; its pickers load behind it (and are prefetched once per session), so the title can be typed immediately.
+>
+> **Decision log (2026-10-20, quick-add bar):**
+>
+> - Tasks are added from an always-open **add bar** at the top of Home, My Work and Tasks, and on active project and goal pages (defaulting to them), instead of a New task button in the header. It has priority (Urgent / High / Normal / Low), Today / Tomorrow, a date, the project, **Add task**, and **More options**, which opens the full New task dialog with what was typed. N focuses the bar where there is one and opens the dialog elsewhere; ⌘K's New task still opens the dialog.
+> - Typed shortcuts in the title (`lib/tasks/quick-add.ts`): `!urgent` `!high` `!normal` (`!medium`) `!low`, `@today` `@tomorrow`, and `@name` for a person (first name, full name without spaces, or the email's local part) or a team (name without spaces). An `@` that matches nobody, or more than one, stays in the title. Any mention assigns the task to exactly those mentioned; without one it is the creator's, as before. Typing `!` or `@` offers completions.
 
 This file is the hand-off for anyone building Trackwise. Read `docs/BRIEF.md` for intent; this file says _how_. Follow the `apex-architecture`, `apex-ui` and `apex-ux` skills for everything not spelled out here. If something is genuinely impossible, say so in the report rather than silently choosing differently.
 

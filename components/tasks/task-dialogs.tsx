@@ -21,7 +21,17 @@ function Loading() {
   );
 }
 
-export function CreateTaskDialog({ open, defaults, onClose }: { open: boolean; defaults: CreateDefaults; onClose: () => void }) {
+export function CreateTaskDialog({
+  open,
+  defaults,
+  onCreated,
+  onClose,
+}: {
+  open: boolean;
+  defaults: CreateDefaults;
+  onCreated?: (id: string) => void;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
@@ -29,7 +39,14 @@ export function CreateTaskDialog({ open, defaults, onClose }: { open: boolean; d
           <DialogTitle>New task</DialogTitle>
           <DialogDescription className="sr-only">Only the title is required.</DialogDescription>
         </DialogHeader>
-        {open ? <CreateTaskForm defaults={defaults} onDone={onClose} onCancel={onClose} /> : null}
+        {open ? <CreateTaskForm
+            defaults={defaults}
+            onDone={(id) => {
+              onCreated?.(id);
+              onClose();
+            }}
+            onCancel={onClose}
+          /> : null}
       </DialogContent>
     </Dialog>
   );

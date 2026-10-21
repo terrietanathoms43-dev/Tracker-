@@ -1,6 +1,6 @@
 // Teams and shared assignment (docs/PLAN.md, 2026-10-18 log): Morgan makes a team of Jordan and Sam, assigns it to a
 // seeded task, and Sam finds the task in My Work marked "via" the team, with a notification and edit rights; a task
-// Morgan assigns to two people reaches both; the report and its CSV count the team; a member cannot make a team;
+// Morgan assigns to two people by typing @jordan @sam in the add bar reaches both; the report and its CSV count the team; a member cannot make a team;
 // another workspace gets Not found for it; deleting the team takes it off the task and the history keeps its name.
 //
 // Usage: node scripts/test-walkthrough/08-teams.mjs [--base=http://localhost:3021]
@@ -73,15 +73,16 @@ try {
 
   // --- 4. A task with two people on it reaches both -------------------------------------------------------------------
   await morgan.goto("/tasks", 4000);
-  await morgan.press("n", 1200);
-  step("N opens the New task dialog at once", (await morgan.evaluate(`!!document.querySelector("#task-title")`)) === true);
-  await morgan.type("#task-title", PAIR_TASK);
-  step("the assignees picker starts as You and opens", await morgan.click("You", { exact: true, within: "[role=dialog]", wait: 800 }));
-  await morgan.click("Jordan Dev", { within: "[cmdk-list]", wait: 300 });
-  await morgan.click("Sam Dev", { within: "[cmdk-list]", wait: 300 });
-  await morgan.click("Morgan Lead", { within: "[cmdk-list]", wait: 300 });
-  await morgan.press("Escape", 500);
-  await morgan.click("Create task", { exact: true, wait: 2500 });
+  await morgan.press("n", 800);
+  step("N jumps to the add bar", (await morgan.evaluate(`document.activeElement?.id === "quick-add-title"`)) === true);
+  await morgan.type("#quick-add-title", `${PAIR_TASK} @jor`, { wait: 1500 });
+  const offered = await morgan.evaluate(`document.querySelector("[role=listbox]")?.innerText ?? ""`);
+  step("typing @jor suggests Jordan Dev", offered.includes("Jordan Dev"), offered);
+  await morgan.press("Tab", 400);
+  step("Tab completes the mention", (await morgan.evaluate(`document.querySelector("#quick-add-title").value`)) === `${PAIR_TASK} @jordan `);
+  await morgan.type("#quick-add-title", `${PAIR_TASK} @jordan @sam`);
+  step("the bar says who it will assign", await morgan.waitFor("Assigning to Jordan Dev, Sam Dev"));
+  await morgan.click("Add task", { exact: true, wait: 2500 });
   step("creating the task shows the toast", await morgan.waitFor("Task created."));
   const [pair] = await query("select id from tasks where title = $1", [PAIR_TASK]);
   const pairPeople = await query("select u.email from task_assignees ta join users u on u.id = ta.user_id where ta.task_id = $1", [pair?.id ?? ""]);

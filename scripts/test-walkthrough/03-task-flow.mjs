@@ -1,4 +1,5 @@
-// A task's whole life (docs/PLAN.md §5, apex-ux flows A and D) as Jordan, with Morgan approving: create with N →
+// A task's whole life (docs/PLAN.md §5, apex-ux flows A and D) as Jordan, with Morgan approving: create from the
+// add bar (N, typed !high @tomorrow, More options for the next action) →
 // update progress → block → unblock → send for approval (Morgan by default) → Morgan sends it back → Jordan sees
 // "Sent back" in My Work → resubmit → Morgan approves → reopen → comment → add and remove an evidence link → reject
 // with a reason. The database then holds every history row and notification, and the people who may not see the
@@ -31,17 +32,26 @@ async function changeStatus(browser, label, { reason, title, confirm } = {}) {
 }
 
 try {
-  // --- 1. create with N -------------------------------------------------------------------------------------------
+  // --- 1. create from the add bar ----------------------------------------------------------------------------------
   const jordan = (browsers.jordan = await openBrowser({ role: "member", width: 1280, height: 900 }));
   await jordan.goto("/tasks", 4000);
-  await jordan.press("n", 1200);
-  step("N opens the New task dialog", (await jordan.evaluate(`!!document.querySelector("#task-title")`)) === true);
-  await jordan.type("#task-title", TITLE);
+  await jordan.press("n", 800);
+  step("N jumps to the add bar", (await jordan.evaluate(`document.activeElement?.id === "quick-add-title"`)) === true);
+  await jordan.type("#quick-add-title", `${TITLE} !high @tomorrow`);
+  const picked = await jordan.evaluate(
+    `[...document.querySelector("#quick-add-title").form.querySelectorAll("[aria-checked=true], [aria-pressed=true]")].map((e) => e.textContent.trim()).join(",")`,
+  );
+  step("the bar reads !high and @tomorrow into its buttons", picked === "High,Tomorrow", String(picked));
+  await jordan.click("More options", { exact: true, wait: 1200 });
+  step("More options opens the dialog with the title, shortcuts taken out", (await jordan.evaluate(`document.querySelector("#task-title")?.value ?? null`)) === TITLE);
   await jordan.type("#task-next", "Draft the rotation runbook");
   await jordan.click("Create task", { exact: true, wait: 2500 });
   step("creating shows the toast", await jordan.waitFor("Task created."));
+  step("the add bar is empty again", (await jordan.evaluate(`document.querySelector("#quick-add-title")?.value`)) === "");
   const [created] = await query(
-    "select t.id, t.status, t.next_action, (select array_agg(ta.user_id) from task_assignees ta where ta.task_id = t.id) as assignees from tasks t where t.title = $1",
+    `select t.id, t.status, t.next_action, t.priority, t.due_date::text as due,
+       (select array_agg(ta.user_id) from task_assignees ta where ta.task_id = t.id) as assignees
+       from tasks t where t.title = $1`,
     [TITLE],
   );
   const [me] = await query("select id from users where email = 'jordan@trackwise.test'");
@@ -50,6 +60,7 @@ try {
     created?.status === "not_started" && Array.isArray(created?.assignees) && created.assignees.length === 1 && created.assignees[0] === me?.id && created?.next_action === "Draft the rotation runbook",
     JSON.stringify(created),
   );
+  step("the typed shortcuts set high priority and a due date", created?.priority === "high" && typeof created?.due === "string", JSON.stringify(created));
   const taskPath = `/tasks/${created.id}`;
 
   // --- 2. update progress on the task page ------------------------------------------------------------------------

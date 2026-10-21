@@ -13,6 +13,7 @@ const TASK = `Walkthrough task ${stamp}`;
 const browsers = {};
 
 const value = (browser, selector) => browser.evaluate(`document.querySelector(${JSON.stringify(selector)})?.value ?? null`);
+const hasBar = (browser) => browser.evaluate(`!!document.querySelector("#quick-add-title")`);
 const hasButton = (browser, pattern) =>
   browser.evaluate(`[...document.querySelectorAll("main button")].some((b) => b.offsetParent !== null && ${pattern}.test(b.textContent.trim()))`);
 
@@ -52,12 +53,11 @@ try {
   await lead.goto(projectPath, 3500);
   step("the project starts empty", await lead.waitFor("No tasks in this project yet."));
 
-  await lead.click("New task");
-  step("the task dialog opens from the project page", await lead.evaluate(`!!document.querySelector("#task-title")`));
+  step("the project page has the add bar", await hasBar(lead));
   await sleep(1500);
-  step("the project is preselected", (await value(lead, "#task-project")) === projectPath.split("/").pop());
-  await lead.type("#task-title", TASK);
-  await lead.click("Create task", { exact: true });
+  step("the project is preselected", (await value(lead, "#quick-add-project")) === projectPath.split("/").pop());
+  await lead.type("#quick-add-title", TASK);
+  await lead.click("Add task", { exact: true });
   step("creating a task shows the toast", await lead.waitFor("Task created."));
   step("the project lists the task and counts it", (await lead.waitFor(TASK)) && (await lead.waitFor("of 1 task completed")));
   await lead.shot("07-project-with-task");
@@ -74,7 +74,7 @@ try {
   await lead.click("Pause", { exact: true });
   step("pausing shows the badge", (await lead.waitFor("Goal paused.")) && (await lead.waitFor("Paused")));
   await sleep(800);
-  step("a paused goal offers no New task", !(await hasButton(lead, "/New task/")));
+  step("a paused goal offers no add bar", !(await hasBar(lead)));
   await lead.click("Reactivate", { exact: true });
   step("reactivating works", await lead.waitFor("Goal is active again."));
   await lead.click("Mark achieved", { exact: true });
@@ -91,7 +91,7 @@ try {
   await lead.click("Mark completed", { exact: true });
   step("completing a project works", await lead.waitFor("Project marked completed."));
   await sleep(800);
-  step("a completed project offers no New task", !(await hasButton(lead, "/New task/")));
+  step("a completed project offers no add bar", !(await hasBar(lead)));
   await lead.click("Archive", { exact: true });
   step("archiving shows the banner and keeps the task", (await lead.waitFor("This project is archived. Its tasks stay readable.")) && (await lead.has(TASK)));
   await lead.shot("07-project-archived");
@@ -107,7 +107,7 @@ try {
   step("a member sees Goals without New goal", (await member.waitFor("What the team is working towards")) && !(await hasButton(member, "/New goal/")));
   await member.goto(goalPath, 3500);
   step("a member reads the goal without Edit or status actions", (await member.waitFor(`${GOAL} edited`)) && !(await hasButton(member, "/^(Edit|Mark achieved|Pause|New project)$/")));
-  step("a member may still add a task to the goal", await hasButton(member, "/New task/"));
+  step("a member may still add a task to the goal", await hasBar(member));
   await member.goto(projectPath, 3500);
   step("a member reads the project without management controls", (await member.waitFor(PROJECT)) && !(await hasButton(member, "/^(Edit|Mark completed|Archive)$/")));
   await member.shot("07-member-project");

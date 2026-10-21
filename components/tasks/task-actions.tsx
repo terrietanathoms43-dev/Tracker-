@@ -8,15 +8,29 @@ import { CreateTaskDialog, TransitionDialog, UpdateProgressDialog } from "./task
 import { useShortcuts } from "./use-shortcuts";
 import { prefetchTaskFormOptions } from "./use-task-form-options";
 
-// The task actions every screen can reach: New task (N), Update progress (U on a task page), the status
+// The task actions every screen can reach: New task (N jumps to the page's quick-add bar, or opens the dialog
+// where there is none), Update progress (U on a task page), the status
 // dialogs and the command palette (⌘K). One provider in app/(app)/layout.tsx owns the dialogs, so a row on
 // any page opens the same form.
 
 /** Fired on the task page to scroll to and focus its inline Update progress form. */
 export const FOCUS_UPDATE_EVENT = "trackwise:focus-update";
 
+/** The quick-add bar's title field carries this attribute, so N can find it. */
+export const QUICK_ADD_ATTRIBUTE = "data-quick-add";
+
+/** Focuses the page's quick-add bar; false when the page has none. */
+function focusQuickAdd(): boolean {
+  const input = document.querySelector<HTMLInputElement>(`[${QUICK_ADD_ATTRIBUTE}]`);
+  if (input === null) return false;
+  input.scrollIntoView({ block: "nearest" });
+  input.focus();
+  return true;
+}
+
 export type TaskActions = {
-  openCreate: (defaults?: CreateDefaults) => void;
+  /** `onCreated` runs once the dialog has created the task (the quick-add bar clears itself then). */
+  openCreate: (defaults?: CreateDefaults, onCreated?: (id: string) => void) => void;
   openUpdate: (taskId: string) => void;
   openTransition: (taskId: string, status: TaskStatus) => void;
   openPalette: () => void;
@@ -46,7 +60,7 @@ export function CurrentTask({ id }: { id: string }) {
 
 export function TaskActionsProvider({ children }: { children: ReactNode }) {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
-  const [create, setCreate] = useState<{ open: boolean; defaults: CreateDefaults }>({ open: false, defaults: {} });
+  const [create, setCreate] = useState<{ open: boolean; defaults: CreateDefaults; onCreated?: (id: string) => void }>({ open: false, defaults: {} });
   const [updateTaskId, setUpdateTaskId] = useState<string | null>(null);
   const [transition, setTransition] = useState<{ taskId: string; status: TaskStatus } | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -68,7 +82,7 @@ export function TaskActionsProvider({ children }: { children: ReactNode }) {
 
   const actions = useMemo<TaskActions>(
     () => ({
-      openCreate: (defaults = {}) => setCreate({ open: true, defaults }),
+      openCreate: (defaults = {}, onCreated) => setCreate({ open: true, defaults, onCreated }),
       openUpdate,
       openTransition: (taskId, status) => setTransition({ taskId, status }),
       openPalette: () => setPaletteOpen(true),
@@ -79,7 +93,9 @@ export function TaskActionsProvider({ children }: { children: ReactNode }) {
   );
 
   useShortcuts({
-    onCreate: () => setCreate({ open: true, defaults: {} }),
+    onCreate: () => {
+      if (!focusQuickAdd()) setCreate({ open: true, defaults: {} });
+    },
     onUpdate: () => {
       if (currentTaskId) openUpdate(currentTaskId);
     },
@@ -89,7 +105,12 @@ export function TaskActionsProvider({ children }: { children: ReactNode }) {
   return (
     <TaskActionsContext value={actions}>
       {children}
-      <CreateTaskDialog open={create.open} defaults={create.defaults} onClose={() => setCreate({ open: false, defaults: {} })} />
+      <CreateTaskDialog
+        open={create.open}
+        defaults={create.defaults}
+        onCreated={create.onCreated}
+        onClose={() => setCreate({ open: false, defaults: {} })}
+      />
       <UpdateProgressDialog taskId={updateTaskId} onClose={() => setUpdateTaskId(null)} />
       <TransitionDialog target={transition} onClose={() => setTransition(null)} />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />

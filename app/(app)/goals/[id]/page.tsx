@@ -9,7 +9,7 @@ import { PlanningHeader, PlanningSummary } from "@/components/goals/planning-hea
 import { ProjectDialog } from "@/components/projects/project-dialog";
 import { PlanningTasks } from "@/components/projects/task-groups";
 import { TeamChip } from "@/components/tasks/assignee-stack";
-import { NewTaskButton } from "@/components/tasks/new-task-button";
+import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { activeGoalOptions, getGoal, ownerOptions } from "@/lib/dal/goals";
 import { projectsForGoal } from "@/lib/dal/projects";
 import { tasksForGoal } from "@/lib/dal/tasks";
@@ -82,6 +82,7 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
           </>
         }
       />
+      {active && canCreateTask(viewer) ? <QuickAddTask today={today} defaults={{ goalId: goal.id }} /> : null}
       <div className="grid gap-8">
         <PlanningSummary successCriteria={goal.successCriteria} description={goal.description} progress={goal.progress} />
         <GoalProjects
@@ -92,8 +93,7 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
         <PlanningTasks
           items={tasks}
           today={today}
-          action={active && canCreateTask(viewer) ? <NewTaskButton defaults={{ goalId: goal.id }} /> : null}
-          empty={active ? "No tasks serve this goal yet. Add one here, or put a project under it." : "No tasks served this goal."}
+          empty={active ? "No tasks serve this goal yet. Add one above, or put a project under it." : "No tasks served this goal."}
         />
       </div>
     </div>

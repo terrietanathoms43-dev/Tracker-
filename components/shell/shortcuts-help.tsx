@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 export const SHORTCUTS_EVENT = "trackwise:shortcuts";
 
 const SHORTCUTS = [
-  { keys: ["N"], does: "New task" },
+  { keys: ["N"], does: "New task (jumps to the add bar where there is one)" },
   { keys: ["U"], does: "Update progress, on a task page" },
   { keys: ["⌘", "K"], does: "Search tasks and commands (Ctrl+K on Windows)" },
   { keys: ["/"], does: "Focus the list search" },

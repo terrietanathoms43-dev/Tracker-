@@ -44,8 +44,18 @@ export type TaskFormOptions = {
   goals: { id: string; title: string }[];
 };
 
-/** Defaults the create dialog starts from (a project or goal page passes its own id). */
-export type CreateDefaults = { projectId?: string; goalId?: string };
+/**
+ * Defaults the create dialog starts from: a project or goal page passes its own id, and the quick-add bar's
+ * "More options" hands over what was already typed and picked.
+ */
+export type CreateDefaults = {
+  projectId?: string;
+  goalId?: string;
+  title?: string;
+  priority?: TaskPriority;
+  dueDate?: string;
+  assignment?: { assigneeIds: string[]; teamIds: string[] };
+};
 
 export type EvidenceLink = { id: string; url: string; label: string | null; addedBy: string };
 

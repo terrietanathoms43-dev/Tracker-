@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { getTaskFormOptions } from "@/actions/tasks";
 import type { TaskFormOptions } from "@/lib/tasks/types";
 
@@ -9,9 +9,16 @@ import type { TaskFormOptions } from "@/lib/tasks/types";
 
 type Loaded = { options: TaskFormOptions | null; error: string | null };
 
+const NOTHING: Loaded = { options: null, error: null };
+
 let cached: Loaded | null = null;
 let inflight: Promise<Loaded> | null = null;
-const listeners = new Set<(loaded: Loaded) => void>();
+const listeners = new Set<() => void>();
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
 
 /** Fetches (or refetches) the options; one request at a time, shared by everyone waiting. */
 export function loadTaskFormOptions(): Promise<Loaded> {
@@ -22,7 +29,7 @@ export function loadTaskFormOptions(): Promise<Loaded> {
     .then((loaded) => {
       cached = loaded;
       inflight = null;
-      for (const listener of listeners) listener(loaded);
+      for (const listener of listeners) listener();
       return loaded;
     });
   return inflight;
@@ -34,15 +41,14 @@ export function prefetchTaskFormOptions(): void {
   void loadTaskFormOptions();
 }
 
-/** The current options (the cached ones at once, refreshed in the background each time the form opens). */
+/**
+ * The current options (the cached ones at once, refreshed in the background each time the form mounts). The server
+ * and the hydrating render see none, so an always-visible form like the quick-add bar hydrates cleanly.
+ */
 export function useTaskFormOptions(): Loaded {
-  const [loaded, setLoaded] = useState<Loaded>(() => cached ?? { options: null, error: null });
+  const loaded = useSyncExternalStore(subscribe, () => cached ?? NOTHING, () => NOTHING);
   useEffect(() => {
-    listeners.add(setLoaded);
     void loadTaskFormOptions();
-    return () => {
-      listeners.delete(setLoaded);
-    };
   }, []);
   return loaded;
 }

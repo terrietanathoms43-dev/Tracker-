@@ -35,13 +35,13 @@ export function CreateTaskForm({
 }) {
    const router = useRouter();
    const { options, error: loadError } = useTaskFormOptions();
-   const [title, setTitle] = useState("");
+   const [title, setTitle] = useState(defaults.title ?? "");
    /** Null until the person touches the picker: "me" once the options say who that is. */
-   const [assignment, setAssignment] = useState<AssigneeIds | null>(null);
+   const [assignment, setAssignment] = useState<AssigneeIds | null>(defaults.assignment ?? null);
    const [projectId, setProjectId] = useState(defaults.projectId ?? "");
    const [goalId, setGoalId] = useState(defaults.goalId ?? "");
-   const [priority, setPriority] = useState<TaskPriority>("normal");
-   const [dueDate, setDueDate] = useState("");
+   const [priority, setPriority] = useState<TaskPriority>(defaults.priority ?? "normal");
+   const [dueDate, setDueDate] = useState(defaults.dueDate ?? "");
    const [nextAction, setNextAction] = useState("");
    const [description, setDescription] = useState("");
    const [errors, setErrors] = useState<Errors>({});

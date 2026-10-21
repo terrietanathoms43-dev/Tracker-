@@ -104,3 +104,8 @@ export function greetingFor(timeZone: string, now: Date = new Date()): string {
   const hour = Number(new Intl.DateTimeFormat("en", { timeZone, hour: "numeric", hourCycle: "h23" }).format(now));
   return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 }
+
+/** The calendar day `days` after (or before) `day`: addDays("2026-10-31", 1) is "2026-11-01". */
+export function addDays(day: string, days: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
+}

@@ -5,7 +5,7 @@ import { MemberHome } from "@/components/home/member-home";
 import { NoWorkspaceHome } from "@/components/home/no-workspace-home";
 import { StakeholderHome } from "@/components/home/stakeholder-home";
 import { PageHeader } from "@/components/page-header";
-import { NewTaskButton } from "@/components/tasks/new-task-button";
+import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { DEFAULT_TIMEZONE, ORG_ROLE_LABELS } from "@/lib/constants";
 import { activeGoalProgress, teamFeed } from "@/lib/dal/dashboard";
 import { listInvitationsForEmail } from "@/lib/dal/invitations";
@@ -83,7 +83,8 @@ export default async function HomePage() {
 
   return (
     <>
-      <PageHeader title={title} description={`${org.name} · ${ORG_ROLE_LABELS[viewer.orgRole]}`} action={<NewTaskButton />} />
+      <PageHeader title={title} description={`${org.name} · ${ORG_ROLE_LABELS[viewer.orgRole]}`} />
+      <QuickAddTask today={today} />
       {alone ? (
         <div className="mb-6">
           <InviteBanner />

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
-import { NewTaskButton } from "@/components/tasks/new-task-button";
+import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { TaskSection } from "@/components/tasks/task-section";
 import { RECENTLY_FINISHED_DAYS } from "@/lib/constants";
 import { myWorkGroups } from "@/lib/dal/tasks";
@@ -29,13 +29,13 @@ export default async function MyWorkPage() {
 
   return (
     <>
-      <PageHeader title="My Work" description="Where you stopped, and what's next." action={<NewTaskButton />} />
+      <PageHeader title="My Work" description="Where you stopped, and what's next." />
+      <QuickAddTask today={today} />
       {nothing ? (
         <EmptyState
           icon={ListChecks}
           title="Nothing is assigned to you yet"
           description="Tasks assigned to you, or to a team you're in, show up here, grouped by what needs doing next."
-          action={<NewTaskButton variant="outline" />}
         />
       ) : (
         <div className="grid gap-8">

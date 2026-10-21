@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { LastFilters } from "@/components/tasks/last-filters";
-import { NewTaskButton } from "@/components/tasks/new-task-button";
+import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { TaskBoard } from "@/components/tasks/task-board";
 import { TaskList } from "@/components/tasks/task-list";
 import { TaskToolbar } from "@/components/tasks/task-toolbar";
@@ -40,7 +40,8 @@ export default async function TasksPage(props: PageProps<"/tasks">) {
 
   return (
     <>
-      <PageHeader title="Tasks" action={<NewTaskButton />} />
+      <PageHeader title="Tasks" />
+      <QuickAddTask today={today} />
       <ViewTabs active={view} query={query.toString()} />
       <TaskToolbar filters={filters} view={view} people={options.people} teams={options.teams} projects={options.projects} goals={options.goals} />
       <LastFilters current={query.toString()} view={view} />
@@ -59,8 +60,7 @@ export default async function TasksPage(props: PageProps<"/tasks">) {
           <EmptyState
             icon={SquareCheckBig}
             title={view === "board" ? "No tasks yet" : "No open tasks"}
-            description={view === "board" ? "Create the first one and it will show up in its column." : "Create the first one, or switch on Show closed to see finished work."}
-            action={<NewTaskButton variant="outline" />}
+            description={view === "board" ? "Add the first one above and it will show up in its column." : "Add the first one above, or switch on Show closed to see finished work."}
           />
         )
       ) : page ? (
