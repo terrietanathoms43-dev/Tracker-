@@ -154,7 +154,8 @@ export function TaskToolbar({
           </NativeSelect>
           {projects.length > 0 || filters.project ? (
             <NativeSelect aria-label="Project" className={cn(half, "sm:w-44")} value={filters.project} onChange={(event) => apply({ project: event.target.value })}>
-              <option value="">Any project</option>
+              <option value="">All projects</option>
+              <option value="none">Unlinked (no project)</option>
               {projects.map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
@@ -164,7 +165,8 @@ export function TaskToolbar({
           ) : null}
           {goals.length > 0 || filters.goal ? (
             <NativeSelect aria-label="Goal" className={cn(half, "sm:w-44")} value={filters.goal} onChange={(event) => apply({ goal: event.target.value })}>
-              <option value="">Any goal</option>
+              <option value="">All goals</option>
+              <option value="none">Unlinked (no goal)</option>
               {goals.map((goal) => (
                 <option key={goal.id} value={goal.id}>
                   {goal.title}

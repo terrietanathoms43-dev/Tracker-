@@ -1,3 +1,4 @@
+import { ApprovalStaging } from "@/components/tasks/approval-staging";
 import { TaskList } from "@/components/tasks/task-list";
 import { ActivityFeed } from "@/components/team/activity-feed";
 import { CountTiles } from "@/components/team/count-tiles";
@@ -5,6 +6,7 @@ import { GoalProgressList } from "@/components/team/goal-progress";
 import { Panel, PanelEmpty } from "@/components/team/panel";
 import { WorkloadCompact } from "@/components/team/workload";
 import type { FeedEntry, GoalProgress } from "@/lib/dal/dashboard";
+import type { ApprovalStagingTask } from "@/lib/dal/tasks";
 import { tasksHref } from "@/lib/tasks/filters";
 import type { TaskCounts, TaskListItem, WorkloadRow } from "@/lib/tasks/types";
 import { PendingBanner } from "./pending-banner";
@@ -22,6 +24,7 @@ export type LeaderHomeData = {
   attention: TaskListItem[];
   workload: WorkloadRow[];
   feed: FeedEntry[];
+  staging: ApprovalStagingTask[];
 };
 
 export function LeaderHome({
@@ -45,6 +48,10 @@ export function LeaderHome({
     <div className="grid gap-6">
       {data.pending > 0 ? <PendingBanner count={data.pending} /> : null}
       <CountTiles counts={data.counts} days={days} />
+
+      {/* Supervisor Approval Staging Area: Eliminates hallucination before sign-off */}
+      <ApprovalStaging tasks={data.staging} />
+
       <Panel title="Needs attention" count={data.attention.length} highlight href={tasksHref({})} hrefLabel="All open tasks">
         {data.attention.length === 0 ? (
           <PanelEmpty>Nothing is overdue, blocked, waiting on approval, unassigned or due soon.</PanelEmpty>

@@ -4,15 +4,21 @@ import { activeGoalProgress, type GoalProgress } from "@/lib/dal/dashboard";
 import { canSeeReports, type Viewer } from "@/lib/permissions";
 import { contributionsTable, deliveredTable, openTable, teamsTable, toCsv } from "./csv";
 import {
+  blockedDurationStats,
   blockedOrOverdue,
   contributionCounts,
   deliveredTasks,
   openCommitments,
   progressUpdateCount,
+  projectAndGoalHealth,
+  reportTimeline,
   teamCounts,
+  type BlockedDurationStats,
   type ContributionRow,
+  type HealthBoard,
   type ReportTask,
   type TeamReportRow,
+  type TimelineDay,
 } from "./data";
 import type { ReportTable } from "./params";
 import type { ReportRange } from "./range";
@@ -40,6 +46,9 @@ export type Report = {
   goals: GoalProgress[];
   /** Tasks under each goal completed in the range, by goal id. */
   goalsDeliveredInRange: Record<string, number>;
+  timeline: TimelineDay[];
+  healthBoard: HealthBoard;
+  blockedDuration: BlockedDurationStats;
 };
 
 /** Reports are for the people who do the work (PLAN §3): stakeholders are refused here as well as by the page. */
@@ -50,7 +59,7 @@ function assertCanSeeReports(viewer: Viewer): void {
 /** Everything /reports prints for a range. Blocked and overdue are as of `today`, whatever the range. */
 export async function buildReport(viewer: Viewer, range: ReportRange, today: string): Promise<Report> {
   assertCanSeeReports(viewer);
-  const [delivered, open, blockedOverdue, contributions, teams, goals, progressUpdates] = await Promise.all([
+  const [delivered, open, blockedOverdue, contributions, teams, goals, progressUpdates, blockedDuration, healthBoard] = await Promise.all([
     deliveredTasks(viewer, range),
     openCommitments(viewer, range, today),
     blockedOrOverdue(viewer, today),
@@ -58,7 +67,10 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
     teamCounts(viewer, range, today),
     activeGoalProgress(viewer),
     progressUpdateCount(viewer, range),
+    blockedDurationStats(viewer),
+    projectAndGoalHealth(viewer),
   ]);
+  const timeline = await reportTimeline(viewer, range, delivered);
   const goalsDeliveredInRange: Record<string, number> = {};
   for (const task of delivered) {
     if (task.goalId) goalsDeliveredInRange[task.goalId] = (goalsDeliveredInRange[task.goalId] ?? 0) + 1;
@@ -80,6 +92,9 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
     teams,
     goals,
     goalsDeliveredInRange,
+    timeline,
+    healthBoard,
+    blockedDuration,
   };
 }
 

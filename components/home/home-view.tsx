@@ -8,7 +8,7 @@ import { ORG_ROLE_LABELS } from "@/lib/constants";
 import { activeGoalProgress, teamFeed } from "@/lib/dal/dashboard";
 import { getSetupState } from "@/lib/dal/orgs";
 import { countPendingRequests, listRequests } from "@/lib/dal/requests";
-import { attentionTasks, myWorkTasks, taskCounts, workload } from "@/lib/dal/tasks";
+import { attentionTasks, approvalStagingTasks, myWorkTasks, taskCounts, workload } from "@/lib/dal/tasks";
 import type { HomeTabConfig } from "@/lib/home-tabs";
 import type { Membership } from "@/lib/dal/orgs";
 import { isAdmin, isLeader, isStakeholder, type Viewer } from "@/lib/permissions";
@@ -25,14 +25,15 @@ const LEADER_FEED_ROWS = 8;
 
 /** The reads only leaders and admins need, so a member's Home never runs them. Counts cover the last 30 days. */
 async function loadLeaderData(viewer: Viewer, now: Date, today: string): Promise<LeaderHomeData> {
-  const [pending, counts, attention, rows, feed] = await Promise.all([
+  const [pending, counts, attention, rows, feed, staging] = await Promise.all([
     countPendingRequests(viewer),
     taskCounts(viewer, { today, since: periodStart(now, DEFAULT_PERIOD) }),
     attentionTasks(viewer, today),
     workload(viewer),
     teamFeed(viewer, LEADER_FEED_ROWS),
+    approvalStagingTasks(viewer),
   ]);
-  return { pending, counts, attention, workload: rows, feed };
+  return { pending, counts, attention, workload: rows, feed, staging };
 }
 
 /** "What needs me right now?", answered for the viewer's role. */

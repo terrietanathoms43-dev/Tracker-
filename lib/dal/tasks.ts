@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, ilike, inArray, ne, notInArray, or, sql, type 
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, type Tx } from "@/db";
 import { goals, projects, requests, taskActivity, taskLinks, tasks, users } from "@/db/schema";
-import { CLOSED_STATUSES, DUE_SOON_DAYS, RECENTLY_FINISHED_DAYS, type TaskStatus } from "@/lib/constants";
+import { CLOSED_STATUSES, DUE_SOON_DAYS, RECENTLY_FINISHED_DAYS, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { assignmentOf } from "@/lib/dal/assignments";
 import { listWorkers } from "@/lib/dal/orgs";
 import { teamOptions } from "@/lib/dal/teams";
@@ -160,8 +160,10 @@ function filterConditions(viewer: Viewer, filters: TaskFilters, today: string): 
   else if (filters.assignee) where.push(assignedTo(filters.assignee));
   if (filters.team) where.push(assignedToTeam(filters.team));
   if (filters.priority) where.push(eq(tasks.priority, filters.priority));
-  if (filters.project) where.push(eq(tasks.projectId, filters.project));
-  if (filters.goal) where.push(inGoal(viewer, filters.goal));
+  if (filters.project === "none") where.push(isNull(tasks.projectId));
+  else if (filters.project) where.push(eq(tasks.projectId, filters.project));
+  if (filters.goal === "none") where.push(isNull(tasks.goalId));
+  else if (filters.goal) where.push(inGoal(viewer, filters.goal));
   if (filters.due === "overdue") where.push(sql`${tasks.dueDate} < ${today}::date`, isOpen);
   if (filters.due === "week") where.push(sql`${tasks.dueDate} between ${today}::date and ${today}::date + 6`);
   if (filters.due === "none") where.push(isNull(tasks.dueDate));
@@ -268,6 +270,64 @@ export async function attentionTasks(viewer: Viewer, today: string, limit = 50):
   });
   items.sort((a, b) => ATTENTION_RANK[a.reason] - ATTENTION_RANK[b.reason] || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"));
   return items.slice(0, limit);
+}
+
+export type ApprovalStagingTask = {
+  id: string;
+  title: string;
+  priority: TaskPriority;
+  dueDate: string | null;
+  updatedAt: string;
+  latestProgress: string | null;
+  completionSummary: string | null;
+  nextAction: string | null;
+  approverId: string | null;
+  project: { id: string; name: string } | null;
+  assignees: { people: Person[]; teams: TeamRef[] };
+  evidence: { url: string; label: string | null }[];
+};
+
+/**
+ * Tasks waiting for approval across the workspace, along with their latest progress,
+ * completion summaries, and evidence links so supervisors have the facts before approving.
+ */
+export async function approvalStagingTasks(viewer: Viewer): Promise<ApprovalStagingTask[]> {
+  const rows = await db
+    .select({
+      id: tasks.id,
+      title: tasks.title,
+      priority: tasks.priority,
+      dueDate: tasks.dueDate,
+      updatedAt: tasks.updatedAt,
+      latestProgress: tasks.latestProgress,
+      completionSummary: tasks.completionSummary,
+      nextAction: tasks.nextAction,
+      approverId: tasks.approverId,
+      projectId: projects.id,
+      projectName: projects.name,
+      people: assigneesJson,
+      teams: teamsJson,
+      evidence: sql<{ url: string; label: string | null }[]>`coalesce((select json_agg(json_build_object('url', l.url, 'label', l.label) order by l.created_at) from task_links l where l.task_id = ${tasks.id}), '[]'::json)`,
+    })
+    .from(tasks)
+    .leftJoin(projects, eq(projects.id, tasks.projectId))
+    .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.status, "awaiting_approval")))
+    .orderBy(asc(tasks.updatedAt));
+
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    priority: row.priority,
+    dueDate: row.dueDate,
+    updatedAt: row.updatedAt.toISOString(),
+    latestProgress: row.latestProgress,
+    completionSummary: row.completionSummary,
+    nextAction: row.nextAction,
+    approverId: row.approverId,
+    project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
+    assignees: { people: row.people, teams: row.teams },
+    evidence: row.evidence,
+  }));
 }
 
 /**

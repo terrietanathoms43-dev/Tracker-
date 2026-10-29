@@ -2,14 +2,14 @@ import "server-only";
 import { and, asc, desc, eq, isNotNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { projects, taskActivity, taskAssignees, tasks, taskUpdates, teams } from "@/db/schema";
+import { goals, projects, taskActivity, taskAssignees, tasks, taskUpdates, teams } from "@/db/schema";
 import { CLOSED_STATUSES, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { listWorkers } from "@/lib/dal/orgs";
-import { assigneesJson, teamsJson } from "@/lib/dal/tasks";
+import { assigneesJson, progressForGoals, progressForProjects, teamsJson } from "@/lib/dal/tasks";
 import type { Viewer } from "@/lib/permissions";
 import type { Assignees, Person, TeamRef } from "@/lib/tasks/types";
-import { dayKey } from "@/lib/time";
-import type { ReportRange } from "./range";
+import { addDays, calendarDaysBetween, dayKey } from "@/lib/time";
+import { shiftDay, type ReportRange } from "./range";
 
 // The rows behind /reports and its CSV exports. Every query is scoped to viewer.orgId in SQL and every number a
 // report prints is a count of these rows: nothing is estimated, weighted or ranked. Callers check access first
@@ -34,10 +34,71 @@ export type ReportTask = {
 };
 
 /** One worker's counts in the range (direct assignments). Counts only: the report never compares people. */
-export type ContributionRow = { person: Person; completed: number; progressUpdates: number; blockersRaised: number };
+export type ContributionRow = {
+  person: Person;
+  completed: number;
+  deltaCompleted?: number;
+  progressUpdates: number;
+  blockersRaised: number;
+};
 
 /** One team's counts: what it delivered in the range and what it holds today. */
 export type TeamReportRow = { team: TeamRef; members: number; completed: number; open: number; blocked: number; overdue: number };
+
+export type TimelineGoalMarker = { id: string; title: string };
+
+export type TimelineTaskSummary = {
+  id: string;
+  title: string;
+  kind: "completed" | "blocked";
+  isMine?: boolean;
+};
+
+export type TimelineDay = {
+  date: string;
+  completed: number;
+  myCompleted: number;
+  blockedRaised: number;
+  goalDeadlines: TimelineGoalMarker[];
+  tasks: TimelineTaskSummary[];
+};
+
+export type HealthStatus = "on_track" | "at_risk" | "needs_attention";
+
+export type ProjectHealthRow = {
+  id: string;
+  name: string;
+  targetDate: string | null;
+  total: number;
+  completed: number;
+  blocked: number;
+  overdue: number;
+  pct: number;
+  health: HealthStatus;
+};
+
+export type GoalHealthRow = {
+  id: string;
+  title: string;
+  targetDate: string | null;
+  total: number;
+  completed: number;
+  blocked: number;
+  overdue: number;
+  pct: number;
+  health: HealthStatus;
+};
+
+export type HealthBoard = {
+  goals: GoalHealthRow[];
+  projects: ProjectHealthRow[];
+};
+
+export type BlockedDurationStats = {
+  averageDays: number;
+  maxDays: number;
+  currentlyBlocked: number;
+};
 
 // --- helpers ------------------------------------------------------------------------------------------------
 
@@ -123,13 +184,24 @@ const tally = (rows: CountByPerson[]) => new Map(rows.map((row) => [row.personId
  */
 export async function contributionCounts(viewer: Viewer, range: ReportRange): Promise<ContributionRow[]> {
   const n = sql<number>`count(*)::int`;
-  const [workers, completed, updates, blockers] = await Promise.all([
+  const span = Math.max(0, calendarDaysBetween(range.from, range.to));
+  const priorTo = shiftDay(range.from, -1);
+  const priorFrom = shiftDay(priorTo, -span);
+  const priorRange: ReportRange = { from: priorFrom, to: priorTo };
+
+  const [workers, completed, priorCompleted, updates, blockers] = await Promise.all([
     listWorkers(viewer),
     db
       .select({ personId: taskAssignees.userId, n })
       .from(taskAssignees)
       .innerJoin(tasks, eq(tasks.id, taskAssignees.taskId))
       .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.status, "completed"), withinDays(tasks.completedAt, range, viewer.timezone)))
+      .groupBy(taskAssignees.userId),
+    db
+      .select({ personId: taskAssignees.userId, n })
+      .from(taskAssignees)
+      .innerJoin(tasks, eq(tasks.id, taskAssignees.taskId))
+      .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.status, "completed"), withinDays(tasks.completedAt, priorRange, viewer.timezone)))
       .groupBy(taskAssignees.userId),
     db
       .select({ personId: taskUpdates.authorId, n })
@@ -143,14 +215,19 @@ export async function contributionCounts(viewer: Viewer, range: ReportRange): Pr
       .where(and(eq(taskActivity.orgId, viewer.orgId), eq(taskActivity.kind, "blocked"), withinDays(taskActivity.createdAt, range, viewer.timezone)))
       .groupBy(taskActivity.actorId),
   ]);
-  const [completedBy, updatesBy, blockersBy] = [tally(completed), tally(updates), tally(blockers)];
+  const [completedBy, priorCompletedBy, updatesBy, blockersBy] = [tally(completed), tally(priorCompleted), tally(updates), tally(blockers)];
   return workers
-    .map((worker) => ({
-      person: { id: worker.userId, name: worker.name, email: worker.email, image: worker.image },
-      completed: completedBy.get(worker.userId) ?? 0,
-      progressUpdates: updatesBy.get(worker.userId) ?? 0,
-      blockersRaised: blockersBy.get(worker.userId) ?? 0,
-    }))
+    .map((worker) => {
+      const cur = completedBy.get(worker.userId) ?? 0;
+      const prior = priorCompletedBy.get(worker.userId) ?? 0;
+      return {
+        person: { id: worker.userId, name: worker.name, email: worker.email, image: worker.image },
+        completed: cur,
+        deltaCompleted: cur - prior,
+        progressUpdates: updatesBy.get(worker.userId) ?? 0,
+        blockersRaised: blockersBy.get(worker.userId) ?? 0,
+      };
+    })
     .sort((a, b) => (a.person.name ?? a.person.email ?? "").localeCompare(b.person.name ?? b.person.email ?? ""));
 }
 
@@ -181,4 +258,161 @@ export async function teamCounts(viewer: Viewer, range: ReportRange, today: stri
     .where(eq(teams.orgId, viewer.orgId))
     .orderBy(asc(teams.name));
   return rows.map(({ id, name, ...counts }) => ({ team: { id, name }, ...counts }));
+}
+
+/** Daily timeline over the range: completions, personal completions, blockers, and goal deadline markers. */
+export async function reportTimeline(viewer: Viewer, range: ReportRange, delivered: ReportTask[]): Promise<TimelineDay[]> {
+  const span = Math.max(0, calendarDaysBetween(range.from, range.to));
+  const daysCount = Math.min(span + 1, 120);
+  const days: string[] = [];
+  for (let i = 0; i < daysCount; i++) {
+    days.push(addDays(range.from, i));
+  }
+
+  const [goalRows, blockerRows] = await Promise.all([
+    db
+      .select({ id: goals.id, title: goals.title, targetDate: goals.targetDate })
+      .from(goals)
+      .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active"), isNotNull(goals.targetDate))),
+    db
+      .select({
+        day: sql<string>`to_char(${taskActivity.createdAt} at time zone ${viewer.timezone}, 'YYYY-MM-DD')`,
+        taskId: taskActivity.taskId,
+        taskTitle: tasks.title,
+      })
+      .from(taskActivity)
+      .innerJoin(tasks, eq(tasks.id, taskActivity.taskId))
+      .where(and(eq(taskActivity.orgId, viewer.orgId), eq(taskActivity.kind, "blocked"), withinDays(taskActivity.createdAt, range, viewer.timezone))),
+  ]);
+
+  const goalsByDay = new Map<string, TimelineGoalMarker[]>();
+  for (const g of goalRows) {
+    if (g.targetDate && g.targetDate >= range.from && g.targetDate <= range.to) {
+      const list = goalsByDay.get(g.targetDate) ?? [];
+      list.push({ id: g.id, title: g.title });
+      goalsByDay.set(g.targetDate, list);
+    }
+  }
+
+  const blockersByDay = new Map<string, number>();
+  const tasksByDay = new Map<string, TimelineTaskSummary[]>();
+
+  for (const b of blockerRows) {
+    blockersByDay.set(b.day, (blockersByDay.get(b.day) ?? 0) + 1);
+    const list = tasksByDay.get(b.day) ?? [];
+    list.push({ id: b.taskId, title: b.taskTitle, kind: "blocked" });
+    tasksByDay.set(b.day, list);
+  }
+
+  const deliveredByDay = new Map<string, number>();
+  const myDeliveredByDay = new Map<string, number>();
+  for (const t of delivered) {
+    if (t.completedDay) {
+      deliveredByDay.set(t.completedDay, (deliveredByDay.get(t.completedDay) ?? 0) + 1);
+      const isMine = t.assignees.people.some((p) => p.id === viewer.userId) || t.assignees.teams.some((tm) => viewer.teamIds.includes(tm.id));
+      if (isMine) {
+        myDeliveredByDay.set(t.completedDay, (myDeliveredByDay.get(t.completedDay) ?? 0) + 1);
+      }
+      const list = tasksByDay.get(t.completedDay) ?? [];
+      list.push({ id: t.id, title: t.title, kind: "completed", isMine });
+      tasksByDay.set(t.completedDay, list);
+    }
+  }
+
+  return days.map((date) => ({
+    date,
+    completed: deliveredByDay.get(date) ?? 0,
+    myCompleted: myDeliveredByDay.get(date) ?? 0,
+    blockedRaised: blockersByDay.get(date) ?? 0,
+    goalDeadlines: goalsByDay.get(date) ?? [],
+    tasks: tasksByDay.get(date) ?? [],
+  }));
+}
+
+/** Average and maximum days currently blocked tasks have sat blocked. */
+export async function blockedDurationStats(viewer: Viewer): Promise<BlockedDurationStats> {
+  const rows = await db
+    .select({
+      id: tasks.id,
+      updatedAt: tasks.updatedAt,
+    })
+    .from(tasks)
+    .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.status, "blocked")));
+
+  if (rows.length === 0) {
+    return { averageDays: 0, maxDays: 0, currentlyBlocked: 0 };
+  }
+
+  const now = Date.now();
+  const durations = rows.map((r) => Math.max(0, (now - r.updatedAt.getTime()) / (1000 * 60 * 60 * 24)));
+  const sum = durations.reduce((acc, d) => acc + d, 0);
+  const averageDays = Math.round((sum / durations.length) * 10) / 10;
+  const maxDays = Math.round(Math.max(...durations) * 10) / 10;
+
+  return {
+    averageDays,
+    maxDays,
+    currentlyBlocked: rows.length,
+  };
+}
+
+/** Executive health board: sparkbars and status indicators for all active projects and goals. */
+export async function projectAndGoalHealth(viewer: Viewer): Promise<HealthBoard> {
+  const [activeGoals, activeProjects] = await Promise.all([
+    db
+      .select({ id: goals.id, title: goals.title, targetDate: goals.targetDate })
+      .from(goals)
+      .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active")))
+      .orderBy(sql`${goals.targetDate} asc nulls last`, asc(goals.title)),
+    db
+      .select({ id: projects.id, name: projects.name, targetDate: projects.targetDate })
+      .from(projects)
+      .where(and(eq(projects.orgId, viewer.orgId), eq(projects.status, "active")))
+      .orderBy(sql`${projects.targetDate} asc nulls last`, asc(projects.name)),
+  ]);
+
+  const [goalProgressMap, projectProgressMap] = await Promise.all([
+    progressForGoals(viewer, activeGoals.map((g) => g.id)),
+    progressForProjects(viewer, activeProjects.map((p) => p.id)),
+  ]);
+
+  function calculateHealth(total: number, completed: number, blocked: number, overdue: number): HealthStatus {
+    if (blocked > 0 || (total > 0 && overdue / total >= 0.2)) return "at_risk";
+    if (overdue > 0) return "needs_attention";
+    return "on_track";
+  }
+
+  const goalHealth: GoalHealthRow[] = activeGoals.map((g) => {
+    const prog = goalProgressMap.get(g.id) ?? { total: 0, completed: 0, blocked: 0, overdue: 0 };
+    const pct = prog.total > 0 ? Math.round((prog.completed / prog.total) * 100) : 0;
+    return {
+      id: g.id,
+      title: g.title,
+      targetDate: g.targetDate,
+      total: prog.total,
+      completed: prog.completed,
+      blocked: prog.blocked,
+      overdue: prog.overdue,
+      pct,
+      health: calculateHealth(prog.total, prog.completed, prog.blocked, prog.overdue),
+    };
+  });
+
+  const projectHealth: ProjectHealthRow[] = activeProjects.map((p) => {
+    const prog = projectProgressMap.get(p.id) ?? { total: 0, completed: 0, blocked: 0, overdue: 0 };
+    const pct = prog.total > 0 ? Math.round((prog.completed / prog.total) * 100) : 0;
+    return {
+      id: p.id,
+      name: p.name,
+      targetDate: p.targetDate,
+      total: prog.total,
+      completed: prog.completed,
+      blocked: prog.blocked,
+      overdue: prog.overdue,
+      pct,
+      health: calculateHealth(prog.total, prog.completed, prog.blocked, prog.overdue),
+    };
+  });
+
+  return { goals: goalHealth, projects: projectHealth };
 }

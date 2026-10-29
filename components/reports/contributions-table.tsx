@@ -3,13 +3,24 @@ import { UserAvatar } from "@/components/user-avatar";
 import type { ContributionRow } from "@/lib/reports/data";
 import { nameOf } from "@/lib/tasks/people";
 
-// Contributions per worker: three counts each, alphabetical, with the note that they are records, not a ranking.
+// Contributions per worker: counts each, alphabetical, with the note that they are records, not a ranking.
 
 const COLUMNS: { key: keyof Omit<ContributionRow, "person">; short: string; long: string }[] = [
   { key: "completed", short: "Completed", long: "Completed" },
+  { key: "deltaCompleted", short: "Δ Prior", long: "Change vs prior" },
   { key: "progressUpdates", short: "Updates", long: "Progress updates" },
   { key: "blockersRaised", short: "Blockers", long: "Blockers raised" },
 ];
+
+function renderCell(key: keyof Omit<ContributionRow, "person">, value: unknown) {
+  if (key === "deltaCompleted") {
+    const n = Number(value ?? 0);
+    if (n > 0) return <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{n}</span>;
+    if (n < 0) return <span className="font-semibold text-rose-600 dark:text-rose-400">{n}</span>;
+    return <span className="text-muted-foreground">0</span>;
+  }
+  return String(value ?? 0);
+}
 
 export function ContributionsTable({ rows }: { rows: ContributionRow[] }) {
   if (rows.length === 0) return <PanelEmpty>Nobody in the workspace does work yet.</PanelEmpty>;
@@ -40,7 +51,7 @@ export function ContributionsTable({ rows }: { rows: ContributionRow[] }) {
               </th>
               {COLUMNS.map((column) => (
                 <td key={column.key} className="px-2 py-2.5 text-right tabular-nums last:pr-4">
-                  {row[column.key]}
+                  {renderCell(column.key, row[column.key])}
                 </td>
               ))}
             </tr>
