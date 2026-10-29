@@ -150,6 +150,9 @@ export const DEFAULT_TIMEZONE = "America/Jamaica";
 /** Cookie holding the active workspace id (validated against membership on every request). */
 export const ORG_COOKIE = "trackwise.org";
 
+/** Cookie holding the person's /home tab order, hidden tabs and landing tab (written client-side). */
+export const HOME_TABS_COOKIE = "trackwise.homeTabs";
+
 export const INVITE_TTL_DAYS = 7;
 
 /** "Recently finished" and the board's Completed column look back this far. */

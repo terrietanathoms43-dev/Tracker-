@@ -15,7 +15,7 @@ export function ResumePanel({ tasks, today }: { tasks: TaskListItem[]; today: st
       {tasks.length === 0 ? (
         <PanelEmpty>
           Nothing assigned to you needs doing right now.{" "}
-          <Link href="/tasks" className="text-link underline-offset-4 hover:underline">
+          <Link href="/home?view=list" className="text-link underline-offset-4 hover:underline">
             Browse the open tasks
           </Link>
           .

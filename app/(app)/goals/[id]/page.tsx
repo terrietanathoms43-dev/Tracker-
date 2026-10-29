@@ -11,7 +11,7 @@ import { PlanningTasks } from "@/components/projects/task-groups";
 import { TeamChip } from "@/components/tasks/assignee-stack";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { activeGoalOptions, getGoal, ownerOptions } from "@/lib/dal/goals";
-import { projectsForGoal } from "@/lib/dal/projects";
+import { projectOptions, projectsForGoal } from "@/lib/dal/projects";
 import { tasksForGoal } from "@/lib/dal/tasks";
 import { teamOptions } from "@/lib/dal/teams";
 import { canCreateTask, canManagePlanning } from "@/lib/permissions";
@@ -31,13 +31,14 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
   const viewer = await requireViewer();
   const manage = canManagePlanning(viewer);
   // One round trip; nothing renders unless getGoal finds the goal in this workspace for a viewer who may read it.
-  const [goal, projects, tasks, people, goalOptions, teams] = await Promise.all([
+  const [goal, projects, tasks, people, goalOptions, teams, allProjects] = await Promise.all([
     getGoal(viewer, id),
     projectsForGoal(viewer, id),
     tasksForGoal(viewer, id),
     manage ? ownerOptions(viewer) : [],
     manage ? activeGoalOptions(viewer) : [],
     manage ? teamOptions(viewer) : [],
+    manage ? projectOptions(viewer) : [],
   ]);
   if (goal === null) notFound();
   const today = dayKey(new Date(), viewer.timezone);
@@ -59,10 +60,12 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
                   successCriteria: goal.successCriteria,
                   ownerId: goal.owner?.id ?? null,
                   teamIds: goal.teams.map((team) => team.id),
+                  projectIds: projects.map((project) => project.id),
                   targetDate: goal.targetDate,
                 }}
                 people={people}
                 teams={teams}
+                projects={allProjects}
                 viewerId={viewer.userId}
               />
               <GoalStatusActions goalId={goal.id} status={goal.status} />

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useSyncExternalStore } from "react";
 import type { TaskView } from "@/lib/tasks/filters";
 
-// "Back to your last view" (apex-ux §6): the last filtered /tasks address, remembered in this browser only.
+// "Back to your last view" (apex-ux §6): the last filtered /home list address, remembered in this browser only.
 // It is a preference, not data, so localStorage is the right place; it never reaches the server.
 
 const KEY = "trackwise.tasks.lastQuery";
@@ -47,7 +47,7 @@ export function LastFilters({ current, view }: { current: string; view: TaskView
   }, [current]);
 
   if (current !== "" || !saved) return null;
-  const href = view === "board" ? `/tasks?${saved}&view=board` : `/tasks?${saved}`;
+  const href = view === "board" ? `/home?${saved}&view=board` : `/home?${saved}&view=list`;
   return (
     <div className="mb-3 flex items-center gap-2 text-[13px] text-muted-foreground">
       <History className="size-3.5 shrink-0" aria-hidden />

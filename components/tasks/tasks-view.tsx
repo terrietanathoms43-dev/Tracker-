@@ -1,7 +1,5 @@
 import { SearchX, SquareCheckBig } from "lucide-react";
-import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { LastFilters } from "@/components/tasks/last-filters";
@@ -9,26 +7,19 @@ import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { TaskBoard } from "@/components/tasks/task-board";
 import { TaskList } from "@/components/tasks/task-list";
 import { TaskToolbar } from "@/components/tasks/task-toolbar";
-import { ViewTabs } from "@/components/tasks/view-tabs";
+import { ViewTabs } from "@/components/home/view-tabs";
 import { Button } from "@/components/ui/button";
 import { boardTasks, listTasks, taskFormOptions } from "@/lib/dal/tasks";
-import { isStakeholder } from "@/lib/permissions";
+import type { HomeTabConfig } from "@/lib/home-tabs";
+import type { Viewer } from "@/lib/permissions";
 import { BOARD_STATUSES } from "@/lib/tasks/board";
-import { filtersToParams, isFiltered, parseFilters, parseView, tasksHref } from "@/lib/tasks/filters";
+import { filtersToParams, isFiltered, tasksHref, type TaskFilters, type TaskView } from "@/lib/tasks/filters";
 import { dayKey } from "@/lib/time";
-import { requireViewer } from "@/lib/viewer";
 
-// /tasks: the task list and board, filtered by the address.
+// The List and Board tabs of /home: every task in the workspace, filtered by the address.
 
-export const metadata: Metadata = { title: "Tasks" };
-
-/** "Find the thing": every task in the workspace as a list or a board, filtered by the address. */
-export default async function TasksPage(props: PageProps<"/tasks">) {
-  const viewer = await requireViewer();
-  if (isStakeholder(viewer)) redirect("/home");
-  const raw = await props.searchParams;
-  const filters = parseFilters(raw);
-  const view = parseView(raw);
+/** "Find the thing": the task list or board under the /home tab row. */
+export async function TasksView({ viewer, filters, view, tabsConfig }: { viewer: Viewer; filters: TaskFilters; view: TaskView; tabsConfig: HomeTabConfig }) {
   const today = dayKey(new Date(), viewer.timezone);
   const query = filtersToParams(filters);
   const [options, page, columns] = await Promise.all([
@@ -42,7 +33,7 @@ export default async function TasksPage(props: PageProps<"/tasks">) {
     <>
       <PageHeader title="Tasks" />
       <QuickAddTask today={today} />
-      <ViewTabs active={view} query={query.toString()} />
+      <ViewTabs active={view} query={query.toString()} config={tabsConfig} />
       <TaskToolbar filters={filters} view={view} people={options.people} teams={options.teams} projects={options.projects} goals={options.goals} />
       <LastFilters current={query.toString()} view={view} />
       {empty ? (

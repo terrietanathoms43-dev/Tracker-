@@ -17,9 +17,9 @@ import { useTaskActions } from "./task-actions";
 const PLACES: { href: string; label: string; icon: LucideIcon; nav: NavKey }[] = [
   { href: "/home", label: "Home", icon: House, nav: "home" },
   { href: "/my-work", label: "My Work", icon: ListChecks, nav: "my-work" },
-  { href: "/tasks", label: "Tasks", icon: SquareCheckBig, nav: "tasks" },
-  { href: "/tasks?view=board", label: "Board", icon: Columns3, nav: "tasks" },
-  { href: "/projects", label: "Projects", icon: FolderKanban, nav: "tasks" },
+  { href: "/home?view=list", label: "Tasks", icon: SquareCheckBig, nav: "tasks" },
+  { href: "/home?view=board", label: "Board", icon: Columns3, nav: "tasks" },
+  { href: "/home?view=projects", label: "Projects", icon: FolderKanban, nav: "tasks" },
   { href: "/goals", label: "Goals", icon: Target, nav: "goals" },
   { href: "/members", label: "Members", icon: Users, nav: "members" },
   { href: "/requests", label: "Requests", icon: Inbox, nav: "requests" },
@@ -68,7 +68,13 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   };
   const term = query.trim().toLowerCase();
   const tasks = term !== "" && results.q.toLowerCase() === term ? results.items : [];
-  const places = caps === null ? [] : PLACES.filter((place) => caps.nav.includes(place.nav) && (term === "" || place.label.toLowerCase().includes(term)));
+  // The tasks views aren't a nav destination any more (the /home tab row is), but workers still get them here.
+  const places =
+    caps === null
+      ? []
+      : PLACES.filter(
+          (place) => (place.nav === "tasks" ? caps.canCreate : caps.nav.includes(place.nav)) && (term === "" || place.label.toLowerCase().includes(term)),
+        );
   const showCreate = caps?.canCreate === true && (term === "" || "new task".includes(term));
   const showUpdate = currentTaskId !== null && (term === "" || "update progress".includes(term));
 

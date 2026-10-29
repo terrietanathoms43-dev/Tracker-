@@ -34,7 +34,7 @@ async function changeStatus(browser, label, { reason, title, confirm } = {}) {
 try {
   // --- 1. create from the add bar ----------------------------------------------------------------------------------
   const jordan = (browsers.jordan = await openBrowser({ role: "member", width: 1280, height: 900 }));
-  await jordan.goto("/tasks", 4000);
+  await jordan.goto("/home?view=list", 4000);
   await jordan.press("n", 800);
   step("N jumps to the add bar", (await jordan.evaluate(`document.activeElement?.id === "quick-add-title"`)) === true);
   await jordan.type("#quick-add-title", `${TITLE} !high @tomorrow`);

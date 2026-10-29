@@ -103,12 +103,12 @@ export function filtersToParams(filters: TaskFilters): URLSearchParams {
   return params;
 }
 
-/** The /tasks address for some filters, keeping the board view when asked. */
+/** The /home address for some filters, keeping the board view when asked. */
 export function tasksHref(filters: Partial<TaskFilters>, view: TaskView = "list"): string {
   const params = filtersToParams({ ...DEFAULT_FILTERS, ...filters });
   if (view === "board") params.set("view", "board");
-  const query = params.toString();
-  return query ? `/tasks?${query}` : "/tasks";
+  else params.set("view", "list");
+  return `/home?${params}`;
 }
 
 /** Whether anything narrows the list (the sort order alone does not). */

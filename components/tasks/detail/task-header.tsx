@@ -69,7 +69,7 @@ function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boole
 /** What this is and who holds it, at a glance: title, status, assignee, due date and priority. */
 export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; abilities: TaskAbilities; today: string }) {
   // A stakeholder follows a task from their request; the task list isn't theirs to browse.
-  const back = !abilities.progress && detail.request ? { href: `/requests/${detail.request.id}`, label: "Request" } : { href: "/tasks", label: "Tasks" };
+  const back = !abilities.progress && detail.request ? { href: `/requests/${detail.request.id}`, label: "Request" } : { href: "/home?view=list", label: "Tasks" };
   return (
     <header className="mb-5">
       <Link href={back.href} className="inline-flex items-center gap-1.5 rounded-md text-[13px] text-muted-foreground hover:text-foreground">

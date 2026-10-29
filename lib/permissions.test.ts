@@ -120,8 +120,8 @@ describe("planning, requests, administration", () => {
 });
 
 describe("navigation", () => {
-  it("gives stakeholders two destinations and everyone else six, Members among them", () => {
+  it("gives stakeholders two destinations and everyone else five, Members among them", () => {
     expect(navFor({ orgRole: "stakeholder" })).toEqual(["home", "requests"]);
-    expect(navFor({ orgRole: "member" })).toEqual(["home", "my-work", "tasks", "goals", "members", "requests"]);
+    expect(navFor({ orgRole: "member" })).toEqual(["home", "my-work", "goals", "members", "requests"]);
   });
 });

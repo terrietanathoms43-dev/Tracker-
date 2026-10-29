@@ -120,8 +120,9 @@ export function canManageInvitation(viewer: Viewer, invitedBy: string | null): b
 
 export type NavKey = "home" | "my-work" | "tasks" | "goals" | "members" | "requests";
 
-/** What the navigation shows: stakeholders get the front door and requests, everyone else the lot. */
+/** What the navigation shows: stakeholders get the front door and requests, everyone else the lot. The tasks
+ *  views are reached through the /home tab row, so there is no Tasks item. */
 export function navFor(viewer: Pick<Viewer, "orgRole">): NavKey[] {
   if (viewer.orgRole === "stakeholder") return ["home", "requests"];
-  return ["home", "my-work", "tasks", "goals", "members", "requests"];
+  return ["home", "my-work", "goals", "members", "requests"];
 }

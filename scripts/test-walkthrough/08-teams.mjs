@@ -68,11 +68,11 @@ try {
   await sam.goto(taskPath, 4000);
   await sam.waitFor(seeded.title);
   step("Sam may edit the task through the team", (await sam.evaluate(`!!document.querySelector('button[title="Click to edit the title"]')`)) === true);
-  await sam.goto(`/tasks?team=${team.id}`, 4000);
+  await sam.goto(`/home?view=list&team=${team.id}`, 4000);
   step("the task list filters by team", (await sam.waitFor(seeded.title)) && (await sam.evaluate(`document.querySelectorAll("[data-task-link]").length`)) === 1);
 
   // --- 4. A task with two people on it reaches both -------------------------------------------------------------------
-  await morgan.goto("/tasks", 4000);
+  await morgan.goto("/home?view=list", 4000);
   await morgan.press("n", 800);
   step("N jumps to the add bar", (await morgan.evaluate(`document.activeElement?.id === "quick-add-title"`)) === true);
   await morgan.type("#quick-add-title", `${PAIR_TASK} @jor`, { wait: 1500 });

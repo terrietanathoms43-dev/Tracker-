@@ -30,11 +30,11 @@ import {
 
 // docs/PLAN.md §2: the sidebar on desktop; four tabs plus More on a phone.
 const DESKTOP_NAV = {
-  full: ["Home", "My Work", "Tasks", "Goals", "Members", "Requests"],
+  full: ["Home", "My Work", "Goals", "Members", "Requests"],
   stakeholder: ["Home", "Requests"],
 };
 const PHONE_NAV = {
-  full: ["Home", "My Work", "Tasks", "Goals", "More"],
+  full: ["Home", "My Work", "Goals", "More"],
   stakeholder: ["Home", "Requests", "More"],
 };
 const DESKTOP = { width: 1280, height: 900 };

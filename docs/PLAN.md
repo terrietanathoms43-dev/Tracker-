@@ -32,6 +32,12 @@
 >
 > - Tasks are added from an always-open **add bar** at the top of Home, My Work and Tasks, and on active project and goal pages (defaulting to them), instead of a New task button in the header. It has priority (Urgent / High / Normal / Low), Today / Tomorrow, a date, the project, **Add task**, and **More options**, which opens the full New task dialog with what was typed. N focuses the bar where there is one and opens the dialog elsewhere; ⌘K's New task still opens the dialog.
 > - Typed shortcuts in the title (`lib/tasks/quick-add.ts`): `!urgent` `!high` `!normal` (`!medium`) `!low`, `@today` `@tomorrow`, and `@name` for a person (first name, full name without spaces, or the email's local part) or a team (name without spaces). An `@` that matches nobody, or more than one, stays in the title. Any mention assigns the task to exactly those mentioned; without one it is the creator's, as before. Typing `!` or `@` offers completions.
+>
+> **Decision log (2026-10-28, Home becomes the tab hub):**
+>
+> - `/home` is now the hub the app hangs off: a tab row — List, Board, Projects, Home — sits under the header, the tab picked by `?view=` (`list` is the plain value; a bare `/home` opens the person's landing tab). The old role-aware Home screen is the **Home** tab; `/tasks` is gone, `/projects` redirects into `/home` with its parameters intact, and `/tasks/[id]` / `/projects/[id]` are unchanged. There is no Tasks item in the navigation: the tab row is that navigation, and the sidebar's Home covers the whole hub.
+> - The add bar stays on the List and Board tabs (and My Work); the Home and Projects tabs don't have it.
+> - Tab order is a per-browser preference in the `trackwise.homeTabs` cookie (`lib/home-tabs.ts`, like `trackwise.tasks.lastQuery` but server-read for the landing). The tabs themselves drag sideways to reorder (the same sortable as the board); the first tab is where a bare `/home` opens — there is no separate landing setting. Defaults: members and leaders land on List, admins and stakeholders on Home; a stakeholder only ever has the Home tab, so their row never renders.
 
 This file is the hand-off for anyone building Trackwise. Read `docs/BRIEF.md` for intent; this file says _how_. Follow the `apex-architecture`, `apex-ui` and `apex-ux` skills for everything not spelled out here. If something is genuinely impossible, say so in the report rather than silently choosing differently.
 
@@ -69,12 +75,14 @@ Fonts: Geist Sans + Geist Mono.
 /invite/[token]            accept a workspace invitation
 /onboarding                create workspace → invite (skippable) → done
 (app) group, authenticated, shell:
-  /home                    role-aware: member next steps · leader team health · stakeholder requests
+  /home                    the tab hub: ?view=list (filters in URL) · ?view=board (status columns) ·
+                           ?view=projects (active projects, archived behind ?all=1) · ?view=home
+                           (role-aware overview: member next steps · leader team health · stakeholder
+                           requests); bare /home opens the landing tab (cookie, List for members and
+                           leaders, Home for admins and stakeholders)
   /my-work                 Needs attention · Continue working · Waiting on others · Recently finished
-  /tasks                   list (filters in URL) · ?view=board shows status columns
-  /tasks/[id]              Resume card → details → comments & history
-  /projects                active projects with counts; archived behind a toggle
-  /projects/[id]           project header + its tasks grouped by status
+  /tasks                   → /home (parameters carried over)   /tasks/[id]  Resume card → details → comments & history
+  /projects                → /home?view=projects                /projects/[id]  project header + its tasks grouped by status
   /goals                   goals with progress (completed / total)
   /goals/[id]              goal header + projects and tasks under it
   /members                 the roster (role, teams, open work) and the teams; invite, New team (workers; /team redirects here)
@@ -90,7 +98,7 @@ Fonts: Geist Sans + Geist Mono.
 /api/test-login            dev-only persona sign-in (§9)
 ```
 
-Navigation: **Home · My Work · Tasks · Goals · Members · Requests** (sidebar, desktop). Phone bottom tabs: Home · My Work · Tasks · Goals · More (Members, Requests, Reports, User settings, Workspace, Sign out). Projects is reached from the Tasks page header (a secondary tab row: _List · Board · Projects_) and from goals. Reports is reached from Members and from the account menu. Stakeholders see Home · Requests only. User settings and Workspace live in the account menu. A signed-in person with no workspace sees Home only.
+Navigation: **Home · My Work · Goals · Members · Requests** (sidebar, desktop). Phone bottom tabs: Home · My Work · Goals · More (Members, Requests, Reports, User settings, Workspace, Sign out). The tab row under the /home header (_Home · List · Board · Projects_, draggable per person — see the 2026-10-28 log) reaches the tasks views and projects; projects are also reached from goals. Reports is reached from Members and from the account menu. Stakeholders see Home · Requests only. User settings and Workspace live in the account menu. A signed-in person with no workspace sees Home only.
 
 ## 3. Tenancy, roles, visibility
 
@@ -141,7 +149,7 @@ Indexes: `tasks(org_id, status)`, `tasks(org_id, assignee_id, status)`, `task_as
 - **Who may do what**: approve/send back = the approver or any leader/admin; reject = edit rights; the rest = progress rights (any member on a task in the workspace).
 - **Resume card** first on the task page: next action (large), latest progress, blocker strip, evidence chips, last update by/when, inline Update progress form. Then details (project, goal, assignee, due, priority, created by, request), then comments + history merged newest first, 20 at a time.
 - **Lists**: dense rows (status icon · title · next action · reason · due · priority · assignees as an avatar stack plus team chips) with hover "⋯" (Update progress · Change status · Copy link) and long-press sheet. Filters in the URL: `q`, `status`, `assignee` (me/none/id: a person directly or through a team they are in), `team` (id), `priority`, `project`, `goal`, `due` (overdue/week/none), `closed`, `sort` (smart/due/priority/updated/created). Closed hidden by default.
-- **Board** (`/tasks?view=board`): five columns (Not started · In progress · Awaiting approval · Blocked · Completed in the last 14 days), compact cards (title, assignee, due, priority), the same filters. Drag a card onto another column to change its status — statuses that need a reason or an approver open the transition dialog instead of applying; the card menu does the same by hand.
+- **Board** (`/home?view=board`): five columns (Not started · In progress · Awaiting approval · Blocked · Completed in the last 14 days), compact cards (title, assignee, due, priority), the same filters. Drag a card onto another column to change its status — statuses that need a reason or an approver open the transition dialog instead of applying; the card menu does the same by hand.
 - **My Work grouping**: "my" work is every task I am assigned to directly or through a team I am in (team work carries a "via Frontend" chip). _Needs attention_ = overdue, due within 2 days, blocked, awaiting my approval, sent back; _Continue working_ = my not*started/in_progress ordered overdue → due soonest → priority → sort_rank → updated; \_Waiting on others* = my awaiting*approval + blocked; \_Recently finished* = my completed in the last 14 days.
 
 ## 6. Projects and goals
@@ -176,7 +184,7 @@ Follow `apex-ui`. Brand slots (Trackwise keeps its colours):
 | `sidebar-accent`                     | `oklch(0.95 0.025 262)`                            | `oklch(0.26 0.04 262)`                          |
 | `highlight` / `highlight-foreground` | `oklch(0.84 0.11 82)` gold / `oklch(0.32 0.08 70)` | `oklch(0.82 0.12 82)` / `oklch(0.2 0.05 70)`    |
 
-Gold appears only as: the goal progress fill, the active-tab underline on the Tasks sub-tabs, the logo mark's dot, and the "highlight" badge for _Needs attention_ counts. Everything else is the standard's neutrals and status colours. Nav icons: Home `House`, My Work `ListChecks`, Tasks `SquareCheckBig`, Goals `Target`, Members `Users`, Requests `Inbox`, Projects `FolderKanban`, Reports `BarChart3`, User settings `Settings`, Workspace `Building2`; a team is `UsersRound`.
+Gold appears only as: the goal progress fill, the active-tab underline on the /home tab row, the logo mark's dot, and the "highlight" badge for _Needs attention_ counts. Everything else is the standard's neutrals and status colours. Nav icons: Home `House`, My Work `ListChecks`, Tasks `SquareCheckBig`, Goals `Target`, Members `Users`, Requests `Inbox`, Projects `FolderKanban`, Reports `BarChart3`, User settings `Settings`, Workspace `Building2`; a team is `UsersRound`.
 
 ## 10. Test personas and the AI dev loop
 

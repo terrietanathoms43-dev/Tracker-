@@ -26,10 +26,10 @@ step("the seed has every row the sweep needs", Object.values(ids).every(Boolean)
 const WORKER_SCREENS = [
   "/home",
   "/my-work",
-  "/tasks",
-  "/tasks?view=board",
+  "/home?view=list",
+  "/home?view=board",
   `/tasks/${ids.task}`,
-  "/projects",
+  "/home?view=projects",
   `/projects/${ids.project}`,
   "/goals",
   `/goals/${ids.goal}`,
@@ -45,10 +45,10 @@ const WORKER_SCREENS = [
 ];
 /** A stakeholder's screens, and where the worker-only ones send her. */
 const STAKEHOLDER_SCREENS = ["/home", "/requests", `/requests/${ids.taylorRequest}`, `/tasks/${ids.convertedTask}`, "/notifications", "/settings", "/settings/workspace"];
-const STAKEHOLDER_REDIRECTS = ["/my-work", "/tasks", "/projects", "/goals", "/members", "/reports"];
+const STAKEHOLDER_REDIRECTS = ["/my-work", "/home?view=list", "/projects", "/goals", "/members", "/reports"];
 const STAKEHOLDER_NOT_FOUND = [`/tasks/${ids.task}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/teams/${ids.team}`, `/requests/${ids.request}`];
 /** Riley's own screens, and the Trackwise Demo ids that must be invisible to Other Co. */
-const OTHER_SCREENS = ["/home", "/my-work", "/tasks", "/projects", "/goals", "/members", "/requests", "/reports", "/settings/workspace"];
+const OTHER_SCREENS = ["/home", "/my-work", "/home?view=list", "/projects", "/goals", "/members", "/requests", "/reports", "/settings/workspace"];
 const OTHER_NOT_FOUND = [`/tasks/${ids.task}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/teams/${ids.team}`, `/requests/${ids.request}`];
 const PUBLIC_SCREENS = ["/", "/login", "/login/check-email", "/invite/not-a-token"];
 

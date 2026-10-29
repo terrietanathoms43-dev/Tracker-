@@ -8,6 +8,7 @@ import { createGoal, updateGoal } from "@/actions/goals";
 import { Field } from "@/components/field";
 import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { AssigneePicker } from "@/components/tasks/assignee-picker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,7 @@ import type { Person, TeamRef } from "@/lib/tasks/types";
 
 // New goal and Edit goal: one dialog, one form. Leaders and admins only; the page decides whether to render it.
 
-type Values = { title: string; description: string; successCriteria: string; ownerId: string; teamIds: string[]; targetDate: string };
+type Values = { title: string; description: string; successCriteria: string; ownerId: string; teamIds: string[]; projectIds: string[]; targetDate: string };
 type Errors = Record<string, string[] | undefined>;
 
 /** The goal being edited, as the goal page has it. */
@@ -29,8 +30,12 @@ export type EditableGoal = {
   successCriteria: string | null;
   ownerId: string | null;
   teamIds: string[];
+  projectIds: string[];
   targetDate: string | null;
 };
+
+/** An active project the dialog can attach to the goal, with the goal it already rolls up into (if any). */
+export type ProjectOption = { id: string; name: string; goal: { id: string; title: string } | null };
 
 /**
  * Renders its own trigger ("New goal", or "Edit" for an existing goal) and the dialog behind it. Only the title is
@@ -40,12 +45,14 @@ export function GoalDialog({
   goal,
   people,
   teams,
+  projects = [],
   viewerId,
   variant = "default",
 }: {
   goal?: EditableGoal;
   people: Person[];
   teams: TeamRef[];
+  projects?: ProjectOption[];
   viewerId: string;
   variant?: "default" | "outline";
 }) {
@@ -57,6 +64,7 @@ export function GoalDialog({
     successCriteria: goal?.successCriteria ?? "",
     ownerId: editing ? (goal.ownerId ?? "") : viewerId,
     teamIds: goal?.teamIds ?? [],
+    projectIds: goal?.projectIds ?? [],
     targetDate: goal?.targetDate ?? "",
   });
   const [open, setOpen] = useState(false);
@@ -188,6 +196,29 @@ export function GoalDialog({
                   options={{ people: [], teams, viewerId: null }}
                   invalid={Boolean(error("teamIds"))}
                 />
+              </Field>
+            ) : null}
+            {projects.length > 0 || values.projectIds.length > 0 ? (
+              <Field id="goal-projects" label="Projects" hint="Optional: the projects that roll up into this goal." error={error("projectIds")}>
+                <ul className="grid max-h-40 gap-0.5 overflow-y-auto rounded-md border p-1" aria-labelledby="goal-projects">
+                  {projects.map((project) => {
+                    const on = values.projectIds.includes(project.id);
+                    return (
+                      <li key={project.id}>
+                        <label className="flex cursor-pointer items-center gap-2.5 rounded-[5px] px-2 py-1.5 text-sm transition-colors hover:bg-accent">
+                          <Checkbox
+                            checked={on}
+                            onCheckedChange={(next) =>
+                              set("projectIds", next === true ? [...values.projectIds, project.id] : values.projectIds.filter((each) => each !== project.id))
+                            }
+                          />
+                          <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                          {project.goal && project.goal.id !== goal?.id ? <span className="shrink-0 text-[13px] text-muted-foreground">in {project.goal.title}</span> : null}
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
               </Field>
             ) : null}
             <div className="flex justify-end gap-2 pt-1">

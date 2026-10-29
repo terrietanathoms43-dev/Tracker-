@@ -9,6 +9,7 @@ import { ERR, fail, GuardError, ok, runAction, type ActionResult } from "@/lib/a
 import { GOAL_STATUSES, type GoalStatus } from "@/lib/constants";
 import { validateAssignment } from "@/lib/dal/assignments";
 import { lockGoal, ownerError, setGoalTeams } from "@/lib/dal/goals";
+import { setGoalProjects } from "@/lib/dal/projects";
 import { log } from "@/lib/log";
 import { canManagePlanning } from "@/lib/permissions";
 import { requireViewer } from "@/lib/viewer";
@@ -30,6 +31,8 @@ const goalFields = {
   ownerId: z.string().max(64).default(""),
   /** The teams expected to deliver it; the whole list replaces the old one. */
   teamIds: z.array(id).max(50).default([]),
+  /** The projects rolling up into it; the whole list replaces the old one. */
+  projectIds: z.array(id).max(100).default([]),
   targetDate: day,
 };
 
@@ -66,6 +69,7 @@ export async function createGoal(input: z.input<typeof createSchema>): Promise<A
         .values({ orgId: viewer.orgId, ownerId, createdBy: viewer.userId, ...goalValues(data) })
         .returning({ id: goals.id });
       await setGoalTeams(tx, row.id, teamIds, viewer.userId);
+      await setGoalProjects(tx, viewer.orgId, row.id, data.projectIds);
       return row;
     });
     log.info("goals.created", { orgId: viewer.orgId, goalId: created.id, teams: data.teamIds.length, by: viewer.userId });
@@ -96,6 +100,7 @@ export async function updateGoal(input: z.input<typeof updateSchema>): Promise<A
         .set({ ...goalValues(data), ownerId, updatedAt: new Date() })
         .where(eq(goals.id, goal.id));
       await setGoalTeams(tx, goal.id, teamIds, viewer.userId);
+      await setGoalProjects(tx, viewer.orgId, goal.id, data.projectIds);
       return ok(undefined);
     });
     if (!result.ok) return result;

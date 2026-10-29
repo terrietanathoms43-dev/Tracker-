@@ -36,7 +36,7 @@ try {
 
   // --- stakeholder ------------------------------------------------------------------------------------------------
   const taylor = (browsers.taylor = await openBrowser({ role: "stakeholder", width: 390, height: 844 }));
-  for (const path of ["/tasks", "/my-work", "/goals", "/projects", "/members", "/reports"]) {
+  for (const path of ["/home?view=list", "/my-work", "/goals", "/projects", "/members", "/reports"]) {
     await taylor.goto(path, 4000);
     step(`a stakeholder asking for ${path} is sent home`, (await taylor.path()).startsWith("/home"), await taylor.path());
   }
@@ -89,7 +89,7 @@ try {
     await riley.goto(path, 5000);
     step(`another workspace gets Not found for ${label}`, await riley.waitFor("Not found"));
   }
-  await riley.goto("/tasks?closed=1", 5000);
+  await riley.goto("/home?view=list&closed=1", 5000);
   step("another workspace's task list holds none of ours", (await riley.waitFor("Tasks")) && !(await riley.has(rows.plainTask.title)) && !(await riley.has(rows.completedTitle)));
   const csv = await riley.evaluate(`fetch("/reports/export?table=delivered").then((r) => r.text())`);
   step("another workspace's CSV export holds none of ours", typeof csv === "string" && !csv.includes(rows.completedTitle), (csv ?? "").slice(0, 80));
