@@ -7,7 +7,7 @@ import { CLOSED_STATUSES, DUE_SOON_DAYS, RECENTLY_FINISHED_DAYS, type TaskPriori
 import { assignmentOf } from "@/lib/dal/assignments";
 import { listWorkers } from "@/lib/dal/orgs";
 import { teamOptions } from "@/lib/dal/teams";
-import { isStakeholder, type TaskScope, type Viewer } from "@/lib/permissions";
+import { canDeleteTask, isStakeholder, type TaskScope, type Viewer } from "@/lib/permissions";
 import { BOARD_STATUSES, toBoardColumns, type BoardColumns } from "@/lib/tasks/board";
 import type { TaskFilters, TaskSort } from "@/lib/tasks/filters";
 import { FEED_KINDS, phraseFeed, type FeedKind } from "@/lib/tasks/history";
@@ -85,6 +85,7 @@ const listColumns = {
   dueDate: tasks.dueDate,
   nextAction: tasks.nextAction,
   updatedAt: tasks.updatedAt,
+  goalId: tasks.goalId,
   projectId: projects.id,
   projectName: projects.name,
   assignees: assigneesJson,
@@ -99,15 +100,18 @@ type ListRow = {
   dueDate: string | null;
   nextAction: string | null;
   updatedAt: Date;
+  goalId: string | null;
   projectId: string | null;
   projectName: string | null;
   assignees: Person[];
   teams: TeamRef[];
 };
 
-function toListItem(row: ListRow): TaskListItem {
+function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
   return {
     id: row.id,
+    goalId: row.goalId,
+    canDelete: canDeleteTask(viewer),
     title: row.title,
     status: row.status,
     priority: row.priority,
@@ -197,7 +201,7 @@ export async function listTasks(viewer: Viewer, filters: TaskFilters, options: {
     .where(and(...where))
     .orderBy(...orderBy(filters.sort, today))
     .limit(limit + 1);
-  const items = rows.slice(0, limit).map(toListItem);
+  const items = rows.slice(0, limit).map((row) => toListItem(row, viewer));
   return { items, nextCursor: rows.length > limit ? items[items.length - 1].id : null };
 }
 
@@ -217,7 +221,7 @@ export async function boardTasks(viewer: Viewer, filters: TaskFilters, options: 
     .where(and(...where))
     .orderBy(...orderBy(filters.sort, options.today))
     .limit(500);
-  return toBoardColumns(rows.map(toListItem));
+  return toBoardColumns(rows.map((row) => toListItem(row, viewer)));
 }
 
 /** Title search for the command palette: open tasks first, then the most recently touched. */
@@ -228,7 +232,7 @@ export async function searchTasks(viewer: Viewer, q: string): Promise<TaskListIt
     .where(and(visibility(viewer), ilike(tasks.title, `%${escapeLike(term)}%`)))
     .orderBy(sql`(${tasks.status} in ('completed', 'rejected'))`, desc(tasks.updatedAt))
     .limit(8);
-  return rows.map(toListItem);
+  return rows.map((row) => toListItem(row, viewer));
 }
 
 // --- attention, My Work --------------------------------------------------------------------------------------
@@ -266,7 +270,7 @@ export async function attentionTasks(viewer: Viewer, today: string, limit = 50):
             : nobody
               ? "Unassigned"
               : "Due soon";
-    return { ...toListItem(row), reason };
+    return { ...toListItem(row, viewer), reason };
   });
   items.sort((a, b) => ATTENTION_RANK[a.reason] - ATTENTION_RANK[b.reason] || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"));
   return items.slice(0, limit);
@@ -359,7 +363,7 @@ export async function myWorkRows(viewer: Viewer): Promise<MyWorkRow[]> {
     );
   return rows.map((row) => {
     const mine = row.direct || row.viaTeams.length > 0;
-    const item = toListItem(row);
+    const item = toListItem(row, viewer);
     if (mine && !row.direct) item.via = row.viaTeams.join(", ");
     return {
       item,
@@ -395,7 +399,7 @@ export async function tasksForProject(viewer: Viewer, projectId: string): Promis
     .where(and(visibility(viewer), eq(tasks.projectId, projectId)))
     .orderBy(...groupedOrder(todayFor(viewer)))
     .limit(500);
-  return rows.map(toListItem);
+  return rows.map((row) => toListItem(row, viewer));
 }
 
 /** Every task serving a goal: linked to it directly, or through one of its projects (open first). */
@@ -404,7 +408,7 @@ export async function tasksForGoal(viewer: Viewer, goalId: string): Promise<Task
     .where(and(visibility(viewer), inGoal(viewer, goalId)))
     .orderBy(...groupedOrder(todayFor(viewer)))
     .limit(500);
-  return rows.map(toListItem);
+  return rows.map((row) => toListItem(row, viewer));
 }
 
 /** The open tasks a team is assigned to, in the smart order (the team page). */
@@ -413,7 +417,7 @@ export async function openTasksForTeam(viewer: Viewer, teamId: string, limit = 1
     .where(and(visibility(viewer), isOpen, assignedToTeam(teamId)))
     .orderBy(...orderBy("smart", todayFor(viewer)))
     .limit(limit);
-  return rows.map(toListItem);
+  return rows.map((row) => toListItem(row, viewer));
 }
 
 type ProgressRow = { key: string; taskId: string; status: TaskStatus; dueDate: string | null };
@@ -510,7 +514,7 @@ export async function workload(viewer: Viewer): Promise<WorkloadRow[]> {
   const byPerson = new Map<string | null, TaskListItem[]>();
   const people = new Map<string, Person>();
   for (const row of rows) {
-    const item = toListItem(row);
+    const item = toListItem(row, viewer);
     if (item.assignees.people.length === 0 && item.assignees.teams.length === 0) byPerson.set(null, [...(byPerson.get(null) ?? []), item]);
     for (const person of item.assignees.people) {
       people.set(person.id, person);

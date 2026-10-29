@@ -20,6 +20,8 @@ function row(partial: Partial<TaskListItem> & Partial<Omit<MyWorkRow, "item">> =
       nextAction: null,
       assignees: { people: [], teams: [] },
       project: null,
+      goalId: null,
+      canDelete: false,
       updatedAt: `2026-10-${String(10 + n).padStart(2, "0")}T00:00:00.000Z`,
       ...item,
     },

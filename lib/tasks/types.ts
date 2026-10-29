@@ -22,6 +22,9 @@ export type TaskListItem = {
   nextAction: string | null;
   assignees: Assignees;
   project: { id: string; name: string } | null;
+  goalId: string | null;
+  /** Leaders and admins only: whether the row's menu offers Delete. */
+  canDelete: boolean;
   updatedAt: string;
   /** Attention lists only: why it is there ("Overdue", "Your approval", …). */
   reason?: string;

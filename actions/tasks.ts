@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 import { db, type Tx } from "@/db";
-import { goals, projects, taskLinks, taskUpdates, tasks } from "@/db/schema";
+import { goals, notifications, projects, taskLinks, taskUpdates, tasks } from "@/db/schema";
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { TASK_PRIORITIES, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
 import { recordActivity } from "@/lib/dal/activity";
@@ -17,6 +17,7 @@ import { dispatch, type Notice } from "@/lib/notify";
 import {
   canApproveTask,
   canCreateTask,
+  canDeleteTask,
   canEditTask,
   canReadTask,
   canRejectTask,
@@ -623,5 +624,26 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
         reject: canRejectTask(viewer, task.scope),
       },
     });
+  });
+}
+
+// --- delete ----------------------------------------------------------------------------------------------------
+
+const deleteSchema = z.object({ taskId: id });
+
+/** Removes the task and everything hanging off it (assignees, updates, links, history — all cascade). */
+export async function deleteTask(input: z.input<typeof deleteSchema>): Promise<ActionResult> {
+  return runAction("tasks.delete", deleteSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    await db.transaction(async (tx) => {
+      const locked = await lockTask(tx, viewer.orgId, data.taskId);
+      if (locked === null) throw new GuardError("not_found");
+      if (!canDeleteTask(viewer)) throw new GuardError("forbidden", "Only leaders and admins can delete tasks.");
+      await tx.delete(tasks).where(and(eq(tasks.id, data.taskId), eq(tasks.orgId, viewer.orgId)));
+      await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/tasks/${data.taskId}`)));
+    });
+    log.info("tasks.deleted", { orgId: viewer.orgId, taskId: data.taskId, by: viewer.userId });
+    refresh();
+    return ok(undefined, "Task deleted.");
   });
 }

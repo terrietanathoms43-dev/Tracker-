@@ -74,6 +74,9 @@ export function canApproveTask(viewer: Viewer, task: TaskScope): boolean {
 
 export const canRejectTask = canEditTask;
 
+/** Deleting destroys the task and its history: leaders and admins only. */
+export const canDeleteTask = (viewer: Viewer) => isLeader(viewer);
+
 // --- projects and goals ---------------------------------------------------------
 
 export const canReadPlanning = (viewer: Viewer) => isWorker(viewer);
