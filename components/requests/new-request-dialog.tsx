@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { REQUEST_URGENCIES, REQUEST_URGENCY_LABELS, type RequestUrgency } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 
 // The New request button and its dialog: anyone in the workspace, stakeholders included, can ask for something.
 
@@ -58,29 +59,35 @@ function NewRequestForm({ onDone }: { onDone: () => void }) {
         }
       }}
     >
-      <Field id="request-title" label="What do you need?" error={error("title")}>
+      <Field id="request-title" label="What do you need?" error={error("title")} count={{ value: title, max: LIMITS.requestTitle }}>
         <Input
           id="request-title"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           placeholder="e.g. Export invoices as CSV for finance"
-          maxLength={200}
+          maxLength={LIMITS.requestTitle}
           autoFocus
           aria-invalid={error("title") ? true : undefined}
         />
       </Field>
-      <Field id="request-outcome" label="Why does it matter?" hint="The business reason, and what should be true once it's done." error={error("desiredOutcome")}>
+      <Field id="request-outcome" label="Why does it matter?" hint="The business reason, and what should be true once it's done." error={error("desiredOutcome")} count={{ value: desiredOutcome, max: LIMITS.desiredOutcome }}>
         <Textarea
           id="request-outcome"
           value={desiredOutcome}
           onChange={(event) => setDesiredOutcome(event.target.value)}
           rows={2}
-          maxLength={2000}
+          maxLength={LIMITS.desiredOutcome}
           placeholder="e.g. Month-end close takes two days of copying by hand."
         />
       </Field>
-      <Field id="request-description" label="Details" hint="Optional." error={error("description")}>
-        <Textarea id="request-description" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={10_000} />
+      <Field id="request-description" label="Details" hint="Optional." error={error("description")} count={{ value: description, max: LIMITS.requestDescription }}>
+        <Textarea
+          id="request-description"
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          rows={3}
+          maxLength={LIMITS.requestDescription}
+        />
       </Field>
       <div className="grid gap-2">
         <span className="text-base leading-none font-medium">Urgency</span>
@@ -93,6 +100,7 @@ function NewRequestForm({ onDone }: { onDone: () => void }) {
           onChange={(event) => setLink(event.target.value)}
           placeholder="https://…"
           inputMode="url"
+          maxLength={LIMITS.url}
           aria-invalid={error("link") ? true : undefined}
         />
       </Field>

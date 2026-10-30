@@ -10,6 +10,7 @@ import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ORG_ROLE_DESCRIPTIONS, ORG_ROLE_LABELS, type OrgRole } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 import { toastResult } from "@/lib/toast-result";
 
 // Emails (commas or new lines) and one role for the whole batch. Used by Settings → Workspace and by the
@@ -63,7 +64,7 @@ export function InviteForm({
         submit();
       }}
     >
-      <Field id="invite-emails" label="Email addresses" hint="Separate several with commas or new lines." error={error}>
+      <Field id="invite-emails" label="Email addresses" hint="Separate several with commas or new lines." error={error} count={{ value: emails, max: LIMITS.inviteEmails }}>
         <Textarea
           id="invite-emails"
           value={emails}
@@ -78,6 +79,7 @@ export function InviteForm({
           autoComplete="off"
           spellCheck={false}
           rows={2}
+          maxLength={LIMITS.inviteEmails}
           className="min-h-16"
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? "invite-emails-error" : undefined}

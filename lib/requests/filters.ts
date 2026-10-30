@@ -1,4 +1,5 @@
 import { REQUEST_STATUSES, type RequestStatus } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 import type { RequestFilters, RequestListItem, RequestSections } from "./types";
 
 // What the requests page shows: the filters kept in the address (apex-ux §6, so a view can be shared and the back
@@ -22,7 +23,7 @@ export function parseRequestFilters(raw: Raw): RequestFilters {
   return {
     status: (REQUEST_STATUSES as readonly string[]).includes(status) ? (status as RequestStatus) : "",
     mine: one(raw, "mine") === "1",
-    q: one(raw, "q").slice(0, 100),
+    q: one(raw, "q").slice(0, LIMITS.search),
   };
 }
 

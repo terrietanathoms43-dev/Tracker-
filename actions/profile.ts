@@ -3,6 +3,8 @@
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { LIMITS } from "@/lib/limits";
+import { requiredText } from "@/lib/sanitize";
 import { db } from "@/db";
 import { notificationPreferences, users } from "@/db/schema";
 import { ok, runAction, type ActionResult } from "@/lib/action-result";
@@ -14,7 +16,7 @@ import { requireUser } from "@/lib/viewer";
 // the user, not to a workspace, so they follow them into every workspace they're in.
 
 const profileSchema = z.object({
-  name: z.string().trim().min(1, "Enter your name.").max(80, "Keep it under 80 characters."),
+  name: requiredText(1, LIMITS.memberName, "Enter your name.", "Keep it under 80 characters."),
   /** Empty means "use the workspace's timezone". */
   timezone: z
     .string()

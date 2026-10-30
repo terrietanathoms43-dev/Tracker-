@@ -6,11 +6,13 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { editTask } from "@/actions/tasks";
+import { CharacterCounter } from "@/components/character-counter";
 import { PriorityGlyph } from "@/components/priority-glyph";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { LIMITS } from "@/lib/limits";
 import type { TaskAbilities, TaskDetail } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneeStack } from "../assignee-stack";
@@ -34,22 +36,27 @@ function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boole
   };
   if (editing) {
     return (
-      <Input
-        aria-label="Title"
-        value={value}
-        autoFocus
-        maxLength={200}
-        onChange={(event) => setValue(event.target.value)}
-        onBlur={save}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") save();
-          if (event.key === "Escape") {
-            setValue(detail.title);
-            setEditing(false);
-          }
-        }}
-        className="h-auto py-1 text-lg font-semibold md:text-xl"
-      />
+      <div>
+        <Input
+          aria-label="Title"
+          value={value}
+          autoFocus
+          maxLength={LIMITS.taskTitle}
+          onChange={(event) => setValue(event.target.value)}
+          onBlur={save}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") save();
+            if (event.key === "Escape") {
+              setValue(detail.title);
+              setEditing(false);
+            }
+          }}
+          className="h-auto py-1 text-lg font-semibold md:text-xl"
+        />
+        <div className="mt-1 flex justify-end">
+          <CharacterCounter value={value} max={LIMITS.taskTitle} />
+        </div>
+      </div>
     );
   }
   const title = <span className={cn(detail.status === "rejected" && "text-muted-foreground line-through", pending && "opacity-60")}>{value}</span>;

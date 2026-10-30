@@ -7,6 +7,7 @@ import { getPaletteContext, paletteSearch } from "@/actions/tasks";
 import { StatusIcon } from "@/components/status-badge";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { LIMITS } from "@/lib/limits";
 import type { NavKey } from "@/lib/permissions";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { useTaskActions } from "./task-actions";
@@ -85,8 +86,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           <DialogTitle>Command palette</DialogTitle>
           <DialogDescription>Search tasks, start one, or go somewhere</DialogDescription>
         </DialogHeader>
-        <Command shouldFilter={false} className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:text-[13px] [&_[cmdk-group-heading]]:text-muted-foreground">
-          <CommandInput value={query} onValueChange={setQuery} placeholder="Search tasks or type a command…" />
+        <Command shouldFilter={false} className="**:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:text-[13px] **:[[cmdk-group-heading]]:text-muted-foreground">
+          <CommandInput value={query} onValueChange={setQuery} placeholder="Search tasks or type a command…" maxLength={LIMITS.search} />
           <CommandList className="max-h-[min(60dvh,420px)]">
             <CommandEmpty>{term === "" ? "Type to search tasks." : "Nothing matches."}</CommandEmpty>
             {tasks.length > 0 ? (

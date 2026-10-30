@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-result";
+import { LIMITS } from "@/lib/limits";
 import { nameOf } from "@/lib/tasks/people";
 import type { Person } from "@/lib/tasks/types";
 
@@ -126,19 +127,25 @@ export function ProjectDialog({
               }
             }}
           >
-            <Field id="project-name" label="Name" error={error("name")}>
+            <Field id="project-name" label="Name" error={error("name")} count={{ value: values.name, max: LIMITS.projectName }}>
               <Input
                 id="project-name"
                 value={values.name}
                 onChange={(event) => set("name", event.target.value)}
                 placeholder="e.g. Incident tooling"
-                maxLength={200}
+                maxLength={LIMITS.projectName}
                 autoFocus
                 aria-invalid={error("name") ? true : undefined}
               />
             </Field>
-            <Field id="project-description" label="Description" hint="Optional: what's in it and what isn't." error={error("description")}>
-              <Textarea id="project-description" value={values.description} onChange={(event) => set("description", event.target.value)} rows={3} maxLength={4000} />
+            <Field id="project-description" label="Description" hint="Optional: what's in it and what isn't." error={error("description")} count={{ value: values.description, max: LIMITS.projectDescription }}>
+              <Textarea
+                id="project-description"
+                value={values.description}
+                onChange={(event) => set("description", event.target.value)}
+                rows={3}
+                maxLength={LIMITS.projectDescription}
+              />
             </Field>
             <div className="grid items-start gap-4 sm:grid-cols-2">
               <Field id="project-owner" label="Owner" error={error("ownerId")}>

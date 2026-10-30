@@ -3,6 +3,8 @@
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { LIMITS } from "@/lib/limits";
+import { optionalLink, optionalText, requiredText } from "@/lib/sanitize";
 import { db, type Tx } from "@/db";
 import { requestDecisions, requests, tasks, type RequestRow } from "@/db/schema";
 import { GuardError, fail, ok, runAction, type ActionResult } from "@/lib/action-result";
@@ -26,16 +28,15 @@ import { requireViewer } from "@/lib/viewer";
 // --- shared checks -----------------------------------------------------------------------------------------
 
 const id = z.string().min(1).max(64);
-const optionalText = (max: number) => z.string().trim().max(max).default("");
-const httpUrl = z.union([z.literal(""), z.url({ protocol: /^https?$/, error: "Use a full http(s) link." })]).default("");
+const httpUrl = optionalLink();
 const day = z.union([z.literal(""), z.iso.date({ error: "Pick a date." })]).default("");
 
 // --- submit ---------------------------------------------------------------------------------------------------
 
 const submitSchema = z.object({
-  title: z.string().trim().min(1, "Say what you need in a few words.").max(200),
-  description: optionalText(10_000),
-  desiredOutcome: optionalText(2000),
+  title: requiredText(1, LIMITS.requestTitle, "Say what you need in a few words."),
+  description: optionalText(LIMITS.requestDescription),
+  desiredOutcome: optionalText(LIMITS.desiredOutcome),
   urgency: z.enum(REQUEST_URGENCIES).default("normal"),
   link: httpUrl,
 });
@@ -80,7 +81,7 @@ const decideSchema = z
   .object({
     requestId: id,
     decision: z.enum(REQUEST_DECISIONS),
-    reason: optionalText(1000),
+    reason: optionalText(LIMITS.decisionReason),
     deferUntil: day,
     /** Approve only: create the task now, in the same transaction. Convert always creates one. */
     createTask: taskFields.optional(),

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { TaskStatus } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
 import type { UpdateContext } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
@@ -64,33 +65,36 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
       >
          {status === "blocked" ? (
             <>
-               <Field id="transition-reason" label="What's blocking it?" error={errors.reason?.[0]}>
+               <Field id="transition-reason" label="What's blocking it?" error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
                   <Textarea
                      id="transition-reason"
                      value={reason}
                      onChange={(event) => setReason(event.target.value)}
                      rows={2}
+                     maxLength={LIMITS.blockedReason}
                      autoFocus
                      placeholder="e.g. Waiting for the vendor's fix"
                   />
                </Field>
-               <Field id="transition-by" label="Who or what can unblock it?" hint="Optional.">
+               <Field id="transition-by" label="Who or what can unblock it?" hint="Optional." count={{ value: blockedBy, max: LIMITS.blockedBy }}>
                   <Input
                      id="transition-by"
                      value={blockedBy}
                      onChange={(event) => setBlockedBy(event.target.value)}
                      placeholder="e.g. Vendor support"
+                     maxLength={LIMITS.blockedBy}
                   />
                </Field>
             </>
          ) : null}
          {status === "rejected" ? (
-            <Field id="transition-reason" label="Why is it rejected?" hint="Kept in the task's history." error={errors.reason?.[0]}>
+            <Field id="transition-reason" label="Why is it rejected?" hint="Kept in the task's history." error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
                <Textarea
                   id="transition-reason"
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                   rows={2}
+                  maxLength={LIMITS.blockedReason}
                   autoFocus
                />
             </Field>
@@ -112,12 +116,13 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
          ) : null}
          {status === "completed" ? (
             <>
-               <Field id="transition-summary" label="Completion summary" hint="Optional: what changed, and why it matters.">
+               <Field id="transition-summary" label="Completion summary" hint="Optional: what changed, and why it matters." count={{ value: summary, max: LIMITS.completionSummary }}>
                   <Textarea
                      id="transition-summary"
                      value={summary}
                      onChange={(event) => setSummary(event.target.value)}
                      rows={2}
+                     maxLength={LIMITS.completionSummary}
                      autoFocus
                   />
                </Field>
@@ -129,14 +134,16 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                         onChange={(event) => setEvidenceUrl(event.target.value)}
                         placeholder="https://…"
                         inputMode="url"
+                        maxLength={LIMITS.url}
                      />
                   </Field>
-                  <Field id="transition-evidence-label" label="Label">
+                  <Field id="transition-evidence-label" label="Label" count={{ value: evidenceLabel, max: LIMITS.evidenceLabel }}>
                      <Input
                         id="transition-evidence-label"
                         value={evidenceLabel}
                         onChange={(event) => setEvidenceLabel(event.target.value)}
                         placeholder="Optional"
+                        maxLength={LIMITS.evidenceLabel}
                      />
                   </Field>
                </div>

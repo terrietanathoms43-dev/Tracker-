@@ -3,6 +3,8 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { LIMITS } from "@/lib/limits";
+import { optionalText, requiredText } from "@/lib/sanitize";
 import { db } from "@/db";
 import { teamMembers, teams } from "@/db/schema";
 import { ERR, fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
@@ -19,8 +21,8 @@ import { requireViewer } from "@/lib/viewer";
 const id = z.string().min(1).max(64);
 
 const teamFields = {
-  name: z.string().trim().min(1, "Give the team a name.").max(60, "Keep the name under 60 characters."),
-  description: z.string().trim().max(500).default(""),
+  name: requiredText(1, LIMITS.teamName, "Give the team a name.", "Keep the name under 60 characters."),
+  description: optionalText(LIMITS.teamDescription),
   memberIds: z.array(id).max(200).default([]),
 };
 

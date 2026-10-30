@@ -3,6 +3,7 @@
 import { ChevronDown, Pencil } from "lucide-react";
 import { useState, useTransition } from "react";
 import { editTask, setAssignees } from "@/actions/tasks";
+import { CharacterCounter } from "@/components/character-counter";
 import { NativeSelect } from "@/components/native-select";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/compon
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { TaskPriority, TaskStatus } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 import { idsOf, sameIds, type AssigneeIds } from "@/lib/tasks/assignees";
 import type { Assignees, Person, TeamRef } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
@@ -44,12 +46,16 @@ export function DescriptionEditor({ taskId, description, editable }: { taskId: s
           value={value}
           onChange={(event) => setValue(event.target.value)}
           rows={4}
+          maxLength={LIMITS.taskDescription}
           autoFocus
           onKeyDown={(event) => {
             if (event.key === "Escape") cancel();
             if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) event.currentTarget.form?.requestSubmit();
           }}
         />
+        <div className="flex justify-end">
+          <CharacterCounter value={value} max={LIMITS.taskDescription} />
+        </div>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={cancel}>
             Cancel

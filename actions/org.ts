@@ -5,6 +5,8 @@ import { refresh } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { LIMITS } from "@/lib/limits";
+import { cappedText, requiredText } from "@/lib/sanitize";
 import { db } from "@/db";
 import { organizationMembers, organizations } from "@/db/schema";
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
@@ -19,7 +21,7 @@ import { requireUser } from "@/lib/viewer";
 // Workspaces: create, rename, switch, delete. Members and invitations live in actions/members.ts and
 // actions/invitations.ts.
 
-const nameSchema = z.string().trim().min(2, "Give the workspace a name (2 characters or more).").max(80);
+const nameSchema = requiredText(2, LIMITS.workspaceName, "Give the workspace a name (2 characters or more).");
 const timezoneSchema = z.string().trim().default(DEFAULT_TIMEZONE).refine(isValidTimeZone, "Pick a timezone from the list.");
 
 const createSchema = z.object({ name: nameSchema, timezone: timezoneSchema });
@@ -78,7 +80,7 @@ export async function switchOrganization(input: z.input<typeof switchSchema>): P
   redirect("/home");
 }
 
-const deleteSchema = z.object({ confirmName: z.string() });
+const deleteSchema = z.object({ confirmName: cappedText(LIMITS.workspaceName) });
 
 /** Deletes the active workspace and everything in it (cascades). The admin must type its name to confirm. */
 export async function deleteOrganization(input: z.input<typeof deleteSchema>): Promise<ActionResult> {

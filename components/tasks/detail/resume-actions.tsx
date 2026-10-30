@@ -7,6 +7,7 @@ import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { LIMITS } from "@/lib/limits";
 import { toastResult } from "@/lib/toast-result";
 
 // The buttons inside the Resume card's status strip: Approve, Send back, Mark unblocked.
@@ -55,8 +56,8 @@ export function ApprovalActions({ taskId }: { taskId: string }) {
               }
             }}
           >
-            <Field id="send-back-note" label="What needs to change?">
-              <Textarea id="send-back-note" value={note} onChange={(event) => setNote(event.target.value)} rows={3} autoFocus placeholder="e.g. The rollback step is missing from the runbook" />
+            <Field id="send-back-note" label="What needs to change?" count={{ value: note, max: LIMITS.sendBackNote }}>
+              <Textarea id="send-back-note" value={note} onChange={(event) => setNote(event.target.value)} rows={3} maxLength={LIMITS.sendBackNote} autoFocus placeholder="e.g. The rollback step is missing from the runbook" />
             </Field>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setOpen(false)}>

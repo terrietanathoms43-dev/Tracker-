@@ -3,6 +3,8 @@
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { LIMITS } from "@/lib/limits";
+import { optionalText, requiredText } from "@/lib/sanitize";
 import { db, type Tx } from "@/db";
 import { projects } from "@/db/schema";
 import { ERR, fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
@@ -19,12 +21,11 @@ import { requireViewer } from "@/lib/viewer";
 // --- shared checks -----------------------------------------------------------------------------------------
 
 const id = z.string().min(1).max(64);
-const optionalText = (max: number) => z.string().trim().max(max).default("");
 const day = z.union([z.literal(""), z.iso.date({ error: "Pick a date." })]).default("");
 
 const projectFields = {
-  name: z.string().trim().min(1, "Give the project a name.").max(200),
-  description: optionalText(4000),
+  name: requiredText(1, LIMITS.projectName, "Give the project a name."),
+  description: optionalText(LIMITS.projectDescription),
   /** Empty means no owner. */
   ownerId: z.string().max(64).default(""),
   /** Empty means the project doesn't roll up into a goal. */

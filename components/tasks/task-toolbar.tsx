@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, TASK_STATUSES, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 import { BOARD_STATUSES } from "@/lib/tasks/board";
 import { DEFAULT_FILTERS, isFiltered, SORT_LABELS, tasksHref, type DueFilter, type TaskFilters, type TaskSort, type TaskView } from "@/lib/tasks/filters";
 import { nameOf } from "@/lib/tasks/people";
@@ -83,6 +84,7 @@ export function TaskToolbar({
             placeholder="Search tasks…"
             value={q}
             onChange={(event) => setQ(event.target.value)}
+            maxLength={LIMITS.search}
             onKeyDown={(event) => {
               if (event.key === "Escape") event.currentTarget.blur();
             }}

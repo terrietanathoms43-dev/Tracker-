@@ -5,6 +5,7 @@ import { updateProfile } from "@/actions/profile";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LIMITS } from "@/lib/limits";
 import { toastResult } from "@/lib/toast-result";
 import { Section } from "./section";
 import { TimezoneSelect } from "./timezone-select";
@@ -36,13 +37,13 @@ export function ProfileForm(props: { name: string; email: string; timezone: stri
             <Input id="profile-email" value={props.email} disabled readOnly />
           </Field>
           <div className="grid items-start gap-4 sm:grid-cols-2">
-            <Field id="profile-name" label="Name" error={errors.name?.[0]}>
+            <Field id="profile-name" label="Name" error={errors.name?.[0]} count={{ value: name, max: LIMITS.memberName }}>
               <Input
                 id="profile-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 autoComplete="name"
-                maxLength={80}
+                maxLength={LIMITS.memberName}
                 aria-invalid={errors.name ? true : undefined}
                 aria-describedby={errors.name ? "profile-name-error" : undefined}
               />

@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { UserAvatar } from "@/components/user-avatar";
 import type { ActionResult } from "@/lib/action-result";
+import { LIMITS } from "@/lib/limits";
 import { nameOf } from "@/lib/tasks/people";
 import type { Person } from "@/lib/tasks/types";
 
@@ -106,18 +107,32 @@ export function TeamDialog({ team, people, variant = "default", size = "default"
               }
             }}
           >
-            <Field id="team-name" label="Name" error={errors.name?.[0]}>
-              <Input id="team-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Frontend" maxLength={60} autoFocus aria-invalid={errors.name ? true : undefined} />
+            <Field id="team-name" label="Name" error={errors.name?.[0]} count={{ value: name, max: LIMITS.teamName }}>
+              <Input
+                id="team-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="e.g. Frontend"
+                maxLength={LIMITS.teamName}
+                autoFocus
+                aria-invalid={errors.name ? true : undefined}
+              />
             </Field>
-            <Field id="team-description" label="What it looks after" hint="Optional." error={errors.description?.[0]}>
-              <Textarea id="team-description" value={description} onChange={(event) => setDescription(event.target.value)} rows={2} maxLength={500} />
+            <Field id="team-description" label="What it looks after" hint="Optional." error={errors.description?.[0]} count={{ value: description, max: LIMITS.teamDescription }}>
+              <Textarea
+                id="team-description"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                rows={2}
+                maxLength={LIMITS.teamDescription}
+              />
             </Field>
             <fieldset className="grid gap-2">
               <legend className="text-base leading-none font-medium">
                 Members <span className="font-normal text-muted-foreground">({memberIds.length})</span>
               </legend>
               {people.length >= SEARCH_FROM ? (
-                <Input aria-label="Search members" placeholder="Search members…" value={search} onChange={(event) => setSearch(event.target.value)} className="mt-1" />
+                <Input aria-label="Search members" placeholder="Search members…" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={LIMITS.search} className="mt-1" />
               ) : null}
               {people.length === 0 ? (
                 <p className="text-base text-muted-foreground">Nobody else does work in this workspace yet. Invite people first.</p>

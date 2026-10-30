@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 import type { AssigneeIds } from "@/lib/tasks/assignees";
 import type { CreateDefaults } from "@/lib/tasks/types";
 import { AssigneePicker } from "./assignee-picker";
@@ -84,13 +85,13 @@ export function CreateTaskForm({
             }
          }}
       >
-         <Field id="task-title" label="Title" error={error("title")}>
+         <Field id="task-title" label="Title" error={error("title")} count={{ value: title, max: LIMITS.taskTitle }}>
             <Input
                id="task-title"
                value={title}
                onChange={(event) => setTitle(event.target.value)}
                placeholder="What needs doing?"
-               maxLength={200}
+               maxLength={LIMITS.taskTitle}
                autoFocus
                aria-invalid={error("title") ? true : undefined}
             />
@@ -155,17 +156,24 @@ export function CreateTaskForm({
             id="task-next"
             label="First next action"
             hint="Optional: the very next step, so whoever picks it up knows where to start."
+            count={{ value: nextAction, max: LIMITS.nextAction }}
          >
             <Input
                id="task-next"
                value={nextAction}
                onChange={(event) => setNextAction(event.target.value)}
                placeholder="e.g. Reproduce it on staging"
-               maxLength={1000}
+               maxLength={LIMITS.nextAction}
             />
          </Field>
-         <Field id="task-description" label="Description" hint="Optional.">
-            <Textarea id="task-description" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} />
+         <Field id="task-description" label="Description" hint="Optional." count={{ value: description, max: LIMITS.taskDescription }}>
+            <Textarea
+               id="task-description"
+               value={description}
+               onChange={(event) => setDescription(event.target.value)}
+               rows={3}
+               maxLength={LIMITS.taskDescription}
+            />
          </Field>
 
          <div className="flex items-center justify-end gap-2 pt-1">

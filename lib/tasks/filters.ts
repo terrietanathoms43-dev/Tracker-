@@ -1,4 +1,5 @@
 import { TASK_PRIORITIES, TASK_STATUSES, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 
 // The task list's state lives in the URL (apex-ux §6), so a view can be shared and the back button works.
 // These functions are the only translation between the address and the filters the DAL understands.
@@ -69,7 +70,7 @@ export function parseFilters(raw: Raw): TaskFilters {
     .map((value) => pick(value, TASK_STATUSES))
     .filter((value): value is TaskStatus => value !== "");
   return {
-    q: one(raw, "q").slice(0, 100),
+    q: one(raw, "q").slice(0, LIMITS.search),
     status: [...new Set(statuses)],
     assignee: idLike(one(raw, "assignee")),
     team: idLike(one(raw, "team")),

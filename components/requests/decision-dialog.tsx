@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { RequestDecision, RequestStatus, RequestUrgency, TaskPriority } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 import { PRIORITY_FOR_URGENCY } from "@/lib/requests/decisions";
 import type { AssigneeIds } from "@/lib/tasks/assignees";
 import type { TaskFormOptions } from "@/lib/tasks/types";
@@ -123,13 +124,13 @@ function DecisionForm({ request, decision, onDone }: { request: DecisionTarget; 
           <Input id="decision-defer" type="date" value={deferUntil} onChange={(event) => setDeferUntil(event.target.value)} aria-invalid={errors.deferUntil ? true : undefined} />
         </Field>
       ) : null}
-      <Field id="decision-reason" label={copy.reasonLabel} hint={copy.reasonHint} error={errors.reason?.[0]}>
+      <Field id="decision-reason" label={copy.reasonLabel} hint={copy.reasonHint} error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.decisionReason }}>
         <Textarea
           id="decision-reason"
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           rows={3}
-          maxLength={1000}
+          maxLength={LIMITS.decisionReason}
           autoFocus={decision !== "approved" && decision !== "converted"}
           aria-invalid={errors.reason ? true : undefined}
         />

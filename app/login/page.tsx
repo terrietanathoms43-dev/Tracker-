@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { allowedDomainsLabel } from "@/lib/allowed-domains";
 import { domainRuleMessage, googleEnabled } from "@/lib/auth";
 import { APP_NAME } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 import { safePath } from "@/lib/safe-path";
 import { getSessionUser } from "@/lib/viewer";
 
@@ -25,6 +26,7 @@ const ERRORS: Record<string, string> = {
   access_denied: "Sign-in wasn't allowed for that account.",
   EmailSignInError: "We couldn't send the sign-in email. Check the address and try again.",
   EmailInvalid: "Enter a valid email address.",
+  RateLimited: "Too many sign-in tries in a row. Wait a few minutes and try again.",
 };
 
 function GoogleMark() {
@@ -82,7 +84,7 @@ async function LoginForms({ searchParams }: Pick<PageProps<"/login">, "searchPar
         <input type="hidden" name="redirectTo" value={redirectTo} />
         <div className="grid gap-2">
           <Label htmlFor="email">Work email</Label>
-          <Input id="email" name="email" type="email" required autoComplete="email" placeholder="you@company.com" className="h-10" />
+          <Input id="email" name="email" type="email" required autoComplete="email" placeholder="you@company.com" maxLength={LIMITS.email} className="h-10" />
         </div>
         <SubmitButton className="h-10 w-full" pendingLabel="Sending link…">
           Email me a sign-in link

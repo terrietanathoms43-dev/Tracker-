@@ -12,11 +12,13 @@ import { isAllowedEmail } from "@/lib/allowed-domains";
 import { auth, domainRuleMessage } from "@/lib/auth";
 import { ORG_COOKIE, ORG_ROLE_LABELS, ORG_ROLES, type OrgRole } from "@/lib/constants";
 import { hashInviteToken, inviteExpiry, inviteUrl, newInviteToken } from "@/lib/invite-token";
+import { LIMITS } from "@/lib/limits";
 import { errorFields, log } from "@/lib/log";
 import { providerFor, sendMail } from "@/lib/mail";
 import { invitationEmail } from "@/lib/mail/templates";
 import { setActiveOrgCookie } from "@/lib/org-cookie";
 import { canInvite, canManageInvitation, type Viewer } from "@/lib/permissions";
+import { rateLimitHit } from "@/lib/rate-limit";
 import { requireUser, requireViewerContext, type ViewerContext } from "@/lib/viewer";
 
 // Invitations: create, resend, renew the link, revoke, accept. The link is the credential: only its sha256 is
@@ -28,10 +30,11 @@ const MAX_AT_ONCE = 20;
 /** "a@x.com, b@y.com" or one per line → unique lowercased addresses. */
 const emailList = z
   .string()
+  .max(LIMITS.inviteEmails, "That's more than a batch of invitations can hold.")
   .transform((raw) => [...new Set(raw.split(/[\s,;]+/).map((each) => each.trim().toLowerCase()).filter(Boolean))])
   .pipe(
     z
-      .array(z.email({ error: (issue) => `“${String(issue.input)}” isn't an email address.` }))
+      .array(z.email({ error: (issue) => `“${String(issue.input)}” isn't an email address.` }).max(LIMITS.email, "That email address is too long."))
       .min(1, "Enter at least one email address.")
       .max(MAX_AT_ONCE, `Invite up to ${MAX_AT_ONCE} people at a time.`),
   );
@@ -79,6 +82,10 @@ const inviteSchema = z.object({ emails: emailList, role: z.enum(ORG_ROLES).defau
 export async function inviteMembers(input: z.input<typeof inviteSchema>): Promise<ActionResult<InviteResult>> {
   return runAction("invitations.create", inviteSchema, input, async ({ emails, role }) => {
     const context = await requireViewerContext();
+    // One batch can reach 20 inboxes; ten batches an hour per person keeps this a feature, not a mailer.
+    if (rateLimitHit(`invite:${context.viewer.orgId}:${context.viewer.userId}`, 10, 60 * 60_000)) {
+      return fail("You've sent a lot of invitations in a short time. Try again in about an hour.", { emails: ["Try again in about an hour."] });
+    }
     // The company email rule applies to invitations too: an outsider could never sign in to accept one.
     const outside = emails.filter((email) => !isAllowedEmail(email));
     if (outside.length > 0) return fail(`${outside.join(", ")}: ${domainRuleMessage()}`, { emails: [domainRuleMessage()] });

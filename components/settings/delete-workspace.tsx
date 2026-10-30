@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { LIMITS } from "@/lib/limits";
 import { Section } from "./section";
 
 // The one irreversible action in settings. Typing the workspace's name is the confirmation, so a stray click
@@ -72,6 +73,7 @@ export function DeleteWorkspace({ orgName }: { orgName: string }) {
                   onChange={(event) => setTyped(event.target.value)}
                   autoComplete="off"
                   spellCheck={false}
+                  maxLength={LIMITS.workspaceName}
                   autoFocus
                   aria-invalid={error ? true : undefined}
                   aria-describedby={error ? "delete-confirm-error" : undefined}

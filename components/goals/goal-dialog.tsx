@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-result";
+import { LIMITS } from "@/lib/limits";
 import { nameOf } from "@/lib/tasks/people";
 import type { Person, TeamRef } from "@/lib/tasks/types";
 
@@ -133,29 +134,35 @@ export function GoalDialog({
               }
             }}
           >
-            <Field id="goal-title" label="Title" error={error("title")}>
+            <Field id="goal-title" label="Title" error={error("title")} count={{ value: values.title, max: LIMITS.goalTitle }}>
               <Input
                 id="goal-title"
                 value={values.title}
                 onChange={(event) => set("title", event.target.value)}
                 placeholder="e.g. Cut incident response time in half"
-                maxLength={200}
+                maxLength={LIMITS.goalTitle}
                 autoFocus
                 aria-invalid={error("title") ? true : undefined}
               />
             </Field>
-            <Field id="goal-criteria" label="Success looks like" hint="Optional: how you'll know it's achieved." error={error("successCriteria")}>
+            <Field id="goal-criteria" label="Success looks like" hint="Optional: how you'll know it's achieved." error={error("successCriteria")} count={{ value: values.successCriteria, max: LIMITS.successCriteria }}>
               <Textarea
                 id="goal-criteria"
                 value={values.successCriteria}
                 onChange={(event) => set("successCriteria", event.target.value)}
                 rows={2}
-                maxLength={2000}
+                maxLength={LIMITS.successCriteria}
                 placeholder="e.g. Median time to mitigate under 24 minutes across the next ten incidents"
               />
             </Field>
-            <Field id="goal-description" label="Description" hint="Optional: why it matters." error={error("description")}>
-              <Textarea id="goal-description" value={values.description} onChange={(event) => set("description", event.target.value)} rows={3} maxLength={4000} />
+            <Field id="goal-description" label="Description" hint="Optional: why it matters." error={error("description")} count={{ value: values.description, max: LIMITS.goalDescription }}>
+              <Textarea
+                id="goal-description"
+                value={values.description}
+                onChange={(event) => set("description", event.target.value)}
+                rows={3}
+                maxLength={LIMITS.goalDescription}
+              />
             </Field>
             <div className="grid items-start gap-4 sm:grid-cols-2">
               <Field id="goal-owner" label="Owner" error={error("ownerId")}>

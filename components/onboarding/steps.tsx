@@ -9,6 +9,7 @@ import { TimezoneSelect } from "@/components/settings/timezone-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { OrgRole } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 
 // The two onboarding forms. Neither keeps "which step am I on": each action changes what exists on the server
 // (a workspace, an invitation) and the page works the next step out from that.
@@ -49,13 +50,13 @@ export function WorkspaceStep({ zones, defaultTimezone, mode }: { zones: string[
             : "A workspace holds your team's tasks, goals and requests. You'll invite people next."
         }
       />
-      <Field id="workspace-name" label="Workspace name" hint="Your company or team, e.g. Apex Engineering." error={errors.name?.[0]}>
+      <Field id="workspace-name" label="Workspace name" hint="Your company or team, e.g. Apex Engineering." error={errors.name?.[0]} count={{ value: name, max: LIMITS.workspaceName }}>
         <Input
           id="workspace-name"
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder="Your company or team"
-          maxLength={80}
+          maxLength={LIMITS.workspaceName}
           autoFocus
           autoComplete="organization"
           className="h-10"

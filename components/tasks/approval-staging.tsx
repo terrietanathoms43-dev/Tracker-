@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import type { ApprovalStagingTask } from "@/lib/dal/tasks";
+import { LIMITS } from "@/lib/limits";
 import { nameOf } from "@/lib/tasks/people";
 import { toastResult } from "@/lib/toast-result";
 
@@ -188,12 +189,13 @@ export function ApprovalStaging({ tasks }: { tasks: ApprovalStagingTask[] }) {
               handleSendBack();
             }}
           >
-            <Field id="staging-sendback-note" label="Feedback / Revision requirements">
+            <Field id="staging-sendback-note" label="Feedback / Revision requirements" count={{ value: sendBackNote, max: LIMITS.sendBackNote }}>
               <Textarea
                 id="staging-sendback-note"
                 value={sendBackNote}
                 onChange={(e) => setSendBackNote(e.target.value)}
                 rows={3}
+                maxLength={LIMITS.sendBackNote}
                 autoFocus
                 placeholder="e.g. Please attach the test results or fix the edge case in the handler."
               />

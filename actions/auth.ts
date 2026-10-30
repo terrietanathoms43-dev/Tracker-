@@ -7,6 +7,8 @@ import { z } from "zod";
 import { isAllowedEmail } from "@/lib/allowed-domains";
 import { auth } from "@/lib/auth";
 import { ORG_COOKIE } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
+import { rateLimitHit } from "@/lib/rate-limit";
 import { safePath } from "@/lib/safe-path";
 
 // Sign-in is the one place that uses plain <form action> server actions: Better Auth redirects or sends an
@@ -19,7 +21,7 @@ function loginError(code: string, redirectTo: string): never {
   redirect(`/login?${params}`);
 }
 
-const emailSchema = z.email().max(254);
+const emailSchema = z.email().max(LIMITS.email);
 
 export async function signInWithEmail(form: FormData): Promise<void> {
   const redirectTo = safePath(form.get("redirectTo"));
@@ -27,6 +29,11 @@ export async function signInWithEmail(form: FormData): Promise<void> {
   if (!email.success) loginError("EmailInvalid", redirectTo);
   // Checked here for a friendly message; lib/auth.ts enforces the same rule at the API.
   if (!isAllowedEmail(email.data)) loginError("domain", redirectTo);
+  // auth.api calls made server-side bypass better-auth's own rate limiter, so this form gets its own:
+  // 5 requests per 5 minutes per address+IP — enough for a typo, nowhere near enough for magic-link spam.
+  // The rightmost x-forwarded-for entry is the one a trusted proxy appends (the leftmost is client-set).
+  const ip = (await headers()).get("x-forwarded-for")?.split(",").at(-1)?.trim() ?? "unknown";
+  if (rateLimitHit(`signin:${ip}:${email.data}`, 5, 5 * 60_000)) loginError("RateLimited", redirectTo);
   try {
     await auth.api.signInMagicLink({
       body: { email: email.data, callbackURL: redirectTo, errorCallbackURL: "/login?error=magic_link" },

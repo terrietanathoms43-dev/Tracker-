@@ -2,8 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { addComment } from "@/actions/tasks";
+import { CharacterCounter } from "@/components/character-counter";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { LIMITS } from "@/lib/limits";
 import { toastResult } from "@/lib/toast-result";
 
 // The inline Add a comment box above a task's history.
@@ -38,6 +40,7 @@ export function CommentForm({ taskId }: { taskId: string }) {
         value={body}
         onChange={(event) => setBody(event.target.value)}
         rows={2}
+        maxLength={LIMITS.comment}
         aria-invalid={error ? true : undefined}
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -46,7 +49,10 @@ export function CommentForm({ taskId }: { taskId: string }) {
           }
         }}
       />
-      {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
+      <div className="flex items-start justify-between gap-3">
+        {error ? <p className="text-[13px] text-destructive">{error}</p> : <span />}
+        <CharacterCounter value={body} max={LIMITS.comment} />
+      </div>
       {body.trim() !== "" ? (
         <div className="flex justify-end">
           <Button type="submit" size="sm" variant="outline" disabled={pending}>

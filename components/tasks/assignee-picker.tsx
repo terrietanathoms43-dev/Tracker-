@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { UserAvatar } from "@/components/user-avatar";
+import { LIMITS } from "@/lib/limits";
 import type { AssigneeIds } from "@/lib/tasks/assignees";
 import { nameOf } from "@/lib/tasks/people";
 import type { Person, TeamRef } from "@/lib/tasks/types";
@@ -89,7 +90,7 @@ export function AssigneePicker({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-(--radix-popover-trigger-width) min-w-64 p-0">
         <Command loop>
-          <CommandInput placeholder={mode === "teams" ? "Search teams…" : "Search people and teams…"} />
+          <CommandInput placeholder={mode === "teams" ? "Search teams…" : "Search people and teams…"} maxLength={LIMITS.search} />
           <CommandList>
             <CommandEmpty>Nobody matches.</CommandEmpty>
             {options !== null && options.teams.length > 0 ? (

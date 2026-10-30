@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { Link2 } from "lucide-react";
 import { useState, useTransition, type RefObject } from "react";
 import { updateProgress } from "@/actions/tasks";
+import { CharacterCounter } from "@/components/character-counter";
 import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { TASK_STATUS_LABELS } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
 import type { UpdateContext } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
@@ -131,9 +133,13 @@ export function UpdateProgressForm({
                placeholder="What did you get done?"
                rows={3}
                autoFocus={autoFocus}
+               maxLength={LIMITS.progressNote}
                aria-invalid={errors.progress ? true : undefined}
             />
-            {error("progress")}
+            <div className="flex items-start justify-between gap-3">
+               {error("progress") ?? <span />}
+               <CharacterCounter value={progress} max={LIMITS.progressNote} />
+            </div>
          </div>
          <div className="grid gap-2">
             <Label htmlFor={field("next")}>
@@ -146,9 +152,13 @@ export function UpdateProgressForm({
                onChange={(event) => setNextAction(event.target.value)}
                placeholder={task.nextAction ? `Was: ${task.nextAction}` : "What exactly happens next?"}
                rows={2}
+               maxLength={LIMITS.nextAction}
                aria-invalid={errors.nextAction ? true : undefined}
             />
-            {error("nextAction")}
+            <div className="flex items-start justify-between gap-3">
+               {error("nextAction") ?? <span />}
+               <CharacterCounter value={nextAction} max={LIMITS.nextAction} />
+            </div>
          </div>
 
          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
@@ -174,18 +184,28 @@ export function UpdateProgressForm({
                      placeholder="What's blocking it?"
                      value={blockedReason}
                      onChange={(event) => setBlockedReason(event.target.value)}
+                     maxLength={LIMITS.blockedReason}
                      aria-invalid={errors.blockedReason ? true : undefined}
                      className="bg-background"
                   />
-                  {error("blockedReason")}
+                  <div className="flex items-start justify-between gap-3">
+                     {error("blockedReason") ?? <span />}
+                     <CharacterCounter value={blockedReason} max={LIMITS.blockedReason} />
+                  </div>
                </div>
-               <Input
-                  aria-label="Who or what can unblock it?"
-                  placeholder="Who or what can unblock it? (optional)"
-                  value={blockedBy}
-                  onChange={(event) => setBlockedBy(event.target.value)}
-                  className="bg-background"
-               />
+               <div className="grid gap-1.5">
+                  <Input
+                     aria-label="Who or what can unblock it?"
+                     placeholder="Who or what can unblock it? (optional)"
+                     value={blockedBy}
+                     onChange={(event) => setBlockedBy(event.target.value)}
+                     maxLength={LIMITS.blockedBy}
+                     className="bg-background"
+                  />
+                  <div className="flex justify-end">
+                     <CharacterCounter value={blockedBy} max={LIMITS.blockedBy} />
+                  </div>
+               </div>
             </div>
          ) : null}
 
@@ -198,17 +218,24 @@ export function UpdateProgressForm({
                      value={evidenceUrl}
                      onChange={(event) => setEvidenceUrl(event.target.value)}
                      inputMode="url"
+                     maxLength={LIMITS.url}
                      autoFocus
                      aria-invalid={errors.evidenceUrl ? true : undefined}
                   />
                   {error("evidenceUrl")}
                </div>
-               <Input
-                  aria-label="Evidence label"
-                  placeholder="Label (optional)"
-                  value={evidenceLabel}
-                  onChange={(event) => setEvidenceLabel(event.target.value)}
-               />
+               <div className="grid gap-1.5">
+                  <Input
+                     aria-label="Evidence label"
+                     placeholder="Label (optional)"
+                     value={evidenceLabel}
+                     onChange={(event) => setEvidenceLabel(event.target.value)}
+                     maxLength={LIMITS.evidenceLabel}
+                  />
+                  <div className="flex justify-end">
+                     <CharacterCounter value={evidenceLabel} max={LIMITS.evidenceLabel} />
+                  </div>
+               </div>
             </div>
          ) : null}
 
@@ -279,13 +306,19 @@ export function UpdateProgressForm({
             </div>
          ) : null}
          {completing ? (
-            <Textarea
-               aria-label="Completion summary"
-               placeholder="Completion summary (optional): what changed, and why it matters"
-               value={summary}
-               onChange={(event) => setSummary(event.target.value)}
-               rows={2}
-            />
+            <div className="grid gap-1">
+               <Textarea
+                  aria-label="Completion summary"
+                  placeholder="Completion summary (optional): what changed, and why it matters"
+                  value={summary}
+                  onChange={(event) => setSummary(event.target.value)}
+                  rows={2}
+                  maxLength={LIMITS.completionSummary}
+               />
+               <div className="flex justify-end">
+                  <CharacterCounter value={summary} max={LIMITS.completionSummary} />
+               </div>
+            </div>
          ) : null}
 
          <div className="flex items-center justify-end gap-3">

@@ -3,6 +3,8 @@
 import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { LIMITS } from "@/lib/limits";
+import { cappedText, optionalLink, optionalText, requiredLink, requiredText } from "@/lib/sanitize";
 import { db, type Tx } from "@/db";
 import { goals, notifications, projects, taskLinks, taskUpdates, tasks } from "@/db/schema";
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
@@ -45,8 +47,7 @@ import { requireViewer } from "@/lib/viewer";
 
 const id = z.string().min(1).max(64);
 const idList = z.array(id).max(50).default([]);
-const optionalText = (max: number) => z.string().trim().max(max).default("");
-const httpUrl = z.union([z.literal(""), z.url({ protocol: /^https?$/, error: "Use a full http(s) link." })]).default("");
+const httpUrl = optionalLink();
 const day = z.union([z.literal(""), z.iso.date({ error: "Pick a date." })]).default("");
 
 const taskHref = (taskId: string) => `/tasks/${taskId}`;
@@ -141,15 +142,15 @@ async function noticesFor(
 // --- create ---------------------------------------------------------------------------------------------------
 
 const createSchema = z.object({
-  title: z.string().trim().min(1, "Give the task a title.").max(200),
+  title: requiredText(1, LIMITS.taskTitle, "Give the task a title."),
   assigneeIds: idList,
   teamIds: idList,
   projectId: z.string().max(64).default(""),
   goalId: z.string().max(64).default(""),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
   dueDate: day,
-  nextAction: optionalText(1000),
-  description: optionalText(10_000),
+  nextAction: optionalText(LIMITS.nextAction),
+  description: optionalText(LIMITS.taskDescription),
 });
 
 /** Creates a task. Only the title is required; everyone assigned but the creator hears about it. */
@@ -239,8 +240,8 @@ export async function setAssignees(input: z.input<typeof assignSchema>): Promise
 // --- edit fields ------------------------------------------------------------------------------------------------
 
 const editSchema = z.discriminatedUnion("field", [
-  z.object({ taskId: id, field: z.literal("title"), value: z.string().trim().min(1, "A task needs a title.").max(200) }),
-  z.object({ taskId: id, field: z.literal("description"), value: z.string().trim().max(10_000) }),
+  z.object({ taskId: id, field: z.literal("title"), value: requiredText(1, LIMITS.taskTitle, "A task needs a title.") }),
+  z.object({ taskId: id, field: z.literal("description"), value: cappedText(LIMITS.taskDescription) }),
   z.object({ taskId: id, field: z.literal("priority"), value: z.enum(TASK_PRIORITIES) }),
   z.object({ taskId: id, field: z.literal("dueDate"), value: day }),
   z.object({ taskId: id, field: z.literal("projectId"), value: z.string().max(64) }),
@@ -300,13 +301,13 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
 const statusSchema = z.object({
   taskId: id,
   status: z.enum(TASK_STATUSES),
-  reason: optionalText(500),
-  blockedBy: optionalText(200),
+  reason: optionalText(LIMITS.blockedReason),
+  blockedBy: optionalText(LIMITS.blockedBy),
   approverId: z.string().max(64).default(""),
-  summary: optionalText(2000),
-  note: optionalText(1000),
+  summary: optionalText(LIMITS.completionSummary),
+  note: optionalText(LIMITS.sendBackNote),
   evidenceUrl: httpUrl,
-  evidenceLabel: optionalText(120),
+  evidenceLabel: optionalText(LIMITS.evidenceLabel),
   via: z.enum(["status", "approve", "send_back"]).default("status"),
 });
 
@@ -362,17 +363,17 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
 const progressSchema = z
   .object({
     taskId: id,
-    progress: z.string().trim().min(1, "Say what you got done.").max(4000),
-    nextAction: optionalText(1000),
+    progress: requiredText(1, LIMITS.progressNote, "Say what you got done."),
+    nextAction: optionalText(LIMITS.nextAction),
     blocked: z.boolean().default(false),
-    blockedReason: optionalText(500),
-    blockedBy: optionalText(200),
+    blockedReason: optionalText(LIMITS.blockedReason),
+    blockedBy: optionalText(LIMITS.blockedBy),
     evidenceUrl: httpUrl,
-    evidenceLabel: optionalText(120),
+    evidenceLabel: optionalText(LIMITS.evidenceLabel),
     handOverTo: z.string().max(64).default(""),
     markAs: z.enum(["", "in_progress", "awaiting_approval", "completed"]).default(""),
     approverId: z.string().max(64).default(""),
-    summary: optionalText(2000),
+    summary: optionalText(LIMITS.completionSummary),
   })
   .superRefine((value, ctx) => {
     if (value.markAs !== "completed" && value.nextAction === "") ctx.addIssue({ code: "custom", path: ["nextAction"], message: "Say what happens next." });
@@ -471,7 +472,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
 
 // --- comments and evidence ----------------------------------------------------------------------------------------
 
-const commentSchema = z.object({ taskId: id, body: z.string().trim().min(1, "Write a comment first.").max(4000) });
+const commentSchema = z.object({ taskId: id, body: requiredText(1, LIMITS.comment, "Write a comment first.") });
 
 /** A comment joins the task's timeline; everyone responsible for the task and its creator hear about it. */
 export async function addComment(input: z.input<typeof commentSchema>): Promise<ActionResult> {
@@ -499,8 +500,8 @@ export async function addComment(input: z.input<typeof commentSchema>): Promise<
 
 const linkSchema = z.object({
   taskId: id,
-  url: z.url({ protocol: /^https?$/, error: "Use a full http(s) link." }),
-  label: optionalText(120),
+  url: requiredLink(),
+  label: optionalText(LIMITS.evidenceLabel),
 });
 
 /** Evidence on its own (outside an update): anyone who may update progress may add a link. */
@@ -572,7 +573,7 @@ export async function loadHistory(input: z.input<typeof historySchema>): Promise
   });
 }
 
-const searchSchema = z.object({ q: z.string().max(100) });
+const searchSchema = z.object({ q: z.string().max(LIMITS.search) });
 
 /** Task titles for the command palette. */
 export async function paletteSearch(input: z.input<typeof searchSchema>): Promise<ActionResult<TaskListItem[]>> {

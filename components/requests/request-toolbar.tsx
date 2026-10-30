@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { REQUEST_STATUS_LABELS, REQUEST_STATUSES, type RequestStatus } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 import { DEFAULT_REQUEST_FILTERS, isRequestFiltered, requestsHref } from "@/lib/requests/filters";
 import type { RequestFilters } from "@/lib/requests/types";
 
@@ -56,6 +57,7 @@ export function RequestToolbar({ filters }: { filters: RequestFilters }) {
           placeholder="Search requests…"
           value={q}
           onChange={(event) => setQ(event.target.value)}
+          maxLength={LIMITS.search}
           onKeyDown={(event) => {
             if (event.key === "Escape") event.currentTarget.blur();
           }}

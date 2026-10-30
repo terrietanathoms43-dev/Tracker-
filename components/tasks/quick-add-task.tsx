@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { useId, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 import { createTask } from "@/actions/tasks";
+import { CharacterCounter } from "@/components/character-counter";
 import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
+import { LIMITS } from "@/lib/limits";
 import type { AssigneeIds } from "@/lib/tasks/assignees";
 import { nameOf } from "@/lib/tasks/people";
 import { activeToken, mentionTargets, parseQuickAdd, removeTokens, suggest, type QuickAddParse, type QuickAddToken } from "@/lib/tasks/quick-add";
@@ -192,7 +194,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
           id="quick-add-title"
           {...{ [QUICK_ADD_ATTRIBUTE]: "" }}
           value={text}
-          maxLength={260}
+          maxLength={LIMITS.quickAddTitle}
           autoComplete="off"
           placeholder="Add a task and press Enter"
           role="combobox"
@@ -328,7 +330,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
             setDue(event.target.value);
             dropTokens("due");
           }}
-          className="h-9 rounded-md border border-input bg-transparent px-2.5 text-base outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30 dark:[color-scheme:dark]"
+          className="h-9 rounded-md border border-input bg-transparent px-2.5 text-base outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30 dark:scheme-dark"
         />
 
         {showProject ? (
@@ -361,37 +363,40 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
         </div>
       </div>
 
-      <p id="quick-add-hint" className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[14px] text-muted-foreground" aria-live="polite">
-        {error ? (
-          <span className="text-destructive">{error}</span>
-        ) : names.length > 0 || parsed.unmatched.length > 0 ? (
-          <>
-            {names.length > 0 ? (
-              <span>
-                Assigning to <span className="font-medium text-foreground">{names.join(", ")}</span>.
+      <div className="mt-3 flex items-start justify-between gap-3">
+        <p id="quick-add-hint" className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-[14px] text-muted-foreground" aria-live="polite">
+          {error ? (
+            <span className="text-destructive">{error}</span>
+          ) : names.length > 0 || parsed.unmatched.length > 0 ? (
+            <>
+              {names.length > 0 ? (
+                <span>
+                  Assigning to <span className="font-medium text-foreground">{names.join(", ")}</span>.
+                </span>
+              ) : null}
+              {parsed.unmatched.length > 0 ? (
+                <span>
+                  {parsed.unmatched.join(", ")} {parsed.unmatched.length === 1 ? "doesn't" : "don't"} name one person or team, so{" "}
+                  {parsed.unmatched.length === 1 ? "it stays" : "they stay"} in the title.
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <span>Shortcuts in the title:</span>
+              {SHORTCUT_HINTS.map((hint) => (
+                <code key={hint} className={chip}>
+                  {hint}
+                </code>
+              ))}
+              <span className="hidden sm:inline">
+                . Press <kbd className={chip}>N</kbd> anywhere to jump here.
               </span>
-            ) : null}
-            {parsed.unmatched.length > 0 ? (
-              <span>
-                {parsed.unmatched.join(", ")} {parsed.unmatched.length === 1 ? "doesn't" : "don't"} name one person or team, so{" "}
-                {parsed.unmatched.length === 1 ? "it stays" : "they stay"} in the title.
-              </span>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <span>Shortcuts in the title:</span>
-            {SHORTCUT_HINTS.map((hint) => (
-              <code key={hint} className={chip}>
-                {hint}
-              </code>
-            ))}
-            <span className="hidden sm:inline">
-              . Press <kbd className={chip}>N</kbd> anywhere to jump here.
-            </span>
-          </>
-        )}
-      </p>
+            </>
+          )}
+        </p>
+        <CharacterCounter value={text} max={LIMITS.quickAddTitle} />
+      </div>
     </form>
   );
 }

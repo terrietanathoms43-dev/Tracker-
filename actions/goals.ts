@@ -3,6 +3,8 @@
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { LIMITS } from "@/lib/limits";
+import { optionalText, requiredText } from "@/lib/sanitize";
 import { db } from "@/db";
 import { goals } from "@/db/schema";
 import { ERR, fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
@@ -20,13 +22,12 @@ import { requireViewer } from "@/lib/viewer";
 // --- shared checks -----------------------------------------------------------------------------------------
 
 const id = z.string().min(1).max(64);
-const optionalText = (max: number) => z.string().trim().max(max).default("");
 const day = z.union([z.literal(""), z.iso.date({ error: "Pick a date." })]).default("");
 
 const goalFields = {
-  title: z.string().trim().min(1, "Give the goal a title.").max(200),
-  description: optionalText(4000),
-  successCriteria: optionalText(2000),
+  title: requiredText(1, LIMITS.goalTitle, "Give the goal a title."),
+  description: optionalText(LIMITS.goalDescription),
+  successCriteria: optionalText(LIMITS.successCriteria),
   /** Empty means "me" on create, "keep the current owner" on edit. */
   ownerId: z.string().max(64).default(""),
   /** The teams expected to deliver it; the whole list replaces the old one. */

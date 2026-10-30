@@ -3,8 +3,10 @@
 import { Plus } from "lucide-react";
 import { useState, useTransition } from "react";
 import { addLink } from "@/actions/tasks";
+import { CharacterCounter } from "@/components/character-counter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LIMITS } from "@/lib/limits";
 import { toastResult } from "@/lib/toast-result";
 
 // Adding an evidence link on the task page without writing an update.
@@ -48,10 +50,15 @@ export function AddLink({ taskId }: { taskId: string }) {
       }}
     >
       <div className="grid gap-1">
-        <Input aria-label="Evidence link" placeholder="https://…" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} autoFocus aria-invalid={error ? true : undefined} />
+        <Input aria-label="Evidence link" placeholder="https://…" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} maxLength={LIMITS.url} autoFocus aria-invalid={error ? true : undefined} />
         {error ? <p className="text-[13px] text-destructive">{error}</p> : null}
       </div>
-      <Input aria-label="Evidence label" placeholder="Label (optional)" value={label} onChange={(event) => setLabel(event.target.value)} />
+      <div className="grid gap-1">
+        <Input aria-label="Evidence label" placeholder="Label (optional)" value={label} onChange={(event) => setLabel(event.target.value)} maxLength={LIMITS.evidenceLabel} />
+        <div className="flex justify-end">
+          <CharacterCounter value={label} max={LIMITS.evidenceLabel} />
+        </div>
+      </div>
       <div className="flex gap-2">
         <Button type="button" variant="ghost" onClick={close}>
           Cancel

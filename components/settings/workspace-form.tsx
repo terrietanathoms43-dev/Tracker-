@@ -5,6 +5,7 @@ import { updateOrganization } from "@/actions/org";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LIMITS } from "@/lib/limits";
 import { toastResult } from "@/lib/toast-result";
 import { Section } from "./section";
 import { TimezoneSelect } from "./timezone-select";
@@ -32,12 +33,12 @@ export function WorkspaceForm(props: { name: string; timezone: string; zones: st
         }}
       >
         <div className="grid items-start gap-4 p-4 sm:grid-cols-2 sm:p-5">
-          <Field id="workspace-name" label="Name" error={errors.name?.[0]}>
+          <Field id="workspace-name" label="Name" error={errors.name?.[0]} count={{ value: name, max: LIMITS.workspaceName }}>
             <Input
               id="workspace-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              maxLength={80}
+              maxLength={LIMITS.workspaceName}
               autoComplete="organization"
               aria-invalid={errors.name ? true : undefined}
               aria-describedby={errors.name ? "workspace-name-error" : undefined}
