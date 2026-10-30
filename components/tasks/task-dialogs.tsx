@@ -59,7 +59,7 @@ export function UpdateProgressDialog({ taskId, onClose }: { taskId: string | nul
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Update progress</DialogTitle>
-          <DialogDescription className="truncate">{state?.context?.task.title ?? " "}</DialogDescription>
+          <DialogDescription className="line-clamp-2 wrap-anywhere">{state?.context?.task.title ?? " "}</DialogDescription>
         </DialogHeader>
         {state === null ? (
           <Loading />
@@ -79,10 +79,10 @@ export function TransitionDialog({ target, onClose }: { target: { taskId: string
   const state = useUpdateContext(target?.taskId ?? null);
   return (
     <Dialog open={target !== null} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto overflow-x-hidden sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{target ? (TRANSITION_TITLES[target.status] ?? "Change status") : "Change status"}</DialogTitle>
-          <DialogDescription className="truncate">{state?.context?.task.title ?? " "}</DialogDescription>
+          <DialogDescription className="line-clamp-2 wrap-anywhere">{state?.context?.task.title ?? " "}</DialogDescription>
         </DialogHeader>
         {target === null || state === null ? (
           <Loading />
