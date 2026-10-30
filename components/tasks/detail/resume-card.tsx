@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock, OctagonAlert, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, MessageSquareWarning, OctagonAlert, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { RelativeTime } from "@/components/relative-time";
 import { nameOf } from "@/lib/tasks/people";
@@ -39,7 +39,7 @@ function StatusStrip({ detail, abilities, timeZone, now }: { detail: TaskDetail;
           <span className="font-medium">Awaiting approval</span>
           {detail.approver ? ` from ${nameOf(detail.approver)}` : ""}
         </p>
-        {abilities.approve ? <ApprovalActions taskId={detail.id} /> : null}
+        {abilities.approve ? <ApprovalActions taskId={detail.id} openComments={detail.openComments} /> : null}
       </div>
     );
   }
@@ -122,6 +122,12 @@ export function ResumeCard({
             <Label>Evidence</Label>
             <EvidenceChips taskId={detail.id} links={links} removable={removableLinks} />
           </div>
+        ) : null}
+        {!closed && detail.openComments > 0 ? (
+          <a href="#history-heading" className="flex items-center gap-2 rounded-md text-[13px] text-status-awaiting-fg underline-offset-4 hover:underline">
+            <MessageSquareWarning className="size-4 shrink-0" aria-hidden />
+            {detail.openComments === 1 ? "1 open comment" : `${detail.openComments} open comments`} to resolve before this task can be completed
+          </a>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <p className="text-[13px] text-muted-foreground">

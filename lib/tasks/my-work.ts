@@ -9,7 +9,7 @@ import type { TaskListItem } from "./types";
 export type MyWorkRow = {
   item: TaskListItem;
   approverId: string | null;
-  /** Assigned to the viewer, directly or through one of their teams. */
+  /** Assigned to the viewer. */
   mine: boolean;
   sortRank: number;
   completedAt: Date | null;

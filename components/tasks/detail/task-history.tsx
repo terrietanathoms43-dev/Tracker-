@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { cn } from "cn";
+import { ArrowRight, CheckCircle2, RotateCcw } from "lucide-react";
 import { Fragment, useState, useTransition } from "react";
-import { loadHistory } from "@/actions/tasks";
+import { loadHistory, setCommentResolved } from "@/actions/tasks";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
 import { nameOf } from "@/lib/tasks/people";
@@ -10,9 +11,32 @@ import type { HistoryItem, HistoryPage } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { CommentForm } from "./comment-form";
 
-// Comments and history on the task page, newest first, 20 at a time.
+// Comments and history on the task page, newest first, 20 at a time. A comment is open until someone resolves
+// it, and a task with an open comment can't be completed (docs/PLAN.md, 2026-10-30 log).
 
-function Entry({ item }: { item: HistoryItem }) {
+/** Resolve / Reopen on one comment, for people who may work on the task. */
+function ResolveButton({ taskId, item }: { taskId: string; item: HistoryItem }) {
+  const [pending, startTransition] = useTransition();
+  const resolved = item.resolved !== null;
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={resolved ? "ghost" : "outline"}
+      className={cn("h-7 shrink-0 text-[13px]", resolved && "text-muted-foreground")}
+      disabled={pending}
+      aria-label={`${resolved ? "Reopen" : "Resolve"} the comment by ${nameOf(item.actor)}`}
+      onClick={() => startTransition(async () => void toastResult(await setCommentResolved({ taskId, commentId: item.id, resolved: !resolved })))}
+    >
+      {resolved ? <RotateCcw aria-hidden /> : <CheckCircle2 aria-hidden />}
+      {pending ? "Saving…" : resolved ? "Reopen" : "Resolve"}
+    </Button>
+  );
+}
+
+function Entry({ taskId, item, canResolve }: { taskId: string; item: HistoryItem; canResolve: boolean }) {
+  const comment = item.type === "comment";
+  const resolved = comment && item.resolved !== null;
   return (
     <li className="flex gap-3 py-2.5">
       <UserAvatar name={item.actor.name} email={item.actor.email} image={item.actor.image} size="sm" className="mt-0.5" />
@@ -46,8 +70,21 @@ function Entry({ item }: { item: HistoryItem }) {
               </p>
             ) : null}
           </div>
-        ) : item.type === "comment" ? (
-          <p className="mt-1 rounded-md border px-3 py-2 text-base whitespace-pre-line">{item.body}</p>
+        ) : comment ? (
+          <div className={cn("mt-1 rounded-md border", resolved ? "border-dashed bg-muted/30" : "border-status-awaiting-dot/40 bg-status-awaiting-bg/40")}>
+            <p className={cn("px-3 py-2 text-base whitespace-pre-line", resolved && "text-muted-foreground")}>{item.body}</p>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-inherit px-3 py-1.5 text-[13px]">
+              {resolved ? (
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                  <CheckCircle2 className="size-3.5 text-status-completed-dot" aria-hidden />
+                  Resolved by {item.resolved!.by}
+                </span>
+              ) : (
+                <span className="font-medium text-status-awaiting-fg">Open comment</span>
+              )}
+              {canResolve ? <ResolveButton taskId={taskId} item={item} /> : null}
+            </div>
+          </div>
         ) : item.note ? (
           <p className="mt-1 text-base text-muted-foreground">“{item.note}”</p>
         ) : null}
@@ -58,9 +95,10 @@ function Entry({ item }: { item: HistoryItem }) {
 
 /**
  * Comments and history, merged newest first and grouped by day, 20 at a time (docs/PLAN.md §5). People who may
- * work on the task get the "Add a comment" box above it.
+ * work on the task get the "Add a comment" box above it and Resolve on each comment; the heading counts what
+ * is still open.
  */
-export function TaskHistory({ taskId, initial, canComment }: { taskId: string; initial: HistoryPage; canComment: boolean }) {
+export function TaskHistory({ taskId, initial, canComment, openComments }: { taskId: string; initial: HistoryPage; canComment: boolean; openComments: number }) {
   // Earlier pages are keyed to the first page the server sent: after an action refreshes the page, `initial`
   // is a new object, so the list starts over from the fresh first page instead of keeping stale entries.
   const [extra, setExtra] = useState<{ key: HistoryPage; pages: HistoryPage[] } | null>(null);
@@ -71,9 +109,16 @@ export function TaskHistory({ taskId, initial, canComment }: { taskId: string; i
 
   return (
     <section aria-labelledby="history-heading" className="rounded-xl border bg-card">
-      <h2 id="history-heading" className="border-b px-5 py-3 text-base font-semibold md:px-6">
-        Comments and history
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3 md:px-6">
+        <h2 id="history-heading" className="text-base font-semibold">
+          Comments and history
+        </h2>
+        {openComments > 0 ? (
+          <span className="rounded-md bg-status-awaiting-bg px-2 py-0.5 text-[13px] font-medium text-status-awaiting-fg tabular-nums">
+            {openComments === 1 ? "1 open comment" : `${openComments} open comments`}
+          </span>
+        ) : null}
+      </div>
       {canComment ? (
         <div className="border-b px-5 py-4 md:px-6">
           <CommentForm taskId={taskId} />
@@ -90,7 +135,7 @@ export function TaskHistory({ taskId, initial, canComment }: { taskId: string; i
                   <p className="text-[13px] font-medium text-muted-foreground">{item.dayLabel}</p>
                 </li>
               ) : null}
-              <Entry item={item} />
+              <Entry taskId={taskId} item={item} canResolve={canComment} />
             </Fragment>
           ))}
         </ol>

@@ -3,7 +3,7 @@ import { calendarDaysBetween, dayKey, formatAbsolute, formatDay } from "@/lib/ti
 import { joinNames, listNames, type AssignmentSnapshot } from "./assignees";
 import type { ActivityFeedItem, HistoryItem } from "./types";
 
-// Task events in plain words: one function for a task's own history, one for the Home and Team feeds.
+// Task events in plain words: one function for a task's own history, one for the Home and Members feeds.
 // Pure, so the wording can change without touching a query.
 
 /** One row of the merged history query (lib/dal/history.ts), before it is phrased. */
@@ -18,6 +18,9 @@ export type HistoryRow = {
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   note: string | null;
+  /** Comments: when it was marked resolved, and by whom. */
+  resolved_at: Date | string | null;
+  resolved_by_name: string | null;
   actor_id: string;
   actor_name: string | null;
   actor_email: string | null;
@@ -38,7 +41,7 @@ function assignmentNames(side: Record<string, unknown>): string[] | null {
   return listNames(side as Partial<AssignmentSnapshot>);
 }
 
-/** "assigned it to Jordan Dev and Frontend", "changed who it's assigned to" (before → after), "unassigned it". */
+/** "assigned it to Jordan Dev and Sam Dev", "changed who it's assigned to" (before → after), "unassigned it". */
 function assignedPhrase(row: HistoryRow, before: Record<string, unknown>, after: Record<string, unknown>): { phrase: string; change: HistoryItem["change"] } {
   const to = assignmentNames(after);
   const from = assignmentNames(before);
@@ -108,6 +111,10 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
       return { phrase: "completed it", change: null };
     case "reopened":
       return { phrase: "reopened it", change: { before: statusLabel(before.status), after: statusLabel(after.status) } };
+    case "comment_resolved":
+      return { phrase: "resolved a comment", change: null };
+    case "comment_reopened":
+      return { phrase: "reopened a comment", change: null };
     case "link_added":
       return { phrase: `added evidence: ${text(after.label) ?? text(after.url) ?? "a link"}`, change: null };
     case "link_removed":
@@ -142,6 +149,7 @@ export function phraseHistory(row: HistoryRow, timeZone: string, now: Date): His
     body: row.body,
     nextAction: row.next_action,
     blocker: row.blocker,
+    resolved: row.type === "comment" && row.resolved_at ? { by: row.resolved_by_name ?? "someone", at: new Date(row.resolved_at).toISOString() } : null,
     at: at.toISOString(),
     day,
     dayLabel,
@@ -150,7 +158,7 @@ export function phraseHistory(row: HistoryRow, timeZone: string, now: Date): His
   };
 }
 
-/** The activity kinds worth a line in the Home and Team feeds (docs/PLAN.md §8): decisions and problems, not edits. */
+/** The activity kinds worth a line in the Home and Members feeds (docs/PLAN.md §8): decisions and problems, not edits. */
 export const FEED_KINDS = ["completed", "blocked", "unblocked", "approved", "sent_back", "rejected", "due_changed", "reopened"] as const satisfies readonly TaskActivityKind[];
 export type FeedKind = (typeof FEED_KINDS)[number];
 
@@ -165,7 +173,7 @@ const FEED_VERBS: Record<FeedKind, string> = {
   reopened: "reopened",
 };
 
-/** One row of the feed query (lib/dal/activity.ts), before it is phrased. */
+/** One row of the feed query (lib/dal/tasks.ts recentActivity), before it is phrased. */
 export type FeedRow = {
   id: string;
   kind: FeedKind;

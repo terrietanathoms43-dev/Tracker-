@@ -35,7 +35,7 @@ export function HealthBoard({ data }: { data: HealthBoardData }) {
       <div className="rounded-lg border bg-card">
         <div className="border-b px-4 py-3">
           <h3 className="text-sm font-semibold tracking-tight">Goals Health Board</h3>
-          <p className="text-[12px] text-muted-foreground">Strategic milestones and delivery status</p>
+          <p className="text-[12px] text-muted-foreground">Top-level goals: progress, blockers and overdue work beneath each</p>
         </div>
         {goals.length === 0 ? (
           <div className="p-4 text-[13px] text-muted-foreground">No active goals.</div>
@@ -100,7 +100,7 @@ export function HealthBoard({ data }: { data: HealthBoardData }) {
       <div className="rounded-lg border bg-card">
         <div className="border-b px-4 py-3">
           <h3 className="text-sm font-semibold tracking-tight">Projects Health Board</h3>
-          <p className="text-[12px] text-muted-foreground">Team execution initiatives and risk trends</p>
+          <p className="text-[12px] text-muted-foreground">Delivery and risk across the active projects</p>
         </div>
         {projects.length === 0 ? (
           <div className="p-4 text-[13px] text-muted-foreground">No active projects.</div>

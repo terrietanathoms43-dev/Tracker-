@@ -3,7 +3,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { NewRequestDialog } from "@/components/requests/new-request-dialog";
 import { RequestRow } from "@/components/requests/request-row";
-import { Panel } from "@/components/team/panel";
+import { Panel } from "@/components/dashboard/panel";
 import type { RequestStatus } from "@/lib/constants";
 import type { RequestListItem } from "@/lib/requests/types";
 

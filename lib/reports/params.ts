@@ -1,13 +1,23 @@
 import { z } from "zod";
 import { lastDays, type ReportRange } from "./range";
 
-// The report's state lives in the URL (`/reports?from&to`, `/reports/export?from&to&table`). These functions are
-// the only translation between the address and what lib/reports/data.ts is asked for.
+// The report's state lives in the URL (`/reports?from&to&cut`, `/reports/export?from&to&table`). These functions
+// are the only translation between the address and what lib/reports/data.ts is asked for.
 
 export const DEFAULT_RANGE_DAYS = 30;
 
-export const REPORT_TABLES = ["delivered", "open", "contributions", "teams"] as const;
+export const REPORT_TABLES = ["delivered", "open", "contributions"] as const;
 export type ReportTable = (typeof REPORT_TABLES)[number];
+
+/** The three views of the report: what admins, leaders and members each open on first. */
+export const REPORT_CUTS = ["exec", "leader", "member"] as const;
+export type ReportCut = (typeof REPORT_CUTS)[number];
+
+export const REPORT_CUT_LABELS: Record<ReportCut, string> = {
+  exec: "Executive health",
+  leader: "Workload",
+  member: "My work",
+};
 
 type Raw = Record<string, string | string[] | undefined>;
 
@@ -33,15 +43,27 @@ export function parseReportRange(raw: Raw, today: string): ReportRange {
 
 const tableSchema = z.enum(REPORT_TABLES);
 
-/** Which CSV the export route was asked for, or null when it isn't one of the four. */
+/** Which CSV the export route was asked for, or null when it isn't one of the three. */
 export function parseReportTable(raw: Raw): ReportTable | null {
   const parsed = tableSchema.safeParse(one(raw, "table"));
   return parsed.success ? parsed.data : null;
 }
 
-/** The address of the report page or one of its CSV exports. Both ends are always written, so a link is stable. */
-export function reportHref(base: "/reports" | "/reports/export", range: ReportRange, table?: ReportTable): string {
+const cutSchema = z.enum(REPORT_CUTS);
+
+/** The view in the address, or `fallback` (the role's own) when it isn't one of the three. */
+export function parseReportCut(raw: Raw, fallback: ReportCut): ReportCut {
+  const parsed = cutSchema.safeParse(one(raw, "cut"));
+  return parsed.success ? parsed.data : fallback;
+}
+
+/**
+ * The address of the report page or one of its CSV exports. Both ends are always written, so a link is stable;
+ * the page keeps its view (`cut`) across range changes.
+ */
+export function reportHref(base: "/reports" | "/reports/export", range: ReportRange, extra: { table?: ReportTable; cut?: ReportCut } = {}): string {
   const params = new URLSearchParams({ from: range.from, to: range.to });
-  if (table) params.set("table", table);
+  if (extra.table) params.set("table", extra.table);
+  if (extra.cut) params.set("cut", extra.cut);
   return `${base}?${params.toString()}`;
 }

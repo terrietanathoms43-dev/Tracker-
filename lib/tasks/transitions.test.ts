@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { needsInput, planTransition, type TaskState } from "./transitions";
 
 const now = new Date("2026-10-15T12:00:00Z");
-const task = (overrides: Partial<TaskState> = {}): TaskState => ({ status: "in_progress", startedAt: new Date("2026-10-01"), approverId: null, blockedReason: null, ...overrides });
+const task = (overrides: Partial<TaskState> = {}): TaskState => ({ status: "in_progress", startedAt: new Date("2026-10-01"), approverId: null, blockedReason: null, openComments: 0, ...overrides });
 const kinds = (plan: ReturnType<typeof planTransition>) => (plan.ok ? plan.activities.map((a) => a.kind) : plan.error);
 
 describe("status transitions (PLAN §5)", () => {
@@ -62,6 +62,16 @@ describe("status transitions (PLAN §5)", () => {
     const again = planTransition(task({ status: "not_started" }), "in_progress", {}, now);
     expect(again.ok && "startedAt" in again.patch).toBe(false);
     expect(kinds(again)).toEqual(["status_changed"]);
+  });
+
+  it("refuses to complete, or approve, a task while a comment is open", () => {
+    expect(planTransition(task({ openComments: 2 }), "completed", {}, now)).toEqual({ ok: false, error: "Resolve the 2 open comments before completing this task." });
+    expect(planTransition(task({ status: "awaiting_approval", approverId: "morgan", openComments: 1 }), "completed", {}, now, "approve")).toEqual({ ok: false, error: "Resolve the 1 open comment before completing this task." });
+    expect(planTransition(task({ openComments: 1 }), "completed", {}, now).ok).toBe(false);
+    expect(planTransition(task({ openComments: 0 }), "completed", {}, now).ok).toBe(true);
+    // Other moves are not held: a blocked or sent-back task with an open question is normal.
+    expect(planTransition(task({ openComments: 3 }), "blocked", { reason: "Waiting" }, now).ok).toBe(true);
+    expect(planTransition(task({ openComments: 3 }), "awaiting_approval", { approverId: "morgan" }, now).ok).toBe(true);
   });
 
   it("asking for the status it already has changes nothing", () => {

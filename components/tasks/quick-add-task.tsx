@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { CalendarDays, Plus, SlidersHorizontal, UsersRound } from "lucide-react";
+import { CalendarDays, Plus, SlidersHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -11,7 +11,6 @@ import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
-import type { AssigneeIds } from "@/lib/tasks/assignees";
 import { nameOf } from "@/lib/tasks/people";
 import { activeToken, mentionTargets, parseQuickAdd, removeTokens, suggest, type QuickAddParse, type QuickAddToken } from "@/lib/tasks/quick-add";
 import type { CreateDefaults, TaskFormOptions } from "@/lib/tasks/types";
@@ -51,13 +50,10 @@ function Toggle({ active, onClick, children, label }: { active: boolean; onClick
   );
 }
 
-/** Who the parsed title assigns, by name: "Sam Dev, Frontend". */
+/** Who the parsed title assigns, by name: "Sam Dev, You". */
 function assignedNames(parsed: QuickAddParse, options: TaskFormOptions | null): string[] {
   if (options === null) return [];
-  return [
-    ...parsed.people.map((id) => (id === options.viewerId ? "You" : nameOf(options.people.find((person) => person.id === id)))),
-    ...parsed.teams.map((id) => options.teams.find((team) => team.id === id)?.name ?? "A team"),
-  ];
+  return parsed.people.map((id) => (id === options.viewerId ? "You" : nameOf(options.people.find((person) => person.id === id))));
 }
 
 /**
@@ -81,7 +77,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const targets = useMemo(() => (options ? mentionTargets(options.people, options.teams) : []), [options]);
+  const targets = useMemo(() => (options ? mentionTargets(options.people) : []), [options]);
   const parsed = parseQuickAdd(text, targets);
   const tomorrow = addDays(today, 1);
   const effectivePriority = parsed.priority ?? priority;
@@ -130,9 +126,10 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
     setError(null);
   }
 
-  function assignment(read: QuickAddParse, viewerId: string | null): AssigneeIds {
-    if (read.people.length + read.teams.length > 0) return { assigneeIds: read.people, teamIds: read.teams };
-    return { assigneeIds: viewerId ? [viewerId] : [], teamIds: [] };
+  /** The people a parsed title assigns; without a mention the task is the creator's, as before. */
+  function assigneesOf(read: QuickAddParse, viewerId: string | null): string[] {
+    if (read.people.length > 0) return read.people;
+    return viewerId ? [viewerId] : [];
   }
 
   function submit() {
@@ -140,10 +137,10 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
     startTransition(async () => {
       // Mentions can only be read once the people are known: an Enter that beats them waits and reads again.
       const ready = options ?? (await loadTaskFormOptions()).options;
-      const read = options ? parsed : parseQuickAdd(text, ready ? mentionTargets(ready.people, ready.teams) : []);
+      const read = options ? parsed : parseQuickAdd(text, ready ? mentionTargets(ready.people) : []);
       const result = await createTask({
         title: read.title,
-        ...assignment(read, ready?.viewerId ?? null),
+        assigneeIds: assigneesOf(read, ready?.viewerId ?? null),
         projectId,
         goalId: defaults.goalId ?? "",
         priority: read.priority ?? priority,
@@ -161,7 +158,6 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
   }
 
   function moreOptions() {
-    const typed = parsed.people.length + parsed.teams.length > 0;
     openCreate(
       {
         ...defaults,
@@ -169,7 +165,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
         title: parsed.title,
         priority: effectivePriority,
         dueDate: effectiveDue,
-        ...(typed ? { assignment: { assigneeIds: parsed.people, teamIds: parsed.teams } } : {}),
+        ...(parsed.people.length > 0 ? { assigneeIds: parsed.people } : {}),
       },
       reset,
     );
@@ -255,9 +251,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
                 onMouseMove={() => setHighlight(index)}
                 className={cn("flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-base", index === active && "bg-accent")}
               >
-                {suggestion.kind === "team" ? (
-                  <UsersRound className="size-4 text-muted-foreground" aria-hidden />
-                ) : suggestion.kind === "due" ? (
+                {suggestion.kind === "due" ? (
                   <CalendarDays className="size-4 text-muted-foreground" aria-hidden />
                 ) : suggestion.kind === "priority" ? (
                   <span className={cn("size-2 rounded-full", PRIORITIES.find((each) => `!${each.value}` === suggestion.insert)?.dot)} aria-hidden />
@@ -376,7 +370,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
               ) : null}
               {parsed.unmatched.length > 0 ? (
                 <span>
-                  {parsed.unmatched.join(", ")} {parsed.unmatched.length === 1 ? "doesn't" : "don't"} name one person or team, so{" "}
+                  {parsed.unmatched.join(", ")} {parsed.unmatched.length === 1 ? "doesn't" : "don't"} name one person, so{" "}
                   {parsed.unmatched.length === 1 ? "it stays" : "they stay"} in the title.
                 </span>
               ) : null}

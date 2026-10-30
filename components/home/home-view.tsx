@@ -12,7 +12,7 @@ import { attentionTasks, approvalStagingTasks, myWorkTasks, taskCounts, workload
 import type { HomeTabConfig } from "@/lib/home-tabs";
 import type { Membership } from "@/lib/dal/orgs";
 import { isAdmin, isLeader, isStakeholder, type Viewer } from "@/lib/permissions";
-import { DEFAULT_PERIOD, periodStart } from "@/lib/team/period";
+import { DEFAULT_PERIOD, periodStart } from "@/lib/dashboard/period";
 import { dayKey, greetingFor } from "@/lib/time";
 import type { SessionUser } from "@/lib/viewer";
 

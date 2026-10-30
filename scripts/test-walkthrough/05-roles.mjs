@@ -37,8 +37,9 @@ try {
   // --- stakeholder ------------------------------------------------------------------------------------------------
   const taylor = (browsers.taylor = await openBrowser({ role: "stakeholder", width: 390, height: 844 }));
   for (const path of ["/home?view=list", "/my-work", "/goals", "/projects", "/members", "/reports"]) {
-    await taylor.goto(path, 4000);
-    step(`a stakeholder asking for ${path} is sent home`, (await taylor.path()).startsWith("/home"), await taylor.path());
+    await taylor.goto(path, 2000);
+    // The redirect streams in after the prerendered shell, so wait for the address rather than reading it at once.
+    step(`a stakeholder asking for ${path} is sent home`, await taylor.waitForPath("/home", 20_000), await taylor.path());
   }
   await taylor.goto(`/tasks/${rows.convertedTask.id}`, 6000);
   step("a stakeholder reads the task made from her request", await taylor.waitFor("Next action"));
@@ -67,7 +68,7 @@ try {
   await jordan.goto(`/tasks/${rows.awaitingTask.id}`, 5000);
   step("a member who is not the approver sees no Approve button", (await jordan.waitFor("Next action")) && !(await buttonTexts(jordan)).some((text) => text === "Approve"));
   await jordan.goto("/members", 5000);
-  step("a member reads the Members page without New team or Invite people", (await jordan.waitFor("Frontend")) && !(await buttonTexts(jordan)).some((text) => /^(New team|Invite people)$/.test(text)));
+  step("a member reads the Members page without Invite people", (await jordan.waitFor("Sam Dev")) && !(await buttonTexts(jordan)).some((text) => /^Invite people$/.test(text)));
 
   // --- leader -----------------------------------------------------------------------------------------------------
   const morgan = (browsers.morgan = await openBrowser({ role: "leader", width: 1280, height: 900 }));
@@ -94,7 +95,7 @@ try {
   const csv = await riley.evaluate(`fetch("/reports/export?table=delivered").then((r) => r.text())`);
   step("another workspace's CSV export holds none of ours", typeof csv === "string" && !csv.includes(rows.completedTitle), (csv ?? "").slice(0, 80));
   await riley.goto("/members", 5000);
-  step("another workspace's Members page shows only its own people and teams", (await riley.waitFor("Members")) && !(await riley.has("Jordan Dev")) && !(await riley.has("Frontend")) && (await riley.has("Casey Other")));
+  step("another workspace's Members page shows only its own people", (await riley.waitFor("Members")) && !(await riley.has("Jordan Dev")) && (await riley.has("Casey Other")));
 } catch (error) {
   await stoppedOn(error, "05", browsers);
   step("flow ran to the end", false);

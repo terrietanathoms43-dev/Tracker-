@@ -20,14 +20,12 @@ export const LIMITS = {
   /** Anything longer is not a link a person would click; http(s) is checked on top of this. */
   url: 2_048,
 
-  // Goals, projects and teams
+  // Goals and projects
   goalTitle: 200,
   goalDescription: 4_000,
   successCriteria: 2_000,
   projectName: 200,
   projectDescription: 4_000,
-  teamName: 60,
-  teamDescription: 500,
 
   // Workspace and people
   workspaceName: 80,

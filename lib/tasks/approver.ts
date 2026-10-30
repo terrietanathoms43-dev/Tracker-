@@ -5,7 +5,7 @@ import type { OrgRole } from "@/lib/constants";
 /**
  * The task's current approver, else the first leader who isn't assigned to it, else an admin who isn't, else any
  * leader or admin. Leaders come before admins because they are the people who sign off day-to-day work. Only the
- * people assigned directly are excluded: a leader in an assigned team may still approve the team's work.
+ * people assigned are excluded.
  */
 export function defaultApproverFor(people: { id: string; role: OrgRole }[], approverId: string | null, assigneeIds: readonly string[]): string | null {
   if (approverId) return approverId;

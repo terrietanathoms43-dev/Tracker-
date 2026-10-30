@@ -22,7 +22,6 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -33,7 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { TASK_STATUS_LABELS, TASK_STATUSES } from "@/lib/constants";
-import type { AssigneeIds } from "@/lib/tasks/assignees";
+import { idsOf } from "@/lib/tasks/assignees";
 import type { TaskFormOptions, TaskListItem } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneePicker } from "./assignee-picker";
@@ -81,10 +80,7 @@ function useSave(onClose: () => void) {
 function AssignDialog({ task, onClose }: { task: TaskListItem; onClose: () => void }) {
   const options = useFormOptions(true);
   const { pending, save } = useSave(onClose);
-  const [assignees, setAssigneeIds] = useState<AssigneeIds>({
-    assigneeIds: task.assignees.people.map((p) => p.id),
-    teamIds: task.assignees.teams.map((t) => t.id),
-  });
+  const [assigneeIds, setAssigneeIds] = useState<string[]>(() => idsOf(task.assignees));
   return (
     <Dialog open onOpenChange={(o) => (o ? undefined : onClose())}>
       <DialogContent>
@@ -94,9 +90,9 @@ function AssignDialog({ task, onClose }: { task: TaskListItem; onClose: () => vo
         </DialogHeader>
         <AssigneePicker
           label="Assigned to"
-          value={assignees}
+          value={assigneeIds}
           onChange={setAssigneeIds}
-          options={options}
+          options={options ? { people: options.people, viewerId: options.viewerId } : null}
           disabled={pending}
           className="w-full max-w-none justify-start"
         />
@@ -104,7 +100,7 @@ function AssignDialog({ task, onClose }: { task: TaskListItem; onClose: () => vo
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={pending || options === null} onClick={() => save(() => setAssignees({ taskId: task.id, ...assignees }))}>
+          <Button disabled={pending || options === null} onClick={() => save(() => setAssignees({ taskId: task.id, assigneeIds }))}>
             Save
           </Button>
         </DialogFooter>
@@ -199,10 +195,9 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
     void getTaskFormOptions().then((result) => (result.ok ? setOptions(result.data) : toast.error(result.error)));
   };
 
-  const current: AssigneeIds = { assigneeIds: task.assignees.people.map((p) => p.id), teamIds: task.assignees.teams.map((t) => t.id) };
-  const assign = (next: AssigneeIds) =>
-    startTransition(async () => void toastResult(await setAssignees({ taskId: task.id, ...next })));
-  const toggleAssignee = (ids: string[], id: string, on: boolean) => (on ? [...ids, id] : ids.filter((x) => x !== id));
+  const current = idsOf(task.assignees);
+  const assign = (assigneeIds: string[]) => startTransition(async () => void toastResult(await setAssignees({ taskId: task.id, assigneeIds })));
+  const toggleAssignee = (id: string, on: boolean) => (on ? [...current, id] : current.filter((x) => x !== id));
   const attach = (field: "goalId" | "projectId", value: string) =>
     startTransition(async () => void toastResult(await editTask({ taskId: task.id, field, value })));
 
@@ -242,36 +237,17 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
               {options === null ? (
                 <DropdownMenuItem disabled>Loading…</DropdownMenuItem>
               ) : (
-                <>
-                  <DropdownMenuLabel>People</DropdownMenuLabel>
-                  {options.people.map((person) => (
-                    // preventDefault keeps the menu open, so several people can be checked in one visit.
-                    <DropdownMenuCheckboxItem
-                      key={person.id}
-                      checked={current.assigneeIds.includes(person.id)}
-                      onSelect={(event) => event.preventDefault()}
-                      onCheckedChange={(on) =>
-                        assign({ assigneeIds: toggleAssignee(current.assigneeIds, person.id, on), teamIds: current.teamIds })
-                      }
-                    >
-                      {person.name}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel>Teams</DropdownMenuLabel>
-                  {options.teams.map((team) => (
-                    <DropdownMenuCheckboxItem
-                      key={team.id}
-                      checked={current.teamIds.includes(team.id)}
-                      onSelect={(event) => event.preventDefault()}
-                      onCheckedChange={(on) =>
-                        assign({ assigneeIds: current.assigneeIds, teamIds: toggleAssignee(current.teamIds, team.id, on) })
-                      }
-                    >
-                      {team.name}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </>
+                options.people.map((person) => (
+                  // preventDefault keeps the menu open, so several people can be checked in one visit.
+                  <DropdownMenuCheckboxItem
+                    key={person.id}
+                    checked={current.includes(person.id)}
+                    onSelect={(event) => event.preventDefault()}
+                    onCheckedChange={(on) => assign(toggleAssignee(person.id, on))}
+                  >
+                    {person.name}
+                  </DropdownMenuCheckboxItem>
+                ))
               )}
             </DropdownMenuSubContent>
           </DropdownMenuSub>

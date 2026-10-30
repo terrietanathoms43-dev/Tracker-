@@ -1,6 +1,7 @@
 // Every screen as every persona (docs/PLAN.md §2): no error or blank page, no console errors, no horizontal
 // overflow, redirects land where the role allows, and a screenshot of each. Desktop light for all six personas,
-// phone dark for a member and a stakeholder, and the public pages signed out.
+// phone dark for a member and a stakeholder, and the public pages signed out. Also: the sidebar offers Reports to
+// workers and not to a stakeholder, and the old team addresses land on Members.
 //
 // Usage: node scripts/test-walkthrough/02-pages.mjs [--only=workers,stakeholder,other,public] [--base=http://localhost:3021]
 import { closePool, finish, only, pageBroken, query, step, withBrowser } from "./lib.mjs";
@@ -14,8 +15,8 @@ const one = async (sql) => (await query(sql))[0];
 const ids = {
   task: (await one(`select id from tasks where org_id = (${org}) and request_id is null and status = 'in_progress' order by created_at limit 1`))?.id,
   project: (await one(`select id from projects where org_id = (${org}) and status = 'active' limit 1`))?.id,
-  goal: (await one(`select id from goals where org_id = (${org}) and status = 'active' limit 1`))?.id,
-  team: (await one(`select id from teams where org_id = (${org}) order by name limit 1`))?.id,
+  goal: (await one(`select id from goals where org_id = (${org}) and status = 'active' and parent_goal_id is null limit 1`))?.id,
+  subGoal: (await one(`select id from goals where org_id = (${org}) and parent_goal_id is not null limit 1`))?.id,
   request: (await one(`select r.id from requests r join users u on u.id = r.requester_id where r.org_id = (${org}) and u.email <> 'taylor@trackwise.test' limit 1`))?.id,
   taylorRequest: (await one(`select r.id from requests r join users u on u.id = r.requester_id where r.org_id = (${org}) and u.email = 'taylor@trackwise.test' and r.converted_task_id is not null limit 1`))?.id,
 };
@@ -27,17 +28,20 @@ const WORKER_SCREENS = [
   "/home",
   "/my-work",
   "/home?view=list",
+  "/home?view=list&assignee=me&due=overdue",
   "/home?view=board",
   `/tasks/${ids.task}`,
   "/home?view=projects",
   `/projects/${ids.project}`,
   "/goals",
   `/goals/${ids.goal}`,
+  `/goals/${ids.subGoal}`,
   "/members",
-  `/teams/${ids.team}`,
   "/requests",
   `/requests/${ids.request}`,
   "/reports",
+  "/reports?cut=exec",
+  "/reports?cut=member",
   "/notifications",
   "/settings",
   "/settings/workspace",
@@ -46,14 +50,17 @@ const WORKER_SCREENS = [
 /** A stakeholder's screens, and where the worker-only ones send her. */
 const STAKEHOLDER_SCREENS = ["/home", "/requests", `/requests/${ids.taylorRequest}`, `/tasks/${ids.convertedTask}`, "/notifications", "/settings", "/settings/workspace"];
 const STAKEHOLDER_REDIRECTS = ["/my-work", "/home?view=list", "/projects", "/goals", "/members", "/reports"];
-const STAKEHOLDER_NOT_FOUND = [`/tasks/${ids.task}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/teams/${ids.team}`, `/requests/${ids.request}`];
+const STAKEHOLDER_NOT_FOUND = [`/tasks/${ids.task}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/requests/${ids.request}`];
 /** Riley's own screens, and the Trackwise Demo ids that must be invisible to Other Co. */
 const OTHER_SCREENS = ["/home", "/my-work", "/home?view=list", "/projects", "/goals", "/members", "/requests", "/reports", "/settings/workspace"];
-const OTHER_NOT_FOUND = [`/tasks/${ids.task}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/teams/${ids.team}`, `/requests/${ids.request}`];
+const OTHER_NOT_FOUND = [`/tasks/${ids.task}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/goals/${ids.subGoal}`, `/requests/${ids.request}`];
 const PUBLIC_SCREENS = ["/", "/login", "/login/check-email", "/invite/not-a-token"];
 
 const slug = (path) => path.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60) || "root";
 const pathOnly = (address) => address.split("?")[0];
+
+/** The labels in the main navigation (the sidebar on desktop). */
+const navLabels = (browser) => browser.evaluate(`[...document.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.textContent.trim())`);
 
 /** Opens a screen and checks it rendered as a real page: not Next's error or not-found page, not blank, no errors, no overflow. */
 async function sweep(browser, role, size, path, { expectNotFound = false } = {}) {
@@ -81,6 +88,14 @@ if (only("workers")) {
   for (const [role, size, viewport] of visits) {
     await withBrowser({ role, ...viewport }, async (browser) => {
       for (const path of WORKER_SCREENS) await sweep(browser, role, size, path);
+      if (size === "desktop") {
+        await browser.goto("/home", 3000);
+        const labels = await navLabels(browser);
+        step(`${role} sees Reports in the main navigation`, Array.isArray(labels) && labels.includes("Reports"), JSON.stringify(labels));
+        step(`${role}'s navigation has no team entry`, Array.isArray(labels) && !labels.some((label) => /team/i.test(label)), JSON.stringify(labels));
+        const landed = pathOnly(await browser.goto("/teams/not-a-team-any-more", 3000));
+        step(`${role}: an old team address lands on Members`, landed === "/members", `landed ${landed}`);
+      }
     });
   }
 }
@@ -90,6 +105,8 @@ if (only("stakeholder")) {
   for (const [size, viewport] of [["desktop", DESKTOP]]) {
     await withBrowser({ role: "stakeholder", ...viewport }, async (browser) => {
       for (const path of STAKEHOLDER_SCREENS) await sweep(browser, "stakeholder", size, path);
+      const labels = await navLabels(browser);
+      step("a stakeholder's navigation has no Reports", Array.isArray(labels) && !labels.includes("Reports"), JSON.stringify(labels));
       for (const path of STAKEHOLDER_REDIRECTS) {
         const landed = pathOnly(await browser.goto(path, 3000));
         step(`stakeholder ${size} ${path} → /home`, landed === "/home", `landed ${landed}`);

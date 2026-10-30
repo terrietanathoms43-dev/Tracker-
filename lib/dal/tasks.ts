@@ -6,7 +6,6 @@ import { goals, projects, requests, taskActivity, taskLinks, tasks, users } from
 import { CLOSED_STATUSES, DUE_SOON_DAYS, RECENTLY_FINISHED_DAYS, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { assignmentOf } from "@/lib/dal/assignments";
 import { listWorkers } from "@/lib/dal/orgs";
-import { teamOptions } from "@/lib/dal/teams";
 import { canDeleteTask, isStakeholder, type TaskScope, type Viewer } from "@/lib/permissions";
 import { BOARD_STATUSES, toBoardColumns, type BoardColumns } from "@/lib/tasks/board";
 import type { TaskFilters, TaskSort } from "@/lib/tasks/filters";
@@ -15,6 +14,7 @@ import { groupMyWork, resumeOrder, type MyWorkGroups, type MyWorkRow } from "@/l
 import type {
   ActivityFeedItem,
   EvidenceLink,
+  GoalOption,
   Person,
   PersonOption,
   TaskCounts,
@@ -23,7 +23,6 @@ import type {
   TaskListItem,
   TaskPage,
   TaskProgress,
-  TeamRef,
   WorkloadRow,
 } from "@/lib/tasks/types";
 import { dayKey } from "@/lib/time";
@@ -31,11 +30,12 @@ import { dayKey } from "@/lib/time";
 // Every read of tasks, for every screen: lists, the board, My Work, the task page, and the counts, progress,
 // workload and feeds that Home, Members, Projects, Goals and Reports build on. Each function takes the Viewer and
 // filters by its workspace in SQL; stakeholders only ever see the tasks made from their own requests.
-// Assignment is a set (task_assignees + task_teams): every row carries it as JSON, so no list joins people.
+// Assignment is a set of people (task_assignees): every row carries it as JSON, so no list joins people.
 
 const CLOSED = [...CLOSED_STATUSES];
 const creatorUser = alias(users, "creator_user");
 const approverUser = alias(users, "approver_user");
+const parentGoal = alias(goals, "parent_goal");
 
 /** The tenancy boundary for tasks: this workspace, and for stakeholders only tasks from their own requests. */
 function visibility(viewer: Viewer): SQL {
@@ -51,29 +51,30 @@ const todayFor = (viewer: Viewer) => dayKey(new Date(), viewer.timezone);
 const isOpen = notInArray(tasks.status, CLOSED);
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, (match) => `\\${match}`);
 
-/** Tasks linked to a goal directly, or through a project that serves it. */
+/** The goal itself and its sub-goals (one level, docs/PLAN.md 2026-10-30 log): what "under this goal" means. */
+const goalFamily = (viewer: Viewer, goalId: string) =>
+  sql`(select ${goals.id} from ${goals} where ${goals.orgId} = ${viewer.orgId} and (${goals.id} = ${goalId} or ${goals.parentGoalId} = ${goalId}))`;
+
+/** Tasks serving a goal: linked to it or a sub-goal of it directly, or through a project under either. */
 function inGoal(viewer: Viewer, goalId: string): SQL {
+  const family = goalFamily(viewer, goalId);
   return or(
-    eq(tasks.goalId, goalId),
-    sql`${tasks.projectId} in (select ${projects.id} from ${projects} where ${projects.goalId} = ${goalId} and ${projects.orgId} = ${viewer.orgId})`,
+    sql`${tasks.goalId} in ${family}`,
+    sql`${tasks.projectId} in (select ${projects.id} from ${projects} where ${projects.goalId} in ${family} and ${projects.orgId} = ${viewer.orgId})`,
   )!;
 }
 
-// --- assignment, in SQL --------------------------------------------------------------------------------------
+// --- assignment and comments, in SQL --------------------------------------------------------------------------
 
 /** The people on the task, as JSON, alphabetically (reports select it too). */
 export const assigneesJson = sql<Person[]>`coalesce((select json_agg(json_build_object('id', u.id, 'name', u.name, 'email', u.email, 'image', u.image) order by u.name nulls last, u.email) from task_assignees ta join users u on u.id = ta.user_id where ta.task_id = ${tasks.id}), '[]'::json)`;
-/** The teams on the task, as JSON, alphabetically. */
-export const teamsJson = sql<TeamRef[]>`coalesce((select json_agg(json_build_object('id', tm.id, 'name', tm.name) order by tm.name) from task_teams tt join teams tm on tm.id = tt.team_id where tt.task_id = ${tasks.id}), '[]'::json)`;
 
-const assignedDirectly = (userId: string) => sql`exists (select 1 from task_assignees ta where ta.task_id = ${tasks.id} and ta.user_id = ${userId})`;
-const assignedViaTeam = (userId: string) =>
-  sql`exists (select 1 from task_teams tt join team_members tm on tm.team_id = tt.team_id where tt.task_id = ${tasks.id} and tm.user_id = ${userId})`;
-/** Assigned to the person directly, or through a team they are in. */
-const assignedTo = (userId: string) => or(assignedDirectly(userId), assignedViaTeam(userId))!;
-const assignedToTeam = (teamId: string) => sql`exists (select 1 from task_teams tt where tt.task_id = ${tasks.id} and tt.team_id = ${teamId})`;
-/** Nobody and no team. */
-const unassigned = sql`not exists (select 1 from task_assignees ta where ta.task_id = ${tasks.id}) and not exists (select 1 from task_teams tt where tt.task_id = ${tasks.id})`;
+const assignedTo = (userId: string) => sql`exists (select 1 from task_assignees ta where ta.task_id = ${tasks.id} and ta.user_id = ${userId})`;
+/** Nobody. */
+const unassigned = sql`not exists (select 1 from task_assignees ta where ta.task_id = ${tasks.id})`;
+
+/** Comments nobody has resolved: while there are any, the task can't be completed (lib/tasks/transitions.ts). */
+const openCommentsSql = sql<number>`(select count(*)::int from task_updates u where u.task_id = ${tasks.id} and u.kind = 'comment' and u.resolved_at is null)`;
 
 // --- list rows -----------------------------------------------------------------------------------------------
 
@@ -89,7 +90,6 @@ const listColumns = {
   projectId: projects.id,
   projectName: projects.name,
   assignees: assigneesJson,
-  teams: teamsJson,
 };
 
 type ListRow = {
@@ -104,7 +104,6 @@ type ListRow = {
   projectId: string | null;
   projectName: string | null;
   assignees: Person[];
-  teams: TeamRef[];
 };
 
 function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
@@ -119,7 +118,7 @@ function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
     nextAction: row.nextAction,
     updatedAt: row.updatedAt.toISOString(),
     project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
-    assignees: { people: row.assignees, teams: row.teams },
+    assignees: row.assignees,
   };
 }
 
@@ -162,7 +161,6 @@ function filterConditions(viewer: Viewer, filters: TaskFilters, today: string): 
   if (filters.assignee === "me") where.push(assignedTo(viewer.userId));
   else if (filters.assignee === "none") where.push(unassigned);
   else if (filters.assignee) where.push(assignedTo(filters.assignee));
-  if (filters.team) where.push(assignedToTeam(filters.team));
   if (filters.priority) where.push(eq(tasks.priority, filters.priority));
   if (filters.project === "none") where.push(isNull(tasks.projectId));
   else if (filters.project) where.push(eq(tasks.projectId, filters.project));
@@ -206,7 +204,7 @@ export async function listTasks(viewer: Viewer, filters: TaskFilters, options: {
 }
 
 /**
- * The board (`/tasks?view=board`): the same filters as the list, split into five status columns. Completed shows
+ * The board (`/home?view=board`): the same filters as the list, split into five status columns. Completed shows
  * only the last RECENTLY_FINISHED_DAYS days; a status filter narrows the board to those columns.
  */
 export async function boardTasks(viewer: Viewer, filters: TaskFilters, options: { today: string }): Promise<BoardColumns> {
@@ -257,7 +255,7 @@ export async function attentionTasks(viewer: Viewer, today: string, limit = 50):
       ),
     );
   const items = rows.map((row) => {
-    const nobody = row.assignees.length === 0 && row.teams.length === 0;
+    const nobody = row.assignees.length === 0;
     const reason =
       row.dueDate !== null && row.dueDate < today
         ? "Overdue"
@@ -287,8 +285,10 @@ export type ApprovalStagingTask = {
   nextAction: string | null;
   approverId: string | null;
   project: { id: string; name: string } | null;
-  assignees: { people: Person[]; teams: TeamRef[] };
+  assignees: Person[];
   evidence: { url: string; label: string | null }[];
+  /** Open comments: approving is refused until they are resolved. */
+  openComments: number;
 };
 
 /**
@@ -310,7 +310,7 @@ export async function approvalStagingTasks(viewer: Viewer): Promise<ApprovalStag
       projectId: projects.id,
       projectName: projects.name,
       people: assigneesJson,
-      teams: teamsJson,
+      openComments: openCommentsSql,
       evidence: sql<{ url: string; label: string | null }[]>`coalesce((select json_agg(json_build_object('url', l.url, 'label', l.label) order by l.created_at) from task_links l where l.task_id = ${tasks.id}), '[]'::json)`,
     })
     .from(tasks)
@@ -329,22 +329,21 @@ export async function approvalStagingTasks(viewer: Viewer): Promise<ApprovalStag
     nextAction: row.nextAction,
     approverId: row.approverId,
     project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
-    assignees: { people: row.people, teams: row.teams },
+    assignees: row.people,
     evidence: row.evidence,
+    openComments: row.openComments,
   }));
 }
 
 /**
- * Everything My Work groups, in one query: my open work and my recently finished work (assigned to me directly
- * or through one of my teams), and approvals I owe. Team work that isn't also mine directly says which team.
+ * Everything My Work groups, in one query: my open work and my recently finished work, and approvals I owe.
  */
 export async function myWorkRows(viewer: Viewer): Promise<MyWorkRow[]> {
   const me = viewer.userId;
   const rows = await db
     .select({
       ...listColumns,
-      direct: sql<boolean>`${assignedDirectly(me)}`,
-      viaTeams: sql<string[]>`coalesce((select json_agg(tm.name order by tm.name) from task_teams tt join teams tm on tm.id = tt.team_id join team_members m on m.team_id = tt.team_id where tt.task_id = ${tasks.id} and m.user_id = ${me}), '[]'::json)`,
+      mine: sql<boolean>`${assignedTo(me)}`,
       approverId: tasks.approverId,
       sortRank: tasks.sortRank,
       completedAt: tasks.completedAt,
@@ -361,19 +360,14 @@ export async function myWorkRows(viewer: Viewer): Promise<MyWorkRow[]> {
         ),
       ),
     );
-  return rows.map((row) => {
-    const mine = row.direct || row.viaTeams.length > 0;
-    const item = toListItem(row, viewer);
-    if (mine && !row.direct) item.via = row.viaTeams.join(", ");
-    return {
-      item,
-      approverId: row.approverId,
-      mine,
-      sortRank: row.sortRank,
-      completedAt: row.completedAt,
-      sentBack: row.status === "in_progress" && row.lastStatusKind === "sent_back",
-    };
-  });
+  return rows.map((row) => ({
+    item: toListItem(row, viewer),
+    approverId: row.approverId,
+    mine: row.mine,
+    sortRank: row.sortRank,
+    completedAt: row.completedAt,
+    sentBack: row.status === "in_progress" && row.lastStatusKind === "sent_back",
+  }));
 }
 
 /** My Work's four groups (Needs attention · Continue working · Waiting on others · Recently finished). */
@@ -389,7 +383,7 @@ export async function myWorkTasks(viewer: Viewer): Promise<TaskListItem[]> {
   return resumeOrder(await myWorkGroups(viewer, todayFor(viewer)));
 }
 
-// --- projects, goals, teams, counts, workload ---------------------------------------------------------------
+// --- projects, goals, counts, workload ---------------------------------------------------------------------
 
 const groupedOrder = (today: string) => [sql`(${tasks.status} in ('completed', 'rejected'))`, ...orderBy("smart", today)];
 
@@ -402,21 +396,12 @@ export async function tasksForProject(viewer: Viewer, projectId: string): Promis
   return rows.map((row) => toListItem(row, viewer));
 }
 
-/** Every task serving a goal: linked to it directly, or through one of its projects (open first). */
+/** Every task serving a goal: linked to it or one of its sub-goals directly, or through a project under either (open first). */
 export async function tasksForGoal(viewer: Viewer, goalId: string): Promise<TaskListItem[]> {
   const rows = await selectList()
     .where(and(visibility(viewer), inGoal(viewer, goalId)))
     .orderBy(...groupedOrder(todayFor(viewer)))
     .limit(500);
-  return rows.map((row) => toListItem(row, viewer));
-}
-
-/** The open tasks a team is assigned to, in the smart order (the team page). */
-export async function openTasksForTeam(viewer: Viewer, teamId: string, limit = 100): Promise<TaskListItem[]> {
-  const rows = await selectList()
-    .where(and(visibility(viewer), isOpen, assignedToTeam(teamId)))
-    .orderBy(...orderBy("smart", todayFor(viewer)))
-    .limit(limit);
   return rows.map((row) => toListItem(row, viewer));
 }
 
@@ -441,25 +426,38 @@ function tallyProgress(rows: ProgressRow[], keys: string[], today: string): Map<
 }
 
 /**
- * Progress per goal (completed / total, plus blocked and overdue), counting tasks linked directly and through the
- * goal's projects. Rejected tasks are left out of the total: they will never be completed. Every id asked for
- * gets an entry, zeros included.
+ * Progress per goal (completed / total, plus blocked and overdue), counting tasks linked directly, through the
+ * goal's projects, and through its sub-goals (and their projects). Rejected tasks are left out of the total: they
+ * will never be completed. Every id asked for gets an entry, zeros included.
  */
 export async function progressForGoals(viewer: Viewer, goalIds: string[]): Promise<Map<string, TaskProgress>> {
   if (goalIds.length === 0) return new Map();
+  // A sub-goal's tasks count for the sub-goal and roll up into its parent.
+  const children = await db
+    .select({ id: goals.id, parentGoalId: goals.parentGoalId })
+    .from(goals)
+    .where(and(eq(goals.orgId, viewer.orgId), inArray(goals.parentGoalId, goalIds)));
+  const parentOf = new Map(children.map((child) => [child.id, child.parentGoalId!]));
+  const allIds = [...new Set([...goalIds, ...parentOf.keys()])];
   const base = { taskId: tasks.id, status: tasks.status, dueDate: tasks.dueDate };
   const [direct, viaProject] = await Promise.all([
     db
       .select({ ...base, key: tasks.goalId })
       .from(tasks)
-      .where(and(visibility(viewer), ne(tasks.status, "rejected"), inArray(tasks.goalId, goalIds))),
+      .where(and(visibility(viewer), ne(tasks.status, "rejected"), inArray(tasks.goalId, allIds))),
     db
       .select({ ...base, key: projects.goalId })
       .from(tasks)
       .innerJoin(projects, and(eq(projects.id, tasks.projectId), eq(projects.orgId, viewer.orgId)))
-      .where(and(visibility(viewer), ne(tasks.status, "rejected"), inArray(projects.goalId, goalIds))),
+      .where(and(visibility(viewer), ne(tasks.status, "rejected"), inArray(projects.goalId, allIds))),
   ]);
-  const rows = [...direct, ...viaProject].filter((row): row is ProgressRow => row.key !== null);
+  const rows: ProgressRow[] = [];
+  for (const row of [...direct, ...viaProject]) {
+    if (row.key === null) continue;
+    if (goalIds.includes(row.key)) rows.push({ ...row, key: row.key });
+    const parent = parentOf.get(row.key);
+    if (parent !== undefined && goalIds.includes(parent)) rows.push({ ...row, key: parent });
+  }
   return tallyProgress(rows, goalIds, todayFor(viewer));
 }
 
@@ -498,9 +496,8 @@ export async function taskCounts(viewer: Viewer, options: { today: string; since
 }
 
 /**
- * Open work per person, assigned to them directly (Home's Workload): every worker, even with nothing assigned,
- * then an "Unassigned" row (person null) when open work has nobody and no team on it. A task with three people on
- * it is in three rows; work assigned to a team is the team's row on the Members page, not each member's.
+ * Open work per person (Home's Workload): every worker, even with nothing assigned, then an "Unassigned" row
+ * (person null) when open work has nobody on it. A task with three people on it is in three rows.
  */
 export async function workload(viewer: Viewer): Promise<WorkloadRow[]> {
   if (isStakeholder(viewer)) return [];
@@ -515,8 +512,8 @@ export async function workload(viewer: Viewer): Promise<WorkloadRow[]> {
   const people = new Map<string, Person>();
   for (const row of rows) {
     const item = toListItem(row, viewer);
-    if (item.assignees.people.length === 0 && item.assignees.teams.length === 0) byPerson.set(null, [...(byPerson.get(null) ?? []), item]);
-    for (const person of item.assignees.people) {
+    if (item.assignees.length === 0) byPerson.set(null, [...(byPerson.get(null) ?? []), item]);
+    for (const person of item.assignees) {
       people.set(person.id, person);
       byPerson.set(person.id, [...(byPerson.get(person.id) ?? []), item]);
     }
@@ -589,10 +586,9 @@ export async function recentActivity(viewer: Viewer, limit: number, since?: Date
 type PersonColumns = { id: AnyPgColumn; name: AnyPgColumn; email: AnyPgColumn; image: AnyPgColumn };
 const personJson = (table: PersonColumns) => sql`json_build_object('id', ${table.id}, 'name', ${table.name}, 'email', ${table.email}, 'image', ${table.image})`;
 
-const scopeOf = (task: { orgId: string; createdBy: string; approverId: string | null }, assignees: Person[] | string[], teams: TeamRef[] | string[], requesterId: string | null): TaskScope => ({
+const scopeOf = (task: { orgId: string; createdBy: string; approverId: string | null }, assignees: Person[] | string[], requesterId: string | null): TaskScope => ({
   orgId: task.orgId,
   assigneeIds: assignees.map((each) => (typeof each === "string" ? each : each.id)),
-  teamIds: teams.map((each) => (typeof each === "string" ? each : each.id)),
   createdBy: task.createdBy,
   approverId: task.approverId,
   requesterId,
@@ -608,7 +604,7 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
       requestTitle: requests.title,
       requesterId: requests.requesterId,
       assignees: assigneesJson,
-      teams: teamsJson,
+      openComments: openCommentsSql,
       approver: sql<Person | null>`case when ${approverUser.id} is null then null else ${personJson(approverUser)} end`,
       creator: sql<Person>`${personJson(creatorUser)}`,
       lastUpdate: sql<{ author: Person; at: string } | null>`(select json_build_object('at', u.created_at, 'author', json_build_object('id', au.id, 'name', au.name, 'email', au.email, 'image', au.image)) from task_updates u join users au on au.id = u.author_id where u.task_id = ${tasks.id} and u.kind = 'progress' order by u.created_at desc limit 1)`,
@@ -632,7 +628,7 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     project: t.projectId && row.projectName ? { id: t.projectId, name: row.projectName } : null,
     goal: t.goalId && row.goalTitle ? { id: t.goalId, title: row.goalTitle } : null,
     request: t.requestId && row.requestTitle ? { id: t.requestId, title: row.requestTitle } : null,
-    assignees: { people: row.assignees, teams: row.teams },
+    assignees: row.assignees,
     approver: row.approver,
     creator: row.creator,
     createdAt: t.createdAt.toISOString(),
@@ -645,9 +641,10 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     latestProgress: t.latestProgress,
     nextAction: t.nextAction,
     completionSummary: t.completionSummary,
+    openComments: row.openComments,
     lastUpdate: row.lastUpdate ? { author: row.lastUpdate.author, at: new Date(row.lastUpdate.at).toISOString() } : null,
   };
-  return { detail, scope: scopeOf(t, row.assignees, row.teams, row.requesterId) };
+  return { detail, scope: scopeOf(t, row.assignees, row.requesterId) };
 }
 
 /** A task's basics and permission scope: for read actions and the Update progress form. */
@@ -664,18 +661,17 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
       blockedBy: tasks.blockedBy,
       requesterId: requests.requesterId,
       assignees: assigneesJson,
-      teams: teamsJson,
+      openComments: openCommentsSql,
     })
     .from(tasks)
     .leftJoin(requests, eq(requests.id, tasks.requestId))
     .where(and(eq(tasks.id, id), eq(tasks.orgId, viewer.orgId)));
   if (!row) return null;
-  const { assignees, teams, ...basics } = row;
+  const { assignees, ...basics } = row;
   return {
     ...basics,
     assigneeIds: assignees.map((person) => person.id),
-    teamIds: teams.map((team) => team.id),
-    scope: scopeOf({ orgId: viewer.orgId, createdBy: row.createdBy, approverId: row.approverId }, assignees, teams, row.requesterId),
+    scope: scopeOf({ orgId: viewer.orgId, createdBy: row.createdBy, approverId: row.approverId }, assignees, row.requesterId),
   };
 }
 
@@ -691,19 +687,20 @@ export async function listLinks(viewer: Viewer, taskId: string): Promise<Evidenc
 
 /**
  * The task row an action works on, locked (`select … for update`) for the rest of the transaction, with its
- * assignment and the scope its permission checks need. Null when the id is unknown or belongs to another workspace.
+ * assignment, its open-comment count (the transition rules need it) and the scope its permission checks need.
+ * Null when the id is unknown or belongs to another workspace.
  */
 export async function lockTask(tx: Tx, orgId: string, id: string) {
   const [row] = await tx
-    .select({ task: tasks, requesterId: requests.requesterId })
+    .select({ task: tasks, requesterId: requests.requesterId, openComments: openCommentsSql })
     .from(tasks)
     .leftJoin(requests, eq(requests.id, tasks.requestId))
     .where(and(eq(tasks.id, id), eq(tasks.orgId, orgId)))
     .for("update", { of: tasks });
   if (!row) return null;
-  const t = row.task;
+  const t = { ...row.task, openComments: row.openComments };
   const assignment = await assignmentOf(tx, t.id);
-  return { task: t, assignment, scope: scopeOf(t, assignment.assigneeIds, assignment.teamIds, row.requesterId) };
+  return { task: t, assignment, scope: scopeOf(t, assignment, row.requesterId) };
 }
 
 // --- pickers --------------------------------------------------------------------------------------------------------
@@ -714,7 +711,10 @@ export async function taskPeople(viewer: Viewer): Promise<PersonOption[]> {
   return workers.map((worker) => ({ id: worker.userId, name: worker.name, email: worker.email, image: worker.image, role: worker.role }));
 }
 
-/** The projects and goals new work can join: the active ones, by name. */
+/** A sub-goal is offered as "Parent › Sub-goal", so two goals with similar names stay apart in a short list. */
+export const goalOptionLabel = (title: string, parentTitle: string | null): string => (parentTitle ? `${parentTitle} › ${title}` : title);
+
+/** The projects and goals new work can join: the active ones, by name (sub-goals right after their parent). */
 export async function activePlanning(viewer: Viewer): Promise<Pick<TaskFormOptions, "projects" | "goals">> {
   const [projectRows, goalRows] = await Promise.all([
     db
@@ -723,16 +723,18 @@ export async function activePlanning(viewer: Viewer): Promise<Pick<TaskFormOptio
       .where(and(eq(projects.orgId, viewer.orgId), eq(projects.status, "active")))
       .orderBy(asc(projects.name)),
     db
-      .select({ id: goals.id, title: goals.title })
+      .select({ id: goals.id, title: goals.title, parentTitle: parentGoal.title })
       .from(goals)
+      .leftJoin(parentGoal, eq(parentGoal.id, goals.parentGoalId))
       .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active")))
-      .orderBy(asc(goals.title)),
+      .orderBy(asc(sql`coalesce(${parentGoal.title}, ${goals.title})`), sql`${goals.parentGoalId} is not null`, asc(goals.title)),
   ]);
-  return { projects: projectRows, goals: goalRows };
+  const goalOptions: GoalOption[] = goalRows.map((row) => ({ id: row.id, title: goalOptionLabel(row.title, row.parentTitle) }));
+  return { projects: projectRows, goals: goalOptions };
 }
 
-/** What the New task form offers: the workers, the teams, the active projects and the active goals. */
+/** What the New task form offers: the workers, the active projects and the active goals. */
 export async function taskFormOptions(viewer: Viewer): Promise<TaskFormOptions> {
-  const [people, teams, planning] = await Promise.all([taskPeople(viewer), teamOptions(viewer), activePlanning(viewer)]);
-  return { viewerId: viewer.userId, people: people.map(({ id, name, email, image }) => ({ id, name, email, image })), teams, ...planning };
+  const [people, planning] = await Promise.all([taskPeople(viewer), activePlanning(viewer)]);
+  return { viewerId: viewer.userId, people: people.map(({ id, name, email, image }) => ({ id, name, email, image })), ...planning };
 }

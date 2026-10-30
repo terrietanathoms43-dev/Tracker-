@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { BarChart3, Building2, ChevronsUpDown, Keyboard, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
+import { Building2, ChevronsUpDown, Keyboard, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import { useTransition } from "react";
@@ -28,10 +28,10 @@ const THEMES = [
 ] as const;
 
 /**
- * User settings, workspace, reports, theme and sign out. `variant="avatar"` is the phone top bar's compact
+ * User settings, workspace, theme and sign out (Reports is in the main navigation). `variant="avatar"` is the phone top bar's compact
  * trigger; without a workspace only the theme and sign out remain.
  */
-export function UserMenu({ user, variant = "full", canSeeReports, hasWorkspace = true }: { user: MenuUser; variant?: "full" | "avatar"; canSeeReports: boolean; hasWorkspace?: boolean }) {
+export function UserMenu({ user, variant = "full", hasWorkspace = true }: { user: MenuUser; variant?: "full" | "avatar"; hasWorkspace?: boolean }) {
   const { theme, setTheme } = useTheme();
   const [signingOut, startSignOut] = useTransition();
 
@@ -64,14 +64,6 @@ export function UserMenu({ user, variant = "full", canSeeReports, hasWorkspace =
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
           </>
-        ) : null}
-        {canSeeReports ? (
-          <DropdownMenuItem asChild>
-            <Link href="/reports">
-              <BarChart3 className="size-4" aria-hidden />
-              Reports
-            </Link>
-          </DropdownMenuItem>
         ) : null}
         {hasWorkspace ? (
           <>

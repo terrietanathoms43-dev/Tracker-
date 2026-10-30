@@ -1,5 +1,6 @@
 "use client";
 
+import { MessageSquareWarning } from "lucide-react";
 import { useState, useTransition } from "react";
 import { changeStatus } from "@/actions/tasks";
 import { Field } from "@/components/field";
@@ -10,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
+import { openCommentsMessage } from "@/lib/tasks/transitions";
 import type { UpdateContext } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 
@@ -22,7 +24,11 @@ export const TRANSITION_TITLES: Partial<Record<TaskStatus, string>> = {
    rejected: "Reject this task",
 };
 
-/** Exactly the fields a status asks for (apex-ux flow D): a reason, an approver, or an optional summary and evidence. */
+/**
+ * Exactly the fields a status asks for (apex-ux flow D): a reason, an approver, or an optional summary and evidence.
+ * Completing a task with open comments is refused by the server (lib/tasks/transitions.ts); the dialog says so
+ * instead of offering a Save that fails.
+ */
 export function TransitionForm({ context, status, onDone }: { context: UpdateContext; status: TaskStatus; onDone: () => void }) {
    const { task, people } = context;
    const [reason, setReason] = useState("");
@@ -33,8 +39,9 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
    const [evidenceLabel, setEvidenceLabel] = useState("");
    const [errors, setErrors] = useState<Record<string, string[] | undefined>>({});
    const [pending, startTransition] = useTransition();
+   const heldByComments = status === "completed" && task.openComments > 0;
    const ready =
-      status === "blocked" || status === "rejected" ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : true;
+      status === "blocked" || status === "rejected" ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : !heldByComments;
 
    return (
       <form
@@ -114,7 +121,13 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                </NativeSelect>
             </Field>
          ) : null}
-         {status === "completed" ? (
+         {heldByComments ? (
+            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+               <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
+               <span>{openCommentsMessage(task.openComments)} They are under Comments and history on the task page.</span>
+            </p>
+         ) : null}
+         {status === "completed" && !heldByComments ? (
             <>
                <Field id="transition-summary" label="Completion summary" hint="Optional: what changed, and why it matters." count={{ value: summary, max: LIMITS.completionSummary }}>
                   <Textarea

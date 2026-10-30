@@ -79,6 +79,8 @@ export const TASK_ACTIVITY_KINDS = [
   "reopened",
   "progress_updated",
   "commented",
+  "comment_resolved",
+  "comment_reopened",
   "link_added",
   "link_removed",
 ] as const;

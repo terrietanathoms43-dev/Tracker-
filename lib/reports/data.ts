@@ -2,12 +2,12 @@ import "server-only";
 import { and, asc, desc, eq, isNotNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { goals, projects, taskActivity, taskAssignees, tasks, taskUpdates, teams } from "@/db/schema";
+import { goals, projects, taskActivity, taskAssignees, tasks, taskUpdates } from "@/db/schema";
 import { CLOSED_STATUSES, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { listWorkers } from "@/lib/dal/orgs";
-import { assigneesJson, progressForGoals, progressForProjects, teamsJson } from "@/lib/dal/tasks";
+import { assigneesJson, progressForGoals, progressForProjects } from "@/lib/dal/tasks";
 import type { Viewer } from "@/lib/permissions";
-import type { Assignees, Person, TeamRef } from "@/lib/tasks/types";
+import type { Assignees } from "@/lib/tasks/types";
 import { addDays, calendarDaysBetween, dayKey } from "@/lib/time";
 import { shiftDay, type ReportRange } from "./range";
 
@@ -33,17 +33,14 @@ export type ReportTask = {
   evidence: { url: string; label: string | null }[];
 };
 
-/** One worker's counts in the range (direct assignments). Counts only: the report never compares people. */
+/** One worker's counts in the range. Counts only: the report never compares people. */
 export type ContributionRow = {
-  person: Person;
+  person: { id: string; name: string | null; email: string | null; image: string | null };
   completed: number;
   deltaCompleted?: number;
   progressUpdates: number;
   blockersRaised: number;
 };
-
-/** One team's counts: what it delivered in the range and what it holds today. */
-export type TeamReportRow = { team: TeamRef; members: number; completed: number; open: number; blocked: number; overdue: number };
 
 export type TimelineGoalMarker = { id: string; title: string };
 
@@ -132,7 +129,6 @@ async function reportTasks(viewer: Viewer, where: SQL, order: "completed" | "due
       blockedBy: tasks.blockedBy,
       goalId: sql<string | null>`coalesce(${tasks.goalId}, ${projects.goalId})`,
       people: assigneesJson,
-      teams: teamsJson,
       evidence: sql<ReportTask["evidence"]>`coalesce((select json_agg(json_build_object('url', l.url, 'label', l.label) order by l.created_at) from task_links l where l.task_id = ${tasks.id}), '[]'::json)`,
     })
     .from(tasks)
@@ -140,10 +136,10 @@ async function reportTasks(viewer: Viewer, where: SQL, order: "completed" | "due
     .where(and(eq(tasks.orgId, viewer.orgId), where))
     .orderBy(...(order === "completed" ? [desc(tasks.completedAt)] : [sql`${tasks.dueDate} asc nulls last`, asc(tasks.title)]))
     .limit(1000);
-  return rows.map(({ people, teams: teamRefs, completedAt, ...row }) => ({
+  return rows.map(({ people, completedAt, ...row }) => ({
     ...row,
     completedDay: completedAt ? dayKey(completedAt, viewer.timezone) : null,
-    assignees: { people, teams: teamRefs },
+    assignees: people,
   }));
 }
 
@@ -178,9 +174,9 @@ type CountByPerson = { personId: string | null; n: number };
 const tally = (rows: CountByPerson[]) => new Map(rows.map((row) => [row.personId, row.n]));
 
 /**
- * Per current worker, in the range: tasks they were assigned to directly that were completed, progress updates
- * they wrote and blockers they raised. Everyone is listed, zeros included, alphabetically, so the order says
- * nothing about the numbers. A task with two people on it counts once for each.
+ * Per current worker, in the range: tasks they were assigned to that were completed, progress updates they wrote
+ * and blockers they raised. Everyone is listed, zeros included, alphabetically, so the order says nothing about the
+ * numbers. A task with two people on it counts once for each.
  */
 export async function contributionCounts(viewer: Viewer, range: ReportRange): Promise<ContributionRow[]> {
   const n = sql<number>`count(*)::int`;
@@ -229,35 +225,6 @@ export async function contributionCounts(viewer: Viewer, range: ReportRange): Pr
       };
     })
     .sort((a, b) => (a.person.name ?? a.person.email ?? "").localeCompare(b.person.name ?? b.person.email ?? ""));
-}
-
-/**
- * Per team, by name: how many people are in it, the tasks it was assigned to that were completed in the range, and
- * what it holds as of today (open, blocked, overdue). Every team is listed, zeros included.
- */
-export async function teamCounts(viewer: Viewer, range: ReportRange, today: string): Promise<TeamReportRow[]> {
-  const inRange = withinDays(sql`t.completed_at`, range, viewer.timezone);
-  const closed = sql.join(
-    CLOSED.map((status) => sql`${status}`),
-    sql`, `,
-  );
-  // Named with its table: in a select without joins Drizzle writes `${teams.id}` as a bare `"id"` inside raw SQL,
-  // which would bind to the subquery's own table (see lib/dal/teams.ts).
-  const teamId = sql`${teams}.${sql.identifier("id")}`;
-  const rows = await db
-    .select({
-      id: teams.id,
-      name: teams.name,
-      members: sql<number>`(select count(*)::int from team_members m where m.team_id = ${teamId})`,
-      completed: sql<number>`(select count(*)::int from task_teams tt join tasks t on t.id = tt.task_id where tt.team_id = ${teamId} and t.status = 'completed' and ${inRange})`,
-      open: sql<number>`(select count(*)::int from task_teams tt join tasks t on t.id = tt.task_id where tt.team_id = ${teamId} and t.status not in (${closed}))`,
-      blocked: sql<number>`(select count(*)::int from task_teams tt join tasks t on t.id = tt.task_id where tt.team_id = ${teamId} and t.status = 'blocked')`,
-      overdue: sql<number>`(select count(*)::int from task_teams tt join tasks t on t.id = tt.task_id where tt.team_id = ${teamId} and t.status not in (${closed}) and t.due_date < ${today}::date)`,
-    })
-    .from(teams)
-    .where(eq(teams.orgId, viewer.orgId))
-    .orderBy(asc(teams.name));
-  return rows.map(({ id, name, ...counts }) => ({ team: { id, name }, ...counts }));
 }
 
 /** Daily timeline over the range: completions, personal completions, blockers, and goal deadline markers. */
@@ -309,7 +276,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, deliver
   for (const t of delivered) {
     if (t.completedDay) {
       deliveredByDay.set(t.completedDay, (deliveredByDay.get(t.completedDay) ?? 0) + 1);
-      const isMine = t.assignees.people.some((p) => p.id === viewer.userId) || t.assignees.teams.some((tm) => viewer.teamIds.includes(tm.id));
+      const isMine = t.assignees.some((p) => p.id === viewer.userId);
       if (isMine) {
         myDeliveredByDay.set(t.completedDay, (myDeliveredByDay.get(t.completedDay) ?? 0) + 1);
       }
@@ -356,13 +323,13 @@ export async function blockedDurationStats(viewer: Viewer): Promise<BlockedDurat
   };
 }
 
-/** Executive health board: sparkbars and status indicators for all active projects and goals. */
+/** Executive health board: sparkbars and status indicators for all active top-level goals and active projects. */
 export async function projectAndGoalHealth(viewer: Viewer): Promise<HealthBoard> {
   const [activeGoals, activeProjects] = await Promise.all([
     db
       .select({ id: goals.id, title: goals.title, targetDate: goals.targetDate })
       .from(goals)
-      .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active")))
+      .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active"), sql`${goals.parentGoalId} is null`))
       .orderBy(sql`${goals.targetDate} asc nulls last`, asc(goals.title)),
     db
       .select({ id: projects.id, name: projects.name, targetDate: projects.targetDate })

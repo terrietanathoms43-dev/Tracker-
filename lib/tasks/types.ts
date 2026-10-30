@@ -6,11 +6,8 @@ import type { OrgRole, TaskActivityKind, TaskPriority, TaskStatus } from "@/lib/
 /** Someone shown with an avatar and a name. */
 export type Person = { id: string; name: string | null; email: string | null; image: string | null };
 
-/** A team as a chip or a picker row. */
-export type TeamRef = { id: string; name: string };
-
-/** Who a task (or a goal) is assigned to: any number of people and teams, all equal (docs/PLAN.md, 2026-10-18 log). */
-export type Assignees = { people: Person[]; teams: TeamRef[] };
+/** Who a task is assigned to: any number of people, all equal (docs/PLAN.md, 2026-10-18 and 2026-10-30 logs). */
+export type Assignees = Person[];
 
 /** One row of any task list, board column or My Work group. */
 export type TaskListItem = {
@@ -28,8 +25,6 @@ export type TaskListItem = {
   updatedAt: string;
   /** Attention lists only: why it is there ("Overdue", "Your approval", …). */
   reason?: string;
-  /** My Work only: the team through which the viewer is on it ("Frontend") when they are not assigned directly. */
-  via?: string;
 };
 
 /** A page of the task list; `nextCursor` is the id of the last row, or null when there is no more. */
@@ -38,13 +33,15 @@ export type TaskPage = { items: TaskListItem[]; nextCursor: string | null };
 /** A worker in a picker, with the role that decides default approvers. */
 export type PersonOption = Person & { role: OrgRole };
 
-/** What the New task form needs: who you are, who and which teams can own work, and what it can belong to. */
+/** A goal in a picker: a sub-goal's label carries its parent ("Ship onboarding › Invite flow"). */
+export type GoalOption = { id: string; title: string };
+
+/** What the New task form needs: who you are, who can own work, and what it can belong to. */
 export type TaskFormOptions = {
   viewerId: string;
   people: Person[];
-  teams: TeamRef[];
   projects: { id: string; name: string }[];
-  goals: { id: string; title: string }[];
+  goals: GoalOption[];
 };
 
 /**
@@ -57,7 +54,7 @@ export type CreateDefaults = {
   title?: string;
   priority?: TaskPriority;
   dueDate?: string;
-  assignment?: { assigneeIds: string[]; teamIds: string[] };
+  assigneeIds?: string[];
 };
 
 export type EvidenceLink = { id: string; url: string; label: string | null; addedBy: string };
@@ -86,6 +83,8 @@ export type TaskDetail = {
   latestProgress: string | null;
   nextAction: string | null;
   completionSummary: string | null;
+  /** Comments nobody has marked resolved yet; while there are any, the task can't be completed. */
+  openComments: number;
   /** The newest progress update (comments don't count): who wrote it and when. */
   lastUpdate: { author: Person; at: string } | null;
 };
@@ -99,11 +98,12 @@ export type UpdateContext = {
     id: string;
     title: string;
     status: TaskStatus;
-    /** The people assigned directly (teams don't take part in hand-overs or approver rules). */
     assigneeIds: string[];
     nextAction: string | null;
     blockedReason: string | null;
     blockedBy: string | null;
+    /** Comments still open: completing is refused until they are resolved. */
+    openComments: number;
   };
   people: PersonOption[];
   defaultApprover: string | null;
@@ -122,6 +122,8 @@ export type HistoryItem = {
   body: string | null;
   nextAction: string | null;
   blocker: string | null;
+  /** Comments only: who marked it resolved and when; null while it is open. */
+  resolved: { by: string; at: string } | null;
   at: string;
   day: string;
   dayLabel: string;
@@ -151,8 +153,5 @@ export type TaskProgress = { completed: number; total: number; blocked: number; 
 
 export type TaskCounts = { active: number; completed: number; overdue: number; blocked: number; awaiting: number };
 
-/** One person's open work, assigned to them directly (person null = nobody and no team). */
+/** One person's open work (person null = nobody). */
 export type WorkloadRow = { person: Person | null; active: TaskListItem[]; blocked: number; overdue: number };
-
-/** One team's open work: what it is expected to deliver. */
-export type TeamWorkloadRow = { team: TeamRef; active: number; blocked: number; overdue: number };

@@ -1,15 +1,13 @@
-import { cn } from "cn";
 import Link from "next/link";
-import { TeamChip } from "@/components/tasks/assignee-stack";
-import { PanelEmpty } from "@/components/team/panel";
+import { PanelEmpty } from "@/components/dashboard/panel";
 import { UserAvatar } from "@/components/user-avatar";
 import { ORG_ROLE_LABELS } from "@/lib/constants";
-import type { MemberDirectoryRow } from "@/lib/dal/teams";
+import type { MemberDirectoryRow } from "@/lib/dal/members";
 import { tasksHref } from "@/lib/tasks/filters";
 import { nameOf } from "@/lib/tasks/people";
 
-// The roster: one row per member with their role, teams and the open work assigned to them directly. Roles are
-// changed under Settings → Workspace; this page is for seeing who does what.
+// The roster: one row per member with their role and the open work assigned to them. Roles are changed under
+// Settings → Workspace; this page is for seeing who does what.
 
 /** "2 open · 1 overdue" for a person; stakeholders and idle people say so in words. */
 function Work({ row }: { row: MemberDirectoryRow }) {
@@ -50,15 +48,6 @@ export function MemberDirectory({ rows, viewerId }: { rows: MemberDirectoryRow[]
               </p>
             </div>
             <Work row={row} />
-            {row.teams.length > 0 ? (
-              <div className={cn("col-span-2 col-start-2 flex flex-wrap gap-1")} aria-label="Teams">
-                {row.teams.map((team) => (
-                  <Link key={team.id} href={`/teams/${team.id}`} className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    <TeamChip name={team.name} />
-                  </Link>
-                ))}
-              </div>
-            ) : null}
           </li>
         );
       })}

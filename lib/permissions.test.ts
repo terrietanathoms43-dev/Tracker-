@@ -8,10 +8,11 @@ import {
   canManageInvitation,
   canManageOrg,
   canManagePlanning,
-  canManageTeams,
   canReadRequest,
   canReadTask,
+  canResolveComment,
   canSeeMembers,
+  canSeeReports,
   canUpdateProgress,
   invitableRoles,
   isAssigned,
@@ -20,12 +21,11 @@ import {
   type Viewer,
 } from "./permissions";
 
-const viewer = (orgRole: OrgRole, userId = "u1", orgId = "org1", teamIds: string[] = []): Viewer => ({ userId, orgId, orgRole, teamIds, timezone: "UTC" });
+const viewer = (orgRole: OrgRole, userId = "u1", orgId = "org1"): Viewer => ({ userId, orgId, orgRole, timezone: "UTC" });
 
 const task = (overrides: Partial<TaskScope> = {}): TaskScope => ({
   orgId: "org1",
   assigneeIds: ["u2"],
-  teamIds: [],
   createdBy: "u3",
   approverId: null,
   requesterId: null,
@@ -49,26 +49,25 @@ describe("tasks", () => {
     expect(canReadTask(viewer("stakeholder"), task({ requesterId: "u1" }))).toBe(true);
   });
 
-  it("counts someone as assigned directly or through one of their teams", () => {
+  it("counts someone as assigned when they are on the task", () => {
     expect(isAssigned(viewer("member"), task({ assigneeIds: ["u1", "u2"] }))).toBe(true);
-    expect(isAssigned(viewer("member"), task({ assigneeIds: [], teamIds: ["frontend"] }))).toBe(false);
-    expect(isAssigned(viewer("member", "u1", "org1", ["frontend"]), task({ assigneeIds: [], teamIds: ["frontend"] }))).toBe(true);
-    expect(isAssigned(viewer("member", "u1", "org1", ["platform"]), task({ assigneeIds: [], teamIds: ["frontend"] }))).toBe(false);
+    expect(isAssigned(viewer("member"), task({ assigneeIds: ["u2"] }))).toBe(false);
   });
 
-  it("limits editing to leaders, the people and teams assigned, and the creator", () => {
+  it("limits editing to leaders, the people assigned, and the creator", () => {
     expect(canEditTask(viewer("leader"), task())).toBe(true);
     expect(canEditTask(viewer("admin"), task())).toBe(true);
     expect(canEditTask(viewer("member"), task())).toBe(false);
     expect(canEditTask(viewer("member"), task({ assigneeIds: ["u2", "u1"] }))).toBe(true);
-    expect(canEditTask(viewer("member", "u1", "org1", ["frontend"]), task({ teamIds: ["frontend"] }))).toBe(true);
     expect(canEditTask(viewer("member"), task({ createdBy: "u1" }))).toBe(true);
     expect(canEditTask(viewer("stakeholder"), task({ assigneeIds: ["u1"] }))).toBe(false);
   });
 
-  it("lets any worker add progress", () => {
+  it("lets any worker add progress and resolve comments", () => {
     expect(canUpdateProgress(viewer("member"), task())).toBe(true);
+    expect(canResolveComment(viewer("member"), task())).toBe(true);
     expect(canUpdateProgress(viewer("stakeholder"), task())).toBe(false);
+    expect(canResolveComment(viewer("stakeholder"), task())).toBe(false);
   });
 
   it("reserves approval for the approver and leaders", () => {
@@ -79,22 +78,22 @@ describe("tasks", () => {
 });
 
 describe("planning, requests, administration", () => {
-  it("lets leaders manage projects, goals, teams and request decisions", () => {
+  it("lets leaders manage projects, goals and request decisions", () => {
     for (const role of ["leader", "admin"] as const) {
       expect(canManagePlanning(viewer(role))).toBe(true);
       expect(canDecideRequest(viewer(role))).toBe(true);
-      expect(canManageTeams(viewer(role))).toBe(true);
     }
     for (const role of ["member", "stakeholder"] as const) {
       expect(canManagePlanning(viewer(role))).toBe(false);
       expect(canDecideRequest(viewer(role))).toBe(false);
-      expect(canManageTeams(viewer(role))).toBe(false);
     }
   });
 
-  it("opens the Members page to everyone who does work", () => {
+  it("opens the Members page and Reports to everyone who does work", () => {
     expect(canSeeMembers(viewer("member"))).toBe(true);
+    expect(canSeeReports(viewer("member"))).toBe(true);
     expect(canSeeMembers(viewer("stakeholder"))).toBe(false);
+    expect(canSeeReports(viewer("stakeholder"))).toBe(false);
   });
 
   it("shows a stakeholder only their own requests", () => {
@@ -120,8 +119,8 @@ describe("planning, requests, administration", () => {
 });
 
 describe("navigation", () => {
-  it("gives stakeholders two destinations and everyone else five, Members among them", () => {
+  it("gives stakeholders two destinations and everyone else six, Reports last", () => {
     expect(navFor({ orgRole: "stakeholder" })).toEqual(["home", "requests"]);
-    expect(navFor({ orgRole: "member" })).toEqual(["home", "my-work", "goals", "members", "requests"]);
+    expect(navFor({ orgRole: "member" })).toEqual(["home", "my-work", "goals", "members", "requests", "reports"]);
   });
 });

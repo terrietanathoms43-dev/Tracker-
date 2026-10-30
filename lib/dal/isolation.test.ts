@@ -14,7 +14,7 @@ import { dayKey } from "@/lib/time";
 config({ path: [".env.local", ".env"], quiet: true });
 const enabled = process.env.TRACKWISE_DB_TESTS === "1" && Boolean(process.env.DATABASE_URL);
 
-type Dal = typeof import("./tasks") & typeof import("./history") & typeof import("./notifications") & typeof import("./orgs") & typeof import("./teams");
+type Dal = typeof import("./tasks") & typeof import("./history") & typeof import("./notifications") & typeof import("./orgs") & typeof import("./members") & typeof import("./goals");
 
 describe.skipIf(!enabled)("workspace isolation (database)", () => {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -26,33 +26,42 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
   };
 
   let dal: Dal;
-  let demo: { orgId: string; taskIds: string[]; linkedTaskId: string; projectId: string; goalId: string; teamId: string };
+  let demo: { orgId: string; taskIds: string[]; linkedTaskId: string; projectId: string; goalId: string; subGoalId: string; parentGoalId: string };
   let other: { orgId: string; taskIds: string[]; projectId: string; goalId: string };
   let avery: Viewer;
   let riley: Viewer;
   let taylor: Viewer;
   let jordanId: string;
 
-  const viewer = (userId: string, orgId: string, orgRole: Viewer["orgRole"], timezone: string): Viewer => ({ userId, orgId, orgRole, teamIds: [], timezone });
+  const viewer = (userId: string, orgId: string, orgRole: Viewer["orgRole"], timezone: string): Viewer => ({ userId, orgId, orgRole, timezone });
   const userId = async (email: string) => (await one<{ id: string }>("select id from users where email = $1", [email])).id;
   const today = (who: Viewer) => dayKey(new Date(), who.timezone);
   const everything = { ...DEFAULT_FILTERS, closed: true };
 
   beforeAll(async () => {
     // Imported after dotenv has run: db/index.ts reads DATABASE_URL when it is first loaded.
-    const [tasksDal, historyDal, notificationsDal, orgsDal, teamsDal] = await Promise.all([import("./tasks"), import("./history"), import("./notifications"), import("./orgs"), import("./teams")]);
-    dal = { ...tasksDal, ...historyDal, ...notificationsDal, ...orgsDal, ...teamsDal };
+    const [tasksDal, historyDal, notificationsDal, orgsDal, membersDal, goalsDal] = await Promise.all([
+      import("./tasks"),
+      import("./history"),
+      import("./notifications"),
+      import("./orgs"),
+      import("./members"),
+      import("./goals"),
+    ]);
+    dal = { ...tasksDal, ...historyDal, ...notificationsDal, ...orgsDal, ...membersDal, ...goalsDal };
 
     const demoOrgId = (await one<{ id: string }>("select id from organizations where slug = $1", [TEST_ORG.slug])).id;
     const otherOrgId = (await one<{ id: string }>("select id from organizations where slug = $1", [OTHER_ORG.slug])).id;
     const taskIds = async (orgId: string) => (await rows<{ id: string }>("select id from tasks where org_id = $1", [orgId])).map((row) => row.id);
+    const subGoal = await one<{ id: string; parent_goal_id: string }>("select id, parent_goal_id from goals where org_id = $1 and parent_goal_id is not null limit 1", [demoOrgId]);
     demo = {
       orgId: demoOrgId,
       taskIds: await taskIds(demoOrgId),
       linkedTaskId: (await one<{ task_id: string }>("select l.task_id from task_links l join tasks t on t.id = l.task_id where t.org_id = $1 limit 1", [demoOrgId])).task_id,
       projectId: (await one<{ id: string }>("select id from projects where org_id = $1 limit 1", [demoOrgId])).id,
       goalId: (await one<{ id: string }>("select id from goals where org_id = $1 limit 1", [demoOrgId])).id,
-      teamId: (await one<{ id: string }>("select id from teams where org_id = $1 limit 1", [demoOrgId])).id,
+      subGoalId: subGoal.id,
+      parentGoalId: subGoal.parent_goal_id,
     };
     other = {
       orgId: otherOrgId,
@@ -82,6 +91,8 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
     expect((await dal.listHistory(riley, demo.linkedTaskId, null)).items).toEqual([]);
     expect(await dal.tasksForProject(riley, demo.projectId)).toEqual([]);
     expect(await dal.tasksForGoal(riley, demo.goalId)).toEqual([]);
+    expect(await dal.getGoal(riley, demo.goalId)).toBeNull();
+    expect(await dal.subGoalsOf(riley, demo.parentGoalId)).toEqual([]);
     expect((await dal.progressForGoals(riley, [demo.goalId])).get(demo.goalId)).toEqual({ completed: 0, total: 0, blocked: 0, overdue: 0 });
     expect((await dal.progressForProjects(riley, [demo.projectId])).get(demo.projectId)).toEqual({ completed: 0, total: 0, blocked: 0, overdue: 0 });
   });
@@ -100,6 +111,7 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
     expect(leaks((await dal.myWorkRows(riley)).map((row) => row.item.id))).toEqual([]);
     expect(leaks((await dal.workload(riley)).flatMap((row) => ids(row.active)))).toEqual([]);
     expect(leaks((await dal.recentActivity(riley, 500)).map((item) => item.task.id))).toEqual([]);
+    expect((await dal.listGoals(riley, { includeAchieved: true })).some((goal) => goal.id === demo.goalId)).toBe(false);
 
     const counts = await dal.taskCounts(riley, { today: today(riley), since: new Date(0) });
     expect(counts.active + counts.completed).toBeLessThanOrEqual(other.taskIds.length);
@@ -108,24 +120,19 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
     expect((await dal.memberDirectory(riley)).map((member) => member.email).sort()).toEqual(members);
   });
 
-  it("Other Co sees none of Trackwise Demo's teams, by id, in its list, or through a task filter", async () => {
-    expect(await dal.getTeam(riley, demo.teamId)).toBeNull();
-    expect((await dal.listTeams(riley)).some((team) => team.id === demo.teamId)).toBe(false);
-    expect(await dal.openTasksForTeam(riley, demo.teamId)).toEqual([]);
-    expect((await dal.listTasks(riley, { ...everything, team: demo.teamId }, { today: today(riley), limit: 500 })).items).toEqual([]);
-    expect((await dal.listTeams(avery)).some((team) => team.id === demo.teamId)).toBe(true);
-    expect(await dal.teamIdsFor((await import("@/db")).db, other.orgId, jordanId)).toEqual([]);
-  });
-
-  it("a team's members, work and goals are counted for the team itself, not for the subquery's table", async () => {
-    // The seed puts two people, one open task and one active goal on each demo team.
-    const frontend = await dal.getTeam(avery, demo.teamId);
-    expect(frontend?.members.length).toBe(2);
-    expect(frontend?.work.active).toBeGreaterThan(0);
-    expect(frontend?.goals).toBeGreaterThan(0);
-    expect(await dal.teamIdsFor((await import("@/db")).db, demo.orgId, jordanId)).toHaveLength(2);
-    const report = await (await import("@/lib/reports/data")).teamCounts(avery, { from: "2000-01-01", to: today(avery) }, today(avery));
-    expect(report.find((row) => row.team.id === demo.teamId)?.members).toBe(2);
+  it("a sub-goal's tasks count for the sub-goal and roll up into its parent", async () => {
+    const sub = await dal.getGoal(avery, demo.subGoalId);
+    const parent = await dal.getGoal(avery, demo.parentGoalId);
+    expect(sub?.parent?.id).toBe(demo.parentGoalId);
+    expect(sub?.progress.total).toBeGreaterThan(0);
+    expect(parent?.subGoals).toBeGreaterThan(0);
+    expect(parent?.progress.total).toBeGreaterThanOrEqual(sub!.progress.total);
+    const subTasks = await dal.tasksForGoal(avery, demo.subGoalId);
+    const parentTasks = await dal.tasksForGoal(avery, demo.parentGoalId);
+    expect(subTasks.every((task) => parentTasks.some((each) => each.id === task.id))).toBe(true);
+    // The goals list shows top-level goals only; the sub-goal is reached from its parent's page.
+    expect((await dal.listGoals(avery, { includeAchieved: true })).some((goal) => goal.id === demo.subGoalId)).toBe(false);
+    expect((await dal.subGoalsOf(avery, demo.parentGoalId)).some((goal) => goal.id === demo.subGoalId)).toBe(true);
   });
 
   it("Trackwise Demo's admin sees none of Other Co's work, by id or in a list", async () => {

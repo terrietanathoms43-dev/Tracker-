@@ -1,17 +1,21 @@
 import "server-only";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db, type Tx } from "@/db";
-import { goalTeams, goals, users } from "@/db/schema";
+import { goals, users } from "@/db/schema";
 import type { GoalStatus } from "@/lib/constants";
 import { findMembership, listWorkers } from "@/lib/dal/orgs";
-import { progressForGoals } from "@/lib/dal/tasks";
+import { goalOptionLabel, progressForGoals } from "@/lib/dal/tasks";
 import { canReadPlanning, type Viewer } from "@/lib/permissions";
-import type { Person, TaskProgress, TeamRef } from "@/lib/tasks/types";
+import type { GoalOption, Person, TaskProgress } from "@/lib/tasks/types";
 
-// Reads of goals: the list with progress, one goal, the pickers that offer them, and the row lock the actions use.
-// Goals are workspace-wide; every worker reads them, stakeholders never do (an empty list, a goal that isn't found).
+// Reads of goals: the list with progress, one goal, its sub-goals, the pickers that offer them, and the row lock
+// the actions use. Goals are workspace-wide; every worker reads them, stakeholders never do (an empty list, a goal
+// that isn't found). A goal may have sub-goals, one level deep (docs/PLAN.md, 2026-10-30 log).
 
-/** One goal as the list, the goal page, Home and Team show it: plain JSON, progress included. */
+const parentGoal = alias(goals, "parent_goal");
+
+/** One goal as the list, the goal page, Home and Reports show it: plain JSON, progress included. */
 export type GoalListItem = {
   id: string;
   title: string;
@@ -20,10 +24,12 @@ export type GoalListItem = {
   status: GoalStatus;
   /** Null only when the owner's account was deleted. */
   owner: Person | null;
-  /** The teams expected to deliver it, by name. */
-  teams: TeamRef[];
+  /** The goal this is a sub-goal of, when it is one. */
+  parent: { id: string; title: string; targetDate: string | null } | null;
+  /** How many sub-goals it has (a sub-goal always has none). */
+  subGoals: number;
   targetDate: string | null;
-  /** Tasks linked directly and through the goal's projects (rejected ones never count). */
+  /** Tasks linked directly, through the goal's projects and through its sub-goals (rejected ones never count). */
   progress: TaskProgress;
   createdAt: string;
   updatedAt: string;
@@ -42,7 +48,10 @@ const goalColumns = {
   ownerName: users.name,
   ownerEmail: users.email,
   ownerImage: users.image,
-  teams: sql<TeamRef[]>`coalesce((select json_agg(json_build_object('id', tm.id, 'name', tm.name) order by tm.name) from goal_teams gt join teams tm on tm.id = gt.team_id where gt.goal_id = ${goals.id}), '[]'::json)`,
+  parentId: parentGoal.id,
+  parentTitle: parentGoal.title,
+  parentTargetDate: parentGoal.targetDate,
+  subGoals: sql<number>`(select count(*)::int from goals sub where sub.parent_goal_id = ${goals.id})`,
 };
 
 type GoalRow = {
@@ -58,7 +67,10 @@ type GoalRow = {
   ownerName: string | null;
   ownerEmail: string | null;
   ownerImage: string | null;
-  teams: TeamRef[];
+  parentId: string | null;
+  parentTitle: string | null;
+  parentTargetDate: string | null;
+  subGoals: number;
 };
 
 const EMPTY_PROGRESS: TaskProgress = { completed: 0, total: 0, blocked: 0, overdue: 0 };
@@ -71,7 +83,8 @@ function toItem(row: GoalRow, progress: Map<string, TaskProgress>): GoalListItem
     successCriteria: row.successCriteria,
     status: row.status,
     owner: row.ownerId ? { id: row.ownerId, name: row.ownerName, email: row.ownerEmail, image: row.ownerImage } : null,
-    teams: row.teams,
+    parent: row.parentId && row.parentTitle ? { id: row.parentId, title: row.parentTitle, targetDate: row.parentTargetDate } : null,
+    subGoals: row.subGoals,
     targetDate: row.targetDate,
     progress: progress.get(row.id) ?? EMPTY_PROGRESS,
     createdAt: row.createdAt.toISOString(),
@@ -86,70 +99,74 @@ const listOrder = [
   asc(goals.title),
 ];
 
-/**
- * The workspace's goals with their progress, in the order the list shows them. Achieved goals are left out unless
- * `includeAchieved`: Home and Team only care about what is still being worked towards.
- */
-export async function listGoals(viewer: Viewer, { includeAchieved }: { includeAchieved: boolean }): Promise<GoalListItem[]> {
-  if (!canReadPlanning(viewer)) return [];
-  const rows = await db
+function selectGoals() {
+  return db
     .select(goalColumns)
     .from(goals)
     .leftJoin(users, eq(users.id, goals.ownerId))
-    .where(and(eq(goals.orgId, viewer.orgId), includeAchieved ? undefined : sql`${goals.status} <> 'achieved'`))
-    .orderBy(...listOrder);
+    .leftJoin(parentGoal, eq(parentGoal.id, goals.parentGoalId));
+}
+
+async function withProgress(viewer: Viewer, rows: GoalRow[]): Promise<GoalListItem[]> {
   const progress = await progressForGoals(
     viewer,
     rows.map((row) => row.id),
   );
   return rows.map((row) => toItem(row, progress));
+}
+
+/**
+ * The workspace's top-level goals with their progress, in the order the list shows them (sub-goals live on their
+ * parent's page). Achieved goals are left out unless `includeAchieved`: Home only cares about what is still being
+ * worked towards.
+ */
+export async function listGoals(viewer: Viewer, { includeAchieved }: { includeAchieved: boolean }): Promise<GoalListItem[]> {
+  if (!canReadPlanning(viewer)) return [];
+  const rows = await selectGoals()
+    .where(and(eq(goals.orgId, viewer.orgId), isNull(goals.parentGoalId), includeAchieved ? undefined : sql`${goals.status} <> 'achieved'`))
+    .orderBy(...listOrder);
+  return withProgress(viewer, rows);
 }
 
 /** One goal of this workspace with its progress; null when it doesn't exist, belongs elsewhere, or the viewer can't read goals. */
 export async function getGoal(viewer: Viewer, id: string): Promise<GoalListItem | null> {
   if (!canReadPlanning(viewer)) return null;
-  const [row] = await db
-    .select(goalColumns)
-    .from(goals)
-    .leftJoin(users, eq(users.id, goals.ownerId))
-    .where(and(eq(goals.id, id), eq(goals.orgId, viewer.orgId)));
+  const [row] = await selectGoals().where(and(eq(goals.id, id), eq(goals.orgId, viewer.orgId)));
   if (!row) return null;
-  return toItem(row, await progressForGoals(viewer, [row.id]));
+  return (await withProgress(viewer, [row]))[0];
 }
 
-/** The active goals a team owns, with their progress (the team page). */
-export async function goalsForTeam(viewer: Viewer, teamId: string): Promise<GoalListItem[]> {
+/** The sub-goals of a goal, with their progress, in the list order (achieved ones included: the parent page shows them all). */
+export async function subGoalsOf(viewer: Viewer, goalId: string): Promise<GoalListItem[]> {
+  if (!canReadPlanning(viewer)) return [];
+  const rows = await selectGoals()
+    .where(and(eq(goals.orgId, viewer.orgId), eq(goals.parentGoalId, goalId)))
+    .orderBy(...listOrder);
+  return withProgress(viewer, rows);
+}
+
+/** The goals a project or task can point at: the active ones, a sub-goal labelled with its parent. */
+export async function activeGoalOptions(viewer: Viewer): Promise<GoalOption[]> {
   if (!canReadPlanning(viewer)) return [];
   const rows = await db
-    .select(goalColumns)
+    .select({ id: goals.id, title: goals.title, parentTitle: parentGoal.title })
     .from(goals)
-    .innerJoin(goalTeams, eq(goalTeams.goalId, goals.id))
-    .leftJoin(users, eq(users.id, goals.ownerId))
-    .where(and(eq(goals.orgId, viewer.orgId), eq(goalTeams.teamId, teamId), sql`${goals.status} <> 'achieved'`))
-    .orderBy(...listOrder);
-  const progress = await progressForGoals(
-    viewer,
-    rows.map((row) => row.id),
-  );
-  return rows.map((row) => toItem(row, progress));
+    .leftJoin(parentGoal, eq(parentGoal.id, goals.parentGoalId))
+    .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active")))
+    .orderBy(asc(sql`coalesce(${parentGoal.title}, ${goals.title})`), sql`${goals.parentGoalId} is not null`, asc(goals.title));
+  return rows.map((row) => ({ id: row.id, title: goalOptionLabel(row.title, row.parentTitle) }));
 }
 
-/** Replaces the teams on a goal with `teamIds` (already checked against the workspace), in the caller's transaction. */
-export async function setGoalTeams(tx: Tx, goalId: string, teamIds: string[], actorId: string): Promise<void> {
-  const current = (await tx.select({ teamId: goalTeams.teamId }).from(goalTeams).where(eq(goalTeams.goalId, goalId))).map((row) => row.teamId);
-  const removed = current.filter((id) => !teamIds.includes(id));
-  const added = teamIds.filter((id) => !current.includes(id));
-  if (removed.length > 0) await tx.delete(goalTeams).where(and(eq(goalTeams.goalId, goalId), inArray(goalTeams.teamId, removed)));
-  if (added.length > 0) await tx.insert(goalTeams).values(added.map((teamId) => ({ goalId, teamId, addedBy: actorId })));
-}
-
-/** The goals a project can point at: the active ones, by title. */
-export async function activeGoalOptions(viewer: Viewer): Promise<{ id: string; title: string }[]> {
+/**
+ * The goals a goal can be a sub-goal of: active, top-level ones (a sub-goal can't have sub-goals), with the target
+ * date the sub-goal's own date has to respect.
+ */
+export async function parentGoalOptions(viewer: Viewer): Promise<{ id: string; title: string; targetDate: string | null }[]> {
   if (!canReadPlanning(viewer)) return [];
   return db
-    .select({ id: goals.id, title: goals.title })
+    .select({ id: goals.id, title: goals.title, targetDate: goals.targetDate })
     .from(goals)
-    .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active")))
+    .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active"), isNull(goals.parentGoalId)))
     .orderBy(asc(goals.title));
 }
 
@@ -174,18 +191,26 @@ export async function ownerError(handle: Tx | typeof db, orgId: string, ownerId:
  */
 export async function lockGoal(tx: Tx, orgId: string, id: string) {
   const [row] = await tx
-    .select({ id: goals.id, title: goals.title, status: goals.status, ownerId: goals.ownerId })
+    .select({ id: goals.id, title: goals.title, status: goals.status, ownerId: goals.ownerId, parentGoalId: goals.parentGoalId, targetDate: goals.targetDate })
     .from(goals)
     .where(and(eq(goals.id, id), eq(goals.orgId, orgId)))
     .for("update");
   return row ?? null;
 }
 
-/** A goal of this workspace by id, for the actions that link a project to it (null when it isn't one). */
+/** A goal of this workspace by id, for the actions that link something to it (null when it isn't one). */
 export async function findGoal(handle: Tx | typeof db, orgId: string, goalId: string) {
   const [row] = await handle
-    .select({ id: goals.id, status: goals.status })
+    .select({ id: goals.id, title: goals.title, status: goals.status, parentGoalId: goals.parentGoalId, targetDate: goals.targetDate })
     .from(goals)
     .where(and(eq(goals.id, goalId), eq(goals.orgId, orgId)));
   return row ?? null;
+}
+
+/** The sub-goals of a goal with their target dates: what a parent's new date has to respect. */
+export async function subGoalDeadlines(handle: Tx | typeof db, orgId: string, goalId: string): Promise<{ id: string; title: string; targetDate: string | null }[]> {
+  return handle
+    .select({ id: goals.id, title: goals.title, targetDate: goals.targetDate })
+    .from(goals)
+    .where(and(eq(goals.orgId, orgId), eq(goals.parentGoalId, goalId)));
 }

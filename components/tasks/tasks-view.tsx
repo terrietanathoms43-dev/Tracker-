@@ -34,7 +34,7 @@ export async function TasksView({ viewer, filters, view, tabsConfig }: { viewer:
       <PageHeader title="Tasks" />
       <QuickAddTask today={today} />
       <ViewTabs active={view} query={query.toString()} config={tabsConfig} />
-      <TaskToolbar filters={filters} view={view} people={options.people} teams={options.teams} projects={options.projects} goals={options.goals} />
+      <TaskToolbar filters={filters} view={view} people={options.people} projects={options.projects} goals={options.goals} />
       <LastFilters current={query.toString()} view={view} />
       {empty ? (
         isFiltered(filters) ? (

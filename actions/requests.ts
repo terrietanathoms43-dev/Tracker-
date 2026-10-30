@@ -10,7 +10,7 @@ import { requestDecisions, requests, tasks, type RequestRow } from "@/db/schema"
 import { GuardError, fail, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { REQUEST_DECISIONS, REQUEST_URGENCIES, TASK_PRIORITIES, type RequestDecision, type RequestStatus } from "@/lib/constants";
 import { recordActivity } from "@/lib/dal/activity";
-import { applyAssignment, responsibleIds, snapshotAssignment, validateAssignment } from "@/lib/dal/assignments";
+import { applyAssignment, snapshotAssignment, validateAssignment } from "@/lib/dal/assignments";
 import { lockRequest } from "@/lib/dal/requests";
 import { log } from "@/lib/log";
 import { dispatch, type Notice } from "@/lib/notify";
@@ -71,7 +71,6 @@ export async function submitRequest(input: z.input<typeof submitSchema>): Promis
 
 const taskFields = z.object({
   assigneeIds: z.array(id).max(50).default([]),
-  teamIds: z.array(id).max(50).default([]),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
   dueDate: day,
 });
@@ -105,7 +104,7 @@ const REQUESTER_TITLES: Record<RequestDecision, (title: string) => string> = {
  * caller's transaction. Returns the task's id and everyone who should hear that it is theirs.
  */
 async function insertTaskFrom(tx: Tx, viewer: Viewer, request: RequestRow, fields: TaskFields, now: Date): Promise<{ taskId: string; responsible: string[] }> {
-  const assignment = await validateAssignment(tx, viewer.orgId, { assigneeIds: fields.assigneeIds, teamIds: fields.teamIds });
+  const assignment = await validateAssignment(tx, viewer.orgId, fields.assigneeIds);
   // The request's own words travel with the work, so whoever picks it up knows what was asked and why.
   const description = [request.description, request.desiredOutcome ? `Desired outcome: ${request.desiredOutcome}` : null].filter(Boolean).join("\n\n") || null;
   const [task] = await tx
@@ -123,13 +122,13 @@ async function insertTaskFrom(tx: Tx, viewer: Viewer, request: RequestRow, field
       updatedAt: now,
     })
     .returning({ id: tasks.id });
-  await applyAssignment(tx, task.id, viewer.userId, { assigneeIds: [], teamIds: [] }, assignment, now);
+  await applyAssignment(tx, task.id, viewer.userId, [], assignment, now);
   // Same rule as createTask: assigning work to yourself alone is not news worth a history line.
   const drafts: ActivityDraft[] = [{ kind: "created", after: { title: request.title, fromRequest: request.id } }];
-  const justMe = assignment.teamIds.length === 0 && sameIds(assignment.assigneeIds, [viewer.userId]);
-  if (!justMe && (assignment.assigneeIds.length > 0 || assignment.teamIds.length > 0)) drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
+  const justMe = sameIds(assignment, [viewer.userId]);
+  if (!justMe && assignment.length > 0) drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
   await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
-  return { taskId: task.id, responsible: await responsibleIds(tx, task.id) };
+  return { taskId: task.id, responsible: assignment };
 }
 
 /** The request's decision fields afterwards: who decided, when and why. Reopening clears them; it starts over. */
@@ -196,7 +195,7 @@ export async function decideRequest(input: z.input<typeof decideSchema>): Promis
       const problem = decisionProblem(request.status, data.decision);
       if (problem !== null) throw new GuardError("conflict", problem);
 
-      const fields: TaskFields = data.createTask ?? { assigneeIds: [], teamIds: [], priority: PRIORITY_FOR_URGENCY[request.urgency], dueDate: "" };
+      const fields: TaskFields = data.createTask ?? { assigneeIds: [], priority: PRIORITY_FOR_URGENCY[request.urgency], dueDate: "" };
       const made = createsTask ? await insertTaskFrom(tx, viewer, request, fields, now) : null;
       const taskId = made?.taskId ?? null;
       await tx

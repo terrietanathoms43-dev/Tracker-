@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
-import type { AssigneeIds } from "@/lib/tasks/assignees";
 import type { CreateDefaults } from "@/lib/tasks/types";
 import { AssigneePicker } from "./assignee-picker";
 import { loadTaskFormOptions, useTaskFormOptions } from "./use-task-form-options";
@@ -38,7 +37,7 @@ export function CreateTaskForm({
    const { options, error: loadError } = useTaskFormOptions();
    const [title, setTitle] = useState(defaults.title ?? "");
    /** Null until the person touches the picker: "me" once the options say who that is. */
-   const [assignment, setAssignment] = useState<AssigneeIds | null>(defaults.assignment ?? null);
+   const [assignment, setAssignment] = useState<string[] | null>(defaults.assigneeIds ?? null);
    const [projectId, setProjectId] = useState(defaults.projectId ?? "");
    const [goalId, setGoalId] = useState(defaults.goalId ?? "");
    const [priority, setPriority] = useState<TaskPriority>(defaults.priority ?? "normal");
@@ -49,15 +48,15 @@ export function CreateTaskForm({
    const [pending, startTransition] = useTransition();
 
    const error = (key: string) => errors[key]?.[0];
-   const me = (viewerId: string | null): AssigneeIds => ({ assigneeIds: viewerId ? [viewerId] : [], teamIds: [] });
+   const me = (viewerId: string | null): string[] => (viewerId ? [viewerId] : []);
    const value = assignment ?? me(options?.viewerId ?? null);
 
    function submit() {
       startTransition(async () => {
          // The default assignee is "me", which only the options can name: a quick Enter waits for them.
          const ready = options ?? (await loadTaskFormOptions()).options;
-         const chosen = assignment ?? me(ready?.viewerId ?? null);
-         const result = await createTask({ title, ...chosen, projectId, goalId, priority, dueDate, nextAction, description });
+         const assigneeIds = assignment ?? me(ready?.viewerId ?? null);
+         const result = await createTask({ title, assigneeIds, projectId, goalId, priority, dueDate, nextAction, description });
          if (!result.ok) {
             setErrors(result.fieldErrors ?? { title: [result.error] });
             return;
@@ -98,12 +97,12 @@ export function CreateTaskForm({
          </Field>
 
          <div className="grid items-start gap-4 sm:grid-cols-2">
-            <Field id="task-assignees" label="Assigned to" error={error("assigneeIds") ?? error("teamIds")}>
+            <Field id="task-assignees" label="Assigned to" error={error("assigneeIds")}>
                <AssigneePicker
                   id="task-assignees"
                   value={value}
                   onChange={setAssignment}
-                  options={options ? { people: options.people, teams: options.teams, viewerId: options.viewerId } : null}
+                  options={options ? { people: options.people, viewerId: options.viewerId } : null}
                   assumeMe={assignment === null}
                />
             </Field>

@@ -6,9 +6,8 @@ import { GoalDialog } from "@/components/goals/goal-dialog";
 import { GoalCard } from "@/components/goals/goal-parts";
 import { ShowAllToggle } from "@/components/goals/show-all-toggle";
 import { PageHeader } from "@/components/page-header";
-import { listGoals, ownerOptions } from "@/lib/dal/goals";
+import { listGoals, ownerOptions, parentGoalOptions } from "@/lib/dal/goals";
 import { projectOptions } from "@/lib/dal/projects";
-import { teamOptions } from "@/lib/dal/teams";
 import { canManagePlanning, canReadPlanning } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
@@ -19,7 +18,8 @@ export const metadata: Metadata = { title: "Goals" };
 
 /**
  * "How far along is each goal?": active goals first, then paused, then achieved (hidden until `?all=1` once there
- * are any). Leaders and admins get New goal; members read; stakeholders don't see goals at all.
+ * are any). Sub-goals live on their parent's page; each card says how many it has. Leaders and admins get New goal;
+ * members read; stakeholders don't see goals at all.
  */
 export default async function GoalsPage(props: PageProps<"/goals">) {
   const viewer = await requireViewer();
@@ -27,17 +27,17 @@ export default async function GoalsPage(props: PageProps<"/goals">) {
   const showAll = (await props.searchParams).all === "1";
   const manage = canManagePlanning(viewer);
   // A workspace has a handful of goals: read them all once, so the toggle knows whether anything achieved exists.
-  const [goals, people, teams, projects] = await Promise.all([
+  const [goals, people, projects, parents] = await Promise.all([
     listGoals(viewer, { includeAchieved: true }),
     manage ? ownerOptions(viewer) : [],
-    manage ? teamOptions(viewer) : [],
     manage ? projectOptions(viewer) : [],
+    manage ? parentGoalOptions(viewer) : [],
   ]);
   const today = dayKey(new Date(), viewer.timezone);
   const achievedCount = goals.filter((goal) => goal.status === "achieved").length;
   const shown = showAll ? goals : goals.filter((goal) => goal.status !== "achieved");
   const newGoal = (variant: "default" | "outline") =>
-    manage ? <GoalDialog people={people} teams={teams} projects={projects} viewerId={viewer.userId} variant={variant} /> : null;
+    manage ? <GoalDialog people={people} projects={projects} parents={parents} viewerId={viewer.userId} today={today} variant={variant} /> : null;
 
   return (
     <>

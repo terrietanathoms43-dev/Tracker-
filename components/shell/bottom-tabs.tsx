@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { BarChart3, Building2, LogOut, Menu, Settings } from "lucide-react";
+import { Building2, LogOut, Menu, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -12,19 +12,17 @@ import { isActive, NAV_ITEMS } from "./nav-config";
 
 const TAB = "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 text-xs font-medium transition-colors";
 
-/** Phone navigation: up to four destinations, then More (the rest, Reports, User settings, Workspace, Sign out). */
-export function BottomTabs({ items, canSeeReports, hasWorkspace = true }: { items: NavKey[]; canSeeReports: boolean; hasWorkspace?: boolean }) {
+/** Phone navigation: up to four destinations, then More (the rest of the navigation, User settings, Workspace, Sign out). */
+export function BottomTabs({ items, hasWorkspace = true }: { items: NavKey[]; hasWorkspace?: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [signingOut, startSignOut] = useTransition();
   const tabs = items.slice(0, 4);
   const rest = items.slice(4);
-  const moreActive =
-    isActive(pathname, "/settings") || isActive(pathname, "/reports") || rest.some((key) => isActive(pathname, NAV_ITEMS[key].href));
+  const moreActive = isActive(pathname, "/settings") || rest.some((key) => isActive(pathname, NAV_ITEMS[key].href));
 
   const more = [
     ...rest.map((key) => NAV_ITEMS[key]),
-    ...(canSeeReports ? [{ href: "/reports", label: "Reports", icon: BarChart3 }] : []),
     ...(hasWorkspace
       ? [
           { href: "/settings", label: "User settings", icon: Settings },

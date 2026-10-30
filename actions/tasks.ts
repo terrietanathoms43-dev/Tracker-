@@ -10,8 +10,8 @@ import { goals, notifications, projects, taskLinks, taskUpdates, tasks } from "@
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { TASK_PRIORITIES, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
 import { recordActivity } from "@/lib/dal/activity";
-import { applyAssignment, peopleInTeams, responsibleIds, snapshotAssignment, validateAssignment } from "@/lib/dal/assignments";
-import { listHistory } from "@/lib/dal/history";
+import { applyAssignment, snapshotAssignment, validateAssignment } from "@/lib/dal/assignments";
+import { listHistory, lockComment } from "@/lib/dal/history";
 import { findMembership, leaderIds } from "@/lib/dal/orgs";
 import { getTaskBasics, listTasks, lockTask, searchTasks, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
 import { log } from "@/lib/log";
@@ -23,6 +23,7 @@ import {
   canEditTask,
   canReadTask,
   canRejectTask,
+  canResolveComment,
   canUpdateProgress,
   navFor,
   type NavKey,
@@ -30,7 +31,7 @@ import {
   type Viewer,
 } from "@/lib/permissions";
 import { defaultApproverFor } from "@/lib/tasks/approver";
-import { sameIds, type AssigneeIds } from "@/lib/tasks/assignees";
+import { sameIds } from "@/lib/tasks/assignees";
 import { parseFilters } from "@/lib/tasks/filters";
 import { planTransition, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
 import type { HistoryPage, TaskFormOptions, TaskListItem, TaskPage, UpdateContext } from "@/lib/tasks/types";
@@ -40,8 +41,7 @@ import { requireViewer } from "@/lib/viewer";
 // Every change to a task, and the reads its client components need. Each mutation follows the action skeleton
 // (apex-architecture §4): zod → requireViewer → lock the row by id and workspace → permission → one transaction
 // (state + task_activity + notices collected) → dispatch after commit → refresh() → ok(data, "Toast.").
-// Assignment is a set of people and teams (lib/dal/assignments.ts); "responsible" below means everyone on the
-// task directly plus every member of its teams.
+// Assignment is a set of people (lib/dal/assignments.ts).
 
 // --- shared checks -----------------------------------------------------------------------------------------
 
@@ -88,14 +88,6 @@ function mayMove(viewer: Viewer, scope: TaskScope, from: TaskStatus, to: TaskSta
   return canUpdateProgress(viewer, scope);
 }
 
-/** Everyone who should hear that work was assigned to them: the people added, and everyone in the teams added. */
-async function newlyResponsible(tx: Tx, before: AssigneeIds, after: AssigneeIds, wasResponsible: string[]): Promise<string[]> {
-  const addedPeople = after.assigneeIds.filter((userId) => !before.assigneeIds.includes(userId));
-  const addedTeams = after.teamIds.filter((teamId) => !before.teamIds.includes(teamId));
-  const viaTeams = await peopleInTeams(tx, addedTeams);
-  return [...new Set([...addedPeople, ...viaTeams])].filter((userId) => !wasResponsible.includes(userId));
-}
-
 /** "New task for you" / "Assigned to you" for everyone newly on a task; the actor never hears about their own change. */
 function assignedNotice(viewer: Viewer, task: { id: string; title: string; nextAction: string | null }, recipients: string[], fresh: boolean): Notice[] {
   if (recipients.length === 0) return [];
@@ -112,12 +104,12 @@ function assignedNotice(viewer: Viewer, task: { id: string; title: string; nextA
   ];
 }
 
-/** Who hears about a status change: the approver asked, the people responsible for work decided on, the leaders of blocked work. */
+/** Who hears about a status change: the approver asked, the people on work decided on, the leaders of blocked work. */
 async function noticesFor(
   tx: Tx,
   viewer: Viewer,
   task: { id: string; title: string },
-  responsible: string[],
+  assignees: string[],
   activities: ActivityDraft[],
   approverId: string | null,
   note: string | null,
@@ -127,10 +119,10 @@ async function noticesFor(
   for (const activity of activities) {
     const reason = typeof activity.note === "string" ? activity.note : null;
     if (activity.kind === "approval_requested" && approverId) out.push({ ...base, recipients: [approverId], kind: "approval_requested", title: `Approval needed: ${task.title}` });
-    if (activity.kind === "approved" && responsible.length > 0) out.push({ ...base, recipients: responsible, kind: "approval_decided", title: `Approved: ${task.title}`, body: note });
-    if (activity.kind === "sent_back" && responsible.length > 0) out.push({ ...base, recipients: responsible, kind: "approval_decided", title: `Sent back: ${task.title}`, body: note });
+    if (activity.kind === "approved" && assignees.length > 0) out.push({ ...base, recipients: assignees, kind: "approval_decided", title: `Approved: ${task.title}`, body: note });
+    if (activity.kind === "sent_back" && assignees.length > 0) out.push({ ...base, recipients: assignees, kind: "approval_decided", title: `Sent back: ${task.title}`, body: note });
     // A rejection is a decision on someone's work (apex-ux flow D): it travels as an approval decision.
-    if (activity.kind === "rejected" && responsible.length > 0) out.push({ ...base, recipients: responsible, kind: "approval_decided", title: `Rejected: ${task.title}`, body: reason });
+    if (activity.kind === "rejected" && assignees.length > 0) out.push({ ...base, recipients: assignees, kind: "approval_decided", title: `Rejected: ${task.title}`, body: reason });
     if (activity.kind === "blocked") {
       const leaders = await leaderIds(tx, viewer.orgId);
       if (leaders.length > 0) out.push({ ...base, recipients: leaders, kind: "blocked", title: `Blocked: ${task.title}`, body: reason });
@@ -144,7 +136,6 @@ async function noticesFor(
 const createSchema = z.object({
   title: requiredText(1, LIMITS.taskTitle, "Give the task a title."),
   assigneeIds: idList,
-  teamIds: idList,
   projectId: z.string().max(64).default(""),
   goalId: z.string().max(64).default(""),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
@@ -161,7 +152,7 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
     const now = new Date();
     const notices: Notice[] = [];
     const taskId = await db.transaction(async (tx) => {
-      const assignment = await validateAssignment(tx, viewer.orgId, { assigneeIds: data.assigneeIds, teamIds: data.teamIds });
+      const assignment = await validateAssignment(tx, viewer.orgId, data.assigneeIds);
       if (data.projectId) {
         const project = await findProject(tx, viewer.orgId, data.projectId);
         if (project.status === "archived") throw new GuardError("forbidden", "That project is archived. Pick another one.");
@@ -183,17 +174,13 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
           updatedAt: now,
         })
         .returning({ id: tasks.id });
-      const nobody: AssigneeIds = { assigneeIds: [], teamIds: [] };
-      await applyAssignment(tx, created.id, viewer.userId, nobody, assignment, now);
+      await applyAssignment(tx, created.id, viewer.userId, [], assignment, now);
       const drafts: ActivityDraft[] = [{ kind: "created", after: { title: data.title } }];
       // Assigning work to yourself alone is not news worth a history line.
-      const justMe = assignment.teamIds.length === 0 && sameIds(assignment.assigneeIds, [viewer.userId]);
-      if (!justMe && (assignment.assigneeIds.length > 0 || assignment.teamIds.length > 0)) {
-        drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
-      }
+      const justMe = sameIds(assignment, [viewer.userId]);
+      if (!justMe && assignment.length > 0) drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
       await recordActivity(tx, { orgId: viewer.orgId, taskId: created.id, actorId: viewer.userId }, drafts, now);
-      const recipients = await newlyResponsible(tx, nobody, assignment, []);
-      notices.push(...assignedNotice(viewer, { id: created.id, title: data.title, nextAction: data.nextAction || null }, recipients, true));
+      notices.push(...assignedNotice(viewer, { id: created.id, title: data.title, nextAction: data.nextAction || null }, assignment, true));
       return created.id;
     });
     log.info("tasks.created", { orgId: viewer.orgId, taskId, by: viewer.userId });
@@ -205,9 +192,9 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
 
 // --- assignees ------------------------------------------------------------------------------------------------
 
-const assignSchema = z.object({ taskId: id, assigneeIds: idList, teamIds: idList });
+const assignSchema = z.object({ taskId: id, assigneeIds: idList });
 
-/** Replaces who a task is assigned to (people and teams). Everyone newly on it hears; the history keeps both sides. */
+/** Replaces who a task is assigned to. Everyone newly on it hears; the history keeps both sides. */
 export async function setAssignees(input: z.input<typeof assignSchema>): Promise<ActionResult> {
   return runAction("tasks.assign", assignSchema, input, async (data) => {
     const viewer = await requireViewer();
@@ -218,19 +205,18 @@ export async function setAssignees(input: z.input<typeof assignSchema>): Promise
       if (locked === null) throw new GuardError("not_found");
       const { task, assignment: before, scope } = locked;
       if (!canEditTask(viewer, scope)) throw new GuardError("forbidden");
-      const after = await validateAssignment(tx, viewer.orgId, { assigneeIds: data.assigneeIds, teamIds: data.teamIds });
-      if (sameIds(before.assigneeIds, after.assigneeIds) && sameIds(before.teamIds, after.teamIds)) return false;
-      const wasResponsible = await responsibleIds(tx, task.id);
+      const after = await validateAssignment(tx, viewer.orgId, data.assigneeIds);
+      if (sameIds(before, after)) return false;
       await applyAssignment(tx, task.id, viewer.userId, before, after, now);
       await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, task.id));
       const [beforeNames, afterNames] = await Promise.all([snapshotAssignment(tx, before), snapshotAssignment(tx, after)]);
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [{ kind: "assigned", before: beforeNames, after: afterNames }], now);
-      const recipients = await newlyResponsible(tx, before, after, wasResponsible);
-      notices.push(...assignedNotice(viewer, task, recipients, false));
+      const newcomers = after.filter((userId) => !before.includes(userId));
+      notices.push(...assignedNotice(viewer, task, newcomers, false));
       return true;
     });
     if (!changed) return ok(undefined);
-    log.info("tasks.assigned", { orgId: viewer.orgId, taskId: data.taskId, people: data.assigneeIds.length, teams: data.teamIds.length, by: viewer.userId });
+    log.info("tasks.assigned", { orgId: viewer.orgId, taskId: data.taskId, people: data.assigneeIds.length, by: viewer.userId });
     await dispatch(notices);
     refresh();
     return ok(undefined, "Assignees changed.");
@@ -335,7 +321,7 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       if (!mayMove(viewer, scope, task.status, data.status, via)) throw new GuardError("forbidden");
       if (data.status === "awaiting_approval" && data.approverId) {
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
-        if (assignment.assigneeIds.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
+        if (assignment.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
       }
       const transition: TransitionInput = { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary, note: data.note };
       const plan = planTransition(task, data.status, transition, now, via);
@@ -344,8 +330,7 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       const evidence = data.status === "completed" ? await insertLink(tx, task.id, viewer.userId, data.evidenceUrl, data.evidenceLabel, now) : [];
       await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [...plan.activities, ...evidence], now);
-      const responsible = await responsibleIds(tx, task.id);
-      notices.push(...(await noticesFor(tx, viewer, task, responsible, plan.activities, data.approverId || task.approverId, data.note || null)));
+      notices.push(...(await noticesFor(tx, viewer, task, assignment, plan.activities, data.approverId || task.approverId, data.note || null)));
       return null;
     });
     if (outcome !== null) return fail(outcome);
@@ -386,7 +371,7 @@ const progressSchema = z
  * The signature action (docs/BRIEF.md §6): what got done, what happens next, and optionally a blocker, evidence,
  * a handover and a new status, written in one transaction (the update row, the task's denormalised latest
  * progress and next action, the audit rows) with the notices sent after it commits. A handover makes the chosen
- * person the task's only person; its teams stay.
+ * person the task's only person.
  */
 export async function updateProgress(input: z.input<typeof progressSchema>): Promise<ActionResult> {
   return runAction("tasks.progress", progressSchema, input, async (data) => {
@@ -400,8 +385,8 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
       if (!canUpdateProgress(viewer, scope)) throw new GuardError("forbidden");
 
       // The people on the task after this update: the handover target alone, or whoever is on it now.
-      const handingOver = data.handOverTo !== "" && !sameIds(assignment.assigneeIds, [data.handOverTo]);
-      const after: AssigneeIds = handingOver ? { assigneeIds: [data.handOverTo], teamIds: assignment.teamIds } : assignment;
+      const handingOver = data.handOverTo !== "" && !sameIds(assignment, [data.handOverTo]);
+      const after = handingOver ? [data.handOverTo] : assignment;
 
       // The status the update leaves the task in: blocked if ticked, else the "Mark as" choice; un-ticking
       // "I'm blocked" on a blocked task unblocks it.
@@ -417,7 +402,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         if (!mayMove(viewer, scope, task.status, target, via)) throw new GuardError("forbidden", "Only the approver can complete a task that is waiting for approval.");
         if (target === "awaiting_approval") {
           await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
-          if (after.assigneeIds.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
+          if (after.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
         }
         const plan = planTransition(task, target, { reason: data.blockedReason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
         if (!plan.ok) return plan.error;
@@ -442,8 +427,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
           href: taskHref(task.id),
         });
       }
-      const responsible = await responsibleIds(tx, task.id);
-      notices.push(...(await noticesFor(tx, viewer, task, responsible, drafts, data.approverId || task.approverId, null)));
+      notices.push(...(await noticesFor(tx, viewer, task, after, drafts, data.approverId || task.approverId, null)));
       drafts.push(...(await insertLink(tx, task.id, viewer.userId, data.evidenceUrl, data.evidenceLabel, now)));
 
       await tx.insert(taskUpdates).values({
@@ -474,7 +458,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
 
 const commentSchema = z.object({ taskId: id, body: requiredText(1, LIMITS.comment, "Write a comment first.") });
 
-/** A comment joins the task's timeline; everyone responsible for the task and its creator hear about it. */
+/** A comment joins the task's timeline (open until someone resolves it); the people on the task and its creator hear about it. */
 export async function addComment(input: z.input<typeof commentSchema>): Promise<ActionResult> {
   return runAction("tasks.comment", commentSchema, input, async (data) => {
     const viewer = await requireViewer();
@@ -482,12 +466,12 @@ export async function addComment(input: z.input<typeof commentSchema>): Promise<
     const notice = await db.transaction(async (tx) => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
-      const { task, scope } = locked;
+      const { task, assignment, scope } = locked;
       if (!canUpdateProgress(viewer, scope)) throw new GuardError("forbidden");
       await tx.insert(taskUpdates).values({ taskId: task.id, authorId: viewer.userId, kind: "comment", body: data.body, createdAt: now });
       await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [{ kind: "commented", after: { excerpt: data.body.slice(0, 200) } }], now);
-      const recipients = [...new Set([...(await responsibleIds(tx, task.id)), task.createdBy])].filter((userId) => userId !== viewer.userId);
+      const recipients = [...new Set([...assignment, task.createdBy])].filter((userId) => userId !== viewer.userId);
       const out: Notice = { orgId: viewer.orgId, actorId: viewer.userId, recipients, kind: "commented", title: `New comment on ${task.title}`, body: data.body.slice(0, 200), href: taskHref(task.id) };
       return out;
     });
@@ -495,6 +479,39 @@ export async function addComment(input: z.input<typeof commentSchema>): Promise<
     await dispatch([notice]);
     refresh();
     return ok(undefined, "Comment added.");
+  });
+}
+
+const resolveSchema = z.object({ taskId: id, commentId: id, resolved: z.boolean() });
+
+/**
+ * Marks a comment resolved, or open again. A task can't be completed while a comment is open (lib/tasks/transitions.ts),
+ * so this is how a question on a task gets closed off. Anyone who may work on the task may do it; the audit trail
+ * keeps who and when.
+ */
+export async function setCommentResolved(input: z.input<typeof resolveSchema>): Promise<ActionResult> {
+  return runAction("tasks.comment_resolve", resolveSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    const changed = await db.transaction(async (tx) => {
+      const locked = await lockTask(tx, viewer.orgId, data.taskId);
+      if (locked === null) throw new GuardError("not_found");
+      if (!canResolveComment(viewer, locked.scope)) throw new GuardError("forbidden");
+      const comment = await lockComment(tx, locked.task.id, data.commentId);
+      if (comment === null) throw new GuardError("not_found", "That comment doesn't exist, or you can't see it.");
+      if ((comment.resolvedAt !== null) === data.resolved) return false;
+      await tx
+        .update(taskUpdates)
+        .set({ resolvedAt: data.resolved ? now : null, resolvedBy: data.resolved ? viewer.userId : null })
+        .where(eq(taskUpdates.id, comment.id));
+      await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, locked.task.id));
+      await recordActivity(tx, { orgId: viewer.orgId, taskId: locked.task.id, actorId: viewer.userId }, [{ kind: data.resolved ? "comment_resolved" : "comment_reopened", after: { commentId: comment.id } }], now);
+      return true;
+    });
+    if (!changed) return ok(undefined);
+    log.info("tasks.comment_resolved", { orgId: viewer.orgId, taskId: data.taskId, commentId: data.commentId, resolved: data.resolved, by: viewer.userId });
+    refresh();
+    return ok(undefined, data.resolved ? "Comment resolved." : "Comment reopened.");
   });
 }
 
@@ -615,6 +632,7 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
         nextAction: task.nextAction,
         blockedReason: task.blockedReason,
         blockedBy: task.blockedBy,
+        openComments: task.openComments,
       },
       people,
       defaultApprover: defaultApproverFor(people, task.approverId, task.assigneeIds),

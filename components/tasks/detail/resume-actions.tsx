@@ -7,16 +7,22 @@ import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LIMITS } from "@/lib/limits";
+import { openCommentsMessage } from "@/lib/tasks/transitions";
 import { toastResult } from "@/lib/toast-result";
 
 // The buttons inside the Resume card's status strip: Approve, Send back, Mark unblocked.
 
-/** The approver's two buttons on an awaiting task: Approve completes it; Send back returns it with a note. */
-export function ApprovalActions({ taskId }: { taskId: string }) {
+/**
+ * The approver's two buttons on an awaiting task: Approve completes it; Send back returns it with a note.
+ * Approving is held while comments are open (the same rule as completing), and the button says why.
+ */
+export function ApprovalActions({ taskId, openComments = 0 }: { taskId: string; openComments?: number }) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [pending, startTransition] = useTransition();
+  const held = openComments > 0;
 
   const approve = () => startTransition(async () => void toastResult(await changeStatus({ taskId, status: "completed", via: "approve" })));
   const sendBack = () =>
@@ -27,16 +33,32 @@ export function ApprovalActions({ taskId }: { taskId: string }) {
       }
     });
 
+  const approveButton = (
+    <Button size="sm" className="flex-1 sm:flex-none" disabled={pending || held} aria-disabled={held || undefined} onClick={approve}>
+      <Check aria-hidden />
+      {pending ? "Saving…" : "Approve"}
+    </Button>
+  );
+
   return (
     <div className="flex w-full items-center gap-2 sm:w-auto">
       <Button size="sm" variant="outline" className="flex-1 bg-background sm:flex-none" disabled={pending} onClick={() => setOpen(true)}>
         <Undo2 aria-hidden />
         Send back
       </Button>
-      <Button size="sm" className="flex-1 sm:flex-none" disabled={pending} onClick={approve}>
-        <Check aria-hidden />
-        {pending ? "Saving…" : "Approve"}
-      </Button>
+      {held ? (
+        <Tooltip>
+          {/* A disabled button fires no pointer events, so the tooltip hangs off a wrapper. */}
+          <TooltipTrigger asChild>
+            <span className="flex flex-1 sm:flex-none" tabIndex={0}>
+              {approveButton}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{openCommentsMessage(openComments)}</TooltipContent>
+        </Tooltip>
+      ) : (
+        approveButton
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

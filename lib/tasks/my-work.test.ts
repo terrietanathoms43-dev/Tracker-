@@ -18,7 +18,7 @@ function row(partial: Partial<TaskListItem> & Partial<Omit<MyWorkRow, "item">> =
       priority: "normal",
       dueDate: null,
       nextAction: null,
-      assignees: { people: [], teams: [] },
+      assignees: [],
       project: null,
       goalId: null,
       canDelete: false,
@@ -70,12 +70,6 @@ describe("groupMyWork", () => {
       TODAY,
     );
     expect(groups.attention.map((item) => item.reason)).toEqual(["Overdue", "Due soon", "Blocked", "Due soon", "Sent back", "Your approval"]);
-  });
-
-  it("treats work assigned through a team like my own, keeping the team's name on the row", () => {
-    const groups = groupMyWork([row({ title: "team work", via: "Frontend", dueDate: "2026-10-01" }), row({ title: "team plain", via: "Frontend" })], ME, TODAY);
-    expect(groups.attention.map((item) => [item.title, item.reason, item.via])).toEqual([["team work", "Overdue", "Frontend"]]);
-    expect(groups.continueWorking.map((item) => item.via)).toEqual(["Frontend"]);
   });
 
   it("orders continue-working by due date, then priority, then manual rank, then recency", () => {

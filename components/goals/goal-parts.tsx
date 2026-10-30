@@ -1,7 +1,6 @@
 import { cn } from "cn";
-import { CheckCircle2, CirclePause } from "lucide-react";
+import { CheckCircle2, CirclePause, GitBranch } from "lucide-react";
 import Link from "next/link";
-import { TeamChip } from "@/components/tasks/assignee-stack";
 import { UserAvatar } from "@/components/user-avatar";
 import { GOAL_STATUS_LABELS, type GoalStatus } from "@/lib/constants";
 import type { GoalListItem } from "@/lib/dal/goals";
@@ -11,7 +10,7 @@ import { formatDay } from "@/lib/time";
 import { ProgressBar } from "./progress-bar";
 
 // Small server-rendered pieces of the goal screens: the status badge, the owner and target labels (projects reuse
-// both), and the card the goals list is made of.
+// both), and the card the goals list and a goal's sub-goals are made of.
 
 const BADGE = "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium whitespace-nowrap";
 
@@ -24,6 +23,17 @@ export function GoalStatusBadge({ status, className }: { status: GoalStatus; cla
     <span className={cn(BADGE, achieved ? "bg-status-completed-bg text-status-completed-fg" : "bg-status-not-started-bg text-status-not-started-fg", className)}>
       <Icon className="size-3.5" aria-hidden />
       {GOAL_STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+/** "2 sub-goals": how many steps a goal is split into. */
+export function SubGoalCount({ count, className }: { count: number; className?: string }) {
+  if (count === 0) return null;
+  return (
+    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap tabular-nums", className)}>
+      <GitBranch className="size-3.5" aria-hidden />
+      {count} {count === 1 ? "sub-goal" : "sub-goals"}
     </span>
   );
 }
@@ -55,7 +65,7 @@ export function TargetLabel({ day, today, active, className }: { day: string; to
   );
 }
 
-/** One goal in the list: title (the whole card is the link), owner, target, status and progress. */
+/** One goal in a list: title (the whole card is the link), owner, target, sub-goal count, status and progress. */
 export function GoalCard({ goal, today }: { goal: GoalListItem; today: string }) {
   return (
     <li className="relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/40">
@@ -76,9 +86,12 @@ export function GoalCard({ goal, today }: { goal: GoalListItem; today: string })
             <TargetLabel day={goal.targetDate} today={today} active={goal.status === "active"} />
           </>
         ) : null}
-        {goal.teams.map((team) => (
-          <TeamChip key={team.id} name={team.name} className="relative" />
-        ))}
+        {goal.subGoals > 0 ? (
+          <>
+            <span aria-hidden>·</span>
+            <SubGoalCount count={goal.subGoals} />
+          </>
+        ) : null}
       </div>
       <ProgressBar {...goal.progress} className="mt-auto pt-4" />
     </li>

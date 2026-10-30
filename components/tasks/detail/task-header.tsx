@@ -119,7 +119,7 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-muted-foreground">
         <StatusBadge status={detail.status} />
-        {detail.assignees.people.length + detail.assignees.teams.length > 0 ? (
+        {detail.assignees.length > 0 ? (
           <AssigneeStack assignees={detail.assignees} names />
         ) : (
           <span className="inline-flex items-center gap-1.5">

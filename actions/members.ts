@@ -1,12 +1,12 @@
 "use server";
 
-import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db, type Tx } from "@/db";
-import { organizationMembers, taskActivity, taskAssignees, tasks, teamMembers, teams, users } from "@/db/schema";
+import { organizationMembers, taskActivity, taskAssignees, tasks, users } from "@/db/schema";
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { CLOSED_STATUSES, ORG_COOKIE, ORG_ROLE_LABELS, ORG_ROLES } from "@/lib/constants";
 import { findMembership, lockAdminIds } from "@/lib/dal/orgs";
@@ -20,8 +20,8 @@ import { requireViewerContext } from "@/lib/viewer";
 const LAST_ADMIN = "A workspace needs at least one admin. Make someone else an admin first.";
 
 /**
- * Takes a departing person off the open tasks they are assigned to in this workspace, and off its teams, and
- * records each task change in its history (kind "assigned", before → after, with the note), so the team sees the
+ * Takes a departing person off the open tasks they are assigned to in this workspace, and
+ * records each task change in its history (kind "assigned", before → after, with the note), so everyone sees the
  * work is free to pick up. Closed tasks and all past updates keep their name.
  */
 async function unassignOpenTasks(tx: Tx, orgId: string, userId: string, actorId: string, note: string): Promise<number> {
@@ -41,7 +41,6 @@ async function unassignOpenTasks(tx: Tx, orgId: string, userId: string, actorId:
       ids.map((taskId) => ({ orgId, taskId, actorId, kind: "assigned" as const, before: { assignees: [{ id: userId, name }] }, after: { assignees: [] }, note, createdAt: now })),
     );
   }
-  await tx.delete(teamMembers).where(and(eq(teamMembers.userId, userId), inArray(teamMembers.teamId, sql`(select ${teams.id} from ${teams} where ${teams.orgId} = ${orgId})`)));
   return ids.length;
 }
 

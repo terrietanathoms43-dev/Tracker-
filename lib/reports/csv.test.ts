@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contributionsTable, csvCell, deliveredTable, teamsTable, toCsv } from "./csv";
+import { contributionsTable, csvCell, deliveredTable, toCsv } from "./csv";
 import type { ReportTask } from "./data";
 
 describe("csvCell", () => {
@@ -44,7 +44,7 @@ const task: ReportTask = {
   title: 'Ship "v2", finally',
   status: "completed",
   priority: "normal",
-  assignees: { people: [{ id: "u1", name: "Jordan Dev", email: "jordan@trackwise.test", image: null }], teams: [] },
+  assignees: [{ id: "u1", name: "Jordan Dev", email: "jordan@trackwise.test", image: null }],
   dueDate: "2026-10-10",
   completedDay: "2026-10-12",
   completionSummary: "Done.\nNotes in the doc.",
@@ -59,17 +59,13 @@ const task: ReportTask = {
 };
 
 describe("tables", () => {
-  it("delivered: one row per task, people and teams in their own columns, evidence urls space-separated", () => {
+  it("delivered: one row per task, people in one column, evidence urls space-separated", () => {
     expect(toCsv(deliveredTable([task]))).toBe(
-      'Title,Assignees,Teams,Completed on,Completion summary,Evidence\r\n"Ship ""v2"", finally",Jordan Dev,,2026-10-12,"Done.\nNotes in the doc.",https://example.com/a https://example.com/b\r\n',
+      'Title,Assignees,Completed on,Completion summary,Evidence\r\n"Ship ""v2"", finally",Jordan Dev,2026-10-12,"Done.\nNotes in the doc.",https://example.com/a https://example.com/b\r\n',
     );
-    const teamOnly = { ...task, title: "Team work", assignees: { people: [], teams: [{ id: "f", name: "Frontend" }, { id: "p", name: "Platform" }] }, evidence: [] };
-    const nobody = { ...task, title: "Orphan", assignees: { people: [], teams: [] }, evidence: [] };
-    expect(toCsv(deliveredTable([teamOnly, nobody])).split("\r\n").slice(1, 3)).toEqual(['Team work,,Frontend; Platform,2026-10-12,"Done.\nNotes in the doc.",', 'Orphan,Unassigned,,2026-10-12,"Done.\nNotes in the doc.",']);
-  });
-
-  it("teams: one row per team, counts as numbers", () => {
-    expect(toCsv(teamsTable([{ team: { id: "f", name: "Frontend" }, members: 2, completed: 3, open: 4, blocked: 1, overdue: 0 }]))).toBe("Team,Members,Completed,Open,Blocked,Overdue\r\nFrontend,2,3,4,1,0\r\n");
+    const pair = { ...task, title: "Pair work", assignees: [...task.assignees, { id: "u2", name: "Sam Dev", email: "sam@trackwise.test", image: null }], evidence: [] };
+    const nobody = { ...task, title: "Orphan", assignees: [], evidence: [] };
+    expect(toCsv(deliveredTable([pair, nobody])).split("\r\n").slice(1, 3)).toEqual(['Pair work,Jordan Dev; Sam Dev,2026-10-12,"Done.\nNotes in the doc.",', 'Orphan,Unassigned,2026-10-12,"Done.\nNotes in the doc.",']);
   });
 
   it("contributions: counts as numbers", () => {

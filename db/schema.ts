@@ -201,9 +201,13 @@ export const invitations = pgTable(
   (t) => [index("invitations_org_idx").on(t.orgId)],
 );
 
-// --- teams (groups of members inside one workspace) ----------------------------------------------
+// --- legacy: teams -----------------------------------------------------------------------------------------
+// Teams were removed from the product on 2026-10-30 (docs/PLAN.md decision log): assignment is people only, and
+// goals have sub-goals instead of owning teams. These four tables stay because dropping them is not additive and
+// real data exists in them; nothing in the app reads or writes them any more. `scripts/backfill-team-assignees.ts`
+// copies each team's members onto its tasks' task_assignees once, so no work lost a person when teams went.
 
-/** A named group of members ("Frontend") that work can be assigned to. Carries no role and changes no visibility. */
+/** Legacy (unused): a named group of members. */
 export const teams = pgTable(
   "teams",
   {
@@ -220,6 +224,7 @@ export const teams = pgTable(
   (t) => [index("teams_org_idx").on(t.orgId), unique("teams_org_name_unique").on(t.orgId, t.name)],
 );
 
+/** Legacy (unused). */
 export const teamMembers = pgTable(
   "team_members",
   {
@@ -244,6 +249,11 @@ export const goals = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
+    /**
+     * The goal this one is a sub-goal of (one level: a sub-goal never has sub-goals of its own, docs/PLAN.md
+     * 2026-10-30 log). A sub-goal's target date can never be later than its parent's.
+     */
+    parentGoalId: text("parent_goal_id").references((): AnyPgColumn => goals.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     description: text("description"),
     ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
@@ -256,10 +266,10 @@ export const goals = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("goals_org_status_idx").on(t.orgId, t.status)],
+  (t) => [index("goals_org_status_idx").on(t.orgId, t.status), index("goals_parent_idx").on(t.parentGoalId)],
 );
 
-/** The teams expected to deliver a goal. */
+/** Legacy (unused): the teams a goal used to name. */
 export const goalTeams = pgTable(
   "goal_teams",
   {
@@ -412,7 +422,7 @@ export const taskAssignees = pgTable(
   (t) => [primaryKey({ columns: [t.taskId, t.userId] }), index("task_assignees_user_idx").on(t.userId)],
 );
 
-/** The teams a task is assigned to: every member of the team is expected to deliver it. */
+/** Legacy (unused): the teams a task used to be assigned to. */
 export const taskTeams = pgTable(
   "task_teams",
   {
@@ -428,7 +438,7 @@ export const taskTeams = pgTable(
   (t) => [primaryKey({ columns: [t.taskId, t.teamId] }), index("task_teams_team_idx").on(t.teamId)],
 );
 
-/** Append-only: progress updates (the Resume history) and comments share one timeline. */
+/** Append-only (a comment's resolved_at / resolved_by are the one thing that changes): progress updates (the Resume history) and comments share one timeline. */
 export const taskUpdates = pgTable(
   "task_updates",
   {
@@ -445,6 +455,9 @@ export const taskUpdates = pgTable(
     /** Progress only; null on the update that completes a task. */
     nextAction: text("next_action"),
     blocker: text("blocker"),
+    /** Comments only: when and by whom it was marked resolved. A task can't be completed while a comment is open. */
+    resolvedAt: tstz("resolved_at"),
+    resolvedBy: text("resolved_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (t) => [index("task_updates_task_idx").on(t.taskId, t.createdAt.desc())],
@@ -533,7 +546,6 @@ export type User = typeof users.$inferSelect;
 export type Organization = typeof organizations.$inferSelect;
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
-export type Team = typeof teams.$inferSelect;
 export type Goal = typeof goals.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type RequestRow = typeof requests.$inferSelect;

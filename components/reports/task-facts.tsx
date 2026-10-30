@@ -1,18 +1,18 @@
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { PanelEmpty } from "@/components/dashboard/panel";
 import { StatusIcon } from "@/components/status-badge";
+import { AssigneeStack } from "@/components/tasks/assignee-stack";
 import { DueLabel } from "@/components/tasks/due-label";
-import { PanelEmpty } from "@/components/team/panel";
 import { TASK_STATUS_LABELS } from "@/lib/constants";
 import type { ReportTask } from "@/lib/reports/data";
 import { describeAssignees } from "@/lib/tasks/assignees";
 import { formatDay } from "@/lib/time";
 
-// The report's task sections as rows of facts: who, when, what was said, and the evidence. On paper the links
-// lose their colour and evidence chips print their address.
-
-const assigneeOf = (task: ReportTask) => describeAssignees(task.assignees);
+// The report's task sections as rows of facts: who (as avatar circles, stacked when the work was shared), when,
+// what was said, and the evidence. On paper the circles give way to names, links lose their colour and evidence
+// chips print their address.
 
 function hostOf(url: string): string {
   try {
@@ -27,6 +27,16 @@ function TaskTitle({ task }: { task: ReportTask }) {
     <Link href={`/tasks/${task.id}`} prefetch={false} className="text-sm font-medium break-words underline-offset-4 hover:underline">
       {task.title}
     </Link>
+  );
+}
+
+/** The contributors as stacked circles on screen, and as names on paper (where nothing can be hovered). */
+function Contributors({ task }: { task: ReportTask }) {
+  return (
+    <>
+      <AssigneeStack assignees={task.assignees} max={4} className="print:hidden" />
+      <span className="hidden text-[13px] text-muted-foreground print:inline">{describeAssignees(task.assignees)}</span>
+    </>
   );
 }
 
@@ -53,17 +63,18 @@ function EvidenceLinks({ evidence }: { evidence: ReportTask["evidence"] }) {
   );
 }
 
-/** Delivered: title, who owned it, the day it was completed, its completion summary and evidence. */
+/** Delivered: title, who delivered it (circles), the day it was completed, its completion summary and evidence. */
 export function DeliveredList({ tasks, today }: { tasks: ReportTask[]; today: string }) {
   if (tasks.length === 0) return <PanelEmpty>Nothing was completed in this range.</PanelEmpty>;
   return (
     <ul className="divide-y">
       {tasks.map((task) => (
         <li key={task.id} className="px-4 py-3 break-inside-avoid">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
             <TaskTitle task={task} />
-            <span className="text-[13px] whitespace-nowrap text-muted-foreground">
-              {assigneeOf(task)} · Completed {task.completedDay ? formatDay(task.completedDay, today) : ""}
+            <span className="inline-flex items-center gap-2 text-[13px] whitespace-nowrap text-muted-foreground">
+              <Contributors task={task} />
+              <span>Completed {task.completedDay ? formatDay(task.completedDay, today) : ""}</span>
             </span>
           </div>
           {task.completionSummary ? <p className="mt-1 text-sm text-muted-foreground">{task.completionSummary}</p> : null}
@@ -74,15 +85,16 @@ export function DeliveredList({ tasks, today }: { tasks: ReportTask[]; today: st
   );
 }
 
-/** One open task: status, title, owner and status in words, the due date in words, and one line of detail. */
+/** One open task: status, title, the people on it and the status in words, the due date, and one line of detail. */
 function OpenRow({ task, today, detail }: { task: ReportTask; today: string; detail: ReactNode }) {
   return (
     <li className="flex items-start gap-3 px-4 py-2.5 break-inside-avoid">
       <StatusIcon status={task.status} className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <TaskTitle task={task} />
-        <p className="text-[13px] text-muted-foreground">
-          {assigneeOf(task)} · {TASK_STATUS_LABELS[task.status]}
+        <p className="mt-0.5 flex items-center gap-2 text-[13px] text-muted-foreground">
+          <Contributors task={task} />
+          <span>{TASK_STATUS_LABELS[task.status]}</span>
         </p>
         {detail}
       </div>

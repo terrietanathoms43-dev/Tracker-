@@ -65,7 +65,7 @@ try {
   await morgan.click("Approve", { exact: true });
   await morgan.waitFor("Approve this request");
   await morgan.click("Create the task now");
-  // The assignees picker: a button that opens a searchable list of people and teams (it is disabled until the options load).
+  // The assignees picker: a button that opens a searchable list of people (it is disabled until the options load).
   step("the assignees picker opens", await morgan.click("Unassigned", { exact: true, within: "[role=dialog]", wait: 800 }));
   step("and offers Jordan", await morgan.click("Jordan Dev", { within: "[cmdk-list]", wait: 400 }));
   await morgan.press("Escape", 600);

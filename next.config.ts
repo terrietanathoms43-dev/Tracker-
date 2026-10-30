@@ -41,9 +41,13 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  // The Team dashboard became the Members page (docs/PLAN.md, 2026-10-18 log); old links still land somewhere.
+  // The Team dashboard became the Members page (2026-10-18) and teams went altogether (2026-10-30, docs/PLAN.md
+  // log); old links still land somewhere.
   async redirects() {
-    return [{ source: "/team", destination: "/members", permanent: false }];
+    return [
+      { source: "/team", destination: "/members", permanent: false },
+      { source: "/teams/:path*", destination: "/members", permanent: false },
+    ];
   },
   turbopack: {
     rules: {

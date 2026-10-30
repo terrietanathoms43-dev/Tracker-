@@ -12,8 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { TaskPriority, TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
-import { idsOf, sameIds, type AssigneeIds } from "@/lib/tasks/assignees";
-import type { Assignees, Person, TeamRef } from "@/lib/tasks/types";
+import { idsOf, sameIds } from "@/lib/tasks/assignees";
+import type { Assignees, Person } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneePicker } from "../assignee-picker";
 import { StatusMenuItems, useChangeStatus } from "../status-menu";
@@ -107,20 +107,19 @@ export function StatusEditor({ taskId, status, allowReject }: { taskId: string; 
  * The assignees picker on the task page: pick as many as you like, and the change is saved once the list closes
  * (one history line, one round of notifications), not on every tick.
  */
-export function AssigneesEditor({ taskId, assignees, people, teams, viewerId }: { taskId: string; assignees: Assignees; people: Person[]; teams: TeamRef[]; viewerId: string }) {
-  const [value, setValue] = useState<AssigneeIds>(() => idsOf(assignees));
+export function AssigneesEditor({ taskId, assignees, people, viewerId }: { taskId: string; assignees: Assignees; people: Person[]; viewerId: string }) {
+  const [value, setValue] = useState<string[]>(() => idsOf(assignees));
   const [pending, startTransition] = useTransition();
   // Someone on the task who is no longer a worker here stays pickable, so saving doesn't silently drop them.
   const options = {
-    people: [...assignees.people.filter((person) => !people.some((each) => each.id === person.id)), ...people],
-    teams: [...assignees.teams.filter((team) => !teams.some((each) => each.id === team.id)), ...teams],
+    people: [...assignees.filter((person) => !people.some((each) => each.id === person.id)), ...people],
     viewerId,
   };
   function save() {
     const current = idsOf(assignees);
-    if (sameIds(current.assigneeIds, value.assigneeIds) && sameIds(current.teamIds, value.teamIds)) return;
+    if (sameIds(current, value)) return;
     startTransition(async () => {
-      const result = await setAssignees({ taskId, ...value });
+      const result = await setAssignees({ taskId, assigneeIds: value });
       if (!toastResult(result)) setValue(current);
     });
   }

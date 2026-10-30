@@ -1,6 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { unreadCount } from "@/lib/dal/notifications";
-import { canSeeReports, navFor, type NavKey } from "@/lib/permissions";
+import { navFor, type NavKey } from "@/lib/permissions";
 import { getViewerContext, requireUser } from "@/lib/viewer";
 import { BottomTabs } from "./bottom-tabs";
 import { NotificationBell } from "./notification-bell";
@@ -48,7 +48,7 @@ export async function SidebarNotifications() {
 
 export async function SidebarAccount() {
   const { viewer, user } = await context();
-  return <UserMenu user={user} canSeeReports={viewer !== null && canSeeReports(viewer)} hasWorkspace={viewer !== null} />;
+  return <UserMenu user={user} hasWorkspace={viewer !== null} />;
 }
 
 export async function MobileTopBar() {
@@ -60,7 +60,7 @@ export async function MobileTopBar() {
       <div className="ml-auto flex items-center gap-1">
         {viewer && viewer.orgRole !== "stakeholder" ? <SearchButton /> : null}
         {viewer ? <NotificationBell unread={unread} variant="icon" /> : null}
-        <UserMenu user={user} variant="avatar" canSeeReports={viewer !== null && canSeeReports(viewer)} hasWorkspace={viewer !== null} />
+        <UserMenu user={user} variant="avatar" hasWorkspace={viewer !== null} />
       </div>
     </>
   );
@@ -68,7 +68,7 @@ export async function MobileTopBar() {
 
 export async function MobileTabs() {
   const { viewer } = await context();
-  return <BottomTabs items={viewer ? navFor(viewer) : NO_WORKSPACE_NAV} canSeeReports={viewer !== null && canSeeReports(viewer)} hasWorkspace={viewer !== null} />;
+  return <BottomTabs items={viewer ? navFor(viewer) : NO_WORKSPACE_NAV} hasWorkspace={viewer !== null} />;
 }
 
 export function OrgSkeleton() {

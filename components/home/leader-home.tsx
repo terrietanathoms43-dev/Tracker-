@@ -1,10 +1,10 @@
 import { ApprovalStaging } from "@/components/tasks/approval-staging";
 import { TaskList } from "@/components/tasks/task-list";
-import { ActivityFeed } from "@/components/team/activity-feed";
-import { CountTiles } from "@/components/team/count-tiles";
-import { GoalProgressList } from "@/components/team/goal-progress";
-import { Panel, PanelEmpty } from "@/components/team/panel";
-import { WorkloadCompact } from "@/components/team/workload";
+import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { CountTiles } from "@/components/dashboard/count-tiles";
+import { GoalProgressList } from "@/components/dashboard/goal-progress";
+import { Panel, PanelEmpty } from "@/components/dashboard/panel";
+import { WorkloadCompact } from "@/components/dashboard/workload";
 import type { FeedEntry, GoalProgress } from "@/lib/dal/dashboard";
 import type { ApprovalStagingTask } from "@/lib/dal/tasks";
 import { tasksHref } from "@/lib/tasks/filters";

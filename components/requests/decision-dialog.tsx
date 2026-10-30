@@ -15,7 +15,6 @@ import { Textarea } from "@/components/ui/textarea";
 import type { RequestDecision, RequestStatus, RequestUrgency, TaskPriority } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { PRIORITY_FOR_URGENCY } from "@/lib/requests/decisions";
-import type { AssigneeIds } from "@/lib/tasks/assignees";
 import type { TaskFormOptions } from "@/lib/tasks/types";
 import { TaskFields } from "./task-fields";
 
@@ -40,7 +39,7 @@ function DecisionForm({ request, decision, onDone }: { request: DecisionTarget; 
   const [reason, setReason] = useState("");
   const [deferUntil, setDeferUntil] = useState("");
   const [createNow, setCreateNow] = useState(false);
-  const [assignment, setAssignment] = useState<AssigneeIds>({ assigneeIds: [], teamIds: [] });
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [priority, setPriority] = useState<TaskPriority>(PRIORITY_FOR_URGENCY[request.urgency]);
   const [dueDate, setDueDate] = useState("");
   const [options, setOptions] = useState<TaskFormOptions | null>(null);
@@ -71,7 +70,7 @@ function DecisionForm({ request, decision, onDone }: { request: DecisionTarget; 
         decision,
         reason,
         deferUntil: decision === "deferred" ? deferUntil : "",
-        createTask: withTask ? { ...assignment, priority, dueDate } : undefined,
+        createTask: withTask ? { assigneeIds, priority, dueDate } : undefined,
       });
       if (!result.ok) {
         // A field's error shows under it; anything else (a stale screen, no permission) is a toast.
@@ -110,8 +109,8 @@ function DecisionForm({ request, decision, onDone }: { request: DecisionTarget; 
       {withTask ? (
         <TaskFields
           options={options}
-          assignment={assignment}
-          onAssignment={setAssignment}
+          assigneeIds={assigneeIds}
+          onAssigneeIds={setAssigneeIds}
           priority={priority}
           onPriority={setPriority}
           dueDate={dueDate}

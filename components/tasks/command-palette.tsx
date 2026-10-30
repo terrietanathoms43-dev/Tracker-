@@ -1,6 +1,6 @@
 "use client";
 
-import { Columns3, FolderKanban, House, Inbox, ListChecks, NotebookPen, Plus, SquareCheckBig, Target, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, Columns3, FolderKanban, House, Inbox, ListChecks, NotebookPen, Plus, SquareCheckBig, Target, Users, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getPaletteContext, paletteSearch } from "@/actions/tasks";
@@ -24,6 +24,7 @@ const PLACES: { href: string; label: string; icon: LucideIcon; nav: NavKey }[] =
   { href: "/goals", label: "Goals", icon: Target, nav: "goals" },
   { href: "/members", label: "Members", icon: Users, nav: "members" },
   { href: "/requests", label: "Requests", icon: Inbox, nav: "requests" },
+  { href: "/reports", label: "Reports", icon: BarChart3, nav: "reports" },
 ];
 
 type Caps = { nav: NavKey[]; canCreate: boolean };

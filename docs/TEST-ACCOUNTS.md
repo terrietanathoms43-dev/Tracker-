@@ -26,9 +26,9 @@ Also seeded: `casey@trackwise.test` (Casey Other), a member of Other Co who is n
 | `as=` | Waiting for them after a seed |
 | --- | --- |
 | `admin` | 2 requests submitted · 2 requests to decide · owns goal "Cut incident response time in half" |
-| `leader` | 3 open tasks · in team "Platform" · 2 awaiting their approval · 2 requests to decide · 3 unread notifications · owns goal "Ship the self-serve onboarding" · owns project "Onboarding flow" |
-| `member` | 9 open tasks · in team "Frontend" · in team "Platform" · 1 overdue · 2 blocked · 1 request submitted · 2 unread notifications · owns project "Incident tooling" |
-| `member2` | 7 open tasks · in team "Frontend" · 1 overdue · 1 blocked · 1 request submitted · owns goal "Retire the legacy billing jobs" · owns project "Billing jobs migration" |
+| `leader` | 2 open tasks · 2 awaiting their approval · 2 requests to decide · 3 unread notifications · owns goal "Ship the self-serve onboarding" · owns project "Onboarding flow" |
+| `member` | 7 open tasks · 1 overdue · 2 blocked · 1 request submitted · 2 unread notifications · owns project "Incident tooling" |
+| `member2` | 8 open tasks · 1 overdue · 1 blocked · 1 request submitted · owns sub-goal "Invitations work without a support call" · owns goal "Retire the legacy billing jobs" · owns project "Billing jobs migration" |
 | `stakeholder` | 2 requests submitted |
 | `other` | 1 open task · 1 request to decide · owns goal "Answer every support ticket within a day" · owns project "Help center refresh" |
 
@@ -36,15 +36,14 @@ Also seeded: `casey@trackwise.test` (Casey Other), a member of Other Co who is n
 
 **Trackwise Demo** (slug `trackwise-demo`, America/Jamaica): Avery Admin (admin), Morgan Lead (leader), Jordan Dev (member), Sam Dev (member), Taylor Ops (stakeholder).
 
-- Team **Frontend**: Jordan Dev, Sam Dev.
-- Team **Platform**: Morgan Lead, Jordan Dev.
-- Goal **Ship the self-serve onboarding** (active), owner Morgan Lead, teams Frontend.
-- Goal **Cut incident response time in half** (active), owner Avery Admin, teams Platform.
+- Goal **Ship the self-serve onboarding** (active), owner Morgan Lead.
+- Sub-goal **Invitations work without a support call** (active), owner Sam Dev, under "Ship the self-serve onboarding".
+- Goal **Cut incident response time in half** (active), owner Avery Admin.
 - Goal **Retire the legacy billing jobs** (achieved), owner Sam Dev.
 - Project **Onboarding flow** (active), owner Morgan Lead, under "Ship the self-serve onboarding".
 - Project **Incident tooling** (active), owner Jordan Dev, under "Cut incident response time in half".
 - Project **Billing jobs migration** (completed), owner Sam Dev, under "Retire the legacy billing jobs".
-- 24 tasks: 7 in progress, 4 not started, 3 blocked, 2 awaiting approval, 2 rejected, 6 completed. 2 overdue, 1 unassigned, 2 with two people on them, 2 assigned to a team; 6 comments and 12 evidence links.
+- 25 tasks: 8 in progress, 4 not started, 3 blocked, 2 awaiting approval, 2 rejected, 6 completed. 2 overdue, 2 unassigned, 2 with two people on them; 6 comments (4 still open) and 12 evidence links.
 - 6 requests: 2 new, 1 converted to a task, 1 approved, 1 deferred, 1 rejected. "Show incident start times in our time zone" (from Taylor Ops) was converted into a task that links back to it.
 - 9 notifications (5 unread) for Morgan Lead, Jordan Dev, Taylor Ops.
 - Dates are relative to the moment of seeding, so re-seed (or `npm run test:tidy`) to keep the dashboards current.
@@ -53,7 +52,7 @@ Also seeded: `casey@trackwise.test` (Casey Other), a member of Other Co who is n
 
 - Goal **Answer every support ticket within a day** (active), owner Riley Other.
 - Project **Help center refresh** (active), owner Riley Other, under "Answer every support ticket within a day".
-- 3 tasks: 1 in progress, 1 not started, 1 completed. 0 overdue, 0 unassigned, 0 with two people on them, 0 assigned to a team; 0 comments and 0 evidence links.
+- 3 tasks: 1 in progress, 1 not started, 1 completed. 0 overdue, 0 unassigned, 0 with two people on them; 0 comments (0 still open) and 0 evidence links.
 - 1 request: 1 new.
 - No notifications.
 - Used to prove cross-workspace isolation: nothing in it refers to anything in the demo workspace.

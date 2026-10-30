@@ -11,7 +11,7 @@ const READ_ONLY: TaskAbilities = { edit: false, progress: false, approve: false,
 
 /** "Linked task": what the request turned into, where it stands and what happens next, read-only. */
 export function LinkedTask({ detail, links, now, timeZone }: { detail: TaskDetail; links: EvidenceLink[]; now: Date; timeZone: string }) {
-  const nobody = detail.assignees.people.length === 0 && detail.assignees.teams.length === 0;
+  const nobody = detail.assignees.length === 0;
   return (
     <section aria-labelledby="linked-task-heading" className="grid gap-2">
       <h2 id="linked-task-heading" className="px-0.5 text-base font-semibold">

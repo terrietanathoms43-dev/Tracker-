@@ -4,7 +4,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { getTaskFormOptions } from "@/actions/tasks";
 import type { TaskFormOptions } from "@/lib/tasks/types";
 
-// The New task form's pickers (people, teams, projects, goals), kept once per browser session so the dialog
+// The New task form's pickers (people, projects, goals), kept once per browser session so the dialog
 // opens at once: the form renders with what it has and the pickers fill in when the options arrive.
 
 type Loaded = { options: TaskFormOptions | null; error: string | null };

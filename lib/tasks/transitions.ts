@@ -9,6 +9,8 @@ export type TaskState = {
   startedAt: Date | null;
   approverId: string | null;
   blockedReason: string | null;
+  /** Comments nobody has resolved yet. While there are any, the task cannot be completed (2026-10-30 log). */
+  openComments: number;
 };
 
 export type TransitionInput = {
@@ -53,14 +55,21 @@ const clean = (value: string | null | undefined) => {
   return trimmed === "" ? null : trimmed;
 };
 
+/** Why a task with open comments can't be completed: the same words on the server and under the forms' Completed option. */
+export function openCommentsMessage(count: number): string {
+  return `Resolve the ${count} open ${count === 1 ? "comment" : "comments"} before completing this task.`;
+}
+
 /**
  * Plans a move from the task's status to `to`. Leaving a state undoes what it set (blocked clears the reason,
  * completed clears completed_at) and leaves a trace in the history; asking for the current status is a no-op.
+ * Completing (approving included) is refused while a comment is still open.
  */
 export function planTransition(task: TaskState, to: TaskStatus, input: TransitionInput, now: Date, via: TransitionVia = "status"): TransitionPlan {
   const from = task.status;
   if (via !== "status" && from !== "awaiting_approval") return { ok: false, error: "This task isn't waiting for approval." };
   if (from === to && to !== "awaiting_approval") return { ok: true, patch: {}, activities: [] };
+  if (to === "completed" && task.openComments > 0) return { ok: false, error: openCommentsMessage(task.openComments) };
 
   const reason = clean(input.reason);
   if ((to === "blocked" || to === "rejected") && reason === null) {

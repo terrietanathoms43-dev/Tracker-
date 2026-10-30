@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { Link2 } from "lucide-react";
+import { Link2, MessageSquareWarning } from "lucide-react";
 import { useState, useTransition, type RefObject } from "react";
 import { updateProgress } from "@/actions/tasks";
 import { CharacterCounter } from "@/components/character-counter";
@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { TASK_STATUS_LABELS } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
+import { openCommentsMessage } from "@/lib/tasks/transitions";
 import type { UpdateContext } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 
@@ -23,7 +24,8 @@ type MarkAs = "" | "in_progress" | "awaiting_approval" | "completed";
 
 /**
  * The signature form (docs/BRIEF.md §6): latest progress and next action, then the optional blocker, evidence,
- * handover and new status, revealed only when wanted. Ctrl/⌘+Enter saves.
+ * handover and new status, revealed only when wanted. Ctrl/⌘+Enter saves. Completing is held back while the
+ * task has open comments, and the form says so where the choice is made.
  */
 export function UpdateProgressForm({
    context,
@@ -63,6 +65,8 @@ export function UpdateProgressForm({
            ? `Keep with ${nameOf(current[0])}`
            : `Keep with ${current.map((person) => nameOf(person)).join(", ")}`;
    const completing = !blocked && markAs === "completed";
+   // The same rule the server applies (lib/tasks/transitions.ts), shown before the save instead of after it.
+   const heldByComments = completing && task.openComments > 0;
    // Completing a task that waits for approval is approving it: only the approver may.
    const markOptions = (["in_progress", "awaiting_approval", "completed"] as const).filter(
       (status) => status !== task.status && (status !== "completed" || task.status !== "awaiting_approval" || abilities.approve),
@@ -248,7 +252,7 @@ export function UpdateProgressForm({
                   id={field("handover")}
                   value={handOverTo}
                   onChange={(event) => setHandOverTo(event.target.value)}
-                  title="Hands the task to one person; its teams stay."
+                  title="Hands the task to one person."
                >
                   <option value="">{keepLabel}</option>
                   {people
@@ -281,6 +285,13 @@ export function UpdateProgressForm({
             </div>
          </div>
 
+         {heldByComments ? (
+            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+               <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
+               <span>{openCommentsMessage(task.openComments)} Resolve them under Comments and history, or keep the task open for now.</span>
+            </p>
+         ) : null}
+
          {!blocked && markAs === "awaiting_approval" ? (
             <div className="grid gap-1.5">
                <Label htmlFor={field("approver")} className="text-[13px] text-muted-foreground">
@@ -305,7 +316,7 @@ export function UpdateProgressForm({
                {error("approverId")}
             </div>
          ) : null}
-         {completing ? (
+         {completing && !heldByComments ? (
             <div className="grid gap-1">
                <Textarea
                   aria-label="Completion summary"
@@ -323,7 +334,7 @@ export function UpdateProgressForm({
 
          <div className="flex items-center justify-end gap-3">
             <span className="hidden text-[13px] text-muted-foreground sm:inline">Ctrl+Enter to save</span>
-            <Button type="submit" disabled={pending || progress.trim() === ""}>
+            <Button type="submit" disabled={pending || progress.trim() === "" || heldByComments}>
                {pending ? "Saving…" : "Save update"}
             </Button>
          </div>

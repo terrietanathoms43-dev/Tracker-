@@ -5,7 +5,7 @@ import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "@/components/status-badge";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS } from "@/lib/constants";
 import { nameOf } from "@/lib/tasks/people";
-import type { Person, TaskAbilities, TaskDetail, TeamRef } from "@/lib/tasks/types";
+import type { GoalOption, Person, TaskAbilities, TaskDetail } from "@/lib/tasks/types";
 import { AssigneeStack } from "../assignee-stack";
 import { DueLabel } from "../due-label";
 import { AssigneesEditor, DescriptionEditor, DueEditor, PickEditor, StatusEditor } from "./detail-editors";
@@ -37,7 +37,6 @@ export function TaskDetails({
   detail,
   abilities,
   people,
-  teams,
   viewerId,
   projects,
   goals,
@@ -48,10 +47,9 @@ export function TaskDetails({
   detail: TaskDetail;
   abilities: TaskAbilities;
   people: Person[];
-  teams: TeamRef[];
   viewerId: string;
   projects: { id: string; name: string }[];
-  goals: { id: string; title: string }[];
+  goals: GoalOption[];
   today: string;
   timeZone: string;
   now: Date;
@@ -70,8 +68,8 @@ export function TaskDetails({
           <Row label="Status">{abilities.progress ? <StatusEditor taskId={detail.id} status={detail.status} allowReject={abilities.reject} /> : <StatusBadge status={detail.status} />}</Row>
           <Row label="Assigned to">
             {edit ? (
-              <AssigneesEditor key={JSON.stringify(detail.assignees)} taskId={detail.id} assignees={detail.assignees} people={people} teams={teams} viewerId={viewerId} />
-            ) : detail.assignees.people.length + detail.assignees.teams.length > 0 ? (
+              <AssigneesEditor key={JSON.stringify(detail.assignees)} taskId={detail.id} assignees={detail.assignees} people={people} viewerId={viewerId} />
+            ) : detail.assignees.length > 0 ? (
               <AssigneeStack assignees={detail.assignees} names />
             ) : (
               <span className="text-muted-foreground">Unassigned</span>

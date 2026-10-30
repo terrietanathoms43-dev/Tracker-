@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { TaskList } from "@/components/tasks/task-list";
-import { Panel, PanelEmpty } from "@/components/team/panel";
+import { Panel, PanelEmpty } from "@/components/dashboard/panel";
 import type { TaskListItem } from "@/lib/tasks/types";
 
 // "Pick up where you left off": the first few of My Work's actionable tasks, with the reason each is there.

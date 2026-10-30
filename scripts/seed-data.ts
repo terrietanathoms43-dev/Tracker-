@@ -3,14 +3,16 @@
  *
  * Every time is "days ago" (or "due in days") relative to the moment of seeding, so the dashboards always look
  * alive: in Trackwise Demo two tasks are overdue, two await Morgan's approval, three are blocked, six finished in
- * the last two weeks, two were rejected, one is unassigned, two have two people on them, two belong to a team,
- * and the six requests cover every state. Two teams exist: Frontend (Jordan, Sam) and Platform (Morgan, Jordan).
+ * the last two weeks, two were rejected, two are unassigned, two have two people on them, one goal has a sub-goal
+ * with a task of its own, two tasks carry open comments (so they can't be completed until those are resolved), and
+ * the six requests cover every state.
  *
  * How a task spec becomes rows (taskRows in test-accounts.ts):
  *   - `updates` are progress updates, oldest first; the newest one's body / next action is copied onto the task
- *     (latest_progress / next_action). `comments` are kind=comment and never touch those columns.
+ *     (latest_progress / next_action). `comments` are kind=comment and never touch those columns; one marked
+ *     `resolved` has resolved_at / resolved_by set.
  *   - A task with a `project` takes its goal from that project (goal_id stays empty); `goal` links a task to a goal
- *     directly, without a project. Goal progress counts both paths.
+ *     directly, without a project. Goal progress counts both paths, and a sub-goal's tasks count for its parent too.
  *   - `blocked`, `approval`, `completed` and `rejection` describe how the task reached its current status, and
  *     produce the matching task_activity rows (blocked, approval_requested, approved + completed, rejected).
  */
@@ -29,22 +31,13 @@ export const PEOPLE: Record<Person, { email: string; name: string }> = {
 
 // --- shapes ---------------------------------------------------------------------
 
-/** A team: a named group of members (by key) that tasks and goals can be assigned to. */
-export type SeedTeam = {
-  key: string;
-  name: string;
-  description: string;
-  members: Person[];
-  createdDaysAgo: number;
-};
-
 export type SeedGoal = {
   key: string;
   title: string;
   description: string;
   owner: Person;
-  /** The teams expected to deliver it, by key. */
-  teams?: string[];
+  /** The goal this one is a sub-goal of, by key (one level). Its target must not pass the parent's. */
+  parent?: string;
   createdBy: Person;
   status: "active" | "achieved" | "paused";
   targetInDays: number;
@@ -87,6 +80,8 @@ export type SeedRequest = {
 
 export type SeedUpdate = { daysAgo: number; author: Person; body: string; next: string | null; blocker?: string };
 
+export type SeedComment = { daysAgo: number; author: Person; body: string; /** Marked resolved by `resolvedBy` a little after it was written. */ resolvedBy?: Person };
+
 export type SeedTask = {
   /** Only for tasks something else points at (a request, a notification). */
   key?: string;
@@ -96,10 +91,8 @@ export type SeedTask = {
   goal?: string;
   /** The request this task was converted from (the request's converted_task_id points back). */
   request?: string;
-  /** The people on it (any number; empty with no teams = unassigned). */
+  /** The people on it (any number; empty = unassigned). */
   assignees: Person[];
-  /** The teams on it, by key: everyone in them sees it in My Work. */
-  teams?: string[];
   createdBy: Person;
   status: TaskStatus;
   priority: TaskPriority;
@@ -108,7 +101,7 @@ export type SeedTask = {
   /** Manual importance (higher sorts first); most tasks leave it at 0. */
   sortRank?: number;
   updates: SeedUpdate[];
-  comments?: { daysAgo: number; author: Person; body: string }[];
+  comments?: SeedComment[];
   /** Evidence; added alongside the newest update unless daysAgo says otherwise. */
   links?: { url: string; label: string; daysAgo?: number }[];
   blocked?: { daysAgo: number; reason: string; by: string };
@@ -134,7 +127,6 @@ export type OrgSeed = {
   createdBy: Person;
   members: { person: Person; role: OrgRole }[];
   joinedDaysAgo: number;
-  teams: SeedTeam[];
   goals: SeedGoal[];
   projects: SeedProject[];
   requests: SeedRequest[];
@@ -147,18 +139,12 @@ const GRAFANA = "https://grafana.example.com/d";
 
 // --- Trackwise Demo ------------------------------------------------------------------
 
-const DEMO_TEAMS: SeedTeam[] = [
-  { key: "frontend", name: "Frontend", description: "The web app, onboarding and everything a customer clicks.", members: ["member", "member2"], createdDaysAgo: 26 },
-  { key: "platform", name: "Platform", description: "Paging, runbooks, dashboards and the infrastructure under the app.", members: ["leader", "member"], createdDaysAgo: 26 },
-];
-
 const DEMO_GOALS: SeedGoal[] = [
   {
     key: "onboarding",
     title: "Ship the self-serve onboarding",
     description: "New teams should get from sign-up to their first tracked task without a call with us.",
     owner: "leader",
-    teams: ["frontend"],
     createdBy: "admin",
     status: "active",
     targetInDays: 45,
@@ -166,11 +152,22 @@ const DEMO_GOALS: SeedGoal[] = [
     createdDaysAgo: 28,
   },
   {
+    key: "invite-flow",
+    title: "Invitations work without a support call",
+    description: "Half of the onboarding tickets are about invitation emails that never arrived or links that expired.",
+    owner: "member2",
+    parent: "onboarding",
+    createdBy: "leader",
+    status: "active",
+    targetInDays: 30,
+    successCriteria: "No invitation-related support ticket for two weeks running.",
+    createdDaysAgo: 20,
+  },
+  {
     key: "incidents",
     title: "Cut incident response time in half",
     description: "Median time from page to mitigation is 48 minutes; most of it goes on finding the right dashboard and person.",
     owner: "admin",
-    teams: ["platform"],
     createdBy: "admin",
     status: "active",
     targetInDays: 70,
@@ -369,7 +366,6 @@ const DEMO_TASKS: SeedTask[] = [
     title: "Build the first-task checklist on the empty home screen",
     project: "onboarding",
     assignees: ["member2"],
-    teams: ["frontend"],
     createdBy: "leader",
     status: "in_progress",
     priority: "normal",
@@ -418,6 +414,18 @@ const DEMO_TASKS: SeedTask[] = [
     dueInDays: null,
     updates: [{ daysAgo: 2, author: "leader", body: "Outline and the timeline section are written.", next: "Write the 'what we will change' section and share it with the team." }],
   },
+  {
+    title: "Rewrite the invitation email's help text",
+    description: "Under the sub-goal: the email says nothing about what to do when the link has expired.",
+    goal: "invite-flow",
+    assignees: ["member2"],
+    createdBy: "leader",
+    status: "in_progress",
+    priority: "normal",
+    createdDaysAgo: 5,
+    dueInDays: 9,
+    updates: [{ daysAgo: 1.5, author: "member2", body: "Drafted the new copy with support's three most common questions answered.", next: "Review the wording with Morgan and ship it behind the flag." }],
+  },
 
   // --- not started (two unassigned) ---------------------------------------------------
   { title: "Archive unused staging buckets", assignees: ["member2"], createdBy: "leader", status: "not_started", priority: "low", createdDaysAgo: 4, dueInDays: 14, updates: [] },
@@ -432,14 +440,14 @@ const DEMO_TASKS: SeedTask[] = [
     dueInDays: 2,
     updates: [],
   },
-  { title: "Evaluate a hosted status page provider", goal: "incidents", assignees: [], teams: ["platform"], createdBy: "leader", status: "not_started", priority: "normal", createdDaysAgo: 1, dueInDays: null, updates: [] },
+  { title: "Evaluate a hosted status page provider", goal: "incidents", assignees: [], createdBy: "leader", status: "not_started", priority: "normal", createdDaysAgo: 1, dueInDays: null, updates: [] },
   { title: "Translate the invitation email into Spanish", project: "onboarding", assignees: [], createdBy: "admin", status: "not_started", priority: "low", createdDaysAgo: 2, dueInDays: 12, updates: [] },
 
   // --- blocked ------------------------------------------------------------------------
   {
     key: "sending-domain",
     title: "Verify the sending domain for invitation emails",
-    project: "onboarding",
+    goal: "invite-flow",
     assignees: ["member"],
     createdBy: "leader",
     status: "blocked",
@@ -518,7 +526,7 @@ const DEMO_TASKS: SeedTask[] = [
       { daysAgo: 4, author: "member", body: "Copy-link button is in; invitations are accepted end to end in staging.", next: "Ship it behind the flag to production." },
       { daysAgo: 0.5, author: "member", body: "Enabled in production for new workspaces; 14 invitations accepted today.", next: "Morgan to review the numbers and approve." },
     ],
-    comments: [{ daysAgo: 0.3, author: "admin", body: "Lovely. The acceptance numbers look great." }],
+    comments: [{ daysAgo: 0.3, author: "admin", body: "Lovely. The acceptance numbers look great.", resolvedBy: "member" }],
     links: [
       { url: `${GH}/pull/1276`, label: "PR #1276", daysAgo: 4 },
       { url: `${GRAFANA}/product/invitations?from=now-7d`, label: "Invitations dashboard" },
@@ -596,7 +604,7 @@ const DEMO_TASKS: SeedTask[] = [
       { daysAgo: 12, author: "member", body: "All six templates rebuilt in the new mailer.", next: "Run both senders side by side for a week." },
       { daysAgo: 6.2, author: "member", body: "A week side by side with identical output; the old sender is switched off.", next: null },
     ],
-    comments: [{ daysAgo: 7, author: "member2", body: "The side-by-side diff looks clean on my end too." }],
+    comments: [{ daysAgo: 7, author: "member2", body: "The side-by-side diff looks clean on my end too.", resolvedBy: "member" }],
     links: [{ url: `${GH}/pull/1270`, label: "PR #1270" }],
     completed: { daysAgo: 6, summary: "Dunning emails go out from the new mailer; the old sender is off.", approvedBy: "leader" },
   },
@@ -721,7 +729,6 @@ export const DEMO: OrgSeed = {
     { person: "stakeholder", role: "stakeholder" },
   ],
   joinedDaysAgo: 30,
-  teams: DEMO_TEAMS,
   goals: DEMO_GOALS,
   projects: DEMO_PROJECTS,
   requests: DEMO_REQUESTS,
@@ -739,7 +746,6 @@ export const OTHER: OrgSeed = {
     { person: "casey", role: "member" },
   ],
   joinedDaysAgo: 20,
-  teams: [],
   goals: [
     {
       key: "support",

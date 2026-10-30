@@ -5,7 +5,7 @@ import { parseReportRange, parseReportTable } from "@/lib/reports/params";
 import { dayKey } from "@/lib/time";
 import { requireViewerContext } from "@/lib/viewer";
 
-// GET /reports/export?from&to&table=delivered|open|contributions|teams: one of the report's tables as a CSV download.
+// GET /reports/export?from&to&table=delivered|open|contributions: one of the report's tables as a CSV download.
 
 /** A byte-order mark so spreadsheet apps read the file as UTF-8 (names, dashes) rather than a legacy code page. */
 const UTF8_BOM = "﻿";
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
   const raw = Object.fromEntries(request.nextUrl.searchParams);
   const table = parseReportTable(raw);
-  if (table === null) return new NextResponse("Ask for table=delivered, table=open, table=contributions or table=teams.", { status: 400 });
+  if (table === null) return new NextResponse("Ask for table=delivered, table=open or table=contributions.", { status: 400 });
 
   const today = dayKey(new Date(), viewer.timezone);
   const range = parseReportRange(raw, today);
