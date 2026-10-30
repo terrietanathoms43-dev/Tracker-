@@ -47,7 +47,7 @@ export const DEFAULT_FILTERS: TaskFilters = {
   project: "",
   goal: "",
   due: "",
-  closed: false,
+  closed: true,
   sort: "smart",
 };
 

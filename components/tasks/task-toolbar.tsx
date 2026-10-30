@@ -59,8 +59,13 @@ export function TaskToolbar({
   }, [q]);
 
   const statuses: readonly TaskStatus[] = view === "board" ? BOARD_STATUSES : TASK_STATUSES;
-  const toggleStatus = (status: TaskStatus) =>
-    apply({ status: filters.status.includes(status) ? filters.status.filter((each) => each !== status) : [...filters.status, status] });
+  // An empty status list means "all on": chips render selected and the first click takes one off
+  // (from this view's set). Selecting everything back normalizes to the empty "all" form.
+  const toggleStatus = (status: TaskStatus) => {
+    const current = filters.status.length === 0 ? [...statuses] : filters.status;
+    const next = current.includes(status) ? current.filter((each) => each !== status) : [...current, status];
+    apply({ status: next.length === statuses.length ? [] : next });
+  };
   const active = [filters.status.length > 0, filters.assignee, filters.team, filters.priority, filters.project, filters.goal, filters.due, filters.closed].filter(Boolean).length;
   const sortSelect = (className: string, label: string) => (
     <NativeSelect aria-label={label} className={className} value={filters.sort} onChange={(event) => apply({ sort: event.target.value as TaskSort })}>
@@ -101,7 +106,7 @@ export function TaskToolbar({
       <div className={cn("gap-3", open ? "grid" : "hidden md:grid")}>
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Status">
           {statuses.map((status) => {
-            const on = filters.status.includes(status);
+            const on = filters.status.length === 0 || filters.status.includes(status);
             return (
               <button
                 key={status}
