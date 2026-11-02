@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { lastDays, type ReportRange } from "./range";
 
-// The report's state lives in the URL (`/reports?from&to&cut`, `/reports/export?from&to&table`). These functions
-// are the only translation between the address and what lib/reports/data.ts is asked for.
+// The report's state lives in the URL (`/reports?from&to&cut&project`, `/reports/export?from&to&table&project`).
+// These functions are the only translation between the address and what lib/reports/data.ts is asked for.
 
 export const DEFAULT_RANGE_DAYS = 30;
 
@@ -18,6 +18,12 @@ export const REPORT_CUT_LABELS: Record<ReportCut, string> = {
   leader: "Workload",
   member: "My work",
 };
+
+/**
+ * Which project the report is about: "" is the whole workspace, "none" is work in no project, anything else a
+ * project id (the same convention as the task filters, lib/tasks/filters.ts).
+ */
+export type ReportProject = string;
 
 type Raw = Record<string, string | string[] | undefined>;
 
@@ -41,6 +47,12 @@ export function parseReportRange(raw: Raw, today: string): ReportRange {
   return start <= end ? { from: start, to: end } : { from: end, to: start };
 }
 
+/** The project in the address: an id, "none", or "" for everything. Anything else is ignored, never queried. */
+export function parseReportProject(raw: Raw): ReportProject {
+  const value = one(raw, "project");
+  return /^[\w-]{1,64}$/.test(value) ? value : "";
+}
+
 const tableSchema = z.enum(REPORT_TABLES);
 
 /** Which CSV the export route was asked for, or null when it isn't one of the three. */
@@ -59,11 +71,16 @@ export function parseReportCut(raw: Raw, fallback: ReportCut): ReportCut {
 
 /**
  * The address of the report page or one of its CSV exports. Both ends are always written, so a link is stable;
- * the page keeps its view (`cut`) across range changes.
+ * the page keeps its view (`cut`) and its project across range changes.
  */
-export function reportHref(base: "/reports" | "/reports/export", range: ReportRange, extra: { table?: ReportTable; cut?: ReportCut } = {}): string {
+export function reportHref(
+  base: "/reports" | "/reports/export",
+  range: ReportRange,
+  extra: { table?: ReportTable; cut?: ReportCut; project?: ReportProject } = {},
+): string {
   const params = new URLSearchParams({ from: range.from, to: range.to });
   if (extra.table) params.set("table", extra.table);
   if (extra.cut) params.set("cut", extra.cut);
+  if (extra.project) params.set("project", extra.project);
   return `${base}?${params.toString()}`;
 }

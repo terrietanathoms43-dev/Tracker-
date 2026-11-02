@@ -42,6 +42,8 @@ export type TaskFormOptions = {
   people: Person[];
   projects: { id: string; name: string }[];
   goals: GoalOption[];
+  /** Whether "From a meeting" is offered to this person (lib/capture/availability.ts); filled in by the action. */
+  canCapture: boolean;
 };
 
 /**

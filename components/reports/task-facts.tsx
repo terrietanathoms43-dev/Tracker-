@@ -145,3 +145,28 @@ export function BlockedList({ tasks, today }: { tasks: ReportTask[]; today: stri
     </ul>
   );
 }
+
+/** Days since anything changed on the task, from its ISO `updatedAt`. */
+const quietDays = (task: ReportTask) => Math.max(0, Math.floor((Date.now() - Date.parse(task.updatedAt)) / 86_400_000));
+
+/** Stalled: in progress but untouched for a week or more, the quietest first, with how long it has sat. */
+export function StalledList({ tasks, today }: { tasks: ReportTask[]; today: string }) {
+  if (tasks.length === 0) return <PanelEmpty>Nothing in progress has gone quiet.</PanelEmpty>;
+  return (
+    <ul className="divide-y">
+      {tasks.map((task) => (
+        <OpenRow
+          key={task.id}
+          task={task}
+          today={today}
+          detail={
+            <p className="mt-1 text-sm text-status-awaiting-fg">
+              No change for {quietDays(task)} days
+              {task.nextAction ? <span className="text-muted-foreground"> · Next: {task.nextAction}</span> : null}
+            </p>
+          }
+        />
+      ))}
+    </ul>
+  );
+}

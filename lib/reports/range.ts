@@ -64,3 +64,28 @@ export function matchingPreset(range: ReportRange, today: string): RangePreset |
 export function rangeLength(range: ReportRange): number {
   return calendarDaysBetween(range.from, range.to) + 1;
 }
+
+// --- the chart's window ------------------------------------------------------------------------------------------
+
+/** How far past today the daily chart looks, so upcoming due dates and goal deadlines are in view. */
+export const TIMELINE_LOOKAHEAD_DAYS = 14;
+
+/** The most days the chart draws; a longer window keeps its most recent days (today is never cut off). */
+export const TIMELINE_MAX_DAYS = 120;
+
+/**
+ * The days the chart draws for a range: the range itself, then the next TIMELINE_LOOKAHEAD_DAYS after today (or
+ * after the range's end when that is later), trimmed from the left to TIMELINE_MAX_DAYS. Both ends included.
+ */
+export function timelineWindow(range: ReportRange, today: string): ReportRange {
+  const to = shiftDay(range.to > today ? range.to : today, TIMELINE_LOOKAHEAD_DAYS);
+  const earliest = shiftDay(to, -(TIMELINE_MAX_DAYS - 1));
+  return { from: range.from > earliest ? range.from : earliest, to };
+}
+
+/** Every calendar day of a range, in order. */
+export function daysOf(range: ReportRange): string[] {
+  const days: string[] = [];
+  for (let day = range.from; day <= range.to; day = shiftDay(day, 1)) days.push(day);
+  return days;
+}

@@ -14,10 +14,12 @@ import { applyAssignment, snapshotAssignment, validateAssignment } from "@/lib/d
 import { listHistory, lockComment } from "@/lib/dal/history";
 import { findMembership, leaderIds } from "@/lib/dal/orgs";
 import { getTaskBasics, listTasks, lockTask, searchTasks, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
+import { captureProviderFor } from "@/lib/capture/availability";
 import { log } from "@/lib/log";
 import { dispatch, type Notice } from "@/lib/notify";
 import {
   canApproveTask,
+  canCapture,
   canCreateTask,
   canDeleteTask,
   canEditTask,
@@ -36,7 +38,7 @@ import { parseFilters } from "@/lib/tasks/filters";
 import { planTransition, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
 import type { HistoryPage, TaskFormOptions, TaskListItem, TaskPage, UpdateContext } from "@/lib/tasks/types";
 import { dayKey } from "@/lib/time";
-import { requireViewer } from "@/lib/viewer";
+import { requireViewer, requireViewerContext } from "@/lib/viewer";
 
 // Every change to a task, and the reads its client components need. Each mutation follows the action skeleton
 // (apex-architecture §4): zod → requireViewer → lock the row by id and workspace → permission → one transaction
@@ -600,20 +602,23 @@ export async function paletteSearch(input: z.input<typeof searchSchema>): Promis
   });
 }
 
-/** What the palette may offer this viewer: their navigation, and whether they can create tasks. */
-export async function getPaletteContext(): Promise<ActionResult<{ nav: NavKey[]; canCreate: boolean }>> {
+/** Whether this person gets "From a meeting": the role allows it and the server has an engine for them. */
+const offersCapture = (viewer: Viewer, email: string | null) => canCapture(viewer) && captureProviderFor(email) !== null;
+
+/** What the palette may offer this viewer: their navigation, whether they can create tasks, and capture. */
+export async function getPaletteContext(): Promise<ActionResult<{ nav: NavKey[]; canCreate: boolean; canCapture: boolean }>> {
   return runAction("tasks.palette_context", z.object({}), {}, async () => {
-    const viewer = await requireViewer();
-    return ok({ nav: navFor(viewer), canCreate: canCreateTask(viewer) });
+    const { viewer, user } = await requireViewerContext();
+    return ok({ nav: navFor(viewer), canCreate: canCreateTask(viewer), canCapture: offersCapture(viewer, user.email) });
   });
 }
 
 /** The New task form's pickers. Stakeholders ask for work through requests instead. */
 export async function getTaskFormOptions(): Promise<ActionResult<TaskFormOptions>> {
   return runAction("tasks.form_options", z.object({}), {}, async () => {
-    const viewer = await requireViewer();
+    const { viewer, user } = await requireViewerContext();
     if (!canCreateTask(viewer)) throw new GuardError("forbidden", "Only people who work in this workspace can create tasks. Submit a request instead.");
-    return ok(await taskFormOptions(viewer));
+    return ok({ ...(await taskFormOptions(viewer)), canCapture: offersCapture(viewer, user.email) });
   });
 }
 

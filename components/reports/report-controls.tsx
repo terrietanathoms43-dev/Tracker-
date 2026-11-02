@@ -8,20 +8,20 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { reportHref, type ReportCut, type ReportTable } from "@/lib/reports/params";
+import { reportHref, type ReportCut, type ReportProject, type ReportTable } from "@/lib/reports/params";
 import { matchingPreset, PRESET_LABELS, presetRange, RANGE_PRESETS, type ReportRange } from "@/lib/reports/range";
 import { formatDay } from "@/lib/time";
 
 // The report's date range: one row of presets plus "Custom". Only Custom reveals the From / To pickers and their
 // Apply button, so the row reads as one choice at a time. Everything writes `?from&to` to the address (keeping the
-// current view) so a report can be shared as a link. Hidden when printing.
+// current view and project) so a report can be shared as a link. Hidden when printing.
 
 const PILL = "inline-flex h-8 items-center rounded-md border px-2.5 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const ON = "border-primary bg-primary text-primary-foreground";
 const OFF = "bg-background text-muted-foreground hover:bg-accent hover:text-foreground";
 
 /** Preset links (the active one filled), then Custom, which opens a From / To form that submits as a plain GET. */
-export function ReportControls({ range, today, cut }: { range: ReportRange; today: string; cut: ReportCut }) {
+export function ReportControls({ range, today, cut, project }: { range: ReportRange; today: string; cut: ReportCut; project: ReportProject }) {
   const active = matchingPreset(range, today);
   // A range no preset describes is a custom one: the pickers show at once so the dates can be read and changed.
   const [customOpen, setCustomOpen] = useState(active === null);
@@ -34,7 +34,7 @@ export function ReportControls({ range, today, cut }: { range: ReportRange; toda
           return (
             <Link
               key={preset}
-              href={reportHref("/reports", presetRange(preset, today), { cut })}
+              href={reportHref("/reports", presetRange(preset, today), { cut, project })}
               scroll={false}
               aria-current={on ? "page" : undefined}
               onClick={() => setCustomOpen(false)}
@@ -52,6 +52,7 @@ export function ReportControls({ range, today, cut }: { range: ReportRange; toda
         // Keyed by the range, so a new address resets the inputs to the range it chose.
         <Form key={`${range.from}:${range.to}`} action="/reports" scroll={false} className="grid w-full grid-cols-2 items-end gap-2 sm:flex sm:w-auto">
           <input type="hidden" name="cut" value={cut} />
+          {project ? <input type="hidden" name="project" value={project} /> : null}
           <div className="grid gap-1.5">
             <Label htmlFor="report-from" className="text-[13px] font-normal text-muted-foreground">
               From
@@ -73,11 +74,11 @@ export function ReportControls({ range, today, cut }: { range: ReportRange; toda
   );
 }
 
-/** "CSV" in a section's header: downloads that section's table for the same range. */
-export function CsvLink({ range, table, label }: { range: ReportRange; table: ReportTable; label: string }) {
+/** "CSV" in a section's header: downloads that section's table for the same range and project. */
+export function CsvLink({ range, table, project, label }: { range: ReportRange; table: ReportTable; project: ReportProject; label: string }) {
   return (
     <a
-      href={reportHref("/reports/export", range, { table })}
+      href={reportHref("/reports/export", range, { table, project })}
       download
       data-print-hide
       aria-label={`Download ${label} as CSV`}

@@ -17,6 +17,8 @@ npm run dev                     # http://localhost:3015
 
 Without SMTP settings, sign-in links and every other email are printed to the dev server log instead of being sent, so you can sign in by copying the link from the terminal. Without Google credentials the Google button is hidden.
 
+"From a meeting" (`/capture`, leaders and admins) turns a pasted transcript into goals and tasks a person approves before anything is created. It stays hidden until `ANTHROPIC_API_KEY` is set; the test personas never reach the model and get a plain parser instead, so the walkthroughs cost nothing.
+
 ### Test personas (development only)
 
 ```bash

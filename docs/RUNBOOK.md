@@ -11,7 +11,7 @@ The app runs on the team VPS under pm2 (port 3015, behind the reverse proxy); th
 
 ## Environment
 
-`.env.local` on the server, never in git. The full list with explanations is in `.env.example`. Rotate `BETTER_AUTH_SECRET` only with a planned sign-out of everyone. Never set `TEST_MODE_SECRET` in production; a production build answers 404 on `/api/test-login` regardless.
+`.env.local` on the server, never in git. The full list with explanations is in `.env.example`. `ANTHROPIC_API_KEY` is optional: with it, "From a meeting" (`/capture`) sends pasted transcripts to the model and each draft costs money (one request per draft, six per person per ten minutes; `grep capture.drafted` in the logs shows the token counts); without it the page says it is not switched on. Rotate `BETTER_AUTH_SECRET` only with a planned sign-out of everyone. Never set `TEST_MODE_SECRET` in production; a production build answers 404 on `/api/test-login` regardless.
 
 ## Releases
 

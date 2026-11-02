@@ -9,23 +9,37 @@ import type { ContributionRow } from "@/lib/reports/data";
 import { gradeColor, gradeShare, nextSort, sortRows, type SortDirection } from "@/lib/reports/grade";
 import { nameOf } from "@/lib/tasks/people";
 
-// Contributions per worker: counts each, as records, not a ranking. Each person is their avatar circle (the name
-// on hover and for screen readers); the Completed column is graded red → green against the column's own highest
-// value; Blockers only colours when there is one; every header sorts on click, like a file list.
+// People, negative first (docs/PLAN.md, 2026-11-01 log): what is overdue or blocked on each person now, whether
+// they have anything open at all (Idle when not), then what they completed in the range and the change against the
+// range before. Opens sorted worst first; every header sorts on click, like a file list. Each person is their
+// avatar circle (the name on hover and for screen readers). Counts, not a ranking.
 
-type Key = "person" | "completed" | "deltaCompleted" | "progressUpdates" | "blockersRaised";
+type Key = "person" | "overdue" | "blocked" | "open" | "completed" | "deltaCompleted";
 
 const COLUMNS: { key: Exclude<Key, "person">; short: string; long: string }[] = [
-  { key: "completed", short: "Completed", long: "Completed" },
+  { key: "overdue", short: "Overdue", long: "Overdue" },
+  { key: "blocked", short: "Blocked", long: "Blocked" },
+  { key: "open", short: "Open", long: "Open now" },
+  { key: "completed", short: "Done", long: "Completed" },
   { key: "deltaCompleted", short: "Δ Prior", long: "Change vs prior" },
-  { key: "progressUpdates", short: "Updates", long: "Progress updates" },
-  { key: "blockersRaised", short: "Blockers", long: "Blockers raised" },
 ];
 
 const valueOf = (row: ContributionRow, key: Key): number | string => (key === "person" ? nameOf(row.person, row.person.email ?? "") : (row[key] ?? 0));
 
 function Cell({ row, column, maxCompleted }: { row: ContributionRow; column: Exclude<Key, "person">; maxCompleted: number }) {
   const value = row[column] ?? 0;
+  if (column === "overdue" || column === "blocked") {
+    return value > 0 ? <span className="font-semibold text-status-blocked-fg">{value}</span> : <span className="text-muted-foreground">0</span>;
+  }
+  if (column === "open") {
+    return value === 0 ? (
+      <span className="inline-flex items-center rounded-md bg-status-awaiting-bg px-1.5 py-0.5 text-[12px] font-medium text-status-awaiting-fg" title="Nothing open: this person has no task assigned">
+        Idle
+      </span>
+    ) : (
+      <>{value}</>
+    );
+  }
   if (column === "completed") {
     return (
       <span className="font-semibold" style={{ color: gradeColor(gradeShare(value, maxCompleted)) }}>
@@ -33,21 +47,20 @@ function Cell({ row, column, maxCompleted }: { row: ContributionRow; column: Exc
       </span>
     );
   }
-  if (column === "deltaCompleted") {
-    if (value > 0) return <span className="font-semibold text-status-completed-fg">+{value}</span>;
-    if (value < 0) return <span className="font-semibold text-status-blocked-fg">{value}</span>;
-    return <span className="text-muted-foreground">0</span>;
-  }
-  if (column === "blockersRaised") return <span className={cn(value > 0 && "font-semibold text-status-blocked-fg")}>{value}</span>;
-  return <>{value}</>;
+  if (value > 0) return <span className="font-semibold text-status-completed-fg">+{value}</span>;
+  if (value < 0) return <span className="font-semibold text-status-blocked-fg">{value}</span>;
+  return <span className="text-muted-foreground">0</span>;
 }
 
 export function ContributionsTable({ rows }: { rows: ContributionRow[] }) {
-  const [sort, setSort] = useState<{ key: Key; direction: SortDirection }>({ key: "person", direction: "asc" });
+  // Worst first by default: the rows arrive ordered overdue → blocked → idle → name, and "overdue, high to low" keeps that.
+  const [sort, setSort] = useState<{ key: Key; direction: SortDirection }>({ key: "overdue", direction: "desc" });
   if (rows.length === 0) return <PanelEmpty>Nobody in the workspace does work yet.</PanelEmpty>;
   const maxCompleted = Math.max(0, ...rows.map((row) => row.completed));
   const sorted = sortRows(rows, (row) => valueOf(row, sort.key), sort.direction);
   const sortBy = (key: Key) => setSort((current) => nextSort(current, key, key === "person" ? "asc" : "desc"));
+  const trouble = rows.filter((row) => row.overdue > 0 || row.blocked > 0).length;
+  const idle = rows.filter((row) => row.open === 0).length;
 
   const header = (key: Key, label: { short: string; long: string }, align: "left" | "right") => {
     const on = sort.key === key;
@@ -78,6 +91,13 @@ export function ContributionsTable({ rows }: { rows: ContributionRow[] }) {
 
   return (
     <>
+      <p className={cn("border-b px-4 py-2 text-[13px]", trouble > 0 || idle > 0 ? "text-foreground" : "text-muted-foreground")}>
+        {trouble === 0 && idle === 0
+          ? "Nobody is behind, nobody is blocked, everyone has work."
+          : [trouble > 0 ? `${trouble} ${trouble === 1 ? "person has" : "people have"} overdue or blocked work` : null, idle > 0 ? `${idle} ${idle === 1 ? "person has" : "people have"} nothing open` : null]
+              .filter(Boolean)
+              .join(" · ")}
+      </p>
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b text-[13px] text-muted-foreground">
@@ -105,8 +125,8 @@ export function ContributionsTable({ rows }: { rows: ContributionRow[] }) {
         </tbody>
       </table>
       <p className="border-t px-4 py-3 text-[13px] text-muted-foreground">
-        Counts of what was recorded. Completed is shaded from red (none) to green (the most in the column); a blocker count turns red when it is above zero.
-        These are not a comparison or a ranking: one large delivery can matter more than many small ones. Hover an avatar for the name.
+        Overdue and Blocked are as of today and turn red above zero; Idle means nothing is assigned. Completed is shaded from red (none) to green (the most in the
+        column). Counts of what was recorded, not a ranking: one large delivery can matter more than many small ones. Hover an avatar for the name.
       </p>
     </>
   );

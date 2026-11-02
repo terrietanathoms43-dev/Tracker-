@@ -81,6 +81,9 @@ export const canDeleteTask = (viewer: Viewer) => isLeader(viewer);
 export const canReadPlanning = (viewer: Viewer) => isWorker(viewer);
 export const canManagePlanning = (viewer: Viewer) => isLeader(viewer);
 
+/** Turning a meeting transcript into goals and tasks (and a project): it creates planning, so leaders and admins. */
+export const canCapture = (viewer: Viewer) => isLeader(viewer);
+
 // --- requests -------------------------------------------------------------------
 
 export function canReadRequest(viewer: Viewer, request: RequestScope): boolean {

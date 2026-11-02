@@ -56,7 +56,7 @@ export function openTable(tasks: ReportTask[], today: string): CsvCell[][] {
 
 export function contributionsTable(rows: ContributionRow[]): CsvCell[][] {
   return [
-    ["Person", "Email", "Completed", "Progress updates", "Blockers raised"],
-    ...rows.map((row) => [nameOf(row.person, ""), row.person.email, row.completed, row.progressUpdates, row.blockersRaised]),
+    ["Person", "Email", "Overdue", "Blocked", "Open", "Completed", "Change vs prior"],
+    ...rows.map((row) => [nameOf(row.person, ""), row.person.email, row.overdue, row.blocked, row.open, row.completed, row.deltaCompleted ?? 0]),
   ];
 }

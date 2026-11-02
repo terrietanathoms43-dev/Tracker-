@@ -285,6 +285,8 @@ export type ApprovalStagingTask = {
   nextAction: string | null;
   approverId: string | null;
   project: { id: string; name: string } | null;
+  /** The goal the task serves, directly or through its project: what the decision touches. */
+  goal: { id: string; title: string } | null;
   assignees: Person[];
   evidence: { url: string; label: string | null }[];
   /** Open comments: approving is refused until they are resolved. */
@@ -294,8 +296,10 @@ export type ApprovalStagingTask = {
 /**
  * Tasks waiting for approval across the workspace, along with their latest progress,
  * completion summaries, and evidence links so supervisors have the facts before approving.
+ * `project` narrows them the way a report is: "" for all, "none" for work in no project, or a project id.
  */
-export async function approvalStagingTasks(viewer: Viewer): Promise<ApprovalStagingTask[]> {
+export async function approvalStagingTasks(viewer: Viewer, project = ""): Promise<ApprovalStagingTask[]> {
+  const scoped = project === "none" ? isNull(tasks.projectId) : project !== "" ? eq(tasks.projectId, project) : undefined;
   const rows = await db
     .select({
       id: tasks.id,
@@ -309,13 +313,16 @@ export async function approvalStagingTasks(viewer: Viewer): Promise<ApprovalStag
       approverId: tasks.approverId,
       projectId: projects.id,
       projectName: projects.name,
+      goalId: goals.id,
+      goalTitle: goals.title,
       people: assigneesJson,
       openComments: openCommentsSql,
       evidence: sql<{ url: string; label: string | null }[]>`coalesce((select json_agg(json_build_object('url', l.url, 'label', l.label) order by l.created_at) from task_links l where l.task_id = ${tasks.id}), '[]'::json)`,
     })
     .from(tasks)
     .leftJoin(projects, eq(projects.id, tasks.projectId))
-    .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.status, "awaiting_approval")))
+    .leftJoin(goals, eq(goals.id, sql`coalesce(${tasks.goalId}, ${projects.goalId})`))
+    .where(and(eq(tasks.orgId, viewer.orgId), scoped, eq(tasks.status, "awaiting_approval")))
     .orderBy(asc(tasks.updatedAt));
 
   return rows.map((row) => ({
@@ -329,6 +336,7 @@ export async function approvalStagingTasks(viewer: Viewer): Promise<ApprovalStag
     nextAction: row.nextAction,
     approverId: row.approverId,
     project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
+    goal: row.goalId && row.goalTitle ? { id: row.goalId, title: row.goalTitle } : null,
     assignees: row.people,
     evidence: row.evidence,
     openComments: row.openComments,
@@ -736,5 +744,5 @@ export async function activePlanning(viewer: Viewer): Promise<Pick<TaskFormOptio
 /** What the New task form offers: the workers, the active projects and the active goals. */
 export async function taskFormOptions(viewer: Viewer): Promise<TaskFormOptions> {
   const [people, planning] = await Promise.all([taskPeople(viewer), activePlanning(viewer)]);
-  return { viewerId: viewer.userId, people: people.map(({ id, name, email, image }) => ({ id, name, email, image })), ...planning };
+  return { viewerId: viewer.userId, people: people.map(({ id, name, email, image }) => ({ id, name, email, image })), ...planning, canCapture: false };
 }

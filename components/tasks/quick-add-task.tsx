@@ -1,7 +1,8 @@
 "use client";
 
 import { cn } from "cn";
-import { CalendarDays, Plus, SlidersHorizontal } from "lucide-react";
+import { AudioLines, CalendarDays, Plus, SlidersHorizontal } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -346,6 +347,14 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
         ) : null}
 
         <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+          {options?.canCapture ? (
+            <Button asChild variant="ghost" className="text-muted-foreground">
+              <Link href={projectId ? `/capture?project=${projectId}` : "/capture"}>
+                <AudioLines aria-hidden />
+                From a meeting
+              </Link>
+            </Button>
+          ) : null}
           <Button type="button" variant="ghost" onClick={moreOptions} className="text-muted-foreground">
             <SlidersHorizontal aria-hidden />
             More options

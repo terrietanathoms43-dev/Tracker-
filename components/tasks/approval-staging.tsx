@@ -89,7 +89,13 @@ export function ApprovalStaging({ tasks }: { tasks: ApprovalStagingTask[] }) {
                       {task.title}
                     </Link>
                     <PriorityGlyph priority={task.priority} className="relative" />
+                    {/* What the decision touches: the project and the goal the task serves. */}
                     {task.project ? <span className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">{task.project.name}</span> : null}
+                    {task.goal ? (
+                      <Link href={`/goals/${task.goal.id}`} className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground hover:underline">
+                        Goal: {task.goal.title}
+                      </Link>
+                    ) : null}
                   </div>
 
                   <p className="mt-0.5 text-[12px] text-muted-foreground">

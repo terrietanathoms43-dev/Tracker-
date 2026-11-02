@@ -47,11 +47,13 @@ const task: ReportTask = {
   assignees: [{ id: "u1", name: "Jordan Dev", email: "jordan@trackwise.test", image: null }],
   dueDate: "2026-10-10",
   completedDay: "2026-10-12",
+  updatedAt: "2026-10-30T12:00:00.000Z",
   completionSummary: "Done.\nNotes in the doc.",
   nextAction: null,
   blockedReason: null,
   blockedBy: null,
   goalId: null,
+  project: null,
   evidence: [
     { url: "https://example.com/a", label: "PR" },
     { url: "https://example.com/b", label: null },
@@ -69,7 +71,7 @@ describe("tables", () => {
   });
 
   it("contributions: counts as numbers", () => {
-    const rows = contributionsTable([{ person: { id: "u1", name: "Sam Dev", email: "sam@trackwise.test", image: null }, completed: 2, progressUpdates: 5, blockersRaised: 0 }]);
-    expect(toCsv(rows)).toBe("Person,Email,Completed,Progress updates,Blockers raised\r\nSam Dev,sam@trackwise.test,2,5,0\r\n");
+    const rows = contributionsTable([{ person: { id: "u1", name: "Sam Dev", email: "sam@trackwise.test", image: null }, overdue: 1, blocked: 0, open: 4, completed: 2, deltaCompleted: -1 }]);
+    expect(toCsv(rows)).toBe("Person,Email,Overdue,Blocked,Open,Completed,Change vs prior\r\nSam Dev,sam@trackwise.test,1,0,4,2,-1\r\n");
   });
 });

@@ -1,12 +1,12 @@
 import { cn } from "cn";
 import Link from "next/link";
-import { REPORT_CUT_LABELS, REPORT_CUTS, reportHref, type ReportCut } from "@/lib/reports/params";
+import { REPORT_CUT_LABELS, REPORT_CUTS, reportHref, type ReportCut, type ReportProject } from "@/lib/reports/params";
 import type { ReportRange } from "@/lib/reports/range";
 
 // The report's three views. The active one wears the brand colour, exactly like the active date preset beside it,
-// so a glance says which view is open in either theme.
+// so a glance says which view is open in either theme. Switching keeps the range and the project.
 
-export function ReportCutTabs({ current, range, canSwitch }: { current: ReportCut; range: ReportRange; canSwitch: boolean }) {
+export function ReportCutTabs({ current, range, project, canSwitch }: { current: ReportCut; range: ReportRange; project: ReportProject; canSwitch: boolean }) {
   if (!canSwitch) return null;
   return (
     <nav aria-label="Report view" className="flex flex-wrap gap-1.5" data-print-hide>
@@ -15,7 +15,7 @@ export function ReportCutTabs({ current, range, canSwitch }: { current: ReportCu
         return (
           <Link
             key={cut}
-            href={reportHref("/reports", range, { cut })}
+            href={reportHref("/reports", range, { cut, project })}
             scroll={false}
             aria-current={on ? "page" : undefined}
             className={cn(

@@ -40,6 +40,16 @@ export const LIMITS = {
   desiredOutcome: 2_000,
   decisionReason: 1_000,
 
+  // Capture from a meeting (docs/PLAN.md, 2026-11-01 log): a pasted transcript and the draft it becomes.
+  /** About an hour of talk; longer meetings are pasted in two parts. */
+  transcript: 60_000,
+  captureMeetingTitle: 120,
+  captureSummary: 1_000,
+  /** The quoted words a proposed task or goal rests on. */
+  captureEvidence: 400,
+  captureTasks: 60,
+  captureGoals: 12,
+
   // Transient text (filters and the command palette) — never stored, capped to keep URLs and queries sane.
   search: 100,
 } as const;

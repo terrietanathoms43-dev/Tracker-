@@ -1,165 +1,132 @@
+import { cn } from "cn";
+import { AlertTriangle, CalendarX2, CheckCircle2, Clock, GitBranch, type LucideIcon } from "lucide-react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Clock } from "lucide-react";
-import type { HealthBoard as HealthBoardData, HealthStatus } from "@/lib/reports/data";
+import type { GoalHealthRow, HealthBoard as HealthBoardData, ProjectHealthRow } from "@/lib/reports/data";
+import { HEALTH_LABELS, type HealthStatus } from "@/lib/reports/health";
+import { formatDay } from "@/lib/time";
 
-const HEALTH_CONFIG: Record<
-  HealthStatus,
-  { label: string; icon: typeof CheckCircle2; className: string; barColor: string }
-> = {
-  on_track: {
-    label: "On track",
-    icon: CheckCircle2,
-    className: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
-    barColor: "bg-emerald-500",
-  },
-  needs_attention: {
-    label: "Needs attention",
-    icon: Clock,
-    className: "text-amber-600 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800",
-    barColor: "bg-amber-500",
-  },
-  at_risk: {
-    label: "At risk",
-    icon: AlertTriangle,
-    className: "text-rose-600 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800",
-    barColor: "bg-rose-500",
-  },
+// The health board (docs/PLAN.md, 2026-11-01 log): every goal and project judged by lib/reports/health.ts, the bad
+// news first. Rows that are on track fold away under a disclosure as soon as anything isn't, so what needs a
+// decision is what the eye lands on. Each verdict ships with an icon and a word, never a colour alone.
+
+const TONE: Record<HealthStatus, { icon: LucideIcon; badge: string; bar: string }> = {
+  delayed: { icon: CalendarX2, badge: "border-status-blocked-dot/30 bg-status-blocked-bg text-status-blocked-fg", bar: "bg-status-blocked-dot" },
+  at_risk: { icon: AlertTriangle, badge: "border-status-blocked-dot/30 bg-status-blocked-bg text-status-blocked-fg", bar: "bg-status-blocked-dot" },
+  needs_attention: { icon: Clock, badge: "border-status-awaiting-dot/30 bg-status-awaiting-bg text-status-awaiting-fg", bar: "bg-status-awaiting-dot" },
+  on_track: { icon: CheckCircle2, badge: "border-status-completed-dot/30 bg-status-completed-bg text-status-completed-fg", bar: "bg-status-completed-dot" },
 };
 
-export function HealthBoard({ data }: { data: HealthBoardData }) {
-  const { goals, projects } = data;
-
+export function HealthBadge({ health, className }: { health: HealthStatus; className?: string }) {
+  const { icon: Icon, badge } = TONE[health];
   return (
-    <div className="grid gap-6">
-      {/* Goals Health */}
-      <div className="rounded-lg border bg-card">
-        <div className="border-b px-4 py-3">
-          <h3 className="text-sm font-semibold tracking-tight">Goals Health Board</h3>
-          <p className="text-[12px] text-muted-foreground">Top-level goals: progress, blockers and overdue work beneath each</p>
+    <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[12px] font-medium whitespace-nowrap", badge, className)}>
+      <Icon className="size-3" aria-hidden />
+      {HEALTH_LABELS[health]}
+    </span>
+  );
+}
+
+type Row = { id: string; href: string; name: string; subGoal: boolean; targetDate: string | null; total: number; completed: number; blocked: number; overdue: number; pct: number; health: HealthStatus };
+
+const goalRow = (goal: GoalHealthRow): Row => ({ ...goal, href: `/goals/${goal.id}`, name: goal.title, subGoal: goal.parentGoalId !== null });
+const projectRow = (project: ProjectHealthRow): Row => ({ ...project, href: `/projects/${project.id}`, subGoal: false });
+
+function HealthRow({ row, today }: { row: Row; today: string }) {
+  const { bar } = TONE[row.health];
+  const late = row.health === "delayed" && row.targetDate !== null;
+  return (
+    <li className="flex flex-col gap-2 px-4 py-3 break-inside-avoid sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          {row.subGoal ? <GitBranch className="size-3.5 shrink-0 text-muted-foreground" aria-label="Sub-goal" role="img" /> : null}
+          <Link href={row.href} className="text-sm font-medium break-words underline-offset-4 hover:underline">
+            {row.name}
+          </Link>
+          <HealthBadge health={row.health} />
         </div>
-        {goals.length === 0 ? (
-          <div className="p-4 text-[13px] text-muted-foreground">No active goals.</div>
-        ) : (
-          <div className="divide-y">
-            {goals.map((goal) => {
-              const cfg = HEALTH_CONFIG[goal.health];
-              const Icon = cfg.icon;
-              return (
-                <div key={goal.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <Link
-                        href={`/goals/${goal.id}`}
-                        className="truncate text-sm font-medium hover:underline"
-                      >
-                        {goal.title}
-                      </Link>
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${cfg.className}`}
-                      >
-                        <Icon className="size-3" aria-hidden />
-                        {cfg.label}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-foreground">
-                      <span>
-                        {goal.completed} of {goal.total} tasks done
-                      </span>
-                      {goal.blocked > 0 ? (
-                        <span className="font-medium text-rose-600 dark:text-rose-400">
-                          {goal.blocked} blocked
-                        </span>
-                      ) : null}
-                      {goal.overdue > 0 ? (
-                        <span className="font-medium text-amber-600 dark:text-amber-400">
-                          {goal.overdue} overdue
-                        </span>
-                      ) : null}
-                      {goal.targetDate ? <span>Target: {goal.targetDate}</span> : null}
-                    </div>
-                  </div>
-
-                  {/* Sparkbar */}
-                  <div className="flex items-center gap-3 sm:w-48 sm:justify-end">
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={`h-full transition-all ${cfg.barColor}`}
-                        style={{ width: `${Math.min(goal.pct, 100)}%` }}
-                      />
-                    </div>
-                    <span className="w-10 text-right text-xs font-semibold tabular-nums">{goal.pct}%</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-foreground">
+          <span>
+            {row.completed} of {row.total} tasks done
+          </span>
+          {row.blocked > 0 ? <span className="font-medium text-status-blocked-fg">{row.blocked} blocked</span> : null}
+          {row.overdue > 0 ? <span className="font-medium text-status-awaiting-fg">{row.overdue} overdue</span> : null}
+          {row.targetDate ? (
+            <span className={cn(late && "font-medium text-status-blocked-fg")}>
+              {late ? "Target passed" : "Target"} {formatDay(row.targetDate, today)}
+            </span>
+          ) : null}
+        </p>
       </div>
-
-      {/* Projects Health */}
-      <div className="rounded-lg border bg-card">
-        <div className="border-b px-4 py-3">
-          <h3 className="text-sm font-semibold tracking-tight">Projects Health Board</h3>
-          <p className="text-[12px] text-muted-foreground">Delivery and risk across the active projects</p>
+      <div className="flex items-center gap-3 sm:w-48 sm:justify-end">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-muted" role="img" aria-label={`${row.pct}% done`}>
+          <div className={cn("h-full", bar)} style={{ width: `${Math.min(row.pct, 100)}%` }} />
         </div>
-        {projects.length === 0 ? (
-          <div className="p-4 text-[13px] text-muted-foreground">No active projects.</div>
-        ) : (
-          <div className="divide-y">
-            {projects.map((project) => {
-              const cfg = HEALTH_CONFIG[project.health];
-              const Icon = cfg.icon;
-              return (
-                <div key={project.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <Link
-                        href={`/projects/${project.id}`}
-                        className="truncate text-sm font-medium hover:underline"
-                      >
-                        {project.name}
-                      </Link>
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${cfg.className}`}
-                      >
-                        <Icon className="size-3" aria-hidden />
-                        {cfg.label}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-foreground">
-                      <span>
-                        {project.completed} of {project.total} tasks done
-                      </span>
-                      {project.blocked > 0 ? (
-                        <span className="font-medium text-rose-600 dark:text-rose-400">
-                          {project.blocked} blocked
-                        </span>
-                      ) : null}
-                      {project.overdue > 0 ? (
-                        <span className="font-medium text-amber-600 dark:text-amber-400">
-                          {project.overdue} overdue
-                        </span>
-                      ) : null}
-                      {project.targetDate ? <span>Target: {project.targetDate}</span> : null}
-                    </div>
-                  </div>
-
-                  {/* Sparkbar */}
-                  <div className="flex items-center gap-3 sm:w-48 sm:justify-end">
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={`h-full transition-all ${cfg.barColor}`}
-                        style={{ width: `${Math.min(project.pct, 100)}%` }}
-                      />
-                    </div>
-                    <span className="w-10 text-right text-xs font-semibold tabular-nums">{project.pct}%</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <span className="w-10 text-right text-xs font-semibold tabular-nums">{row.pct}%</span>
       </div>
-    </div>
+    </li>
+  );
+}
+
+/** One list, worst first; on-track rows fold away when there is anything else to look at. */
+function HealthList({ rows, today, empty }: { rows: Row[]; today: string; empty: string }) {
+  if (rows.length === 0) return <p className="px-4 py-4 text-[13px] text-muted-foreground">{empty}</p>;
+  const problems = rows.filter((row) => row.health !== "on_track");
+  const fine = rows.filter((row) => row.health === "on_track");
+  const fold = problems.length > 0 && fine.length > 0;
+  return (
+    <>
+      <ul className="divide-y">
+        {(fold ? problems : rows).map((row) => (
+          <HealthRow key={row.id} row={row} today={today} />
+        ))}
+      </ul>
+      {fold ? (
+        <details className="group border-t">
+          <summary className="flex cursor-pointer items-center gap-2 px-4 py-2.5 text-[13px] text-muted-foreground select-none hover:text-foreground">
+            <CheckCircle2 className="size-3.5 text-status-completed-dot" aria-hidden />
+            <span className="group-open:hidden">Show {fine.length} on track</span>
+            <span className="hidden group-open:inline">Hide {fine.length} on track</span>
+          </summary>
+          <ul className="divide-y border-t">
+            {fine.map((row) => (
+              <HealthRow key={row.id} row={row} today={today} />
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </>
+  );
+}
+
+export function HealthBoard({ data, today }: { data: HealthBoardData; today: string }) {
+  const goals = data.goals.map(goalRow);
+  const projects = data.projects.map(projectRow);
+  const problems = [...goals, ...projects].filter((row) => row.health !== "on_track").length;
+  return (
+    <section id="health" aria-labelledby="health-board-title" className="scroll-mt-20 overflow-hidden rounded-lg border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+        <div>
+          <h2 id="health-board-title" className="text-base font-semibold">
+            Health board
+          </h2>
+          <p className="text-[12px] text-muted-foreground">
+            Delayed: target date passed with work open · At risk: blocked, or a fifth overdue · Needs attention: some work overdue, or behind the pace its target needs
+          </p>
+        </div>
+        <span className={cn("rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums", problems > 0 ? "bg-status-blocked-bg text-status-blocked-fg" : "bg-status-completed-bg text-status-completed-fg")}>
+          {problems > 0 ? `${problems} to look at` : "All on track"}
+        </span>
+      </div>
+      <div className="grid md:grid-cols-2 md:divide-x">
+        <div>
+          <h3 className="border-b bg-muted/40 px-4 py-2 text-[12px] font-semibold tracking-wide text-muted-foreground uppercase">Goals</h3>
+          <HealthList rows={goals} today={today} empty="No active goals." />
+        </div>
+        <div className="border-t md:border-t-0">
+          <h3 className="border-b bg-muted/40 px-4 py-2 text-[12px] font-semibold tracking-wide text-muted-foreground uppercase">Projects</h3>
+          <HealthList rows={projects} today={today} empty="No active projects." />
+        </div>
+      </div>
+    </section>
   );
 }

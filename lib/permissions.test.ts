@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { OrgRole } from "@/lib/constants";
 import {
   canApproveTask,
+  canCapture,
   canDecideRequest,
   canEditTask,
   canInvite,
@@ -122,5 +123,12 @@ describe("navigation", () => {
   it("gives stakeholders two destinations and everyone else six, Reports last", () => {
     expect(navFor({ orgRole: "stakeholder" })).toEqual(["home", "requests"]);
     expect(navFor({ orgRole: "member" })).toEqual(["home", "my-work", "goals", "members", "requests", "reports"]);
+  });
+});
+
+describe("canCapture", () => {
+  it("lets leaders and admins turn a meeting into goals and tasks, nobody else", () => {
+    for (const role of ["admin", "leader"] as const) expect(canCapture(viewer(role))).toBe(true);
+    for (const role of ["member", "stakeholder"] as const) expect(canCapture(viewer(role))).toBe(false);
   });
 });

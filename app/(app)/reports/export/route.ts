@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { canSeeReports } from "@/lib/permissions";
 import { buildCsv } from "@/lib/reports/build";
-import { parseReportRange, parseReportTable } from "@/lib/reports/params";
+import { parseReportProject, parseReportRange, parseReportTable } from "@/lib/reports/params";
 import { dayKey } from "@/lib/time";
 import { requireViewerContext } from "@/lib/viewer";
 
-// GET /reports/export?from&to&table=delivered|open|contributions: one of the report's tables as a CSV download.
+// GET /reports/export?from&to&table=delivered|open|contributions[&project]: one of the report's tables as a CSV
+// download, narrowed to a project the same way the page is.
 
 /** A byte-order mark so spreadsheet apps read the file as UTF-8 (names, dashes) rather than a legacy code page. */
 const UTF8_BOM = "﻿";
@@ -21,9 +22,11 @@ export async function GET(request: NextRequest) {
 
   const today = dayKey(new Date(), viewer.timezone);
   const range = parseReportRange(raw, today);
-  const csv = await buildCsv(viewer, table, range, today);
-  // The slug is lowercase letters, digits and dashes, so the name needs no escaping.
-  const filename = `${org.slug}-${table}-${range.from}-to-${range.to}.csv`;
+  const project = parseReportProject(raw);
+  const csv = await buildCsv(viewer, table, range, today, project);
+  // The slug is lowercase letters, digits and dashes, and the project id is a UUID, so the name needs no escaping.
+  const scope = project === "" ? "" : project === "none" ? "-no-project" : `-project-${project.slice(0, 8)}`;
+  const filename = `${org.slug}-${table}${scope}-${range.from}-to-${range.to}.csv`;
   return new NextResponse(UTF8_BOM + csv, {
     headers: {
       "content-type": "text/csv; charset=utf-8",

@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Columns3, FolderKanban, House, Inbox, ListChecks, NotebookPen, Plus, SquareCheckBig, Target, Users, type LucideIcon } from "lucide-react";
+import { AudioLines, BarChart3, Columns3, FolderKanban, House, Inbox, ListChecks, NotebookPen, Plus, SquareCheckBig, Target, Users, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getPaletteContext, paletteSearch } from "@/actions/tasks";
@@ -27,7 +27,7 @@ const PLACES: { href: string; label: string; icon: LucideIcon; nav: NavKey }[] =
   { href: "/reports", label: "Reports", icon: BarChart3, nav: "reports" },
 ];
 
-type Caps = { nav: NavKey[]; canCreate: boolean };
+type Caps = { nav: NavKey[]; canCreate: boolean; canCapture: boolean };
 
 /** ⌘K / Ctrl+K: find a task by title, start one, update the open one, or go anywhere the viewer's role reaches. */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -78,6 +78,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           (place) => (place.nav === "tasks" ? caps.canCreate : caps.nav.includes(place.nav)) && (term === "" || place.label.toLowerCase().includes(term)),
         );
   const showCreate = caps?.canCreate === true && (term === "" || "new task".includes(term));
+  const showCapture = caps?.canCapture === true && (term === "" || "capture from a meeting".includes(term));
   const showUpdate = currentTaskId !== null && (term === "" || "update progress".includes(term));
 
   return (
@@ -101,7 +102,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                 ))}
               </CommandGroup>
             ) : null}
-            {showCreate || showUpdate ? (
+            {showCreate || showUpdate || showCapture ? (
               <CommandGroup heading="Actions">
                 {showCreate ? (
                   <CommandItem
@@ -114,6 +115,12 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                     <Plus />
                     New task
                     <CommandShortcut>N</CommandShortcut>
+                  </CommandItem>
+                ) : null}
+                {showCapture ? (
+                  <CommandItem value="capture-meeting" onSelect={() => go("/capture")}>
+                    <AudioLines />
+                    Capture from a meeting
                   </CommandItem>
                 ) : null}
                 {showUpdate && currentTaskId ? (

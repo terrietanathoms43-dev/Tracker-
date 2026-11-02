@@ -9,17 +9,26 @@ import {
   contributionCounts,
   deliveredTasks,
   openCommitments,
+  pendingDecisions,
   progressUpdateCount,
   projectAndGoalHealth,
+  reportPace,
+  reportProject,
+  reportProjectOptions,
   reportTimeline,
+  stalledTasks,
   type BlockedDurationStats,
   type ContributionRow,
   type HealthBoard,
+  type PendingDecisions,
+  type ReportProjectOption,
   type ReportTask,
   type TimelineDay,
 } from "./data";
-import type { ReportTable } from "./params";
-import type { ReportRange } from "./range";
+import { isProblem } from "./health";
+import type { Pace } from "./pace";
+import type { ReportProject, ReportTable } from "./params";
+import { timelineWindow, type ReportRange } from "./range";
 
 // Assembles the report the page shows and the CSV files the export route sends, from lib/reports/data.ts.
 // Both check the same access rule, so the export can never show more than the page.
@@ -31,14 +40,36 @@ export type ReportSummary = {
   blocked: number;
   overdue: number;
   progressUpdates: number;
+  /** Goals and projects the health board judges delayed or at risk. */
+  problems: number;
+  /** Approvals and requests waiting for someone to decide. */
+  decisions: number;
+  /** In progress, but untouched for a week or more. */
+  stalled: number;
+  /** Workers with nothing open at all. */
+  idlePeople: number;
+};
+
+/** Which project the report is about (docs/PLAN.md, 2026-11-01 log), and the projects it could be about. */
+export type ReportScope = {
+  project: ReportProject;
+  /** The chosen project, when `project` names one this workspace has. */
+  chosen: ReportProjectOption | null;
+  options: ReportProjectOption[];
 };
 
 export type Report = {
   range: ReportRange;
+  /** The days the chart draws: the range plus the look-ahead. */
+  window: ReportRange;
+  scope: ReportScope;
   summary: ReportSummary;
   delivered: ReportTask[];
   open: ReportTask[];
   blockedOverdue: ReportTask[];
+  stalled: ReportTask[];
+  /** Is the scope's work as a whole on pace for its target date? */
+  pace: Pace;
   contributions: ContributionRow[];
   goals: GoalProgress[];
   /** Tasks under each goal completed in the range, by goal id. */
@@ -46,6 +77,7 @@ export type Report = {
   timeline: TimelineDay[];
   healthBoard: HealthBoard;
   blockedDuration: BlockedDurationStats;
+  decisions: PendingDecisions;
 };
 
 /** Reports are for the people who do the work (PLAN §3): stakeholders are refused here as well as by the page. */
@@ -53,20 +85,32 @@ function assertCanSeeReports(viewer: Viewer): void {
   if (!canSeeReports(viewer)) throw new GuardError("forbidden");
 }
 
-/** Everything /reports prints for a range. Blocked and overdue are as of `today`, whatever the range. */
-export async function buildReport(viewer: Viewer, range: ReportRange, today: string): Promise<Report> {
+/** Everything /reports prints for a range and a project. Blocked and overdue are as of `today`, whatever the range. */
+export async function buildReport(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<Report> {
   assertCanSeeReports(viewer);
-  const [delivered, open, blockedOverdue, contributions, goals, progressUpdates, blockedDuration, healthBoard] = await Promise.all([
-    deliveredTasks(viewer, range),
-    openCommitments(viewer, range, today),
-    blockedOrOverdue(viewer, today),
-    contributionCounts(viewer, range),
+  // Two waves rather than one: the sections fan out into twenty-odd queries, and a pool of ten against a database
+  // that may be waking up should not have them all racing for a connection at once.
+  const [delivered, open, blockedOverdue, allGoals, progressUpdates, blockedDuration, chosen, options] = await Promise.all([
+    deliveredTasks(viewer, range, project),
+    openCommitments(viewer, range, today, project),
+    blockedOrOverdue(viewer, today, project),
     activeGoalProgress(viewer),
-    progressUpdateCount(viewer, range),
-    blockedDurationStats(viewer),
-    projectAndGoalHealth(viewer),
+    progressUpdateCount(viewer, range, project),
+    blockedDurationStats(viewer, project),
+    reportProject(viewer, project),
+    reportProjectOptions(viewer),
   ]);
-  const timeline = await reportTimeline(viewer, range, delivered);
+  const [contributions, healthBoard, timeline, decisions, stalled, pace] = await Promise.all([
+    contributionCounts(viewer, range, today, project),
+    projectAndGoalHealth(viewer, today, project),
+    reportTimeline(viewer, range, today, project),
+    pendingDecisions(viewer, today, project),
+    stalledTasks(viewer, project),
+    reportPace(viewer, today, project),
+  ]);
+  // Narrowed to a project, the Goals panel keeps only the goals that project rolls up into.
+  const goalIds = new Set(healthBoard.goals.map((goal) => goal.id));
+  const goals = project === "" ? allGoals : allGoals.filter((goal) => goalIds.has(goal.id));
   const goalsDeliveredInRange: Record<string, number> = {};
   for (const task of delivered) {
     if (task.goalId) goalsDeliveredInRange[task.goalId] = (goalsDeliveredInRange[task.goalId] ?? 0) + 1;
@@ -74,34 +118,43 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
   const dueInRange = (task: ReportTask) => task.dueDate !== null && task.dueDate >= range.from && task.dueDate <= range.to;
   return {
     range,
+    window: timelineWindow(range, today),
+    scope: { project, chosen, options },
     summary: {
       delivered: delivered.length,
       openDueInRange: open.filter(dueInRange).length,
       blocked: blockedOverdue.filter((task) => task.status === "blocked").length,
       overdue: blockedOverdue.filter((task) => task.dueDate !== null && task.dueDate < today).length,
       progressUpdates,
+      problems: [...healthBoard.goals, ...healthBoard.projects].filter((row) => isProblem(row.health)).length,
+      decisions: decisions.approvals.length + decisions.requests.length,
+      stalled: stalled.length,
+      idlePeople: contributions.filter((row) => row.open === 0).length,
     },
     delivered,
     open,
     blockedOverdue,
+    stalled,
+    pace,
     contributions,
     goals,
     goalsDeliveredInRange,
     timeline,
     healthBoard,
     blockedDuration,
+    decisions,
   };
 }
 
 /** One of the report's tables as a CSV file, reading only the rows that table needs. */
-export async function buildCsv(viewer: Viewer, table: ReportTable, range: ReportRange, today: string): Promise<string> {
+export async function buildCsv(viewer: Viewer, table: ReportTable, range: ReportRange, today: string, project: ReportProject): Promise<string> {
   assertCanSeeReports(viewer);
   switch (table) {
     case "delivered":
-      return toCsv(deliveredTable(await deliveredTasks(viewer, range)));
+      return toCsv(deliveredTable(await deliveredTasks(viewer, range, project)));
     case "open":
-      return toCsv(openTable(await openCommitments(viewer, range, today), today));
+      return toCsv(openTable(await openCommitments(viewer, range, today, project), today));
     case "contributions":
-      return toCsv(contributionsTable(await contributionCounts(viewer, range)));
+      return toCsv(contributionsTable(await contributionCounts(viewer, range, today, project)));
   }
 }

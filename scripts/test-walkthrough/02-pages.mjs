@@ -42,6 +42,8 @@ const WORKER_SCREENS = [
   "/reports",
   "/reports?cut=exec",
   "/reports?cut=member",
+  "/reports?cut=exec&project=none",
+  "/capture",
   "/notifications",
   "/settings",
   "/settings/workspace",
@@ -49,7 +51,7 @@ const WORKER_SCREENS = [
 ];
 /** A stakeholder's screens, and where the worker-only ones send her. */
 const STAKEHOLDER_SCREENS = ["/home", "/requests", `/requests/${ids.taylorRequest}`, `/tasks/${ids.convertedTask}`, "/notifications", "/settings", "/settings/workspace"];
-const STAKEHOLDER_REDIRECTS = ["/my-work", "/home?view=list", "/projects", "/goals", "/members", "/reports"];
+const STAKEHOLDER_REDIRECTS = ["/my-work", "/home?view=list", "/projects", "/goals", "/members", "/reports", "/capture"];
 const STAKEHOLDER_NOT_FOUND = [`/tasks/${ids.task}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/requests/${ids.request}`];
 /** Riley's own screens, and the Trackwise Demo ids that must be invisible to Other Co. */
 const OTHER_SCREENS = ["/home", "/my-work", "/home?view=list", "/projects", "/goals", "/members", "/requests", "/reports", "/settings/workspace"];

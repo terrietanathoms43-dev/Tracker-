@@ -1,4 +1,5 @@
-import { Archive } from "lucide-react";
+import { Archive, AudioLines } from "lucide-react";
+import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { OwnerLabel, TargetLabel } from "@/components/goals/goal-parts";
@@ -8,12 +9,14 @@ import { GoalLink, ProjectStatusBadge } from "@/components/projects/project-part
 import { ProjectStatusActions } from "@/components/projects/project-status-actions";
 import { PlanningTasks } from "@/components/projects/task-groups";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
+import { Button } from "@/components/ui/button";
+import { captureProviderFor } from "@/lib/capture/availability";
 import { activeGoalOptions, ownerOptions } from "@/lib/dal/goals";
 import { getProject } from "@/lib/dal/projects";
 import { tasksForProject } from "@/lib/dal/tasks";
-import { canCreateTask, canManagePlanning } from "@/lib/permissions";
+import { canCapture, canCreateTask, canManagePlanning } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
-import { requireViewer } from "@/lib/viewer";
+import { requireViewerContext } from "@/lib/viewer";
 
 // /projects/[id]: one project, its progress, and its tasks grouped by status.
 
@@ -26,8 +29,9 @@ export const metadata: Metadata = { title: "Project" };
  */
 export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
   const { id } = await props.params;
-  const viewer = await requireViewer();
+  const { viewer, user } = await requireViewerContext();
   const manage = canManagePlanning(viewer);
+  const capture = canCapture(viewer) && captureProviderFor(user.email) !== null;
   // One round trip; nothing renders unless getProject finds it in this workspace for a viewer who may read it.
   const [project, tasks, people, goals] = await Promise.all([
     getProject(viewer, id),
@@ -47,6 +51,14 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
         actions={
           manage ? (
             <>
+              {capture && active ? (
+                <Button asChild variant="outline">
+                  <Link href={`/capture?project=${project.id}`}>
+                    <AudioLines aria-hidden />
+                    From a meeting
+                  </Link>
+                </Button>
+              ) : null}
               <ProjectDialog
                 project={{ id: project.id, name: project.name, description: project.description, ownerId: project.owner?.id ?? null, goal: project.goal, targetDate: project.targetDate }}
                 people={people}
