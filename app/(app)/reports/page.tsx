@@ -57,6 +57,8 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const myBlocked = report.blockedOverdue.filter((t) => isMine(t) && t.status === "blocked");
   // "Am I on schedule?": what is already late, and what falls due in the next week.
   const myOverdue = myOpen.filter((t) => t.dueDate !== null && t.dueDate < today);
+  /** Overdue work due before the chart's first day: it has no column, so the chart says it in words. */
+  const overdueBefore = (tasks: typeof report.blockedOverdue) => tasks.filter((t) => t.dueDate !== null && t.dueDate < report.window.from).length;
   const weekEnd = addDays(today, 7);
   const myDueSoon = myOpen.filter((t) => t.dueDate !== null && t.dueDate >= today && t.dueDate <= weekEnd);
   const tile = (label: string, value: number, note: string, problem = false) => (
@@ -95,7 +97,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
               {tile("Delivered", myDelivered.length, "in selected range")}
             </div>
 
-            <RangeChart timeline={report.timeline} today={today} showMyWork title="My deliveries and what's due next" pace={report.pace} />
+            <RangeChart timeline={report.timeline} today={today} showMyWork title="My deliveries and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue.filter(isMine))} />
 
             <Panel title="My delivered" count={myDelivered.length}>
               <DeliveredList tasks={myDelivered} today={today} />
@@ -126,7 +128,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
               </div>
             ) : null}
 
-            <RangeChart timeline={report.timeline} today={today} title="Delivery, blockers and what's due next" pace={report.pace} />
+            <RangeChart timeline={report.timeline} today={today} title="Delivery, blockers and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
 
             <Panel title="Blocked and overdue" count={report.blockedOverdue.length}>
               <BlockedList tasks={report.blockedOverdue} today={today} />
@@ -164,7 +166,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
                 <StalledList tasks={report.stalled} today={today} />
               </Panel>
             </div>
-            <RangeChart timeline={report.timeline} today={today} title="Daily completions, blockers and what's due next" pace={report.pace} />
+            <RangeChart timeline={report.timeline} today={today} title="Daily completions, blockers and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
             <div id="people" className="scroll-mt-20">
               <Panel title="People" aside={<CsvLink {...csv} table="contributions" label="People" />}>
                 <ContributionsTable rows={report.contributions} />

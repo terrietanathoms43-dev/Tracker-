@@ -114,7 +114,7 @@ export function HealthBoard({ data, today }: { data: HealthBoardData; today: str
           </p>
         </div>
         <span className={cn("rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums", problems > 0 ? "bg-status-blocked-bg text-status-blocked-fg" : "bg-status-completed-bg text-status-completed-fg")}>
-          {problems > 0 ? `${problems} to look at` : "All on track"}
+          {problems > 0 ? `${problems} off track` : "All on track"}
         </span>
       </div>
       <div className="grid md:grid-cols-2 md:divide-x">

@@ -60,13 +60,27 @@ try {
     step("the chart has days ahead of today", (await avery.evaluate(`document.querySelectorAll('g[data-future]').length`)) >= 14);
     step("a due task ahead is drawn outlined", (await avery.evaluate(`document.querySelectorAll('[data-segment="due"]').length`)) > 0);
     const todayVisible = await avery.evaluate(`(() => {
-      const scroller = document.querySelector('[data-testid="range-chart-scroller"]');
-      const column = scroller?.querySelector('g[data-day="${today}"] rect');
-      if (!scroller || !column) return "missing";
-      const s = scroller.getBoundingClientRect(), c = column.getBoundingClientRect();
-      return c.left >= s.left - 1 && c.right <= s.right + 1;
+      const frame = document.querySelector('[data-testid="range-chart-frame"]');
+      const column = frame?.querySelector('g[data-day="${today}"] rect');
+      if (!frame || !column) return "missing";
+      const f = frame.getBoundingClientRect(), c = column.getBoundingClientRect();
+      return c.left >= f.left - 1 && c.right <= f.right + 1;
     })()`);
     step("today's column is in view when the chart opens", todayVisible === true, String(todayVisible));
+    const fills = await avery.evaluate(`(() => {
+      const frame = document.querySelector('[data-testid="range-chart-frame"]');
+      const svg = frame?.querySelector("svg");
+      if (!frame || !svg) return "missing";
+      return Math.abs(svg.getBoundingClientRect().width - frame.getBoundingClientRect().width) <= 2 && frame.scrollWidth <= frame.clientWidth + 1;
+    })()`);
+    step("the chart fills its card with no scrollbar", fills === true, String(fills));
+    step("the activity pulse runs behind the bars", (await avery.evaluate(`document.querySelector('[data-testid="activity-line"]') !== null`)) === true);
+    const before = await avery.evaluate(`document.querySelectorAll('g[data-day]').length`);
+    await avery.click("Zoom in: fewer days", { wait: 600 });
+    const after = await avery.evaluate(`document.querySelectorAll('g[data-day]').length`);
+    step("zooming in shows fewer days across the same width", typeof before === "number" && typeof after === "number" && after < before, `${before} → ${after}`);
+    await avery.click("Fit every day of the window", { wait: 600 });
+    step("Fit all shows every day again", (await avery.evaluate(`document.querySelectorAll('g[data-day]').length`)) === before);
     // React derives onMouseEnter from a mouseout whose relatedTarget is the element entered (Next renders <body>,
     // so a bare mouseover is left for "the body's mouseout" that never comes). Leave the body for the column.
     await avery.evaluate(`(() => {
@@ -144,8 +158,14 @@ try {
     step("the chart draws only their own completions", mineDrawn === mine, `${mineDrawn} segments for ${mine}`);
     const overflow = (await jordan.overflow()) ?? [];
     step("the phone view has no horizontal overflow", overflow.length === 0, JSON.stringify(overflow[0] ?? ""));
-    const scrolls = await jordan.evaluate(`(() => { const s = document.querySelector('[data-testid="range-chart-scroller"]'); return s ? s.scrollWidth > s.clientWidth && s.scrollLeft > 0 : "missing" })()`);
-    step("on a phone the chart scrolls sideways and opens scrolled to today", scrolls === true, String(scrolls));
+    const phoneFit = await jordan.evaluate(`(() => {
+      const frame = document.querySelector('[data-testid="range-chart-frame"]');
+      const column = frame?.querySelector('g[data-day="${today}"] rect');
+      if (!frame || !column) return "missing";
+      const f = frame.getBoundingClientRect(), c = column.getBoundingClientRect();
+      return frame.scrollWidth <= frame.clientWidth + 1 && c.left >= f.left - 1 && c.right <= f.right + 1;
+    })()`);
+    step("on a phone the chart fits the width with today in view", phoneFit === true, String(phoneFit));
     await jordan.shot("10-member-phone-dark", { full: true });
     step("no console errors on the phone", jordan.problems.length === 0, JSON.stringify(jordan.problems.slice(0, 2)));
   }

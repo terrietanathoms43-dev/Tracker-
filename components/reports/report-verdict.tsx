@@ -17,14 +17,16 @@ function plural(n: number, one: string, many = `${one}s`): string {
 
 /** "3 things need attention: 1 delayed or at risk, 2 blocked." or "Nothing needs intervention right now." */
 function verdictSentence(summary: ReportSummary): { ok: boolean; text: string } {
+  // Everything that can throw the work off is counted here; "All clear" is only said when every one of these is zero.
   const parts: string[] = [];
-  if (summary.problems > 0) parts.push(`${summary.problems} delayed or at risk`);
+  if (summary.problems > 0) parts.push(`${summary.problems} ${summary.problems === 1 ? "goal or project" : "goals or projects"} off track`);
+  if (summary.behindPace) parts.push("behind pace overall");
   if (summary.blocked > 0) parts.push(`${summary.blocked} blocked`);
   if (summary.overdue > 0) parts.push(`${summary.overdue} overdue`);
   if (summary.stalled > 0) parts.push(`${summary.stalled} stalled`);
   if (summary.decisions > 0) parts.push(`${plural(summary.decisions, "decision")} waiting`);
-  if (parts.length === 0) return { ok: true, text: "All clear. Nothing needs your intervention right now." };
-  const total = summary.problems + summary.blocked + summary.overdue + summary.stalled + summary.decisions;
+  if (parts.length === 0) return { ok: true, text: "All clear. Nothing is off track, late, blocked, stalled or waiting on a decision." };
+  const total = summary.problems + (summary.behindPace ? 1 : 0) + summary.blocked + summary.overdue + summary.stalled + summary.decisions;
   return { ok: false, text: `${plural(total, "thing")} need${total === 1 ? "s" : ""} attention: ${parts.join(", ")}.` };
 }
 
@@ -32,7 +34,7 @@ function verdictSentence(summary: ReportSummary): { ok: boolean; text: string } 
 export function ReportVerdict({ summary, project }: { summary: ReportSummary; project: ReportProject }) {
   const verdict = verdictSentence(summary);
   const tiles: Tile[] = [
-    { label: "Delayed or at risk", value: summary.problems, href: "#health", tone: "problem" },
+    { label: "Off track", value: summary.problems, href: "#health", tone: "problem" },
     { label: "Blocked now", value: summary.blocked, href: tasksHref({ status: ["blocked"], project }), tone: "problem" },
     { label: "Overdue now", value: summary.overdue, href: tasksHref({ due: "overdue", project }), tone: "problem" },
     { label: "Stalled", value: summary.stalled, href: "#stalled", tone: "problem" },

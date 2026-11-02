@@ -12,9 +12,11 @@ import { reportHref, type ReportCut, type ReportProject, type ReportTable } from
 import { matchingPreset, PRESET_LABELS, presetRange, RANGE_PRESETS, type ReportRange } from "@/lib/reports/range";
 import { formatDay } from "@/lib/time";
 
-// The report's date range: one row of presets plus "Custom". Only Custom reveals the From / To pickers and their
-// Apply button, so the row reads as one choice at a time. Everything writes `?from&to` to the address (keeping the
-// current view and project) so a report can be shared as a link. Hidden when printing.
+// The report's date range: one row of spans (Week · Month · 3 months · 6 months · Year to date) plus "Custom".
+// Only Custom reveals the From / To pickers and their Apply button, so the row reads as one choice at a time; the
+// pickers take any day, future ones included, so a range can run past today to what is coming. Everything writes
+// `?from&to` to the address (keeping the current view and project) so a report can be shared as a link. Hidden
+// when printing.
 
 const PILL = "inline-flex h-8 items-center rounded-md border px-2.5 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const ON = "border-primary bg-primary text-primary-foreground";
@@ -57,13 +59,13 @@ export function ReportControls({ range, today, cut, project }: { range: ReportRa
             <Label htmlFor="report-from" className="text-[13px] font-normal text-muted-foreground">
               From
             </Label>
-            <Input id="report-from" name="from" type="date" required defaultValue={range.from} max={today} className="h-8 sm:w-40" />
+            <Input id="report-from" name="from" type="date" required defaultValue={range.from} className="h-8 sm:w-40" />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="report-to" className="text-[13px] font-normal text-muted-foreground">
               To
             </Label>
-            <Input id="report-to" name="to" type="date" required defaultValue={range.to} max={today} className="h-8 sm:w-40" />
+            <Input id="report-to" name="to" type="date" required defaultValue={range.to} className="h-8 sm:w-40" />
           </div>
           <Button type="submit" variant="outline" size="sm" className="col-span-2 sm:col-span-1">
             Apply

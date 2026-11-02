@@ -25,7 +25,6 @@ import {
   type ReportTask,
   type TimelineDay,
 } from "./data";
-import { isProblem } from "./health";
 import type { Pace } from "./pace";
 import type { ReportProject, ReportTable } from "./params";
 import { timelineWindow, type ReportRange } from "./range";
@@ -40,8 +39,10 @@ export type ReportSummary = {
   blocked: number;
   overdue: number;
   progressUpdates: number;
-  /** Goals and projects the health board judges delayed or at risk. */
+  /** Goals and projects the health board judges anything but on track (delayed, at risk, needs attention). */
   problems: number;
+  /** The scope's work as a whole is behind the pace its target date needs. */
+  behindPace: boolean;
   /** Approvals and requests waiting for someone to decide. */
   decisions: number;
   /** In progress, but untouched for a week or more. */
@@ -126,7 +127,9 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
       blocked: blockedOverdue.filter((task) => task.status === "blocked").length,
       overdue: blockedOverdue.filter((task) => task.dueDate !== null && task.dueDate < today).length,
       progressUpdates,
-      problems: [...healthBoard.goals, ...healthBoard.projects].filter((row) => isProblem(row.health)).length,
+      // "All clear" has to mean it: every verdict short of on track counts, not just the worst two.
+      problems: [...healthBoard.goals, ...healthBoard.projects].filter((row) => row.health !== "on_track").length,
+      behindPace: pace.verdict === "behind",
       decisions: decisions.approvals.length + decisions.requests.length,
       stalled: stalled.length,
       idlePeople: contributions.filter((row) => row.open === 0).length,

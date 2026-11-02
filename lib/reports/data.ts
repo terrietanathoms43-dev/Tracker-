@@ -48,7 +48,12 @@ export type ReportTask = {
  * nothing), then what they completed in the range. Counts only: the report never compares people.
  */
 export type ContributionRow = {
-  person: { id: string; name: string | null; email: string | null; image: string | null };
+  person: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+  };
   /** Open tasks assigned to them that are past their due date today. */
   overdue: number;
   /** Tasks assigned to them that are blocked now. */
@@ -59,10 +64,18 @@ export type ContributionRow = {
   deltaCompleted?: number;
 };
 
-export type TimelineGoalMarker = { id: string; title: string };
+/** A goal's deadline on the chart, coloured by the goal's health so an at-risk deadline stands out. */
+export type TimelineGoalMarker = {
+  id: string;
+  title: string;
+  health: HealthStatus;
+};
 
-/** What a task did on a day: it was completed, a blocker was raised on it, or (today and later) it falls due. */
-export type TimelineTaskKind = "completed" | "blocked" | "due";
+/**
+ * What a task did on a day: it was completed, a blocker was raised on it, it was due and is still open (overdue,
+ * drawn loud), or (today and later) it falls due.
+ */
+export type TimelineTaskKind = "completed" | "blocked" | "overdue" | "due";
 
 export type TimelineTaskSummary = {
   id: string;
@@ -78,12 +91,17 @@ export type TimelineDay = {
   completed: number;
   myCompleted: number;
   blockedRaised: number;
-  /** Open tasks falling due that day (only today and later: the past's dues are history, not a plan). */
+  /** Open tasks that were due that day and still are: the chart's loudest mark. */
+  overdue: number;
+  myOverdue: number;
+  /** Open tasks falling due that day (today and later). */
   due: number;
   myDue: number;
   goalDeadlines: TimelineGoalMarker[];
-  /** Every task behind the counts, in the order the bar stacks them: completed, then blocked, then due. */
+  /** Every task behind the counts, in the order the bar stacks them: completed, blocked, overdue, then due. */
   tasks: TimelineTaskSummary[];
+  /** Everything that happened to a task that day (every history row: created, edited, status, comments, links…). */
+  activity: number;
   /** After today: the look-ahead, drawn lighter. */
   future: boolean;
   /** Inside the report's range (the look-ahead and any gap up to today are not). */
@@ -138,7 +156,11 @@ export type PendingDecisions = {
 };
 
 /** A project the report can be narrowed to. */
-export type ReportProjectOption = { id: string; name: string; status: ProjectStatus };
+export type ReportProjectOption = {
+  id: string;
+  name: string;
+  status: ProjectStatus;
+};
 
 // --- helpers ------------------------------------------------------------------------------------------------
 
@@ -262,11 +284,19 @@ export async function reportPace(viewer: Viewer, today: string, project: ReportP
       .from(tasks)
       .where(and(eq(tasks.orgId, viewer.orgId), projectCondition(project))),
     project !== "" && project !== "none"
-      ? db.select({ createdAt: projects.createdAt, targetDate: projects.targetDate }).from(projects).where(and(eq(projects.orgId, viewer.orgId), eq(projects.id, project)))
+      ? db
+          .select({
+            createdAt: projects.createdAt,
+            targetDate: projects.targetDate,
+          })
+          .from(projects)
+          .where(and(eq(projects.orgId, viewer.orgId), eq(projects.id, project)))
       : Promise.resolve([] as { createdAt: Date; targetDate: string | null }[]),
     project === ""
       ? db
-          .select({ targetDate: sql<string | null>`max(${goals.targetDate})::text` })
+          .select({
+            targetDate: sql<string | null>`max(${goals.targetDate})::text`,
+          })
           .from(goals)
           .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active"), isNull(goals.parentGoalId)))
       : Promise.resolve([] as { targetDate: string | null }[]),
@@ -275,7 +305,13 @@ export async function reportPace(viewer: Viewer, today: string, project: ReportP
   const projectStart = chosen ? dayKey(chosen.createdAt, viewer.timezone) : null;
   const start = [firstTask, projectStart].filter((day): day is string => day !== null).sort()[0] ?? null;
   const target = chosen ? chosen.targetDate : project === "" ? (goal?.targetDate ?? null) : null;
-  return paceOf({ done: counts?.done ?? 0, total: counts?.total ?? 0, start, target, today });
+  return paceOf({
+    done: counts?.done ?? 0,
+    total: counts?.total ?? 0,
+    start,
+    target,
+    today,
+  });
 }
 
 /** Progress updates written in the range by anyone in the workspace (comments are not progress). */
@@ -340,7 +376,12 @@ export async function contributionCounts(viewer: Viewer, range: ReportRange, tod
       const prior = priorCompletedBy.get(worker.userId) ?? 0;
       const current = loadBy.get(worker.userId);
       return {
-        person: { id: worker.userId, name: worker.name, email: worker.email, image: worker.image },
+        person: {
+          id: worker.userId,
+          name: worker.name,
+          email: worker.email,
+          image: worker.image,
+        },
         overdue: current?.overdue ?? 0,
         blocked: current?.blocked ?? 0,
         open: current?.open ?? 0,
@@ -361,24 +402,38 @@ function goalMarkerCondition(project: ReportProject): SQL | undefined {
 
 /**
  * One entry per calendar day of the chart's window (lib/reports/range.ts: the range, then two weeks past today):
- * what was completed, which blockers were raised, what falls due from today on, and the goal deadlines, with the
- * tasks behind each count so a bar can be split into them.
+ * what was completed, which blockers were raised, what was due and is still open (overdue), what falls due from
+ * today on, and the goal deadlines with each goal's health, with the tasks behind each count so a bar can be split
+ * into them.
  */
 export async function reportTimeline(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<TimelineDay[]> {
   const window = timelineWindow(range, today);
-  const past: ReportRange = { from: window.from, to: today < window.to ? today : window.to };
-  const ahead: ReportRange = { from: today > window.from ? today : window.from, to: window.to };
+  const past: ReportRange = {
+    from: window.from,
+    to: today < window.to ? today : window.to,
+  };
   const scoped = projectCondition(project);
   const mine = mineSql(viewer.userId);
 
-  const [goalRows, completedRows, blockerRows, dueRows] = await Promise.all([
+  const [goalRows, completedRows, blockerRows, dueRows, activityRows] = await Promise.all([
     db
-      .select({ id: goals.id, title: goals.title, targetDate: goals.targetDate })
+      .select({
+        id: goals.id,
+        title: goals.title,
+        targetDate: goals.targetDate,
+        createdAt: goals.createdAt,
+      })
       .from(goals)
       .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active"), isNotNull(goals.targetDate), goalMarkerCondition(project)))
       .orderBy(asc(goals.title)),
     db
-      .select({ id: tasks.id, title: tasks.title, completedAt: tasks.completedAt, projectName: projects.name, isMine: mine })
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        completedAt: tasks.completedAt,
+        projectName: projects.name,
+        isMine: mine,
+      })
       .from(tasks)
       .leftJoin(projects, eq(projects.id, tasks.projectId))
       .where(and(eq(tasks.orgId, viewer.orgId), scoped, eq(tasks.status, "completed"), isNotNull(tasks.completedAt), withinDays(tasks.completedAt, past, viewer.timezone)))
@@ -396,13 +451,35 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       .leftJoin(projects, eq(projects.id, tasks.projectId))
       .where(and(eq(taskActivity.orgId, viewer.orgId), scoped, eq(taskActivity.kind, "blocked"), withinDays(taskActivity.createdAt, past, viewer.timezone)))
       .orderBy(asc(taskActivity.createdAt)),
+    // Every open task due anywhere in the window: before today it is overdue, from today on it is due.
     db
-      .select({ id: tasks.id, title: tasks.title, dueDate: tasks.dueDate, projectName: projects.name, isMine: mine })
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        dueDate: tasks.dueDate,
+        projectName: projects.name,
+        isMine: mine,
+      })
       .from(tasks)
       .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(tasks.orgId, viewer.orgId), scoped, isOpen, dueWithin(ahead)))
+      .where(and(eq(tasks.orgId, viewer.orgId), scoped, isOpen, dueWithin(window)))
       .orderBy(asc(tasks.dueDate), asc(tasks.title)),
+    // The pulse behind the bars: every history row of every task in scope, by day.
+    db
+      .select({
+        day: sql<string>`to_char(${taskActivity.createdAt} at time zone ${viewer.timezone}, 'YYYY-MM-DD')`,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(taskActivity)
+      .innerJoin(tasks, eq(tasks.id, taskActivity.taskId))
+      .where(and(eq(taskActivity.orgId, viewer.orgId), scoped, withinDays(taskActivity.createdAt, past, viewer.timezone)))
+      .groupBy(sql`1`),
   ]);
+  const goalProgress = await progressForGoals(
+    viewer,
+    goalRows.map((goal) => goal.id),
+  );
+  const activityByDay = new Map(activityRows.map((row) => [row.day, row.n]));
 
   const byDay = new Map<string, TimelineTaskSummary[]>();
   const add = (day: string, task: TimelineTaskSummary) => {
@@ -411,22 +488,70 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
     byDay.set(day, list);
   };
   for (const row of completedRows) {
-    if (row.completedAt) add(dayKey(row.completedAt, viewer.timezone), { id: row.id, title: row.title, kind: "completed", isMine: row.isMine, project: row.projectName });
+    if (row.completedAt)
+      add(dayKey(row.completedAt, viewer.timezone), {
+        id: row.id,
+        title: row.title,
+        kind: "completed",
+        isMine: row.isMine,
+        project: row.projectName,
+      });
   }
-  for (const row of blockerRows) add(row.day, { id: row.taskId, title: row.taskTitle, kind: "blocked", isMine: row.isMine, project: row.projectName });
+  for (const row of blockerRows)
+    add(row.day, {
+      id: row.taskId,
+      title: row.taskTitle,
+      kind: "blocked",
+      isMine: row.isMine,
+      project: row.projectName,
+    });
   for (const row of dueRows) {
-    if (row.dueDate) add(row.dueDate, { id: row.id, title: row.title, kind: "due", isMine: row.isMine, project: row.projectName });
+    if (row.dueDate)
+      add(row.dueDate, {
+        id: row.id,
+        title: row.title,
+        kind: row.dueDate < today ? "overdue" : "due",
+        isMine: row.isMine,
+        project: row.projectName,
+      });
   }
 
   const goalsByDay = new Map<string, TimelineGoalMarker[]>();
   for (const goal of goalRows) {
     if (goal.targetDate === null || goal.targetDate < window.from || goal.targetDate > window.to) continue;
+    const progress = goalProgress.get(goal.id) ?? {
+      total: 0,
+      completed: 0,
+      blocked: 0,
+      overdue: 0,
+    };
+    const behindPace = isBehindPace({
+      done: progress.completed,
+      total: progress.total,
+      start: dayKey(goal.createdAt, viewer.timezone),
+      target: goal.targetDate,
+      today,
+    });
     const list = goalsByDay.get(goal.targetDate) ?? [];
-    list.push({ id: goal.id, title: goal.title });
+    list.push({
+      id: goal.id,
+      title: goal.title,
+      health: healthOf({
+        ...progress,
+        targetDate: goal.targetDate,
+        today,
+        behindPace,
+      }),
+    });
     goalsByDay.set(goal.targetDate, list);
   }
 
-  const ORDER: Record<TimelineTaskKind, number> = { completed: 0, blocked: 1, due: 2 };
+  const ORDER: Record<TimelineTaskKind, number> = {
+    completed: 0,
+    blocked: 1,
+    overdue: 2,
+    due: 3,
+  };
   return daysOf(window).map((date) => {
     const dayTasks = (byDay.get(date) ?? []).sort((a, b) => ORDER[a.kind] - ORDER[b.kind]);
     const count = (kind: TimelineTaskKind, onlyMine = false) => dayTasks.filter((task) => task.kind === kind && (!onlyMine || task.isMine)).length;
@@ -435,10 +560,13 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       completed: count("completed"),
       myCompleted: count("completed", true),
       blockedRaised: count("blocked"),
+      overdue: count("overdue"),
+      myOverdue: count("overdue", true),
       due: count("due"),
       myDue: count("due", true),
       goalDeadlines: goalsByDay.get(date) ?? [],
       tasks: dayTasks,
+      activity: activityByDay.get(date) ?? 0,
       future: date > today,
       inRange: date >= range.from && date <= range.to,
     };
@@ -474,7 +602,14 @@ export async function blockedDurationStats(viewer: Viewer, project: ReportProjec
 export async function projectAndGoalHealth(viewer: Viewer, today: string, project: ReportProject): Promise<HealthBoard> {
   const projectWhere = project === "none" ? sql`false` : project !== "" ? eq(projects.id, project) : eq(projects.status, "active");
   const activeProjects = await db
-    .select({ id: projects.id, name: projects.name, status: projects.status, targetDate: projects.targetDate, goalId: projects.goalId, createdAt: projects.createdAt })
+    .select({
+      id: projects.id,
+      name: projects.name,
+      status: projects.status,
+      targetDate: projects.targetDate,
+      goalId: projects.goalId,
+      createdAt: projects.createdAt,
+    })
     .from(projects)
     .where(and(eq(projects.orgId, viewer.orgId), projectWhere))
     .orderBy(sql`${projects.targetDate} asc nulls last`, asc(projects.name));
@@ -488,20 +623,38 @@ export async function projectAndGoalHealth(viewer: Viewer, today: string, projec
         ? sql`false`
         : or(inArray(goals.id, chain), sql`${goals.id} in (select g.parent_goal_id from ${goals} g where g.id in ${chain} and g.parent_goal_id is not null)`)!;
   const activeGoals = await db
-    .select({ id: goals.id, title: goals.title, parentGoalId: goals.parentGoalId, targetDate: goals.targetDate, createdAt: goals.createdAt })
+    .select({
+      id: goals.id,
+      title: goals.title,
+      parentGoalId: goals.parentGoalId,
+      targetDate: goals.targetDate,
+      createdAt: goals.createdAt,
+    })
     .from(goals)
     .where(and(eq(goals.orgId, viewer.orgId), goalWhere))
     .orderBy(sql`${goals.targetDate} asc nulls last`, asc(goals.title));
 
   const [goalProgress, projectProgress] = await Promise.all([
-    progressForGoals(viewer, activeGoals.map((goal) => goal.id)),
-    progressForProjects(viewer, activeProjects.map((row) => row.id)),
+    progressForGoals(
+      viewer,
+      activeGoals.map((goal) => goal.id),
+    ),
+    progressForProjects(
+      viewer,
+      activeProjects.map((row) => row.id),
+    ),
   ]);
   const EMPTY = { total: 0, completed: 0, blocked: 0, overdue: 0 };
   const pctOf = (completed: number, total: number) => (total > 0 ? Math.round((completed / total) * 100) : 0);
   /** Behind the line from its creation to its target date (lib/reports/pace.ts). */
   const behind = (createdAt: Date, targetDate: string | null, progress: { completed: number; total: number }) =>
-    isBehindPace({ done: progress.completed, total: progress.total, start: dayKey(createdAt, viewer.timezone), target: targetDate, today });
+    isBehindPace({
+      done: progress.completed,
+      total: progress.total,
+      start: dayKey(createdAt, viewer.timezone),
+      target: targetDate,
+      today,
+    });
 
   const goalRows: GoalHealthRow[] = activeGoals.map((goal) => {
     const progress = goalProgress.get(goal.id) ?? EMPTY;
@@ -512,17 +665,41 @@ export async function projectAndGoalHealth(viewer: Viewer, today: string, projec
       targetDate: goal.targetDate,
       ...progress,
       pct: pctOf(progress.completed, progress.total),
-      health: healthOf({ ...progress, targetDate: goal.targetDate, today, behindPace: behind(goal.createdAt, goal.targetDate, progress) }),
+      health: healthOf({
+        ...progress,
+        targetDate: goal.targetDate,
+        today,
+        behindPace: behind(goal.createdAt, goal.targetDate, progress),
+      }),
     };
   });
   const projectRows: ProjectHealthRow[] = activeProjects.map((row) => {
     const progress = projectProgress.get(row.id) ?? EMPTY;
     // A project marked completed or archived is settled whatever its tasks say; chosen by name, it reads as on track.
-    const health = row.status === "active" ? healthOf({ ...progress, targetDate: row.targetDate, today, behindPace: behind(row.createdAt, row.targetDate, progress) }) : "on_track";
-    return { id: row.id, name: row.name, status: row.status, targetDate: row.targetDate, ...progress, pct: pctOf(progress.completed, progress.total), health };
+    const health =
+      row.status === "active"
+        ? healthOf({
+            ...progress,
+            targetDate: row.targetDate,
+            today,
+            behindPace: behind(row.createdAt, row.targetDate, progress),
+          })
+        : "on_track";
+    return {
+      id: row.id,
+      name: row.name,
+      status: row.status,
+      targetDate: row.targetDate,
+      ...progress,
+      pct: pctOf(progress.completed, progress.total),
+      health,
+    };
   });
 
-  return { goals: sortByHealth(goalRows, (row) => row.title), projects: sortByHealth(projectRows, (row) => row.name) };
+  return {
+    goals: sortByHealth(goalRows, (row) => row.title),
+    projects: sortByHealth(projectRows, (row) => row.name),
+  };
 }
 
 /**

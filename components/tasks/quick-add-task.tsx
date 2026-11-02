@@ -1,10 +1,10 @@
 "use client";
 
 import { cn } from "cn";
-import { AudioLines, CalendarDays, Plus, SlidersHorizontal } from "lucide-react";
+import { AudioLines, CalendarDays, ChevronDown, ChevronUp, Plus, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 import { createTask } from "@/actions/tasks";
 import { CharacterCounter } from "@/components/character-counter";
@@ -16,12 +16,47 @@ import { nameOf } from "@/lib/tasks/people";
 import { activeToken, mentionTargets, parseQuickAdd, removeTokens, suggest, type QuickAddParse, type QuickAddToken } from "@/lib/tasks/quick-add";
 import type { CreateDefaults, TaskFormOptions } from "@/lib/tasks/types";
 import { addDays } from "@/lib/time";
+import { AssigneePicker } from "./assignee-picker";
 import { QUICK_ADD_ATTRIBUTE, useTaskActions } from "./task-actions";
 import { loadTaskFormOptions, useTaskFormOptions } from "./use-task-form-options";
 
 // The always-open add bar at the top of Home, My Work, Tasks and the project and goal pages: type a title, press
-// Enter. Priority, due date and assignees can be clicked or typed into the title (lib/tasks/quick-add.ts);
-// "More options" carries everything over to the full New task dialog.
+// Enter. Priority, due date, project and assignees sit in an options row under the title (open by default; "Hide
+// options" folds it away and the choice is remembered in this browser) or are typed into the title
+// (lib/tasks/quick-add.ts); "More options" carries everything over to the full New task dialog.
+
+/** Where the folded / unfolded state of the options row is kept, per browser. */
+const OPTIONS_KEY = "trackwise.quickAdd.options";
+
+const optionListeners = new Set<() => void>();
+
+/** The folded state is external to React (storage), so it is read through useSyncExternalStore, not an effect. */
+function subscribeOptions(listener: () => void): () => void {
+  optionListeners.add(listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    optionListeners.delete(listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+
+/** Open unless this browser folded it; storage that cannot be read counts as open. */
+function readOptionsOpen(): boolean {
+  try {
+    return window.localStorage.getItem(OPTIONS_KEY) !== "closed";
+  } catch {
+    return true;
+  }
+}
+
+function writeOptionsOpen(open: boolean): void {
+  try {
+    window.localStorage.setItem(OPTIONS_KEY, open ? "open" : "closed");
+  } catch {
+    /* not remembered; the page-level override keeps the choice */
+  }
+  for (const listener of optionListeners) listener();
+}
 
 const PRIORITIES: { value: TaskPriority; dot: string }[] = [
   { value: "urgent", dot: "bg-priority-urgent" },
@@ -51,10 +86,10 @@ function Toggle({ active, onClick, children, label }: { active: boolean; onClick
   );
 }
 
-/** Who the parsed title assigns, by name: "Sam Dev, You". */
-function assignedNames(parsed: QuickAddParse, options: TaskFormOptions | null): string[] {
+/** People by name, "You" for the viewer: "Sam Dev, You". */
+function namesOf(ids: string[], options: TaskFormOptions | null): string[] {
   if (options === null) return [];
-  return parsed.people.map((id) => (id === options.viewerId ? "You" : nameOf(options.people.find((person) => person.id === id))));
+  return ids.map((id) => (id === options.viewerId ? "You" : nameOf(options.people.find((person) => person.id === id))));
 }
 
 /**
@@ -72,18 +107,34 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
   const [priority, setPriority] = useState<TaskPriority>("normal");
   const [due, setDue] = useState("");
   const [projectId, setProjectId] = useState(defaults.projectId ?? "");
+  /** People chosen in the picker; null until it is touched, when the task is yours (or whoever the title mentions). */
+  const [picked, setPicked] = useState<string[] | null>(defaults.assigneeIds ?? null);
+  /** The options row: open by default, folded away when this browser last chose so (kept in localStorage). */
+  const remembered = useSyncExternalStore(subscribeOptions, readOptionsOpen, () => true);
+  /** A choice made in a browser that refuses storage still applies for this page. */
+  const [override, setOverride] = useState<boolean | null>(null);
+  const optionsOpen = override ?? remembered;
   const [highlight, setHighlight] = useState(0);
   /** Escape hides the suggestions until the next keystroke. */
   const [dismissed, setDismissed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  function toggleOptions(next: boolean) {
+    setOverride(next);
+    writeOptionsOpen(next);
+  }
+
   const targets = useMemo(() => (options ? mentionTargets(options.people) : []), [options]);
   const parsed = parseQuickAdd(text, targets);
   const tomorrow = addDays(today, 1);
   const effectivePriority = parsed.priority ?? priority;
   const effectiveDue = parsed.due === "today" ? today : parsed.due === "tomorrow" ? tomorrow : due;
-  const names = assignedNames(parsed, options);
+  /** Typed mentions win, then the picker, then you. */
+  const me = options?.viewerId ? [options.viewerId] : [];
+  const effectiveAssignees = parsed.people.length > 0 ? parsed.people : (picked ?? me);
+  const explicitAssignees = parsed.people.length > 0 || picked !== null;
+  const names = explicitAssignees ? namesOf(effectiveAssignees, options) : [];
 
   const token = dismissed ? null : activeToken(text, caret);
   const suggestions = token ? suggest(token, targets) : [];
@@ -124,12 +175,14 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
     setCaret(0);
     setPriority("normal");
     setDue("");
+    setPicked(null);
     setError(null);
   }
 
-  /** The people a parsed title assigns; without a mention the task is the creator's, as before. */
+  /** The people a task goes to: whoever the title mentions, else whoever was picked, else the creator. */
   function assigneesOf(read: QuickAddParse, viewerId: string | null): string[] {
     if (read.people.length > 0) return read.people;
+    if (picked !== null) return picked;
     return viewerId ? [viewerId] : [];
   }
 
@@ -152,7 +205,9 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
         return;
       }
       const id = result.data.id;
-      toast.success(result.message ?? "Task created.", { action: { label: "Open", onClick: () => router.push(`/tasks/${id}`) } });
+      toast.success(result.message ?? "Task created.", {
+        action: { label: "Open", onClick: () => router.push(`/tasks/${id}`) },
+      });
       reset();
       inputRef.current?.focus();
     });
@@ -166,11 +221,19 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
         title: parsed.title,
         priority: effectivePriority,
         dueDate: effectiveDue,
-        ...(parsed.people.length > 0 ? { assigneeIds: parsed.people } : {}),
+        ...(explicitAssignees ? { assigneeIds: effectiveAssignees } : {}),
       },
       reset,
     );
   }
+
+  /** What is set while the options row is folded, so nothing is chosen unseen: "High · Tomorrow · Sam Dev". */
+  const folded = [
+    effectivePriority !== "normal" ? TASK_PRIORITY_LABELS[effectivePriority] : null,
+    effectiveDue === today ? "Today" : effectiveDue === tomorrow ? "Tomorrow" : effectiveDue ? `Due ${effectiveDue}` : null,
+    projectId ? (options?.projects.find((project) => project.id === projectId)?.name ?? null) : null,
+    names.length > 0 ? names.join(", ") : null,
+  ].filter((part): part is string => part !== null);
 
   const showProject = options === null || options.projects.length > 0 || projectId !== "";
 
@@ -233,12 +296,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
           }}
         />
         {listOpen ? (
-          <ul
-            id={listId}
-            role="listbox"
-            aria-label="Suggestions"
-            className="absolute top-full left-0 z-40 mt-1 w-full max-w-sm overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
-          >
+          <ul id={listId} role="listbox" aria-label="Suggestions" className="absolute top-full left-0 z-40 mt-1 w-full max-w-sm overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-md">
             {suggestions.map((suggestion, index) => (
               <li
                 key={suggestion.insert + suggestion.label}
@@ -267,109 +325,103 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
         ) : null}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <div role="radiogroup" aria-label="Priority" className="inline-flex rounded-md border bg-background p-0.5">
-          {PRIORITIES.map((each) => {
-            const checked = effectivePriority === each.value;
-            return (
-              <button
-                key={each.value}
-                type="button"
-                role="radio"
-                aria-checked={checked}
-                onClick={() => {
-                  setPriority(each.value);
-                  dropTokens("priority");
-                }}
-                className={cn(
-                  "inline-flex h-8 items-center gap-1.5 rounded-[5px] px-2.5 text-[14px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  checked ? "bg-accent text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                )}
-              >
-                <span className={cn("size-2 rounded-full", each.dot)} aria-hidden />
-                {TASK_PRIORITY_LABELS[each.value]}
-              </button>
-            );
-          })}
-        </div>
+      {optionsOpen ? (
+        <div id="quick-add-options" className="mt-3 flex flex-wrap items-center gap-2">
+          <div role="radiogroup" aria-label="Priority" className="inline-flex rounded-md border bg-background p-0.5">
+            {PRIORITIES.map((each) => {
+              const checked = effectivePriority === each.value;
+              return (
+                <button
+                  key={each.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={checked}
+                  onClick={() => {
+                    setPriority(each.value);
+                    dropTokens("priority");
+                  }}
+                  className={cn(
+                    "inline-flex h-8 items-center gap-1.5 rounded-[5px] px-2.5 text-[14px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    checked ? "bg-accent text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                  )}
+                >
+                  <span className={cn("size-2 rounded-full", each.dot)} aria-hidden />
+                  {TASK_PRIORITY_LABELS[each.value]}
+                </button>
+              );
+            })}
+          </div>
 
-        <div role="group" aria-label="Due" className="inline-flex rounded-md border bg-background p-0.5">
-          <Toggle
-            active={effectiveDue === today}
-            label="Due today"
-            onClick={() => {
-              setDue(effectiveDue === today ? "" : today);
+          <div role="group" aria-label="Due" className="inline-flex rounded-md border bg-background p-0.5">
+            <Toggle
+              active={effectiveDue === today}
+              label="Due today"
+              onClick={() => {
+                setDue(effectiveDue === today ? "" : today);
+                dropTokens("due");
+              }}
+            >
+              Today
+            </Toggle>
+            <Toggle
+              active={effectiveDue === tomorrow}
+              label="Due tomorrow"
+              onClick={() => {
+                setDue(effectiveDue === tomorrow ? "" : tomorrow);
+                dropTokens("due");
+              }}
+            >
+              Tomorrow
+            </Toggle>
+          </div>
+
+          <input
+            type="date"
+            aria-label="Due date"
+            id="quick-add-due"
+            value={effectiveDue}
+            onChange={(event) => {
+              setDue(event.target.value);
               dropTokens("due");
             }}
-          >
-            Today
-          </Toggle>
-          <Toggle
-            active={effectiveDue === tomorrow}
-            label="Due tomorrow"
-            onClick={() => {
-              setDue(effectiveDue === tomorrow ? "" : tomorrow);
-              dropTokens("due");
-            }}
-          >
-            Tomorrow
-          </Toggle>
-        </div>
+            className="h-9 rounded-md border border-input bg-transparent px-2.5 text-base outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30 dark:scheme-dark"
+          />
 
-        <input
-          type="date"
-          aria-label="Due date"
-          id="quick-add-due"
-          value={effectiveDue}
-          onChange={(event) => {
-            setDue(event.target.value);
-            dropTokens("due");
-          }}
-          className="h-9 rounded-md border border-input bg-transparent px-2.5 text-base outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30 dark:scheme-dark"
-        />
-
-        {showProject ? (
-          <NativeSelect
-            id="quick-add-project"
-            aria-label="Project"
-            className="w-full min-w-40 sm:w-52"
-            value={projectId}
-            disabled={options === null}
-            onChange={(event) => setProjectId(event.target.value)}
-          >
-            <option value="">{options === null ? "Loading…" : "No project"}</option>
-            {(options?.projects ?? []).map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </NativeSelect>
-        ) : null}
-
-        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
-          {options?.canCapture ? (
-            <Button asChild variant="ghost" className="text-muted-foreground">
-              <Link href={projectId ? `/capture?project=${projectId}` : "/capture"}>
-                <AudioLines aria-hidden />
-                From a meeting
-              </Link>
-            </Button>
+          {showProject ? (
+            <NativeSelect id="quick-add-project" aria-label="Project" className="w-full min-w-40 sm:w-52" value={projectId} disabled={options === null} onChange={(event) => setProjectId(event.target.value)}>
+              <option value="">{options === null ? "Loading…" : "No project"}</option>
+              {(options?.projects ?? []).map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </NativeSelect>
           ) : null}
-          <Button type="button" variant="ghost" onClick={moreOptions} className="text-muted-foreground">
-            <SlidersHorizontal aria-hidden />
-            More options
-          </Button>
-          <Button type="submit" disabled={pending || parsed.title === ""} className="ml-auto sm:ml-0">
-            <Plus aria-hidden />
-            {pending ? "Adding…" : "Add task"}
-          </Button>
-        </div>
-      </div>
 
-      <div className="mt-3 flex items-start justify-between gap-3">
-        <p id="quick-add-hint" className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-[14px] text-muted-foreground" aria-live="polite">
+          {/* Who it goes to, right here: a typed @mention still wins, and picking clears the mention from the title. */}
+          <AssigneePicker
+            label="Assigned to"
+            value={effectiveAssignees}
+            onChange={(next) => {
+              setPicked(next);
+              dropTokens("person");
+            }}
+            options={options ? { people: options.people, viewerId: options.viewerId } : null}
+            assumeMe={!explicitAssignees}
+            className="w-full sm:w-auto sm:min-w-44"
+          />
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <p id="quick-add-hint" className="flex min-w-0 flex-1 basis-64 flex-wrap items-center gap-x-1.5 gap-y-1 text-[14px] text-muted-foreground" aria-live="polite">
           {error ? (
             <span className="text-destructive">{error}</span>
+          ) : !optionsOpen && folded.length > 0 ? (
+            <span>
+              Set: <span className="font-medium text-foreground">{folded.join(" · ")}</span>
+              {parsed.unmatched.length > 0 ? ` · ${parsed.unmatched.join(", ")} ${parsed.unmatched.length === 1 ? "stays" : "stay"} in the title.` : "."}
+            </span>
           ) : names.length > 0 || parsed.unmatched.length > 0 ? (
             <>
               {names.length > 0 ? (
@@ -379,8 +431,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
               ) : null}
               {parsed.unmatched.length > 0 ? (
                 <span>
-                  {parsed.unmatched.join(", ")} {parsed.unmatched.length === 1 ? "doesn't" : "don't"} name one person, so{" "}
-                  {parsed.unmatched.length === 1 ? "it stays" : "they stay"} in the title.
+                  {parsed.unmatched.join(", ")} {parsed.unmatched.length === 1 ? "doesn't" : "don't"} name one person, so {parsed.unmatched.length === 1 ? "it stays" : "they stay"} in the title.
                 </span>
               ) : null}
             </>
@@ -398,7 +449,29 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
             </>
           )}
         </p>
-        <CharacterCounter value={text} max={LIMITS.quickAddTitle} />
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <CharacterCounter value={text} max={LIMITS.quickAddTitle} />
+          <Button type="button" variant="ghost" aria-expanded={optionsOpen} aria-controls="quick-add-options" onClick={() => toggleOptions(!optionsOpen)} className="text-muted-foreground">
+            {optionsOpen ? <ChevronUp aria-hidden /> : <ChevronDown aria-hidden />}
+            {optionsOpen ? "Hide options" : "Options"}
+          </Button>
+          {options?.canCapture ? (
+            <Button asChild variant="ghost" className="text-muted-foreground">
+              <Link href={projectId ? `/capture?project=${projectId}` : "/capture"}>
+                <AudioLines aria-hidden />
+                From a meeting
+              </Link>
+            </Button>
+          ) : null}
+          <Button type="button" variant="ghost" onClick={moreOptions} className="text-muted-foreground">
+            <SlidersHorizontal aria-hidden />
+            More options
+          </Button>
+          <Button type="submit" disabled={pending || parsed.title === ""} className="ml-auto sm:ml-0">
+            <Plus aria-hidden />
+            {pending ? "Adding…" : "Add task"}
+          </Button>
+        </div>
       </div>
     </form>
   );

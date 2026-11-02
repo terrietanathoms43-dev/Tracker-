@@ -5,6 +5,10 @@ import type { ComponentProps } from "react";
 /**
  * A real <select>, styled like Input: right for long lists (timezones), phones, and scripted tests.
  * The Radix Select stays available for short pickers that need richer items.
+ *
+ * The open list is the browser's own: `scheme-dark` tells it to draw dark chrome in dark mode, and the option
+ * colours reach every option, grouped ones included (`[&_option]`, not `[&>option]`), so a list with
+ * <optgroup> headings reads like the rest of the page in both themes.
  */
 export function NativeSelect({ className, children, ...props }: ComponentProps<"select">) {
   return (
@@ -12,10 +16,10 @@ export function NativeSelect({ className, children, ...props }: ComponentProps<"
       <select
         {...props}
         className={cn(
-          "h-9 w-full min-w-0 appearance-none rounded-md border border-input bg-transparent pr-8 pl-3 text-base outline-none transition-[color,box-shadow] md:text-base dark:bg-input/30",
+          "h-9 w-full min-w-0 appearance-none rounded-md border border-input bg-transparent pr-8 pl-3 text-base outline-none transition-[color,box-shadow] md:text-base dark:bg-input/30 dark:scheme-dark",
           "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
           "disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive",
-          "[&>option]:bg-popover [&>option]:text-popover-foreground",
+          "[&_option]:bg-popover [&_option]:text-popover-foreground [&_optgroup]:bg-popover [&_optgroup]:font-medium [&_optgroup]:text-muted-foreground",
         )}
       >
         {children}
