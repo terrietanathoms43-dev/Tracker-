@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <rect width="16" height="16" rx="4" fill="oklch(0.43 0.14 262)"/>
+  <g transform="translate(3.4 3.4) scale(0.575)" fill="none" stroke="oklch(0.99 0 0)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3.5 8.5l3 3 6-6.5"/>
+  </g>
+  <circle cx="13.2" cy="2.8" r="2.1" fill="oklch(0.84 0.11 82)" stroke="oklch(0.99 0 0)" stroke-width="1"/>
+</svg>
