@@ -36,7 +36,7 @@ const RADIUS = 4;
 const MIN_SCALE = 4;
 /** The fewest days a zoom shows; and how many pixels a day gets before the default view starts cutting days. */
 const MIN_DAYS = 7;
-const COMFORTABLE_SLOT = 24;
+const COMFORTABLE_SLOT = 20;
 const ZOOM_STEP = 1.5;
 /** The width assumed before the card has been measured (the first paint only). */
 const ASSUMED_WIDTH = 960;
@@ -229,8 +229,11 @@ export function RangeChart({
   const plotWidth = width - PAD_LEFT - PAD_RIGHT;
   const defaultShown = clamp(Math.floor(plotWidth / COMFORTABLE_SLOT), MIN_DAYS, total);
   const shown = clamp(zoom ?? defaultShown, MIN_DAYS, total);
-  // By default the view ends at the window's end (today plus the look-ahead), so today is always in it.
-  const viewStart = clamp(start ?? total - shown, 0, total - shown);
+  // By default today sits towards the right with at most a third of the view ahead of it, so it is always in view
+  // (a phone shows a fortnight or so around today; a desktop usually fits the whole window).
+  const aheadInView = Math.min(TIMELINE_LOOKAHEAD_DAYS, Math.floor(shown / 3));
+  const defaultStart = clamp(todayIndex + aheadInView - shown + 1, 0, total - shown);
+  const viewStart = clamp(start ?? defaultStart, 0, total - shown);
   const view = days.slice(viewStart, viewStart + shown);
   const slot = plotWidth / shown;
   const bar = clamp(slot - 4, MIN_BAR, MAX_BAR);

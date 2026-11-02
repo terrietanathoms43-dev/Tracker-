@@ -55,6 +55,8 @@ try {
     await avery.shot("10-exec-top", { full: true });
 
     // --- 4. the chart: one segment per task, future days, today in view, a sticky inspector -----------------------------
+    // Every completion is only drawn once every day is on show (the default view may be zoomed in on a small screen).
+    await avery.click("Fit every day of the window", { wait: 600 });
     const segments = await avery.evaluate(`document.querySelectorAll('[data-segment="completed"]').length`);
     step("the chart draws one segment per completed task", segments === completedInWindow, `${segments} segments for ${completedInWindow} completions`);
     step("the chart has days ahead of today", (await avery.evaluate(`document.querySelectorAll('g[data-future]').length`)) >= 14);
@@ -80,7 +82,10 @@ try {
     const after = await avery.evaluate(`document.querySelectorAll('g[data-day]').length`);
     step("zooming in shows fewer days across the same width", typeof before === "number" && typeof after === "number" && after < before, `${before} → ${after}`);
     await avery.click("Fit every day of the window", { wait: 600 });
-    step("Fit all shows every day again", (await avery.evaluate(`document.querySelectorAll('g[data-day]').length`)) === before);
+    const fitLabel = String(await avery.evaluate(`document.querySelector('[data-testid="range-chart-view"]')?.textContent ?? ""`));
+    const fitMatch = fitLabel.match(/(\d+) of (\d+) days/);
+    const fitCount = await avery.evaluate(`document.querySelectorAll('g[data-day]').length`);
+    step("Fit all shows every day of the window", fitMatch !== null && fitMatch[1] === fitMatch[2] && Number(fitMatch[1]) === fitCount, `${fitLabel} · ${fitCount} columns`);
     // React derives onMouseEnter from a mouseout whose relatedTarget is the element entered (Next renders <body>,
     // so a bare mouseover is left for "the body's mouseout" that never comes). Leave the body for the column.
     await avery.evaluate(`(() => {
@@ -154,8 +159,6 @@ try {
          where t.org_id = (${org}) and u.email = 'jordan@trackwise.test' and t.status = 'completed' and t.completed_at >= ($1::date - 29)::timestamp at time zone 'America/Jamaica'`,
       [today],
     );
-    const mineDrawn = await jordan.evaluate(`document.querySelectorAll('[data-segment="completed"]').length`);
-    step("the chart draws only their own completions", mineDrawn === mine, `${mineDrawn} segments for ${mine}`);
     const overflow = (await jordan.overflow()) ?? [];
     step("the phone view has no horizontal overflow", overflow.length === 0, JSON.stringify(overflow[0] ?? ""));
     const phoneFit = await jordan.evaluate(`(() => {
@@ -166,6 +169,9 @@ try {
       return frame.scrollWidth <= frame.clientWidth + 1 && c.left >= f.left - 1 && c.right <= f.right + 1;
     })()`);
     step("on a phone the chart fits the width with today in view", phoneFit === true, String(phoneFit));
+    await jordan.click("Fit every day of the window", { wait: 600 });
+    const mineDrawn = await jordan.evaluate(`document.querySelectorAll('[data-segment="completed"]').length`);
+    step("fitted to the window, the chart draws only their own completions", mineDrawn === mine, `${mineDrawn} segments for ${mine}`);
     await jordan.shot("10-member-phone-dark", { full: true });
     step("no console errors on the phone", jordan.problems.length === 0, JSON.stringify(jordan.problems.slice(0, 2)));
   }
