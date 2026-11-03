@@ -1,6 +1,6 @@
 import { HOME_TABS_COOKIE, type OrgRole } from "@/lib/constants";
 
-// The /home tab row (docs/PLAN.md §2): List · Board · Projects · Home, each person's order remembered in the
+// The /home tab row (docs/PLAN.md §2): List · Board · Projects · Overview, each person's order remembered in the
 // `trackwise.homeTabs` cookie (a preference, not data — the browser owns it; the server only reads it to pick
 // the tab a bare /home opens on). Everything here is pure so it can be unit-tested and shared between
 // server and client.
@@ -12,7 +12,7 @@ export type HomeTab = (typeof HOME_TAB_KEYS)[number];
 const CANONICAL_ORDER: HomeTab[] = ["list", "board", "projects", "home"];
 
 export const HOME_TAB_LABELS: Record<HomeTab, string> = {
-  home: "Home",
+  home: "Overview",
   list: "List",
   board: "Board",
   projects: "Projects",
@@ -23,12 +23,12 @@ export type HomeTabConfig = {
   order: HomeTab[];
 };
 
-/** The tabs a role may see: a stakeholder's Home is their requests, so they never get the work views. */
+/** The tabs a role may see: a stakeholder's Overview is their proposals, so they never get the work views. */
 export function tabsForRole(role: OrgRole): HomeTab[] {
   return role === "stakeholder" ? ["home"] : [...HOME_TAB_KEYS];
 }
 
-/** Out of the box: workers land on the list, admins and stakeholders on Home (the old /home screen). */
+/** Out of the box: workers land on the list, admins and stakeholders on Overview (the old /home screen). */
 export function defaultTabConfig(role: OrgRole): HomeTabConfig {
   const landing: HomeTab = role === "admin" || role === "stakeholder" ? "home" : "list";
   const allowed = tabsForRole(role);

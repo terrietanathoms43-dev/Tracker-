@@ -29,7 +29,7 @@ import Link from "next/link";
 import { useId, useRef, useState, type MutableRefObject } from "react";
 import { HOME_TAB_LABELS, HOME_TABS_COOKIE, type HomeTab, type HomeTabConfig } from "@/lib/home-tabs";
 
-// The tab row under the /home header (docs/PLAN.md §2): Home · List · Board · Projects, in the order the
+// The tab row under the /home header (docs/PLAN.md §2): Overview · List · Board · Projects, in the order the
 // person chose — hold a tab and pull it sideways to reorder, the same sortable machinery as the board
 // (components/kanban.tsx). The active tab's underline is one of the few places the gold highlight appears
 // (PLAN §9). The order lives in the trackwise.homeTabs cookie — a browser preference, not data

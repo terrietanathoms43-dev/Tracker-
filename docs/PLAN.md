@@ -35,9 +35,9 @@
 >
 > **Decision log (2026-10-28, Home becomes the tab hub):**
 >
-> - `/home` is now the hub the app hangs off: a tab row — List, Board, Projects, Home — sits under the header, the tab picked by `?view=` (`list` is the plain value; a bare `/home` opens the person's landing tab). The old role-aware Home screen is the **Home** tab; `/tasks` is gone, `/projects` redirects into `/home` with its parameters intact, and `/tasks/[id]` / `/projects/[id]` are unchanged. There is no Tasks item in the navigation: the tab row is that navigation, and the sidebar's Home covers the whole hub.
-> - The add bar stays on the List and Board tabs (and My Work); the Home and Projects tabs don't have it.
-> - Tab order is a per-browser preference in the `trackwise.homeTabs` cookie (`lib/home-tabs.ts`, like `trackwise.tasks.lastQuery` but server-read for the landing). The tabs themselves drag sideways to reorder (the same sortable as the board); the first tab is where a bare `/home` opens — there is no separate landing setting. Defaults: members and leaders land on List, admins and stakeholders on Home; a stakeholder only ever has the Home tab, so their row never renders.
+> - `/home` is now the hub the app hangs off: a tab row — List, Board, Projects, Overview — sits under the header, the tab picked by `?view=` (`list` is the plain value; a bare `/home` opens the person's landing tab). The old role-aware Home screen is the **Overview** tab; `/tasks` is gone, `/projects` redirects into `/home` with its parameters intact, and `/tasks/[id]` / `/projects/[id]` are unchanged. There is no Tasks item in the navigation: the tab row is that navigation, and the sidebar's Home covers the whole hub.
+> - The add bar stays on the List and Board tabs (and My Work); the Overview and Projects tabs don't have it.
+> - Tab order is a per-browser preference in the `trackwise.homeTabs` cookie (`lib/home-tabs.ts`, like `trackwise.tasks.lastQuery` but server-read for the landing). The tabs themselves drag sideways to reorder (the same sortable as the board); the first tab is where a bare `/home` opens — there is no separate landing setting. Defaults: members and leaders land on List, admins and stakeholders on Overview; a stakeholder only ever has the Overview tab, so their row never renders.
 >
 > **Decision log (2026-10-30, teams go, sub-goals and resolvable comments arrive):**
 >
@@ -122,7 +122,7 @@ Fonts: Geist Sans + Geist Mono.
                            ?view=projects (active projects, archived behind ?all=1) · ?view=home
                            (role-aware overview: member next steps · leader team health · stakeholder
                            proposals); bare /home opens the landing tab (cookie, List for members and
-                           leaders, Home for admins and stakeholders)
+                           leaders, Overview for admins and stakeholders)
   /my-work                 Needs attention · Continue working · Waiting on others · Recently finished
   /tasks                   → /home (parameters carried over)   /tasks/[id]  Resume card → details → comments & history
   /projects                → /home?view=projects                /projects/[id]  project header + its tasks grouped by status
@@ -142,7 +142,7 @@ Fonts: Geist Sans + Geist Mono.
 /api/test-login            dev-only persona sign-in (§9)
 ```
 
-Navigation: **Home · My Work · Goals · Members · Proposals · Reports** (sidebar, desktop), with the **project picker** under the workspace switcher. Phone bottom tabs: Home · My Work · Goals · Members · More (Proposals, Reports, User settings, Workspace, Sign out); the project picker is an icon in the top bar. The tab row under the /home header (_Home · List · Board · Projects_, draggable per person — see the 2026-10-28 log) reaches the tasks views and projects; goals are reached from projects and the Goals page. Stakeholders see Home · Goals · Proposals. User settings and Workspace live in the account menu. A signed-in person with no workspace sees Home only.
+Navigation: **Home · My Work · Goals · Members · Proposals · Reports** (sidebar, desktop), with the **project picker** under the workspace switcher. Phone bottom tabs: Home · My Work · Goals · Members · More (Proposals, Reports, User settings, Workspace, Sign out); the project picker is an icon in the top bar. The tab row under the /home header (_Overview · List · Board · Projects_, draggable per person — see the 2026-10-28 log) reaches the tasks views and projects; goals are reached from projects and the Goals page. Stakeholders see Home · Goals · Proposals. User settings and Workspace live in the account menu. A signed-in person with no workspace sees Home only.
 
 ## 3. Tenancy, roles, visibility
 
