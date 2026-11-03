@@ -8,6 +8,7 @@ import { listInvitationsForEmail } from "@/lib/dal/invitations";
 import { landingTab, parseTabParam, tabsForRole } from "@/lib/home-tabs";
 import { readHomeTabConfig } from "@/lib/home-tabs-server";
 import { isStakeholder } from "@/lib/permissions";
+import { scopedProject } from "@/lib/project-scope-server";
 import { parseFilters } from "@/lib/tasks/filters";
 import { safeTimeZone } from "@/lib/time";
 import { getViewerContext, requireUser } from "@/lib/viewer";
@@ -16,6 +17,7 @@ import { getViewerContext, requireUser } from "@/lib/viewer";
 // Projects, Home — sits under the header; a bare /home opens the person's landing tab (the trackwise.homeTabs
 // cookie, falling back to List for members and leaders, Home for admins and stakeholders). /tasks and
 // /projects redirect here, and the no-workspace state lives here too (create one, or accept an invitation).
+// The navigation's project picker narrows the List, Board and Home tabs (docs/PLAN.md, 2026-11-03 log).
 
 export const metadata: Metadata = { title: "Home" };
 
@@ -43,12 +45,12 @@ export default async function HomePage(props: PageProps<"/home">) {
 
   const { viewer, org } = context;
   const role = viewer.orgRole;
-  const config = await readHomeTabConfig(role);
+  const [config, scope] = await Promise.all([readHomeTabConfig(role), scopedProject(viewer)]);
   const requested = parseTabParam(typeof raw.view === "string" ? raw.view : "");
   const allowed = tabsForRole(role);
   const active = requested !== null && allowed.includes(requested) && !(isStakeholder(viewer) && requested !== "home") ? requested : landingTab(config);
 
-  if (active === "home") return <HomeView viewer={viewer} user={user} org={org} tabsConfig={config} />;
+  if (active === "home") return <HomeView viewer={viewer} user={user} org={org} tabsConfig={config} scope={scope} />;
   if (active === "projects") return <ProjectsView viewer={viewer} showAll={raw.all === "1"} tabsConfig={config} />;
-  return <TasksView viewer={viewer} filters={parseFilters(raw)} view={active} tabsConfig={config} />;
+  return <TasksView viewer={viewer} filters={parseFilters(raw, scope?.id ?? "")} view={active} tabsConfig={config} scope={scope} />;
 }

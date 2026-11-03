@@ -12,24 +12,25 @@ import {
   primaryKey,
   text,
   timestamp,
-  unique,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import {
+  APPROVAL_DECISIONS,
   DEFAULT_TIMEZONE,
   GOAL_STATUSES,
   ORG_ROLES,
   PROJECT_STATUSES,
-  REQUEST_DECISIONS,
-  REQUEST_STATUSES,
-  REQUEST_URGENCIES,
+  PROPOSAL_STATUSES,
   TASK_ACTIVITY_KINDS,
   TASK_PRIORITIES,
   TASK_STATUSES,
   TASK_UPDATE_KINDS,
 } from "@/lib/constants";
+import type { Recurrence } from "@/lib/recurrence";
 
-// The whole Trackwise schema (docs/PLAN.md §4), applied with `npm run db:push`.
+// The whole Trackwise schema (docs/PLAN.md §4), applied with `npm run db:push`. The 2026-11-03 overhaul (the
+// rigid workspace → projects → goals → tasks funnel, proposals, repeats, goal links) was applied with
+// `npm run db:migrate-hierarchy` first, which moves existing rows into the new shape before `db:push` adds the rest.
 // Conventions: text UUID ids, timestamptz created on the server, calendar days as "YYYY-MM-DD" strings,
 // enums from lib/constants.ts, every workspace-scoped table carries org_id.
 
@@ -47,13 +48,12 @@ const day = (name: string) => date(name, { mode: "string" });
 export const orgRoleEnum = pgEnum("org_role", ORG_ROLES);
 export const goalStatusEnum = pgEnum("goal_status", GOAL_STATUSES);
 export const projectStatusEnum = pgEnum("project_status", PROJECT_STATUSES);
-export const requestUrgencyEnum = pgEnum("request_urgency", REQUEST_URGENCIES);
-export const requestStatusEnum = pgEnum("request_status", REQUEST_STATUSES);
-export const requestDecisionEnum = pgEnum("request_decision", REQUEST_DECISIONS);
 export const taskPriorityEnum = pgEnum("task_priority", TASK_PRIORITIES);
 export const taskStatusEnum = pgEnum("task_status", TASK_STATUSES);
 export const taskUpdateKindEnum = pgEnum("task_update_kind", TASK_UPDATE_KINDS);
 export const taskActivityKindEnum = pgEnum("task_activity_kind", TASK_ACTIVITY_KINDS);
+export const proposalStatusEnum = pgEnum("proposal_status", PROPOSAL_STATUSES);
+export const approvalDecisionEnum = pgEnum("approval_decision", APPROVAL_DECISIONS);
 
 // --- Better Auth (the core fields its Drizzle adapter expects, plus our timezone) ---------------------
 // Property names must match Better Auth's field names (emailVerified, expiresAt, userId, …); the column
@@ -201,15 +201,12 @@ export const invitations = pgTable(
   (t) => [index("invitations_org_idx").on(t.orgId)],
 );
 
-// --- legacy: teams -----------------------------------------------------------------------------------------
-// Teams were removed from the product on 2026-10-30 (docs/PLAN.md decision log): assignment is people only, and
-// goals have sub-goals instead of owning teams. These four tables stay because dropping them is not additive and
-// real data exists in them; nothing in the app reads or writes them any more. `scripts/backfill-team-assignees.ts`
-// copies each team's members onto its tasks' task_assignees once, so no work lost a person when teams went.
+// --- projects → goals → tasks (docs/PLAN.md, 2026-11-03 log) -------------------------------------------------
+// A project is the top of the funnel; every goal belongs to exactly one project; a task may belong to a goal (and
+// then to that goal's project), to a project alone, or to nothing at all.
 
-/** Legacy (unused): a named group of members. */
-export const teams = pgTable(
-  "teams",
+export const projects = pgTable(
+  "projects",
   {
     id: id(),
     orgId: text("org_id")
@@ -217,30 +214,19 @@ export const teams = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
+    status: projectStatusEnum("status").notNull().default("active"),
+    targetDate: day("target_date"),
+    /** New tasks in this project wait for the sign-off chain in approval_steps (unless the creator is in approval_bypass). */
+    requiresApproval: boolean("requires_approval").notNull().default(false),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("teams_org_idx").on(t.orgId), unique("teams_org_name_unique").on(t.orgId, t.name)],
+  (t) => [index("projects_org_status_idx").on(t.orgId, t.status)],
 );
-
-/** Legacy (unused). */
-export const teamMembers = pgTable(
-  "team_members",
-  {
-    teamId: text("team_id")
-      .notNull()
-      .references(() => teams.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    addedBy: text("added_by").references(() => users.id, { onDelete: "set null" }),
-    addedAt: tstz("added_at").notNull().defaultNow(),
-  },
-  (t) => [primaryKey({ columns: [t.teamId, t.userId] }), index("team_members_user_idx").on(t.userId)],
-);
-
-// --- goals and projects -------------------------------------------------------
 
 export const goals = pgTable(
   "goals",
@@ -249,6 +235,10 @@ export const goals = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
+    /** The project the goal belongs to; a sub-goal is always in its parent's project. */
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
     /**
      * The goal this one is a sub-goal of (one level: a sub-goal never has sub-goals of its own, docs/PLAN.md
      * 2026-10-30 log). A sub-goal's target date can never be later than its parent's.
@@ -260,98 +250,83 @@ export const goals = pgTable(
     targetDate: day("target_date"),
     successCriteria: text("success_criteria"),
     status: goalStatusEnum("status").notNull().default("active"),
+    /** How often the goal comes round (lib/recurrence.ts); completing it makes the next one, tasks included. */
+    recurrence: jsonb("recurrence").$type<Recurrence>(),
+    /** Every occurrence of a repeating goal shares the first one's id. */
+    seriesId: text("series_id"),
+    /** New tasks under this goal wait for the chain in approval_steps; overrides the project's rule. */
+    requiresApproval: boolean("requires_approval").notNull().default(false),
+    completedAt: tstz("completed_at"),
+    completedBy: text("completed_by").references(() => users.id, { onDelete: "set null" }),
     createdBy: text("created_by")
       .notNull()
       .references(() => users.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("goals_org_status_idx").on(t.orgId, t.status), index("goals_parent_idx").on(t.parentGoalId)],
+  (t) => [
+    index("goals_org_status_idx").on(t.orgId, t.status),
+    index("goals_org_project_idx").on(t.orgId, t.projectId),
+    index("goals_parent_idx").on(t.parentGoalId),
+    index("goals_series_idx").on(t.seriesId),
+  ],
 );
 
-/** Legacy (unused): the teams a goal used to name. */
-export const goalTeams = pgTable(
-  "goal_teams",
+/** "From leads into to": the branch view's arrows between goals (docs/PLAN.md, 2026-11-03 log). Never a cycle. */
+export const goalLinks = pgTable(
+  "goal_links",
   {
-    goalId: text("goal_id")
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    fromGoalId: text("from_goal_id")
       .notNull()
       .references(() => goals.id, { onDelete: "cascade" }),
-    teamId: text("team_id")
+    toGoalId: text("to_goal_id")
       .notNull()
-      .references(() => teams.id, { onDelete: "cascade" }),
-    addedBy: text("added_by").references(() => users.id, { onDelete: "set null" }),
-    addedAt: tstz("added_at").notNull().defaultNow(),
+      .references(() => goals.id, { onDelete: "cascade" }),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
   },
-  (t) => [primaryKey({ columns: [t.goalId, t.teamId] }), index("goal_teams_team_idx").on(t.teamId)],
+  (t) => [primaryKey({ columns: [t.fromGoalId, t.toGoalId] }), index("goal_links_to_idx").on(t.toGoalId), index("goal_links_org_idx").on(t.orgId)],
 );
 
-export const projects = pgTable(
-  "projects",
+/**
+ * The sign-off chain of a project or a goal (exactly one of the two is set), in order. A step with no user means
+ * "any leader or admin". A goal's chain, when the goal requires approval, overrides its project's.
+ */
+export const approvalSteps = pgTable(
+  "approval_steps",
   {
     id: id(),
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    goalId: text("goal_id").references(() => goals.id, { onDelete: "set null" }),
-    name: text("name").notNull(),
-    description: text("description"),
-    ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
-    status: projectStatusEnum("status").notNull().default("active"),
-    targetDate: day("target_date"),
-    createdBy: text("created_by")
-      .notNull()
-      .references(() => users.id),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    goalId: text("goal_id").references(() => goals.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
     createdAt: createdAt(),
-    updatedAt: updatedAt(),
   },
-  (t) => [index("projects_org_status_idx").on(t.orgId, t.status), index("projects_goal_idx").on(t.goalId)],
+  (t) => [index("approval_steps_project_idx").on(t.projectId), index("approval_steps_goal_idx").on(t.goalId)],
 );
 
-// --- requests -----------------------------------------------------------------
-
-export const requests = pgTable(
-  "requests",
+/** People whose new tasks in a project or goal go live at once, chain or no chain. */
+export const approvalBypass = pgTable(
+  "approval_bypass",
   {
     id: id(),
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    title: text("title").notNull(),
-    description: text("description"),
-    desiredOutcome: text("desired_outcome"),
-    urgency: requestUrgencyEnum("urgency").notNull().default("normal"),
-    link: text("link"),
-    requesterId: text("requester_id")
+    projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    goalId: text("goal_id").references(() => goals.id, { onDelete: "cascade" }),
+    userId: text("user_id")
       .notNull()
-      .references(() => users.id),
-    status: requestStatusEnum("status").notNull().default("new"),
-    decidedAt: tstz("decided_at"),
-    decidedBy: text("decided_by").references(() => users.id, { onDelete: "set null" }),
-    decisionReason: text("decision_reason"),
-    deferUntil: day("defer_until"),
-    convertedTaskId: text("converted_task_id").references((): AnyPgColumn => tasks.id, { onDelete: "set null" }),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [index("requests_org_status_idx").on(t.orgId, t.status), index("requests_org_requester_idx").on(t.orgId, t.requesterId)],
-);
-
-/** Append-only: every decision, with who and why. */
-export const requestDecisions = pgTable(
-  "request_decisions",
-  {
-    id: id(),
-    requestId: text("request_id")
-      .notNull()
-      .references(() => requests.id, { onDelete: "cascade" }),
-    deciderId: text("decider_id")
-      .notNull()
-      .references(() => users.id),
-    decision: requestDecisionEnum("decision").notNull(),
-    reason: text("reason"),
+      .references(() => users.id, { onDelete: "cascade" }),
     createdAt: createdAt(),
   },
-  (t) => [index("request_decisions_request_idx").on(t.requestId, t.createdAt.desc())],
+  (t) => [index("approval_bypass_project_idx").on(t.projectId), index("approval_bypass_goal_idx").on(t.goalId)],
 );
 
 // --- tasks ----------------------------------------------------------------------
@@ -364,16 +339,10 @@ export const tasks = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    /** When set, project_id is that goal's project (actions keep the two in step). */
     goalId: text("goal_id").references(() => goals.id, { onDelete: "set null" }),
-    requestId: text("request_id").references((): AnyPgColumn => requests.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     description: text("description"),
-    /**
-     * Legacy (docs/PLAN.md, 2026-10-18 log): the single assignee from before assignment became a set. Neither read
-     * nor written any more; `task_assignees` and `task_teams` are the truth. Kept because dropping a column is not
-     * additive; `scripts/backfill-assignees.ts` copies it across once.
-     */
-    assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
     createdBy: text("created_by")
       .notNull()
       .references(() => users.id),
@@ -381,6 +350,14 @@ export const tasks = pgTable(
     priority: taskPriorityEnum("priority").notNull().default("normal"),
     status: taskStatusEnum("status").notNull().default("not_started"),
     dueDate: day("due_date"),
+    /** "HH:MM" in the workspace's day, when a time matters ("every day at 8:00 AM"). */
+    dueTime: text("due_time"),
+    /** How often the task comes round (lib/recurrence.ts); completing it makes the next occurrence. */
+    recurrence: jsonb("recurrence").$type<Recurrence>(),
+    /** Every occurrence of a repeating task shares the first one's id. */
+    seriesId: text("series_id"),
+    /** Null for a task that was live from the start; otherwise where its sign-off stands (task_approvals has the chain). */
+    proposalStatus: proposalStatusEnum("proposal_status"),
     startedAt: tstz("started_at"),
     completedAt: tstz("completed_at"),
     blockedReason: text("blocked_reason"),
@@ -398,11 +375,11 @@ export const tasks = pgTable(
   },
   (t) => [
     index("tasks_org_status_idx").on(t.orgId, t.status),
-    index("tasks_org_assignee_status_idx").on(t.orgId, t.assigneeId, t.status),
     index("tasks_org_project_idx").on(t.orgId, t.projectId),
     index("tasks_org_goal_idx").on(t.orgId, t.goalId),
     index("tasks_org_due_idx").on(t.orgId, t.dueDate),
-    index("tasks_request_idx").on(t.requestId),
+    index("tasks_org_proposal_idx").on(t.orgId, t.proposalStatus),
+    index("tasks_series_idx").on(t.seriesId),
   ],
 );
 
@@ -422,20 +399,27 @@ export const taskAssignees = pgTable(
   (t) => [primaryKey({ columns: [t.taskId, t.userId] }), index("task_assignees_user_idx").on(t.userId)],
 );
 
-/** Legacy (unused): the teams a task used to be assigned to. */
-export const taskTeams = pgTable(
-  "task_teams",
+/**
+ * A proposal's sign-off chain, one row per step in order, copied from the project's or goal's chain when the task
+ * was proposed. `decision` is null while the step waits; the first undecided step is the one that is up.
+ */
+export const taskApprovals = pgTable(
+  "task_approvals",
   {
+    id: id(),
     taskId: text("task_id")
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
-    teamId: text("team_id")
-      .notNull()
-      .references(() => teams.id, { onDelete: "cascade" }),
-    assignedBy: text("assigned_by").references(() => users.id, { onDelete: "set null" }),
-    assignedAt: tstz("assigned_at").notNull().defaultNow(),
+    position: integer("position").notNull(),
+    /** Who the step names; null means any leader or admin. */
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    decision: approvalDecisionEnum("decision"),
+    decidedBy: text("decided_by").references(() => users.id, { onDelete: "set null" }),
+    decidedAt: tstz("decided_at"),
+    note: text("note"),
+    createdAt: createdAt(),
   },
-  (t) => [primaryKey({ columns: [t.taskId, t.teamId] }), index("task_teams_team_idx").on(t.teamId)],
+  (t) => [index("task_approvals_task_idx").on(t.taskId, t.position)],
 );
 
 /** Append-only (a comment's resolved_at / resolved_by are the one thing that changes): progress updates (the Resume history) and comments share one timeline. */
@@ -536,7 +520,8 @@ export const notificationPreferences = pgTable("notification_preferences", {
   emailHandover: boolean("email_handover").notNull().default(true),
   /** Leaders: a task was marked blocked. */
   emailBlocked: boolean("email_blocked").notNull().default(true),
-  emailRequestDecision: boolean("email_request_decision").notNull().default(true),
+  /** A proposal waits for my sign-off, or mine was decided. */
+  emailProposal: boolean("email_proposal").notNull().default(true),
   emailComment: boolean("email_comment").notNull().default(false),
 });
 
@@ -547,10 +532,11 @@ export type Organization = typeof organizations.$inferSelect;
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
 export type Goal = typeof goals.$inferSelect;
+export type GoalLink = typeof goalLinks.$inferSelect;
 export type Project = typeof projects.$inferSelect;
-export type RequestRow = typeof requests.$inferSelect;
-export type RequestDecisionRow = typeof requestDecisions.$inferSelect;
+export type ApprovalStep = typeof approvalSteps.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
+export type TaskApproval = typeof taskApprovals.$inferSelect;
 export type TaskUpdate = typeof taskUpdates.$inferSelect;
 export type TaskLink = typeof taskLinks.$inferSelect;
 export type TaskActivity = typeof taskActivity.$inferSelect;

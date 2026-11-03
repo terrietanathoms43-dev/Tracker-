@@ -5,9 +5,11 @@ import { TaskDetails } from "@/components/tasks/detail/task-details";
 import { TaskHeader } from "@/components/tasks/detail/task-header";
 import { TaskHistory } from "@/components/tasks/detail/task-history";
 import { CurrentTask } from "@/components/tasks/task-actions";
+import { canDecideProposal } from "@/lib/approvals/policy";
 import { listHistory } from "@/lib/dal/history";
 import { activePlanning, getTask, listLinks, taskPeople } from "@/lib/dal/tasks";
 import { canApproveTask, canEditTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
+import { describeRecurrence } from "@/lib/recurrence";
 import { defaultApproverFor } from "@/lib/tasks/approver";
 import type { TaskAbilities, UpdateContext } from "@/lib/tasks/types";
 import { dayKey } from "@/lib/time";
@@ -19,7 +21,8 @@ export const metadata: Metadata = { title: "Task" };
 
 /**
  * "What is this, what happened, what happens next, who must act?" (docs/BRIEF.md §5), answered top down:
- * the header, the Resume card with its inline update form, the details, then comments and history.
+ * the header, the Resume card with its inline update form (or the proposal's sign-off strip), the details, then
+ * comments and history.
  */
 export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const { id } = await props.params;
@@ -31,7 +34,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
     listLinks(viewer, id),
     listHistory(viewer, id, null),
     worker ? taskPeople(viewer) : [],
-    worker ? activePlanning(viewer) : { projects: [], goals: [] },
+    activePlanning(viewer),
   ]);
   if (found === null || !canReadTask(viewer, found.scope)) notFound();
   const { detail, scope } = found;
@@ -40,6 +43,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
     progress: canUpdateProgress(viewer, scope),
     approve: canApproveTask(viewer, scope),
     reject: canRejectTask(viewer, scope),
+    decideProposal: detail.proposalStatus === "pending" && canDecideProposal(viewer, detail.approvals.map((step) => ({ position: step.position, userId: step.user?.id ?? null, decision: step.decision }))),
   };
   const now = new Date();
   const today = dayKey(now, viewer.timezone);
@@ -55,6 +59,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           blockedReason: detail.blockedReason,
           blockedBy: detail.blockedBy,
           openComments: detail.openComments,
+          repeats: detail.recurrence ? describeRecurrence(detail.recurrence, detail.dueDate) : null,
         },
         people,
         defaultApprover: defaultApproverFor(people, detail.approver?.id ?? null, scope.assigneeIds),
@@ -64,7 +69,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
 
   return (
     <div className="mx-auto max-w-3xl">
-      {abilities.progress ? <CurrentTask id={detail.id} /> : null}
+      <CurrentTask id={detail.id} title={detail.title} actionable={abilities.progress} />
       <TaskHeader detail={detail} abilities={abilities} today={today} />
       <div className="grid gap-5">
         <ResumeCard detail={detail} links={links} removableLinks={removableLinks} abilities={abilities} updateContext={updateContext} timeZone={viewer.timezone} now={now} />

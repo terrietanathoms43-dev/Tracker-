@@ -113,8 +113,12 @@ function AttachDialog({ task, kind, onClose }: { task: TaskListItem; kind: "goal
   const options = useFormOptions(true);
   const { pending, save } = useSave(onClose);
   const field = kind === "goal" ? "goalId" : "projectId";
-  const [value, setValue] = useState(kind === "goal" ? (task.goalId ?? "") : (task.project?.id ?? ""));
-  const choices = kind === "goal" ? options?.goals.map((g) => ({ value: g.id, label: g.title })) : options?.projects.map((p) => ({ value: p.id, label: p.name }));
+  const [value, setValue] = useState(kind === "goal" ? (task.goal?.id ?? "") : (task.project?.id ?? ""));
+  // Goals follow the task's project; without one, any goal (which puts the task in that goal's project).
+  const choices =
+    kind === "goal"
+      ? options?.goals.filter((g) => !task.project || g.projectId === task.project.id).map((g) => ({ value: g.id, label: g.title }))
+      : options?.projects.map((p) => ({ value: p.id, label: p.name }));
   return (
     <Dialog open onOpenChange={(o) => (o ? undefined : onClose())}>
       <DialogContent>
@@ -149,7 +153,7 @@ function DeleteDialog({ task, onClose }: { task: TaskListItem; onClose: () => vo
     <Dialog open onOpenChange={(o) => (o ? undefined : onClose())}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete task?</DialogTitle>
+          <DialogTitle>{task.proposal === "pending" || task.proposal === "declined" ? "Withdraw proposal?" : "Delete task?"}</DialogTitle>
           <DialogDescription>
             &ldquo;{task.title}&rdquo; and all of its progress updates, comments and history will be removed permanently.
           </DialogDescription>
@@ -159,7 +163,7 @@ function DeleteDialog({ task, onClose }: { task: TaskListItem; onClose: () => vo
             Cancel
           </Button>
           <Button variant="destructive" disabled={pending} onClick={() => save(() => deleteTask({ taskId: task.id }))}>
-            Delete task
+            {task.proposal === "pending" || task.proposal === "declined" ? "Withdraw" : "Delete task"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -260,9 +264,9 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
               {options === null ? (
                 <DropdownMenuItem disabled>Loading…</DropdownMenuItem>
               ) : (
-                <DropdownMenuRadioGroup value={task.goalId ?? ""} onValueChange={(value) => attach("goalId", value)}>
+                <DropdownMenuRadioGroup value={task.goal?.id ?? ""} onValueChange={(value) => attach("goalId", value)}>
                   <DropdownMenuRadioItem value="">No goal</DropdownMenuRadioItem>
-                  {options.goals.map((goal) => (
+                  {options.goals.filter((goal) => !task.project || goal.projectId === task.project.id).map((goal) => (
                     <DropdownMenuRadioItem key={goal.id} value={goal.id}>
                       {goal.title}
                     </DropdownMenuRadioItem>
@@ -296,7 +300,7 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
                 <Trash2 />
-                Delete task
+                {task.proposal === "pending" || task.proposal === "declined" ? "Withdraw proposal" : "Delete task"}
               </DropdownMenuItem>
             </>
           ) : null}

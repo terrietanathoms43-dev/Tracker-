@@ -12,14 +12,15 @@ import { Button } from "@/components/ui/button";
 import { boardTasks, listTasks, taskFormOptions } from "@/lib/dal/tasks";
 import type { HomeTabConfig } from "@/lib/home-tabs";
 import type { Viewer } from "@/lib/permissions";
+import type { ScopedProject } from "@/lib/project-scope-server";
 import { BOARD_STATUSES } from "@/lib/tasks/board";
 import { filtersToParams, isFiltered, tasksHref, type TaskFilters, type TaskView } from "@/lib/tasks/filters";
 import { dayKey } from "@/lib/time";
 
-// The List and Board tabs of /home: every task in the workspace, filtered by the address.
+// The List and Board tabs of /home: every live task in the workspace (or the chosen project), filtered by the address.
 
 /** "Find the thing": the task list or board under the /home tab row. */
-export async function TasksView({ viewer, filters, view, tabsConfig }: { viewer: Viewer; filters: TaskFilters; view: TaskView; tabsConfig: HomeTabConfig }) {
+export async function TasksView({ viewer, filters, view, tabsConfig, scope }: { viewer: Viewer; filters: TaskFilters; view: TaskView; tabsConfig: HomeTabConfig; scope: ScopedProject | null }) {
   const today = dayKey(new Date(), viewer.timezone);
   const query = filtersToParams(filters);
   const [options, page, columns] = await Promise.all([
@@ -31,10 +32,10 @@ export async function TasksView({ viewer, filters, view, tabsConfig }: { viewer:
 
   return (
     <>
-      <PageHeader title="Tasks" />
-      <QuickAddTask today={today} />
+      <PageHeader title="Tasks" description={scope ? `In ${scope.name}` : undefined} />
+      <QuickAddTask today={today} defaults={scope && scope.status === "active" ? { projectId: scope.id } : {}} />
       <ViewTabs active={view} query={query.toString()} config={tabsConfig} />
-      <TaskToolbar filters={filters} view={view} people={options.people} projects={options.projects} goals={options.goals} />
+      <TaskToolbar filters={filters} view={view} people={options.people} goals={options.goals} today={today} />
       <LastFilters current={query.toString()} view={view} />
       {empty ? (
         isFiltered(filters) ? (
@@ -51,7 +52,13 @@ export async function TasksView({ viewer, filters, view, tabsConfig }: { viewer:
           <EmptyState
             icon={SquareCheckBig}
             title={view === "board" ? "No tasks yet" : "No open tasks"}
-            description={view === "board" ? "Add the first one above and it will show up in its column." : "Add the first one above, or switch on Show closed to see finished work."}
+            description={
+              scope
+                ? `Nothing in ${scope.name} yet. Add the first task above, or pick All projects in the navigation.`
+                : view === "board"
+                  ? "Add the first one above and it will show up in its column."
+                  : "Add the first one above, or switch on Show closed to see finished work."
+            }
           />
         )
       ) : page ? (

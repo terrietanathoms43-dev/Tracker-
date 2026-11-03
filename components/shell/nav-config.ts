@@ -1,4 +1,4 @@
-import { BarChart3, House, Inbox, ListChecks, SquareCheckBig, Target, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, ClipboardCheck, House, ListChecks, SquareCheckBig, Target, Users, type LucideIcon } from "lucide-react";
 import type { NavKey } from "@/lib/permissions";
 
 /** The destinations (docs/PLAN.md §2). Which of them a role sees is decided by navFor() in lib/permissions.ts.
@@ -11,7 +11,7 @@ export const NAV_ITEMS: Record<NavKey, { href: string; label: string; icon: Luci
   tasks: { href: "/home?view=list", label: "Tasks", icon: SquareCheckBig },
   goals: { href: "/goals", label: "Goals", icon: Target },
   members: { href: "/members", label: "Members", icon: Users },
-  requests: { href: "/requests", label: "Requests", icon: Inbox },
+  proposals: { href: "/proposals", label: "Proposals", icon: ClipboardCheck },
   reports: { href: "/reports", label: "Reports", icon: BarChart3 },
 };
 

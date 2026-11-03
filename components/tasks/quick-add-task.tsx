@@ -87,6 +87,10 @@ function Toggle({ active, onClick, children, label }: { active: boolean; onClick
 }
 
 /** People by name, "You" for the viewer: "Sam Dev, You". */
+/** You, when you are someone work can go to; a stakeholder proposes, and nobody is assigned until it is signed off. */
+const selfAssignable = (options: TaskFormOptions | null): options is TaskFormOptions =>
+  options !== null && options.people.some((person) => person.id === options.viewerId);
+
 function namesOf(ids: string[], options: TaskFormOptions | null): string[] {
   if (options === null) return [];
   return ids.map((id) => (id === options.viewerId ? "You" : nameOf(options.people.find((person) => person.id === id))));
@@ -107,6 +111,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
   const [priority, setPriority] = useState<TaskPriority>("normal");
   const [due, setDue] = useState("");
   const [projectId, setProjectId] = useState(defaults.projectId ?? "");
+  const [goalId, setGoalId] = useState(defaults.goalId ?? "");
   /** People chosen in the picker; null until it is touched, when the task is yours (or whoever the title mentions). */
   const [picked, setPicked] = useState<string[] | null>(defaults.assigneeIds ?? null);
   /** The options row: open by default, folded away when this browser last chose so (kept in localStorage). */
@@ -131,7 +136,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
   const effectivePriority = parsed.priority ?? priority;
   const effectiveDue = parsed.due === "today" ? today : parsed.due === "tomorrow" ? tomorrow : due;
   /** Typed mentions win, then the picker, then you. */
-  const me = options?.viewerId ? [options.viewerId] : [];
+  const me = selfAssignable(options) ? [options.viewerId] : [];
   const effectiveAssignees = parsed.people.length > 0 ? parsed.people : (picked ?? me);
   const explicitAssignees = parsed.people.length > 0 || picked !== null;
   const names = explicitAssignees ? namesOf(effectiveAssignees, options) : [];
@@ -177,13 +182,14 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
     setDue("");
     setPicked(null);
     setError(null);
+    setGoalId(defaults.goalId ?? "");
   }
 
   /** The people a task goes to: whoever the title mentions, else whoever was picked, else the creator. */
-  function assigneesOf(read: QuickAddParse, viewerId: string | null): string[] {
+  function assigneesOf(read: QuickAddParse, ready: TaskFormOptions | null): string[] {
     if (read.people.length > 0) return read.people;
     if (picked !== null) return picked;
-    return viewerId ? [viewerId] : [];
+    return selfAssignable(ready) ? [ready.viewerId] : [];
   }
 
   function submit() {
@@ -194,9 +200,9 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
       const read = options ? parsed : parseQuickAdd(text, ready ? mentionTargets(ready.people) : []);
       const result = await createTask({
         title: read.title,
-        assigneeIds: assigneesOf(read, ready?.viewerId ?? null),
+        assigneeIds: assigneesOf(read, ready),
         projectId,
-        goalId: defaults.goalId ?? "",
+        goalId,
         priority: read.priority ?? priority,
         dueDate: read.due === "today" ? today : read.due === "tomorrow" ? tomorrow : due,
       });
@@ -218,6 +224,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
       {
         ...defaults,
         projectId,
+        goalId,
         title: parsed.title,
         priority: effectivePriority,
         dueDate: effectiveDue,
@@ -232,10 +239,15 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
     effectivePriority !== "normal" ? TASK_PRIORITY_LABELS[effectivePriority] : null,
     effectiveDue === today ? "Today" : effectiveDue === tomorrow ? "Tomorrow" : effectiveDue ? `Due ${effectiveDue}` : null,
     projectId ? (options?.projects.find((project) => project.id === projectId)?.name ?? null) : null,
+    goalId ? (options?.goals.find((goal) => goal.id === goalId)?.title ?? null) : null,
     names.length > 0 ? names.join(", ") : null,
   ].filter((part): part is string => part !== null);
 
   const showProject = options === null || options.projects.length > 0 || projectId !== "";
+  // Goals follow the project: only the chosen project's goals are offered, and only once a project is chosen.
+  const goalChoices = projectId ? (options?.goals ?? []).filter((goal) => goal.projectId === projectId) : [];
+  const showGoal = projectId !== "" && (goalChoices.length > 0 || goalId !== "");
+  const proposes = options?.proposesOnly === true;
 
   return (
     <form
@@ -256,7 +268,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
           value={text}
           maxLength={LIMITS.quickAddTitle}
           autoComplete="off"
-          placeholder="Add a task and press Enter"
+          placeholder={proposes ? "Propose a task and press Enter" : "Add a task and press Enter"}
           role="combobox"
           aria-expanded={listOpen}
           aria-controls={listId}
@@ -388,11 +400,32 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
           />
 
           {showProject ? (
-            <NativeSelect id="quick-add-project" aria-label="Project" className="w-full min-w-40 sm:w-52" value={projectId} disabled={options === null} onChange={(event) => setProjectId(event.target.value)}>
+            <NativeSelect
+              id="quick-add-project"
+              aria-label="Project"
+              className="w-full min-w-40 sm:w-52"
+              value={projectId}
+              disabled={options === null}
+              onChange={(event) => {
+                setProjectId(event.target.value);
+                setGoalId("");
+              }}
+            >
               <option value="">{options === null ? "Loading…" : "No project"}</option>
               {(options?.projects ?? []).map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
+                </option>
+              ))}
+            </NativeSelect>
+          ) : null}
+
+          {showGoal ? (
+            <NativeSelect id="quick-add-goal" aria-label="Goal" className="w-full min-w-40 sm:w-52" value={goalId} onChange={(event) => setGoalId(event.target.value)}>
+              <option value="">No goal</option>
+              {goalChoices.map((goal) => (
+                <option key={goal.id} value={goal.id}>
+                  {goal.title}
                 </option>
               ))}
             </NativeSelect>
@@ -435,6 +468,8 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
                 </span>
               ) : null}
             </>
+          ) : proposes ? (
+            <span>A proposal: a leader or admin signs it off before it becomes a live task. Follow it under Proposals.</span>
           ) : (
             <>
               <span>Shortcuts in the title:</span>
@@ -469,7 +504,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
           </Button>
           <Button type="submit" disabled={pending || parsed.title === ""} className="ml-auto sm:ml-0">
             <Plus aria-hidden />
-            {pending ? "Adding…" : "Add task"}
+            {pending ? (proposes ? "Proposing…" : "Adding…") : proposes ? "Propose task" : "Add task"}
           </Button>
         </div>
       </div>

@@ -18,7 +18,7 @@ import { and, eq, inArray, like, lt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "@/db/schema";
-import { CLOSED_STATUSES, ORG_ROLE_LABELS, REQUEST_STATUS_LABELS, TASK_STATUS_LABELS, type TaskActivityKind } from "@/lib/constants";
+import { CLOSED_STATUSES, ORG_ROLE_LABELS, PROPOSAL_STATUS_LABELS, TASK_STATUS_LABELS, type TaskActivityKind } from "@/lib/constants";
 import { TEST_EMAIL_DOMAIN, TEST_HOME, TEST_PERSONAS, type TestPersona } from "@/lib/test-mode";
 import { dayKey } from "@/lib/time";
 import { DEMO, OTHER, PEOPLE, type OrgSeed, type Person, type SeedTask } from "./seed-data";
@@ -29,13 +29,14 @@ const {
   organizations,
   organizationMembers,
   invitations,
-  teams,
   goals,
+  goalLinks,
   projects,
-  requests,
-  requestDecisions,
+  approvalSteps,
+  approvalBypass,
   tasks,
   taskAssignees,
+  taskApprovals,
   taskUpdates,
   taskLinks,
   taskActivity,
@@ -139,13 +140,11 @@ async function claimOrg(tx: Tx, seed: OrgSeed, createdBy: string): Promise<strin
 async function wipeOrgContents(tx: Tx, orgId: string): Promise<void> {
   await tx.delete(notifications).where(eq(notifications.orgId, orgId));
   await tx.delete(taskActivity).where(eq(taskActivity.orgId, orgId));
-  // Tasks take their updates, links and assignments with them; requests take their decisions (cascades).
+  // Tasks take their updates, links, assignments and sign-off chains with them; goals take their links and chains;
+  // projects take their goals and chains (cascades).
   await tx.delete(tasks).where(eq(tasks.orgId, orgId));
-  await tx.delete(requests).where(eq(requests.orgId, orgId));
-  await tx.delete(projects).where(eq(projects.orgId, orgId));
   await tx.delete(goals).where(eq(goals.orgId, orgId));
-  // The legacy team tables (db/schema.ts) may still hold rows from before 2026-10-30; a reset clears them too.
-  await tx.delete(teams).where(eq(teams.orgId, orgId));
+  await tx.delete(projects).where(eq(projects.orgId, orgId));
   await tx.delete(invitations).where(eq(invitations.orgId, orgId));
   await tx.delete(organizationMembers).where(eq(organizationMembers.orgId, orgId));
 }
@@ -162,9 +161,8 @@ function assertSelfContained(seed: OrgSeed): void {
   const members = new Set(seed.members.map((member) => member.person));
   const mentioned: (Person | null)[] = [
     seed.createdBy,
-    ...seed.goals.flatMap((goal) => [goal.owner, goal.createdBy]),
-    ...seed.projects.flatMap((project) => [project.owner, project.createdBy]),
-    ...seed.requests.flatMap((request) => [request.requester, ...request.decisions.map((decision) => decision.by)]),
+    ...seed.projects.flatMap((project) => [project.owner, project.createdBy, ...(project.approvers ?? []), ...(project.bypass ?? [])]),
+    ...seed.goals.flatMap((goal) => [goal.owner, goal.createdBy, ...(goal.approvers ?? []), ...(goal.bypass ?? [])]),
     ...seed.tasks.flatMap((task) => [
       ...task.assignees,
       task.createdBy,
@@ -173,6 +171,7 @@ function assertSelfContained(seed: OrgSeed): void {
       task.approval?.approver ?? null,
       task.completed?.approvedBy ?? null,
       task.rejection?.by ?? null,
+      ...(task.proposal?.steps ?? []).flatMap((step) => [step.user, step.by ?? null]),
     ]),
     ...seed.notifications.map((notification) => notification.person),
   ];
@@ -180,19 +179,24 @@ function assertSelfContained(seed: OrgSeed): void {
   if (strangers.length > 0) throw new Error(`${seed.org.name}'s seed mentions non-members: ${strangers.join(", ")}`);
 }
 
-/** A sub-goal's parent must be a top-level goal of the same seed, and its target must not pass the parent's. */
+/** Every goal is in a known project; a sub-goal's parent is a top-level goal of the same project, due no earlier. */
 function assertGoalsConsistent(seed: OrgSeed): void {
   for (const goal of seed.goals) {
+    if (!seed.projects.some((project) => project.key === goal.project)) throw new Error(`Seed goal "${goal.title}" is in an unknown project "${goal.project}"`);
     if (goal.parent === undefined) continue;
     const parent = seed.goals.find((each) => each.key === goal.parent);
     if (parent === undefined) throw new Error(`Seed goal "${goal.title}" has an unknown parent "${goal.parent}"`);
     if (parent.parent !== undefined) throw new Error(`Seed goal "${goal.title}" is a sub-goal of a sub-goal; only one level is allowed`);
+    if (parent.project !== goal.project) throw new Error(`Seed sub-goal "${goal.title}" is not in its parent's project`);
     if (goal.targetInDays > parent.targetInDays) throw new Error(`Seed sub-goal "${goal.title}" is due after its parent "${parent.title}"`);
+  }
+  for (const link of seed.goalLinks) {
+    if (!seed.goals.some((goal) => goal.key === link.from) || !seed.goals.some((goal) => goal.key === link.to)) throw new Error(`Seed goal link ${link.from} → ${link.to} names an unknown goal`);
   }
 }
 
 /** A task's state blocks must agree with its status (e.g. only a blocked task has `blocked`). */
-function assertTaskConsistent(spec: SeedTask): void {
+function assertTaskConsistent(spec: SeedTask, seed: OrgSeed): void {
   const pairs: [boolean, boolean, string][] = [
     [spec.status === "blocked", spec.blocked !== undefined, "blocked"],
     [spec.status === "awaiting_approval", spec.approval !== undefined, "approval"],
@@ -208,6 +212,13 @@ function assertTaskConsistent(spec: SeedTask): void {
   // The app refuses to complete a task with an open comment; the seed must not claim otherwise.
   if (spec.status === "completed" && (spec.comments ?? []).some((comment) => comment.resolvedBy === undefined)) {
     throw new Error(`Seed task "${spec.title}" is completed but has an open comment`);
+  }
+  if (spec.goal !== undefined && !seed.goals.some((goal) => goal.key === spec.goal)) throw new Error(`Seed task "${spec.title}" names an unknown goal "${spec.goal}"`);
+  if (spec.project !== undefined && !seed.projects.some((project) => project.key === spec.project)) throw new Error(`Seed task "${spec.title}" names an unknown project "${spec.project}"`);
+  if (spec.recurrence !== undefined && spec.dueInDays === null) throw new Error(`Seed task "${spec.title}" repeats but has no due date`);
+  // A proposal still waiting (or declined) is not work yet: it has no progress and was never started.
+  if (spec.proposal !== undefined && spec.proposal.status !== "approved" && (spec.status !== "not_started" || spec.updates.length > 0)) {
+    throw new Error(`Seed task "${spec.title}" is a ${spec.proposal.status} proposal but has started`);
   }
 }
 
@@ -225,6 +236,7 @@ type UpdateRow = typeof taskUpdates.$inferInsert;
 type LinkRow = typeof taskLinks.$inferInsert;
 type ActivityRow = typeof taskActivity.$inferInsert;
 type AssigneeRow = typeof taskAssignees.$inferInsert;
+type ApprovalRow = typeof taskApprovals.$inferInsert;
 
 type TaskContext = {
   orgId: string;
@@ -233,15 +245,17 @@ type TaskContext = {
   nameOf: (person: Person) => string;
   projectId: (key: string) => string;
   goalId: (key: string) => string;
-  requestId: (key: string) => string;
+  /** The project a goal is in, by goal key. */
+  goalProject: (key: string) => string;
 };
 
 /**
- * Turns a task spec into the task row, its assignment rows, its updates and links, and the activity trail that
- * explains how it got there: created → assigned → started → updates / comments / links → blocked | approval
- * asked | approved + completed | rejected. Same-instant events are a second apart so history reads in order.
+ * Turns a task spec into the task row, its assignment rows, its updates and links, its sign-off chain, and the
+ * activity trail that explains how it got there: created (or proposed) → signed / declined → assigned → started →
+ * updates / comments / links → blocked | approval asked | approved + completed | rejected. Same-instant events are
+ * a second apart so history reads in order.
  */
-function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: TaskRow; assignees: AssigneeRow[]; updates: UpdateRow[]; links: LinkRow[]; activity: ActivityRow[] } {
+function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: TaskRow; assignees: AssigneeRow[]; updates: UpdateRow[]; links: LinkRow[]; activity: ActivityRow[]; approvals: ApprovalRow[] } {
   const { at, due } = ctx.clock;
   const { orgId, who } = ctx;
   const createdAt = at(spec.createdDaysAgo);
@@ -255,7 +269,29 @@ function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: Tas
   const log = (kind: TaskActivityKind, actorId: string, when: Date, extra: Partial<ActivityRow> = {}) =>
     activity.push({ orgId, taskId, actorId, kind, createdAt: when, ...extra });
 
-  log("created", creator, createdAt, spec.request ? { after: { requestId: ctx.requestId(spec.request) } } : {});
+  log("created", creator, createdAt, spec.proposal ? { after: { title: spec.title, proposal: true } } : { after: { title: spec.title } });
+
+  // The sign-off chain, each step as it stands, with the history lines the decisions left.
+  const approvals: ApprovalRow[] = (spec.proposal?.steps ?? []).map((step, index) => ({
+    taskId,
+    position: index + 1,
+    userId: step.user ? who(step.user) : null,
+    decision: step.decision ?? null,
+    decidedBy: step.by ? who(step.by) : null,
+    decidedAt: step.decision && step.daysAgo !== undefined ? at(step.daysAgo) : null,
+    note: step.note ?? null,
+    createdAt,
+  }));
+  for (const [index, step] of (spec.proposal?.steps ?? []).entries()) {
+    if (!step.decision || !step.by || step.daysAgo === undefined) continue;
+    if (step.decision === "approved") log("proposal_signed", who(step.by), at(step.daysAgo), { after: { step: String(index + 1) }, note: step.note ?? null });
+    else log("proposal_declined", who(step.by), at(step.daysAgo), { after: { step: index + 1 }, note: step.note ?? null });
+  }
+  if (spec.proposal?.status === "approved") {
+    const lastStep = spec.proposal.steps.at(-1);
+    log("proposal_approved", who(lastStep?.by ?? spec.createdBy), at(lastStep?.daysAgo ?? spec.createdDaysAgo, 1), { after: { steps: spec.proposal.steps.length } });
+  }
+
   // Assigning work to yourself alone is not news worth a history line (the same rule as actions/tasks.ts).
   const justCreator = spec.assignees.length === 1 && spec.assignees[0] === spec.createdBy;
   if (!justCreator && spec.assignees.length > 0) {
@@ -328,12 +364,13 @@ function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: Tas
     log("rejected", who(by), at(daysAgo, 1), { before: { status: startedAt ? "in_progress" : "not_started" }, after: { status: "rejected" }, note: reason });
   }
 
+  // A task under a goal is in that goal's project (docs/PLAN.md, 2026-11-03 log).
+  const projectId = spec.goal ? ctx.goalProject(spec.goal) : spec.project ? ctx.projectId(spec.project) : null;
   const task: TaskRow = {
     id: taskId,
     orgId,
-    projectId: spec.project ? ctx.projectId(spec.project) : null,
+    projectId,
     goalId: spec.goal ? ctx.goalId(spec.goal) : null,
-    requestId: spec.request ? ctx.requestId(spec.request) : null,
     title: spec.title,
     description: spec.description ?? null,
     createdBy: creator,
@@ -341,6 +378,10 @@ function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: Tas
     priority: spec.priority,
     status: spec.status,
     dueDate: spec.dueInDays === null ? null : due(spec.dueInDays),
+    dueTime: spec.dueTime ?? null,
+    recurrence: spec.recurrence ?? null,
+    seriesId: spec.recurrence ? taskId : null,
+    proposalStatus: spec.proposal?.status ?? null,
     startedAt,
     completedAt: spec.completed ? at(spec.completed.daysAgo, 1) : null,
     blockedReason: spec.blocked?.reason ?? null,
@@ -354,17 +395,17 @@ function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: Tas
     createdAt,
     updatedAt: new Date(Math.max(...activity.map((row) => (row.createdAt as Date).getTime()))),
   };
-  return { task, assignees, updates, links, activity };
+  return { task, assignees, updates, links, activity, approvals };
 }
 
 // --- one workspace ------------------------------------------------------------------------------
 
-type SeededOrg = { orgId: string; name: string; tasks: number; requests: number };
+type SeededOrg = { orgId: string; name: string; tasks: number; proposals: number };
 
 async function seedOrg(tx: Tx, seed: OrgSeed, ids: Ids, now: number): Promise<SeededOrg> {
   assertSelfContained(seed);
   assertGoalsConsistent(seed);
-  seed.tasks.forEach(assertTaskConsistent);
+  seed.tasks.forEach((task) => assertTaskConsistent(task, seed));
   const clock = clockFor(now, seed.org.timezone);
   const { at, due } = clock;
   const who = (person: Person) => ids[person];
@@ -381,47 +422,30 @@ async function seedOrg(tx: Tx, seed: OrgSeed, ids: Ids, now: number): Promise<Se
   );
 
   // Ids are chosen up front so rows can point at each other before they are written.
-  const goalIds = new Map(seed.goals.map((goal) => [goal.key, crypto.randomUUID()]));
   const projectIds = new Map(seed.projects.map((project) => [project.key, crypto.randomUUID()]));
-  const requestIds = new Map(seed.requests.map((request) => [request.key, crypto.randomUUID()]));
+  const goalIds = new Map(seed.goals.map((goal) => [goal.key, crypto.randomUUID()]));
   const taskIds = new Map(seed.tasks.map((task, index) => [task.key ?? `#${index}`, crypto.randomUUID()]));
-  const goalId = (key: string) => lookup(goalIds, key, "goal");
   const projectId = (key: string) => lookup(projectIds, key, "project");
-  const requestId = (key: string) => lookup(requestIds, key, "request");
+  const goalId = (key: string) => lookup(goalIds, key, "goal");
   const taskId = (key: string) => lookup(taskIds, key, "task");
+  const goalProject = (key: string) => {
+    const goal = seed.goals.find((each) => each.key === key);
+    if (goal === undefined) throw new Error(`Seed data refers to an unknown goal "${key}"`);
+    return projectId(goal.project);
+  };
 
-  if (seed.goals.length > 0) {
-    // Parents first, so a sub-goal's foreign key has a row to point at.
-    const ordered = [...seed.goals.filter((goal) => goal.parent === undefined), ...seed.goals.filter((goal) => goal.parent !== undefined)];
-    await tx.insert(goals).values(
-      ordered.map((goal) => ({
-        id: goalId(goal.key),
-        orgId,
-        parentGoalId: goal.parent ? goalId(goal.parent) : null,
-        title: goal.title,
-        description: goal.description,
-        ownerId: who(goal.owner),
-        targetDate: due(goal.targetInDays),
-        successCriteria: goal.successCriteria,
-        status: goal.status,
-        createdBy: who(goal.createdBy),
-        createdAt: at(goal.createdDaysAgo),
-        updatedAt: at(goal.updatedDaysAgo ?? goal.createdDaysAgo),
-      })),
-    );
-  }
-
+  // 1. Projects: the top of the funnel.
   if (seed.projects.length > 0) {
     await tx.insert(projects).values(
       seed.projects.map((project) => ({
         id: projectId(project.key),
         orgId,
-        goalId: project.goal ? goalId(project.goal) : null,
         name: project.name,
         description: project.description,
         ownerId: who(project.owner),
         status: project.status,
         targetDate: project.targetInDays === null ? null : due(project.targetInDays),
+        requiresApproval: project.approvers !== undefined,
         createdBy: who(project.createdBy),
         createdAt: at(project.createdDaysAgo),
         updatedAt: at(project.updatedDaysAgo ?? project.createdDaysAgo),
@@ -429,62 +453,64 @@ async function seedOrg(tx: Tx, seed: OrgSeed, ids: Ids, now: number): Promise<Se
     );
   }
 
-  // Requests first (tasks point at them); converted_task_id is filled in once the tasks exist.
-  if (seed.requests.length > 0) {
-    await tx.insert(requests).values(
-      seed.requests.map((request) => {
-        const latest = request.decisions.at(-1);
-        // A reopened request is back to "new": undecided, with its history in request_decisions.
-        const standing = latest !== undefined && latest.decision !== "reopened" ? latest : undefined;
-        return {
-          id: requestId(request.key),
-          orgId,
-          title: request.title,
-          description: request.description,
-          desiredOutcome: request.desiredOutcome,
-          urgency: request.urgency,
-          link: request.link ?? null,
-          requesterId: who(request.requester),
-          status: request.status,
-          decidedAt: standing ? at(standing.daysAgo) : null,
-          decidedBy: standing ? who(standing.by) : null,
-          decisionReason: standing?.reason ?? null,
-          deferUntil: request.status === "deferred" && request.deferInDays !== undefined ? due(request.deferInDays) : null,
-          createdAt: at(request.createdDaysAgo),
-          updatedAt: at(latest?.daysAgo ?? request.createdDaysAgo),
-        };
-      }),
-    );
-    const decisions = seed.requests.flatMap((request) =>
-      request.decisions.map((decision) => ({
-        requestId: requestId(request.key),
-        deciderId: who(decision.by),
-        decision: decision.decision,
-        reason: decision.reason,
-        createdAt: at(decision.daysAgo),
+  // 2. Goals, each in its project; parents first, so a sub-goal's foreign key has a row to point at.
+  if (seed.goals.length > 0) {
+    const ordered = [...seed.goals.filter((goal) => goal.parent === undefined), ...seed.goals.filter((goal) => goal.parent !== undefined)];
+    await tx.insert(goals).values(
+      ordered.map((goal) => ({
+        id: goalId(goal.key),
+        orgId,
+        projectId: projectId(goal.project),
+        parentGoalId: goal.parent ? goalId(goal.parent) : null,
+        title: goal.title,
+        description: goal.description,
+        ownerId: who(goal.owner),
+        targetDate: due(goal.targetInDays),
+        successCriteria: goal.successCriteria,
+        status: goal.status,
+        recurrence: goal.recurrence ?? null,
+        seriesId: goal.recurrence ? goalId(goal.key) : null,
+        requiresApproval: goal.approvers !== undefined,
+        completedAt: goal.status === "completed" ? at(goal.updatedDaysAgo ?? goal.createdDaysAgo) : null,
+        completedBy: goal.status === "completed" ? who(goal.owner) : null,
+        createdBy: who(goal.createdBy),
+        createdAt: at(goal.createdDaysAgo),
+        updatedAt: at(goal.updatedDaysAgo ?? goal.createdDaysAgo),
       })),
     );
-    if (decisions.length > 0) await tx.insert(requestDecisions).values(decisions);
+  }
+  if (seed.goalLinks.length > 0) {
+    await tx.insert(goalLinks).values(seed.goalLinks.map((link) => ({ orgId, fromGoalId: goalId(link.from), toGoalId: goalId(link.to), createdBy: who(seed.createdBy) })));
   }
 
-  const ctx: TaskContext = { orgId, clock, who, nameOf: (person) => PEOPLE[person].name, projectId, goalId, requestId };
+  // 3. Sign-off chains and bypass lists.
+  const steps: (typeof approvalSteps.$inferInsert)[] = [];
+  const bypass: (typeof approvalBypass.$inferInsert)[] = [];
+  for (const project of seed.projects) {
+    (project.approvers ?? []).forEach((person, index) => steps.push({ orgId, projectId: projectId(project.key), goalId: null, position: index + 1, userId: who(person) }));
+    (project.bypass ?? []).forEach((person) => bypass.push({ orgId, projectId: projectId(project.key), goalId: null, userId: who(person) }));
+  }
+  for (const goal of seed.goals) {
+    (goal.approvers ?? []).forEach((person, index) => steps.push({ orgId, projectId: null, goalId: goalId(goal.key), position: index + 1, userId: who(person) }));
+    (goal.bypass ?? []).forEach((person) => bypass.push({ orgId, projectId: null, goalId: goalId(goal.key), userId: who(person) }));
+  }
+  if (steps.length > 0) await tx.insert(approvalSteps).values(steps);
+  if (bypass.length > 0) await tx.insert(approvalBypass).values(bypass);
+
+  // 4. Tasks, with everything hanging off them.
+  const ctx: TaskContext = { orgId, clock, who, nameOf: (person) => PEOPLE[person].name, projectId, goalId, goalProject };
   const rows = seed.tasks.map((spec, index) => taskRows(spec, taskId(spec.key ?? `#${index}`), ctx));
   if (rows.length > 0) {
     await tx.insert(tasks).values(rows.map((row) => row.task));
     const assigneeRows = rows.flatMap((row) => row.assignees);
     const updates = rows.flatMap((row) => row.updates);
     const links = rows.flatMap((row) => row.links);
+    const approvals = rows.flatMap((row) => row.approvals);
     if (assigneeRows.length > 0) await tx.insert(taskAssignees).values(assigneeRows);
     if (updates.length > 0) await tx.insert(taskUpdates).values(updates);
     if (links.length > 0) await tx.insert(taskLinks).values(links);
+    if (approvals.length > 0) await tx.insert(taskApprovals).values(approvals);
     await tx.insert(taskActivity).values(rows.flatMap((row) => row.activity));
-  }
-
-  // A converted request and its task point at each other.
-  for (const request of seed.requests.filter((each) => each.status === "converted")) {
-    const index = seed.tasks.findIndex((task) => task.request === request.key);
-    if (index === -1) throw new Error(`Converted request "${request.title}" has no task with request: "${request.key}"`);
-    await tx.update(requests).set({ convertedTaskId: rows[index].task.id }).where(eq(requests.id, requestId(request.key)));
   }
 
   if (seed.notifications.length > 0) {
@@ -495,14 +521,14 @@ async function seedOrg(tx: Tx, seed: OrgSeed, ids: Ids, now: number): Promise<Se
         kind: notice.kind,
         title: notice.title,
         body: notice.body ?? null,
-        href: notice.task ? `/tasks/${taskId(notice.task)}` : notice.request ? `/requests/${requestId(notice.request)}` : TEST_HOME,
+        href: notice.task ? `/tasks/${taskId(notice.task)}` : TEST_HOME,
         readAt: notice.read ? at(Math.max(0, notice.daysAgo - 0.1)) : null,
         createdAt: at(notice.daysAgo),
       })),
     );
   }
 
-  return { orgId, name: seed.org.name, tasks: seed.tasks.length, requests: seed.requests.length };
+  return { orgId, name: seed.org.name, tasks: seed.tasks.length, proposals: seed.tasks.filter((task) => task.proposal !== undefined).length };
 }
 
 // --- commands -------------------------------------------------------------------------------------
@@ -529,7 +555,7 @@ async function reset(): Promise<{ seeded: SeededOrg[]; removed: number }> {
 export async function seed(): Promise<void> {
   const { seeded, removed } = await reset();
   for (const [key, persona] of Object.entries(TEST_PERSONAS)) console.log(`ready: ${key.padEnd(12)} ${persona.email.padEnd(24)} ${persona.name}`);
-  for (const org of seeded) console.log(`workspace: ${org.name} (${org.tasks} tasks, ${org.requests} requests)`);
+  for (const org of seeded) console.log(`workspace: ${org.name} (${org.tasks} tasks, ${org.proposals} of them proposals)`);
   if (removed > 0) console.log(`removed ${removed} extra test workspace(s)`);
   writeAccountsDoc();
   console.log(`\nSign in with /api/test-login?as=<persona>&secret=<TEST_MODE_SECRET>&to=${TEST_HOME} while a dev server is running.`);
@@ -562,10 +588,10 @@ export async function status(): Promise<void> {
   const orgs = await db.execute<Record<string, string | number>>(sql`
     select o.name, o.slug,
       (select count(*)::int from organization_members m where m.org_id = o.id) as members,
-      (select count(*)::int from goals g where g.org_id = o.id) as goals,
       (select count(*)::int from projects p where p.org_id = o.id) as projects,
-      (select count(*)::int from tasks t where t.org_id = o.id) as tasks,
-      (select count(*)::int from requests r where r.org_id = o.id) as requests,
+      (select count(*)::int from goals g where g.org_id = o.id) as goals,
+      (select count(*)::int from tasks t where t.org_id = o.id and (t.proposal_status is null or t.proposal_status = 'approved')) as tasks,
+      (select count(*)::int from tasks t where t.org_id = o.id and t.proposal_status in ('pending', 'declined')) as proposals,
       (select count(*)::int from notifications n where n.org_id = o.id and n.read_at is null) as unread
     from organizations o
     where o.slug in (${sql.join(slugs.map((slug) => sql`${slug}`), sql`, `)})
@@ -621,14 +647,21 @@ export async function clean(): Promise<void> {
 
 /** What a persona finds waiting in its workspace, computed from the seed so the doc can never drift from it. */
 function startsWith(seed: OrgSeed, person: Person): string {
-  const open = seed.tasks.filter((task) => task.assignees.includes(person) && !CLOSED_STATUSES.includes(task.status));
+  const live = (task: SeedTask) => task.proposal === undefined || task.proposal.status === "approved";
+  const open = seed.tasks.filter((task) => live(task) && task.assignees.includes(person) && !CLOSED_STATUSES.includes(task.status));
+  const pending = seed.tasks.filter((task) => task.proposal?.status === "pending");
+  const myStep = (task: SeedTask) => {
+    const next = task.proposal?.steps.find((step) => step.decision === undefined);
+    const role = seed.members.find((member) => member.person === person)?.role;
+    return next !== undefined && (next.user === person || (next.user === null && (role === "leader" || role === "admin")) || role === "admin");
+  };
   const facts = [
     open.length > 0 ? `${open.length} open task${open.length === 1 ? "" : "s"}` : "",
     count(open.filter((task) => task.dueInDays !== null && task.dueInDays < 0).length, "overdue"),
     count(open.filter((task) => task.status === "blocked").length, "blocked"),
     count(seed.tasks.filter((task) => task.approval?.approver === person).length, "awaiting their approval"),
-    count(seed.requests.filter((request) => request.requester === person).length, "request", "requests", " submitted"),
-    canDecide(seed, person) ? count(seed.requests.filter((request) => request.status === "new").length, "request", "requests", " to decide") : "",
+    count(seed.tasks.filter((task) => task.proposal !== undefined && task.createdBy === person).length, "proposal", "proposals", " of their own"),
+    count(pending.filter(myStep).length, "proposal", "proposals", " to sign off"),
     count(seed.notifications.filter((notice) => notice.person === person && !notice.read).length, "unread notification", "unread notifications"),
     ...seed.goals.filter((goal) => goal.owner === person).map((goal) => `owns ${goal.parent ? "sub-goal" : "goal"} "${goal.title}"`),
     ...seed.projects.filter((project) => project.owner === person).map((project) => `owns project "${project.name}"`),
@@ -640,11 +673,6 @@ function count(n: number, one: string, many = one, suffix = ""): string {
   return n === 0 ? "" : `${n} ${n === 1 ? one : many}${suffix}`;
 }
 
-function canDecide(seed: OrgSeed, person: Person): boolean {
-  const role = seed.members.find((member) => member.person === person)?.role;
-  return role === "leader" || role === "admin";
-}
-
 function contents(seed: OrgSeed): string[] {
   const name = (person: Person) => PEOPLE[person].name;
   const tally = <T extends string>(values: T[], labels: Record<T, string>) =>
@@ -653,30 +681,33 @@ function contents(seed: OrgSeed): string[] {
     )
       .map(([label, n]) => `${n} ${label.toLowerCase()}`)
       .join(", ");
-  const open = seed.tasks.filter((task) => !CLOSED_STATUSES.includes(task.status));
+  const live = seed.tasks.filter((task) => task.proposal === undefined || task.proposal.status === "approved");
+  const proposals = seed.tasks.filter((task) => task.proposal !== undefined);
+  const open = live.filter((task) => !CLOSED_STATUSES.includes(task.status));
   const comments = seed.tasks.flatMap((task) => task.comments ?? []);
   const openComments = comments.filter((comment) => comment.resolvedBy === undefined).length;
   const links = seed.tasks.reduce((sum, task) => sum + (task.links?.length ?? 0), 0);
-  const converted = seed.requests.find((request) => request.status === "converted");
+  const projectName = (key: string) => seed.projects.find((project) => project.key === key)?.name ?? key;
   return [
     `**${seed.org.name}** (slug \`${seed.org.slug}\`, ${seed.org.timezone}): ${seed.members.map((member) => `${name(member.person)} (${member.role})`).join(", ")}.`,
     "",
-    ...seed.goals.map(
-      (goal) =>
-        `- ${goal.parent ? "Sub-goal" : "Goal"} **${goal.title}** (${goal.status}), owner ${name(goal.owner)}${goal.parent ? `, under "${seed.goals.find((each) => each.key === goal.parent)?.title}"` : ""}.`,
-    ),
     ...seed.projects.map(
       (project) =>
-        `- Project **${project.name}** (${project.status}), owner ${name(project.owner)}${project.goal ? `, under "${seed.goals.find((goal) => goal.key === project.goal)?.title}"` : ""}.`,
+        `- Project **${project.name}** (${project.status}), owner ${name(project.owner)}${project.approvers ? `; new tasks are signed off by ${project.approvers.map(name).join(" then ")}${project.bypass ? `, except ${project.bypass.map(name).join(", ")} who skip the queue` : ""}` : ""}.`,
     ),
-    `- ${seed.tasks.length} tasks: ${tally(
-      seed.tasks.map((task) => task.status),
+    ...seed.goals.map(
+      (goal) =>
+        `- ${goal.parent ? "Sub-goal" : "Goal"} **${goal.title}** (${goal.status}${goal.targetInDays < 0 && goal.status === "active" ? ", past its target" : ""}${goal.recurrence ? `, repeats every ${goal.recurrence.unit}` : ""}) in ${projectName(goal.project)}, owner ${name(goal.owner)}${goal.parent ? `, under "${seed.goals.find((each) => each.key === goal.parent)?.title}"` : ""}.`,
+    ),
+    ...(seed.goalLinks.length > 0 ? [`- Goal chain: ${seed.goalLinks.map((link) => `"${seed.goals.find((goal) => goal.key === link.from)?.title}" → "${seed.goals.find((goal) => goal.key === link.to)?.title}"`).join("; ")}.`] : []),
+    `- ${live.length} live tasks: ${tally(
+      live.map((task) => task.status),
       TASK_STATUS_LABELS,
-    )}. ${open.filter((task) => task.dueInDays !== null && task.dueInDays < 0).length} overdue, ${open.filter((task) => task.assignees.length === 0).length} unassigned, ${seed.tasks.filter((task) => task.assignees.length > 1).length} with two people on them; ${comments.length} comments (${openComments} still open) and ${links} evidence links.`,
-    `- ${seed.requests.length} request${seed.requests.length === 1 ? "" : "s"}: ${tally(
-      seed.requests.map((request) => request.status),
-      REQUEST_STATUS_LABELS,
-    )}.${converted ? ` "${converted.title}" (from ${name(converted.requester)}) was converted into a task that links back to it.` : ""}`,
+    )}. ${open.filter((task) => task.dueInDays !== null && task.dueInDays < 0).length} overdue, ${open.filter((task) => task.assignees.length === 0).length} unassigned, ${live.filter((task) => task.assignees.length > 1).length} with two people on them, ${live.filter((task) => task.recurrence).length} repeating; ${comments.length} comments (${openComments} still open) and ${links} evidence links.`,
+    `- ${proposals.length} proposal${proposals.length === 1 ? "" : "s"}: ${tally(
+      proposals.map((task) => task.proposal!.status),
+      PROPOSAL_STATUS_LABELS,
+    )}.`,
     seed.notifications.length > 0
       ? `- ${seed.notifications.length} notifications (${seed.notifications.filter((notice) => !notice.read).length} unread) for ${[...new Set(seed.notifications.map((notice) => name(notice.person)))].join(", ")}.`
       : "- No notifications.",

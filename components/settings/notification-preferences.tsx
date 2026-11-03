@@ -16,7 +16,7 @@ const OPTIONS: { key: keyof Preferences; label: string; hint: string }[] = [
   { key: "emailHandover", label: "Work is handed over to me", hint: "When a teammate passes a task to you with their notes." },
   { key: "emailApproval", label: "Approvals", hint: "When you're asked to approve a task, and when yours is approved or sent back." },
   { key: "emailBlocked", label: "A task is blocked", hint: "Leaders and admins: when a task in the workspace is marked blocked." },
-  { key: "emailRequestDecision", label: "A decision on my request", hint: "When a request you submitted is approved, deferred, rejected or turned into a task." },
+  { key: "emailProposal", label: "Proposals", hint: "When a proposed task waits for your sign-off, and when one you proposed is approved or declined." },
   { key: "emailComment", label: "Comments on my tasks", hint: "When someone comments on a task you're assigned to or created." },
 ];
 

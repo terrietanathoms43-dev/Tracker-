@@ -25,35 +25,41 @@ Also seeded: `casey@trackwise.test` (Casey Other), a member of Other Co who is n
 
 | `as=` | Waiting for them after a seed |
 | --- | --- |
-| `admin` | 2 requests submitted · 2 requests to decide · owns goal "Cut incident response time in half" |
-| `leader` | 2 open tasks · 2 awaiting their approval · 2 requests to decide · 3 unread notifications · owns goal "Ship the self-serve onboarding" · owns project "Onboarding flow" |
-| `member` | 7 open tasks · 1 overdue · 2 blocked · 1 request submitted · 2 unread notifications · owns project "Incident tooling" |
-| `member2` | 8 open tasks · 1 overdue · 1 blocked · 1 request submitted · owns sub-goal "Invitations work without a support call" · owns goal "Retire the legacy billing jobs" · owns project "Billing jobs migration" |
-| `stakeholder` | 2 requests submitted |
-| `other` | 1 open task · 1 request to decide · owns goal "Answer every support ticket within a day" · owns project "Help center refresh" |
+| `admin` | 3 proposals to sign off · 1 unread notification · owns goal "Cut incident response time in half" |
+| `leader` | 2 open tasks · 2 awaiting their approval · 2 proposals to sign off · 5 unread notifications · owns goal "Ship the self-serve onboarding" · owns goal "Every incident gets a review" · owns goal "Patient intake form ships" · owns project "Onboarding flow" · owns project "Lumen Health" |
+| `member` | 11 open tasks · 2 overdue · 2 blocked · 2 unread notifications · owns goal "Public status page live" · owns project "Incident tooling" |
+| `member2` | 10 open tasks · 1 overdue · 1 blocked · 3 proposals of their own · owns sub-goal "Invitations work without a support call" · owns goal "Weekly ops duties" · owns goal "Retire the legacy billing jobs" · owns project "Billing jobs migration" |
+| `stakeholder` | 2 proposals of their own |
+| `other` | 1 open task · 1 proposal to sign off · owns goal "Answer every support ticket within a day" · owns project "Help center refresh" |
 
 ## What the workspaces contain
 
 **Trackwise Demo** (slug `trackwise-demo`, America/Jamaica): Avery Admin (admin), Morgan Lead (leader), Jordan Dev (member), Sam Dev (member), Taylor Ops (stakeholder).
 
-- Goal **Ship the self-serve onboarding** (active), owner Morgan Lead.
-- Sub-goal **Invitations work without a support call** (active), owner Sam Dev, under "Ship the self-serve onboarding".
-- Goal **Cut incident response time in half** (active), owner Avery Admin.
-- Goal **Retire the legacy billing jobs** (achieved), owner Sam Dev.
-- Project **Onboarding flow** (active), owner Morgan Lead, under "Ship the self-serve onboarding".
-- Project **Incident tooling** (active), owner Jordan Dev, under "Cut incident response time in half".
-- Project **Billing jobs migration** (completed), owner Sam Dev, under "Retire the legacy billing jobs".
-- 25 tasks: 8 in progress, 4 not started, 3 blocked, 2 awaiting approval, 2 rejected, 6 completed. 2 overdue, 2 unassigned, 2 with two people on them; 6 comments (4 still open) and 12 evidence links.
-- 6 requests: 2 new, 1 converted to a task, 1 approved, 1 deferred, 1 rejected. "Show incident start times in our time zone" (from Taylor Ops) was converted into a task that links back to it.
-- 9 notifications (5 unread) for Morgan Lead, Jordan Dev, Taylor Ops.
+- Project **Onboarding flow** (active), owner Morgan Lead.
+- Project **Incident tooling** (active), owner Jordan Dev.
+- Project **Lumen Health** (active), owner Morgan Lead; new tasks are signed off by Morgan Lead then Avery Admin, except Jordan Dev who skip the queue.
+- Project **Billing jobs migration** (completed), owner Sam Dev.
+- Goal **Ship the self-serve onboarding** (active) in Onboarding flow, owner Morgan Lead.
+- Sub-goal **Invitations work without a support call** (active) in Onboarding flow, owner Sam Dev, under "Ship the self-serve onboarding".
+- Goal **Public status page live** (active, past its target) in Incident tooling, owner Jordan Dev.
+- Goal **Cut incident response time in half** (active) in Incident tooling, owner Avery Admin.
+- Goal **Every incident gets a review** (active) in Incident tooling, owner Morgan Lead.
+- Goal **Patient intake form ships** (active) in Lumen Health, owner Morgan Lead.
+- Goal **Weekly ops duties** (active, repeats every week) in Lumen Health, owner Sam Dev.
+- Goal **Retire the legacy billing jobs** (completed) in Billing jobs migration, owner Sam Dev.
+- Goal chain: "Public status page live" → "Cut incident response time in half"; "Cut incident response time in half" → "Every incident gets a review".
+- 32 live tasks: 10 in progress, 7 completed, 8 not started, 3 blocked, 2 awaiting approval, 2 rejected. 3 overdue, 2 unassigned, 2 with two people on them, 1 repeating; 6 comments (4 still open) and 12 evidence links.
+- 5 proposals: 3 waiting for sign-off, 1 declined, 1 approved.
+- 13 notifications (8 unread) for Morgan Lead, Avery Admin, Jordan Dev, Sam Dev, Taylor Ops.
 - Dates are relative to the moment of seeding, so re-seed (or `npm run test:tidy`) to keep the dashboards current.
 
 **Other Co** (slug `other-co`, America/New_York): Riley Other (admin), Casey Other (member).
 
-- Goal **Answer every support ticket within a day** (active), owner Riley Other.
-- Project **Help center refresh** (active), owner Riley Other, under "Answer every support ticket within a day".
-- 3 tasks: 1 in progress, 1 not started, 1 completed. 0 overdue, 0 unassigned, 0 with two people on them; 0 comments (0 still open) and 0 evidence links.
-- 1 request: 1 new.
+- Project **Help center refresh** (active), owner Riley Other; new tasks are signed off by Riley Other.
+- Goal **Answer every support ticket within a day** (active) in Help center refresh, owner Riley Other.
+- 3 live tasks: 1 in progress, 1 not started, 1 completed. 0 overdue, 0 unassigned, 0 with two people on them, 0 repeating; 0 comments (0 still open) and 0 evidence links.
+- 1 proposal: 1 waiting for sign-off.
 - No notifications.
 - Used to prove cross-workspace isolation: nothing in it refers to anything in the demo workspace.
 

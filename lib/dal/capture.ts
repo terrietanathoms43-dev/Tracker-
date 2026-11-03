@@ -9,7 +9,8 @@ import type { Viewer } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
 
 // What the meeting helper is allowed to point at (docs/PLAN.md, 2026-11-01 log): this workspace's workers, its
-// active projects and its active goals, read once per draft and handed to the model as the only ids it may use.
+// active projects and its active goals (each in its project), read once per draft and handed to the model as the
+// only ids it may use.
 
 /** The workspace as the helper sees it. `defaultProjectId` is kept only when it names an active project here. */
 export async function captureContext(viewer: Viewer, defaultProjectId: string): Promise<CaptureContext> {
@@ -17,7 +18,7 @@ export async function captureContext(viewer: Viewer, defaultProjectId: string): 
     taskPeople(viewer),
     projectOptions(viewer),
     db
-      .select({ id: goals.id, title: goals.title, parentGoalId: goals.parentGoalId, targetDate: goals.targetDate })
+      .select({ id: goals.id, title: goals.title, parentGoalId: goals.parentGoalId, targetDate: goals.targetDate, projectId: goals.projectId })
       .from(goals)
       .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active")))
       .orderBy(asc(goals.title)),
@@ -26,7 +27,7 @@ export async function captureContext(viewer: Viewer, defaultProjectId: string): 
     today: dayKey(new Date(), viewer.timezone),
     timezone: viewer.timezone,
     people: people.map(({ id, name, email, image }) => ({ id, name, email, image })),
-    projects,
+    projects: projects.map(({ id, name }) => ({ id, name })),
     goals: goalRows,
     defaultProjectId: projects.some((project) => project.id === defaultProjectId) ? defaultProjectId : "",
   };

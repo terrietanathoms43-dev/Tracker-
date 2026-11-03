@@ -4,8 +4,8 @@ import { LIMITS } from "@/lib/limits";
 import { cappedText } from "@/lib/sanitize";
 import type { Person } from "@/lib/tasks/types";
 
-// Capture from a meeting (docs/PLAN.md, 2026-11-01 log): a transcript goes in, a draft of goals and tasks under a
-// project comes out, a person edits and approves it, and only then is anything created. The draft is defined once,
+// Capture from a meeting (docs/PLAN.md, 2026-11-01 log): a transcript goes in, a draft of a project with its goals
+// and tasks comes out, a person edits and approves it, and only then is anything created. The draft is defined once,
 // as the zod schema the apply action parses, and every other shape is read off it, so what the review screen holds
 // and what the server accepts can never drift apart.
 
@@ -21,8 +21,6 @@ export const draftProjectSchema = z.object({
   name: cappedText(LIMITS.projectName),
   description: cappedText(LIMITS.projectDescription),
   targetDate: day,
-  /** The goal a new project rolls up into: a draft goal's key, an existing goal's id, or "". */
-  goalKey: z.string().max(64).default(""),
 });
 
 export const draftGoalSchema = z.object({
@@ -73,9 +71,9 @@ export type CaptureContext = {
   today: string;
   timezone: string;
   people: Person[];
-  projects: { id: string; name: string; goal: { id: string; title: string } | null }[];
-  /** Active goals; a sub-goal names its parent. */
-  goals: { id: string; title: string; parentGoalId: string | null; targetDate: string | null }[];
+  projects: { id: string; name: string }[];
+  /** Active goals, each in its project; a sub-goal names its parent. */
+  goals: { id: string; title: string; parentGoalId: string | null; targetDate: string | null; projectId: string }[];
   /** The project the person started from (a project page's "From a meeting"), or "". */
   defaultProjectId: string;
 };

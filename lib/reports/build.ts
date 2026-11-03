@@ -14,7 +14,6 @@ import {
   projectAndGoalHealth,
   reportPace,
   reportProject,
-  reportProjectOptions,
   reportTimeline,
   stalledTasks,
   type BlockedDurationStats,
@@ -43,7 +42,7 @@ export type ReportSummary = {
   problems: number;
   /** The scope's work as a whole is behind the pace its target date needs. */
   behindPace: boolean;
-  /** Approvals and requests waiting for someone to decide. */
+  /** Approvals and proposals waiting for someone to decide. */
   decisions: number;
   /** In progress, but untouched for a week or more. */
   stalled: number;
@@ -51,12 +50,11 @@ export type ReportSummary = {
   idlePeople: number;
 };
 
-/** Which project the report is about (docs/PLAN.md, 2026-11-01 log), and the projects it could be about. */
+/** Which project the report is about: the navigation's scope (docs/PLAN.md, 2026-11-03 log). */
 export type ReportScope = {
   project: ReportProject;
   /** The chosen project, when `project` names one this workspace has. */
   chosen: ReportProjectOption | null;
-  options: ReportProjectOption[];
 };
 
 export type Report = {
@@ -91,27 +89,23 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
   assertCanSeeReports(viewer);
   // Two waves rather than one: the sections fan out into twenty-odd queries, and a pool of ten against a database
   // that may be waking up should not have them all racing for a connection at once.
-  const [delivered, open, blockedOverdue, allGoals, progressUpdates, blockedDuration, chosen, options] = await Promise.all([
+  const [delivered, open, blockedOverdue, goals, progressUpdates, blockedDuration, chosen] = await Promise.all([
     deliveredTasks(viewer, range, project),
     openCommitments(viewer, range, today, project),
     blockedOrOverdue(viewer, today, project),
-    activeGoalProgress(viewer),
+    activeGoalProgress(viewer, 20, project === "none" ? "" : project),
     progressUpdateCount(viewer, range, project),
     blockedDurationStats(viewer, project),
     reportProject(viewer, project),
-    reportProjectOptions(viewer),
   ]);
   const [contributions, healthBoard, timeline, decisions, stalled, pace] = await Promise.all([
     contributionCounts(viewer, range, today, project),
     projectAndGoalHealth(viewer, today, project),
     reportTimeline(viewer, range, today, project),
-    pendingDecisions(viewer, today, project),
+    pendingDecisions(viewer, project),
     stalledTasks(viewer, project),
     reportPace(viewer, today, project),
   ]);
-  // Narrowed to a project, the Goals panel keeps only the goals that project rolls up into.
-  const goalIds = new Set(healthBoard.goals.map((goal) => goal.id));
-  const goals = project === "" ? allGoals : allGoals.filter((goal) => goalIds.has(goal.id));
   const goalsDeliveredInRange: Record<string, number> = {};
   for (const task of delivered) {
     if (task.goalId) goalsDeliveredInRange[task.goalId] = (goalsDeliveredInRange[task.goalId] ?? 0) + 1;
@@ -120,7 +114,7 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
   return {
     range,
     window: timelineWindow(range, today),
-    scope: { project, chosen, options },
+    scope: { project, chosen },
     summary: {
       delivered: delivered.length,
       openDueInRange: open.filter(dueInRange).length,
@@ -130,7 +124,7 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
       // "All clear" has to mean it: every verdict short of on track counts, not just the worst two.
       problems: [...healthBoard.goals, ...healthBoard.projects].filter((row) => row.health !== "on_track").length,
       behindPace: pace.verdict === "behind",
-      decisions: decisions.approvals.length + decisions.requests.length,
+      decisions: decisions.approvals.length + decisions.proposals.length,
       stalled: stalled.length,
       idlePeople: contributions.filter((row) => row.open === 0).length,
     },

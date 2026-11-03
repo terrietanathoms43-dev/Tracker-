@@ -17,8 +17,9 @@ import { nameOf } from "@/lib/tasks/people";
 import type { Person } from "@/lib/tasks/types";
 
 // New project and Edit project: one dialog, one form. Leaders and admins only; the page decides whether to render it.
+// A project is the top of the funnel (docs/PLAN.md, 2026-11-03 log): goals are added inside it afterwards.
 
-type Values = { name: string; description: string; ownerId: string; goalId: string; targetDate: string };
+type Values = { name: string; description: string; ownerId: string; targetDate: string };
 type Errors = Record<string, string[] | undefined>;
 
 /** The project being edited, as the project page has it. */
@@ -27,37 +28,20 @@ export type EditableProject = {
   name: string;
   description: string | null;
   ownerId: string | null;
-  goal: { id: string; title: string } | null;
   targetDate: string | null;
 };
 
 /**
  * Renders its own trigger ("New project", or "Edit" for an existing project) and the dialog behind it. Only the
- * name is required; the owner starts as the viewer and the goal as `goalId` (a goal page passes its own). `goals`
- * are the active goals; a project already linked to a paused or achieved goal keeps it selectable.
+ * name is required; the owner starts as the viewer.
  */
-export function ProjectDialog({
-  project,
-  people,
-  goals,
-  viewerId,
-  goalId = "",
-  variant = "default",
-}: {
-  project?: EditableProject;
-  people: Person[];
-  goals: { id: string; title: string }[];
-  viewerId: string;
-  goalId?: string;
-  variant?: "default" | "outline";
-}) {
+export function ProjectDialog({ project, people, viewerId, variant = "default" }: { project?: EditableProject; people: Person[]; viewerId: string; variant?: "default" | "outline" }) {
   const router = useRouter();
   const editing = project !== undefined;
   const initial = (): Values => ({
     name: project?.name ?? "",
     description: project?.description ?? "",
     ownerId: editing ? (project.ownerId ?? "") : viewerId,
-    goalId: editing ? (project.goal?.id ?? "") : goalId,
     targetDate: project?.targetDate ?? "",
   });
   const [open, setOpen] = useState(false);
@@ -91,8 +75,6 @@ export function ProjectDialog({
     });
   }
 
-  const linkedGoal = project?.goal ?? null;
-  const goalChoices = linkedGoal && !goals.some((goal) => goal.id === linkedGoal.id) ? [...goals, { ...linkedGoal, title: `${linkedGoal.title} (not active)` }] : goals;
   const ownerMissing = values.ownerId !== "" && !people.some((person) => person.id === values.ownerId);
 
   return (
@@ -112,7 +94,7 @@ export function ProjectDialog({
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit project" : "New project"}</DialogTitle>
-            <DialogDescription>A project groups related tasks and can roll up into a goal.</DialogDescription>
+            <DialogDescription>A project holds goals and the tasks that move them. Add goals from the project page.</DialogDescription>
           </DialogHeader>
           <form
             className="grid gap-4"
@@ -175,21 +157,6 @@ export function ProjectDialog({
                 />
               </Field>
             </div>
-            <Field id="project-goal" label="Goal" hint="Optional: the goal this project moves forward." error={error("goalId")}>
-              <NativeSelect
-                id="project-goal"
-                value={values.goalId}
-                onChange={(event) => set("goalId", event.target.value)}
-                aria-invalid={error("goalId") ? true : undefined}
-              >
-                <option value="">No goal</option>
-                {goalChoices.map((goal) => (
-                  <option key={goal.id} value={goal.id}>
-                    {goal.title}
-                  </option>
-                ))}
-              </NativeSelect>
-            </Field>
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
                 Cancel

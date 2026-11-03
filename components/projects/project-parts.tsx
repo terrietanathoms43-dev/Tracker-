@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { Archive, CheckCircle2, Target } from "lucide-react";
+import { Archive, CheckCircle2, ShieldCheck, Target } from "lucide-react";
 import Link from "next/link";
 import { OwnerLabel, TargetLabel } from "@/components/goals/goal-parts";
 import { ProgressBar } from "@/components/goals/progress-bar";
@@ -23,25 +23,28 @@ export function ProjectStatusBadge({ status, className }: { status: ProjectStatu
   );
 }
 
-/** The goal a project rolls up into, as a link. `relative` lifts it above a card's stretched link so it stays clickable. */
-export function GoalLink({ goal, className }: { goal: { id: string; title: string }; className?: string }) {
+/** "3 goals": how many active goals sit under the project. */
+export function GoalCount({ count, className }: { count: number; className?: string }) {
   return (
-    <Link
-      href={`/goals/${goal.id}`}
-      className={cn("relative inline-flex min-w-0 items-center gap-1 rounded-sm hover:text-foreground hover:underline", className)}
-    >
+    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap tabular-nums", className)}>
       <Target className="size-3.5 shrink-0" aria-hidden />
-      <span className="sr-only">Goal: </span>
-      <span className="truncate">{goal.title}</span>
-    </Link>
+      {count} {count === 1 ? "goal" : "goals"}
+    </span>
   );
 }
 
-/**
- * One project as a card: name (the whole card is the link), owner, goal, target, status and progress. A goal's own
- * page passes `showGoal={false}`, since every card there serves that goal.
- */
-export function ProjectCard({ project, today, showGoal = true }: { project: ProjectListItem; today: string; showGoal?: boolean }) {
+/** A small badge on projects whose new tasks wait for sign-off. */
+export function ApprovalBadge({ className }: { className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-md bg-status-awaiting-bg px-1.5 py-0.5 text-[12px] font-medium text-status-awaiting-fg", className)}>
+      <ShieldCheck className="size-3" aria-hidden />
+      Sign-off
+    </span>
+  );
+}
+
+/** One project as a card: name (the whole card is the link), owner, goals, target, status and progress. */
+export function ProjectCard({ project, today }: { project: ProjectListItem; today: string }) {
   return (
     <li className="relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/40">
       <div className="flex items-start justify-between gap-3">
@@ -53,13 +56,11 @@ export function ProjectCard({ project, today, showGoal = true }: { project: Proj
         </Link>
         <ProjectStatusBadge status={project.status} className="shrink-0" />
       </div>
-      {showGoal && project.goal ? (
-        <div className="mt-1 flex min-w-0 text-[13px] text-muted-foreground">
-          <GoalLink goal={project.goal} className="max-w-full" />
-        </div>
-      ) : null}
       <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
         <OwnerLabel owner={project.owner} />
+        <span aria-hidden>·</span>
+        <GoalCount count={project.goals} />
+        {project.requiresApproval ? <ApprovalBadge /> : null}
         {project.targetDate ? (
           <>
             <span aria-hidden>·</span>

@@ -12,11 +12,11 @@ const TITLE = `Walkthrough rotate the API keys ${Date.now().toString().slice(-5)
 const started = new Date();
 const browsers = {};
 
-/** Fills the Resume card's Update progress form and saves it; `mark` picks a "Mark as" status. */
+/** Fills the Resume card's Update progress form and saves it; `mark` picks the Status. */
 async function updateProgress(browser, taskId, { progress, next, mark }) {
   await browser.type(`#progress-${taskId}`, progress);
   if (next) await browser.type(`#next-${taskId}`, next);
-  if (mark) await browser.select(`#mark-${taskId}`, mark);
+  if (mark) await browser.select(`#status-${taskId}`, mark);
   await browser.click("Save update", { exact: true, wait: 2500 });
 }
 
@@ -82,7 +82,7 @@ try {
   step("Mark unblocked clears the blocker", unblocked?.status === "in_progress" && unblocked?.blocked_reason === null, JSON.stringify(unblocked));
 
   // --- 4. send for approval: Morgan by default -------------------------------------------------------------------
-  await jordan.select(`#mark-${created.id}`, "awaiting_approval");
+  await jordan.select(`#status-${created.id}`, "awaiting_approval");
   await sleep(500);
   const approver = await jordan.evaluate(`document.querySelector("#approver-${created.id}")?.selectedOptions?.[0]?.textContent ?? null`);
   step("the approver defaults to the leader", typeof approver === "string" && approver.includes("Morgan"), String(approver));
@@ -162,10 +162,10 @@ try {
   // Jordan rejected it himself, so only the send-back and the approval reach him (nobody is told about their own change).
   step("Jordan heard the send-back and the approval", kindsFor("jordan@trackwise.test").filter((kind) => kind === "approval_decided").length === 2, JSON.stringify(kindsFor("jordan@trackwise.test")));
 
-  // --- 9. who may not see it --------------------------------------------------------------------------------------------
+  // --- 9. who reads it, and who may not see it ---------------------------------------------------------------------------
   const taylor = (browsers.taylor = await openBrowser({ role: "stakeholder", width: 390, height: 844 }));
   await taylor.goto(taskPath, 4000);
-  step("a stakeholder gets Not found", await taylor.waitFor("Not found"));
+  step("a stakeholder reads the task without the progress form or a status menu", (await taylor.waitFor("Next action")) && !(await taylor.has("Save update")) && !(await taylor.evaluate(`!!document.querySelector('[aria-label="Change status"]')`)));
   const riley = (browsers.riley = await openBrowser({ role: "other", width: 1280, height: 900 }));
   await riley.goto(taskPath, 4000);
   step("another workspace gets Not found", await riley.waitFor("Not found"));

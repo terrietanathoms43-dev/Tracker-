@@ -1,4 +1,5 @@
-// Sub-goals (docs/PLAN.md, 2026-10-30 log): Morgan opens a goal and adds a sub-goal from its page; a target date
+// Sub-goals (docs/PLAN.md, 2026-10-30 and 2026-11-03 logs): Morgan opens a goal and adds a sub-goal from its page
+// (it lands in the parent's project); a target date
 // after the parent's is refused with the parent's date named, an earlier one is accepted; a task added to the
 // sub-goal counts for the sub-goal and rolls up into the parent; moving the parent's date before the sub-goal's is
 // refused; the sub-goal page points back at its parent and offers no sub-goals of its own; a member reads it all
@@ -46,14 +47,15 @@ try {
   step("a date before the parent's is accepted", !(await morgan.has("A sub-goal can't be due after its parent goal.")));
   await morgan.click("Create sub-goal", { exact: true, within: "[role=dialog]", wait: 2500 });
   step("creating shows the toast", await morgan.waitFor("Sub-goal created."));
-  const [sub] = await query("select id, parent_goal_id, target_date::text as target from goals where title = $1", [SUB_GOAL]);
-  step("the sub-goal is in the database under its parent with the earlier date", sub?.parent_goal_id === parent.id && sub?.target === shift(parent.target, -7), JSON.stringify(sub));
+  const [sub] = await query("select id, parent_goal_id, project_id, target_date::text as target from goals where title = $1", [SUB_GOAL]);
+  const [parentRow] = await query("select project_id from goals where id = $1", [parent.id]);
+  step("the sub-goal is in the database under its parent, in the parent's project, with the earlier date", sub?.parent_goal_id === parent.id && sub?.project_id === parentRow?.project_id && sub?.target === shift(parent.target, -7), JSON.stringify(sub));
   step("the parent page lists the sub-goal", await morgan.waitFor(SUB_GOAL));
   await morgan.shot("08-goal-with-sub-goal", { full: true });
 
   // --- 2. a task on the sub-goal rolls up into the parent -------------------------------------------------------------
   const [before] = await query(
-    `select count(*)::int as n from tasks t where t.org_id = (${org}) and t.status <> 'rejected' and (t.goal_id = $1 or t.goal_id in (select id from goals where parent_goal_id = $1) or t.project_id in (select id from projects where goal_id = $1 or goal_id in (select id from goals where parent_goal_id = $1)))`,
+    `select count(*)::int as n from tasks t where t.org_id = (${org}) and t.status <> 'rejected' and (t.proposal_status is null or t.proposal_status = 'approved') and (t.goal_id = $1 or t.goal_id in (select id from goals where parent_goal_id = $1))`,
     [parent.id],
   );
   const subPath = `/goals/${sub.id}`;

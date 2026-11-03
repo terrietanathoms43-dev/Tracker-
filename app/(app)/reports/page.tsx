@@ -8,22 +8,22 @@ import { ContributionsTable } from "@/components/reports/contributions-table";
 import { DecisionsPanel } from "@/components/reports/decisions-panel";
 import { HealthBoard } from "@/components/reports/health-board";
 import { PrintButton } from "@/components/reports/print-button";
-import { ProjectSelect } from "@/components/reports/project-select";
 import { RangeChart } from "@/components/reports/range-chart";
 import { ReportCutTabs } from "@/components/reports/report-cut-tabs";
 import { CsvLink, ReportControls } from "@/components/reports/report-controls";
 import { ReportTiles } from "@/components/reports/report-tiles";
 import { ReportVerdict } from "@/components/reports/report-verdict";
 import { BlockedList, DeliveredList, OpenList, StalledList } from "@/components/reports/task-facts";
-import { canDecideRequest, canSeeReports, isAdmin, isLeader } from "@/lib/permissions";
+import { canSeeReports, isAdmin, isLeader } from "@/lib/permissions";
+import { scopedProject } from "@/lib/project-scope-server";
 import { buildReport } from "@/lib/reports/build";
-import { parseReportCut, parseReportProject, parseReportRange, type ReportCut } from "@/lib/reports/params";
+import { parseReportCut, parseReportRange, type ReportCut } from "@/lib/reports/params";
 import { addDays, dayKey, formatAbsolute, formatDay } from "@/lib/time";
 import { requireViewerContext } from "@/lib/viewer";
 
-// /reports: a date range, a project (or all of them) and the facts (docs/PLAN.md §8, 2026-11-01 log), in three
-// views: Executive health (admins first: what is wrong, what is waiting to be decided, the health board, the daily
-// chart), Workload (leaders first) and My work (members, and the only view they get).
+// /reports: a date range, the navigation's project (or all of them) and the facts (docs/PLAN.md §8, 2026-11-01 and
+// 2026-11-03 logs), in three views: Executive health (admins first: the verdict, the daily chart, what is waiting
+// to be decided, the health board), Workload (leaders first) and My work (members, and the only view they get).
 
 export const metadata: Metadata = { title: "Reports" };
 
@@ -32,9 +32,9 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   if (!canSeeReports(viewer)) redirect("/home");
   const now = new Date();
   const today = dayKey(now, viewer.timezone);
-  const searchParams = await props.searchParams;
+  const [searchParams, scope] = await Promise.all([props.searchParams, scopedProject(viewer)]);
   const range = parseReportRange(searchParams, today);
-  const project = parseReportProject(searchParams);
+  const project = scope?.id ?? "";
   const report = await buildReport(viewer, range, today, project);
 
   // Role cuts: a leader or admin may switch; a member only gets their own.
@@ -42,7 +42,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const defaultCut: ReportCut = isAdmin(viewer) ? "exec" : leader ? "leader" : "member";
   const cut = leader ? parseReportCut(searchParams, defaultCut) : "member";
 
-  const scopeLabel = report.scope.chosen ? report.scope.chosen.name : project === "none" ? "Work in no project" : "All projects";
+  const scopeLabel = scope ? scope.name : "All projects";
   const csv = { range, project };
 
   const goalNotes = Object.fromEntries(
@@ -71,18 +71,11 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
 
   return (
     <>
-      <PageHeader
-        title="Reports"
-        description={`${org.name} · ${scopeLabel} · ${formatDay(range.from, today)} – ${formatDay(range.to, today)}`}
-        action={<PrintButton />}
-      />
+      <PageHeader title="Reports" description={`${org.name} · ${scopeLabel} · ${formatDay(range.from, today)} – ${formatDay(range.to, today)}`} action={<PrintButton />} />
 
       <div className="mb-6 grid gap-4">
         <ReportCutTabs current={cut} range={range} project={project} canSwitch={leader} />
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <ReportControls range={range} today={today} cut={cut} project={project} />
-          <ProjectSelect options={report.scope.options} value={project} range={range} cut={cut} />
-        </div>
+        <ReportControls range={range} today={today} cut={cut} project={project} />
       </div>
 
       <div className="grid gap-6">
@@ -113,10 +106,12 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
           </>
         ) : null}
 
-        {/* LEADER CUT: Who's outstanding, workload, blocked duration */}
+        {/* LEADER CUT: the tiles, the chart, then who's outstanding, workload, blocked duration */}
         {cut === "leader" ? (
           <>
             <ReportTiles summary={report.summary} project={project} />
+
+            <RangeChart timeline={report.timeline} today={today} title="Activity, completions, blockers and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
 
             {report.blockedDuration.currentlyBlocked > 0 ? (
               <div className="flex items-center gap-3 rounded-lg border border-status-awaiting-dot/30 bg-status-awaiting-bg p-4">
@@ -127,8 +122,6 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
                 </div>
               </div>
             ) : null}
-
-            <RangeChart timeline={report.timeline} today={today} title="Delivery, blockers and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
 
             <Panel title="Blocked and overdue" count={report.blockedOverdue.length}>
               <BlockedList tasks={report.blockedOverdue} today={today} />
@@ -155,18 +148,18 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
           </>
         ) : null}
 
-        {/* EXEC CUT: what is wrong, what is waiting on a decision, the health board, the chart */}
+        {/* EXEC CUT: the verdict, the chart, then what is waiting on a decision and the health board */}
         {cut === "exec" ? (
           <>
             <ReportVerdict summary={report.summary} project={project} />
-            <DecisionsPanel decisions={report.decisions} project={project} canDecide={canDecideRequest(viewer)} now={now} today={today} timeZone={viewer.timezone} />
+            <RangeChart timeline={report.timeline} today={today} title="Daily activity, completions, blockers and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
+            <DecisionsPanel decisions={report.decisions} now={now} today={today} timeZone={viewer.timezone} />
             <HealthBoard data={report.healthBoard} today={today} />
             <div id="stalled" className="scroll-mt-20">
               <Panel title="Stalled" count={report.stalled.length}>
                 <StalledList tasks={report.stalled} today={today} />
               </Panel>
             </div>
-            <RangeChart timeline={report.timeline} today={today} title="Daily completions, blockers and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
             <div id="people" className="scroll-mt-20">
               <Panel title="People" aside={<CsvLink {...csv} table="contributions" label="People" />}>
                 <ContributionsTable rows={report.contributions} />
@@ -176,9 +169,8 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
         ) : null}
 
         <p className="text-[13px] text-muted-foreground">
-          Generated {formatAbsolute(now, viewer.timezone)} from {org.name}&apos;s task records
-          {report.scope.chosen ? `, narrowed to ${report.scope.chosen.name}` : project === "none" ? ", narrowed to work in no project" : ""}. Blocked, overdue and
-          decisions waiting are as of today; the chart looks two weeks ahead; everything else falls inside the range.
+          Generated {formatAbsolute(now, viewer.timezone)} from {org.name}&apos;s task records{scope ? `, narrowed to ${scope.name}` : ""}. Blocked, overdue and decisions waiting are as of
+          today; the chart looks two weeks ahead; everything else falls inside the range. Pick a project in the navigation to narrow every section.
         </p>
       </div>
     </>

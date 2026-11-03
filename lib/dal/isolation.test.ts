@@ -7,14 +7,15 @@ import { OTHER_ORG, TEST_ORG, TEST_PERSONAS } from "@/lib/test-mode";
 import { dayKey } from "@/lib/time";
 
 // Cross-workspace isolation, proven against the real database with the two seeded workspaces: nothing of Trackwise
-// Demo is visible from Other Co (by id or in any list), and the other way round; a stakeholder's lists hold only
-// the tasks made from their own requests. Opt-in, because it needs DATABASE_URL and a seeded database:
+// Demo is visible from Other Co (by id or in any list), and the other way round; proposals still waiting for
+// sign-off never appear in the work lists; a stakeholder's proposals list holds only their own. Opt-in, because it
+// needs DATABASE_URL and a seeded database:
 //
 //   npm run test:seed && TRACKWISE_DB_TESTS=1 npx vitest run lib/dal/isolation.test.ts
 config({ path: [".env.local", ".env"], quiet: true });
 const enabled = process.env.TRACKWISE_DB_TESTS === "1" && Boolean(process.env.DATABASE_URL);
 
-type Dal = typeof import("./tasks") & typeof import("./history") & typeof import("./notifications") & typeof import("./orgs") & typeof import("./members") & typeof import("./goals");
+type Dal = typeof import("./tasks") & typeof import("./history") & typeof import("./notifications") & typeof import("./orgs") & typeof import("./members") & typeof import("./goals") & typeof import("./approvals");
 
 describe.skipIf(!enabled)("workspace isolation (database)", () => {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -26,7 +27,7 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
   };
 
   let dal: Dal;
-  let demo: { orgId: string; taskIds: string[]; linkedTaskId: string; projectId: string; goalId: string; subGoalId: string; parentGoalId: string };
+  let demo: { orgId: string; taskIds: string[]; liveTaskIds: string[]; pendingIds: string[]; linkedTaskId: string; projectId: string; goalId: string; subGoalId: string; parentGoalId: string };
   let other: { orgId: string; taskIds: string[]; projectId: string; goalId: string };
   let avery: Viewer;
   let riley: Viewer;
@@ -40,23 +41,26 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
 
   beforeAll(async () => {
     // Imported after dotenv has run: db/index.ts reads DATABASE_URL when it is first loaded.
-    const [tasksDal, historyDal, notificationsDal, orgsDal, membersDal, goalsDal] = await Promise.all([
+    const [tasksDal, historyDal, notificationsDal, orgsDal, membersDal, goalsDal, approvalsDal] = await Promise.all([
       import("./tasks"),
       import("./history"),
       import("./notifications"),
       import("./orgs"),
       import("./members"),
       import("./goals"),
+      import("./approvals"),
     ]);
-    dal = { ...tasksDal, ...historyDal, ...notificationsDal, ...orgsDal, ...membersDal, ...goalsDal };
+    dal = { ...tasksDal, ...historyDal, ...notificationsDal, ...orgsDal, ...membersDal, ...goalsDal, ...approvalsDal };
 
     const demoOrgId = (await one<{ id: string }>("select id from organizations where slug = $1", [TEST_ORG.slug])).id;
     const otherOrgId = (await one<{ id: string }>("select id from organizations where slug = $1", [OTHER_ORG.slug])).id;
-    const taskIds = async (orgId: string) => (await rows<{ id: string }>("select id from tasks where org_id = $1", [orgId])).map((row) => row.id);
+    const taskIds = async (orgId: string, extra = "") => (await rows<{ id: string }>(`select id from tasks where org_id = $1 ${extra}`, [orgId])).map((row) => row.id);
     const subGoal = await one<{ id: string; parent_goal_id: string }>("select id, parent_goal_id from goals where org_id = $1 and parent_goal_id is not null limit 1", [demoOrgId]);
     demo = {
       orgId: demoOrgId,
       taskIds: await taskIds(demoOrgId),
+      liveTaskIds: await taskIds(demoOrgId, "and (proposal_status is null or proposal_status = 'approved')"),
+      pendingIds: await taskIds(demoOrgId, "and proposal_status in ('pending', 'declined')"),
       linkedTaskId: (await one<{ task_id: string }>("select l.task_id from task_links l join tasks t on t.id = l.task_id where t.org_id = $1 limit 1", [demoOrgId])).task_id,
       projectId: (await one<{ id: string }>("select id from projects where org_id = $1 limit 1", [demoOrgId])).id,
       goalId: (await one<{ id: string }>("select id from goals where org_id = $1 limit 1", [demoOrgId])).id,
@@ -65,7 +69,7 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
     };
     other = {
       orgId: otherOrgId,
-      taskIds: await taskIds(otherOrgId),
+      taskIds: await taskIds(otherOrgId, "and (proposal_status is null or proposal_status = 'approved')"),
       projectId: (await one<{ id: string }>("select id from projects where org_id = $1 limit 1", [otherOrgId])).id,
       goalId: (await one<{ id: string }>("select id from goals where org_id = $1 limit 1", [otherOrgId])).id,
     };
@@ -81,6 +85,7 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
 
   it("the seed gives both workspaces work, so the checks below are not vacuous", () => {
     expect(demo.taskIds.length).toBeGreaterThan(10);
+    expect(demo.pendingIds.length).toBeGreaterThan(0);
     expect(other.taskIds.length).toBeGreaterThan(0);
   });
 
@@ -93,6 +98,8 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
     expect(await dal.tasksForGoal(riley, demo.goalId)).toEqual([]);
     expect(await dal.getGoal(riley, demo.goalId)).toBeNull();
     expect(await dal.subGoalsOf(riley, demo.parentGoalId)).toEqual([]);
+    expect(await dal.connectionsOf(riley, demo.goalId)).toEqual({ comesAfter: [], leadsTo: [] });
+    expect(await dal.approvalSettings(riley, { projectId: demo.projectId })).toBeNull();
     expect((await dal.progressForGoals(riley, [demo.goalId])).get(demo.goalId)).toEqual({ completed: 0, total: 0, blocked: 0, overdue: 0 });
     expect((await dal.progressForProjects(riley, [demo.projectId])).get(demo.projectId)).toEqual({ completed: 0, total: 0, blocked: 0, overdue: 0 });
   });
@@ -107,11 +114,14 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
     const leaks = (found: string[]) => found.filter((id) => demo.taskIds.includes(id));
     expect(leaks(onBoard)).toEqual([]);
     expect(leaks(ids(await dal.searchTasks(riley, "the")))).toEqual([]);
+    expect(leaks(ids(await dal.recentTasks(riley, 50)))).toEqual([]);
     expect(leaks(ids(await dal.attentionTasks(riley, today(riley), 500)))).toEqual([]);
     expect(leaks((await dal.myWorkRows(riley)).map((row) => row.item.id))).toEqual([]);
     expect(leaks((await dal.workload(riley)).flatMap((row) => ids(row.active)))).toEqual([]);
     expect(leaks((await dal.recentActivity(riley, 500)).map((item) => item.task.id))).toEqual([]);
-    expect((await dal.listGoals(riley, { includeAchieved: true })).some((goal) => goal.id === demo.goalId)).toBe(false);
+    expect(leaks(ids(await dal.listProposals(riley)))).toEqual([]);
+    expect((await dal.listGoals(riley, { includeCompleted: true })).some((goal) => goal.id === demo.goalId)).toBe(false);
+    expect((await dal.goalLinksIn(riley)).some((link) => link.from === demo.goalId || link.to === demo.goalId)).toBe(false);
 
     const counts = await dal.taskCounts(riley, { today: today(riley), since: new Date(0) });
     expect(counts.active + counts.completed).toBeLessThanOrEqual(other.taskIds.length);
@@ -120,27 +130,29 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
     expect((await dal.memberDirectory(riley)).map((member) => member.email).sort()).toEqual(members);
   });
 
-  it("a sub-goal's tasks count for the sub-goal and roll up into its parent", async () => {
+  it("a sub-goal's tasks count for the sub-goal and roll up into its parent, inside the same project", async () => {
     const sub = await dal.getGoal(avery, demo.subGoalId);
     const parent = await dal.getGoal(avery, demo.parentGoalId);
     expect(sub?.parent?.id).toBe(demo.parentGoalId);
+    expect(sub?.project.id).toBe(parent?.project.id);
     expect(sub?.progress.total).toBeGreaterThan(0);
     expect(parent?.subGoals).toBeGreaterThan(0);
     expect(parent?.progress.total).toBeGreaterThanOrEqual(sub!.progress.total);
     const subTasks = await dal.tasksForGoal(avery, demo.subGoalId);
     const parentTasks = await dal.tasksForGoal(avery, demo.parentGoalId);
     expect(subTasks.every((task) => parentTasks.some((each) => each.id === task.id))).toBe(true);
-    // The goals list shows top-level goals only; the sub-goal is reached from its parent's page.
-    expect((await dal.listGoals(avery, { includeAchieved: true })).some((goal) => goal.id === demo.subGoalId)).toBe(false);
+    expect((await dal.listGoals(avery, { includeCompleted: true, topLevelOnly: true })).some((goal) => goal.id === demo.subGoalId)).toBe(false);
     expect((await dal.subGoalsOf(avery, demo.parentGoalId)).some((goal) => goal.id === demo.subGoalId)).toBe(true);
   });
 
-  it("Trackwise Demo's admin sees none of Other Co's work, by id or in a list", async () => {
+  it("Trackwise Demo's admin sees none of Other Co's work, by id or in a list, and no pending proposals in the work lists", async () => {
     expect(await dal.getTask(avery, other.taskIds[0])).toBeNull();
     expect(await dal.tasksForProject(avery, other.projectId)).toEqual([]);
     expect(await dal.tasksForGoal(avery, other.goalId)).toEqual([]);
     const listed = (await dal.listTasks(avery, everything, { today: today(avery), limit: 500 })).items.map((item) => item.id);
-    expect(listed.sort()).toEqual([...demo.taskIds].sort());
+    expect(listed.sort()).toEqual([...demo.liveTaskIds].sort());
+    expect(listed.some((id) => demo.pendingIds.includes(id))).toBe(false);
+    expect((await dal.listProposals(avery)).map((item) => item.id).filter((id) => demo.pendingIds.includes(id)).sort()).toEqual([...demo.pendingIds].sort());
   });
 
   it("a viewer only ever filters by its own workspace: a forged one for Other Co reaches nothing of the demo", async () => {
@@ -155,19 +167,12 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
     expect((await dal.listNotifications(jordan)).length).toBeGreaterThan(0);
   });
 
-  it("a stakeholder's lists hold only the tasks made from their own requests", async () => {
-    const own = (
-      await rows<{ id: string }>("select t.id from tasks t join requests r on r.id = t.request_id where r.requester_id = $1 and t.org_id = $2", [
-        taylor.userId,
-        demo.orgId,
-      ])
-    ).map((row) => row.id);
+  it("a stakeholder's proposals list holds only their own, and they never approve anything", async () => {
+    const own = (await rows<{ id: string }>("select id from tasks where created_by = $1 and org_id = $2 and proposal_status is not null", [taylor.userId, demo.orgId])).map((row) => row.id);
     expect(own.length).toBeGreaterThan(0);
-    const listed = (await dal.listTasks(taylor, everything, { today: today(taylor), limit: 500 })).items.map((item) => item.id);
-    expect(listed.sort()).toEqual([...own].sort());
-    expect((await dal.searchTasks(taylor, "the")).every((item) => own.includes(item.id))).toBe(true);
-    expect((await dal.attentionTasks(taylor, today(taylor), 500)).every((item) => own.includes(item.id))).toBe(true);
-    expect((await dal.recentActivity(taylor, 500)).every((item) => own.includes(item.task.id))).toBe(true);
+    const listed = await dal.listProposals(taylor);
+    expect(listed.every((item) => own.includes(item.id) && item.isMine && !item.canDecide)).toBe(true);
+    expect(await dal.countProposalsWaitingFor(taylor)).toBe(0);
     expect(await dal.workload(taylor)).toEqual([]);
   });
 });

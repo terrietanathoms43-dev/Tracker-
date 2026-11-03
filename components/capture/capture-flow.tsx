@@ -137,7 +137,7 @@ export function CaptureFlow({ context, provider }: { context: CaptureContext; pr
               <Sparkles className="size-3.5" aria-hidden />
               What happens next
             </p>
-            <p className="mt-1">You get a draft: a project, goals and tasks with people and dates, each with the words it came from. You edit it, untick what you don&apos;t want, then create the rest in one go.</p>
+            <p className="mt-1">You get a draft: a project, the goals inside it and the tasks under them, with people and dates, each with the words it came from. You edit it, untick what you don&apos;t want, then create the rest in one go.</p>
             {provider === "fake" ? <p className="mt-1">Test mode: a plain parser stands in for the model and reads lines starting with “Action item:”, “Goal:”, “Project:” and “Meeting:”.</p> : null}
           </div>
         </div>
@@ -253,22 +253,16 @@ function Review({
             <Field id="capture-project-target" label="Target date">
               <Input id="capture-project-target" type="date" value={draft.project.targetDate} onChange={(event) => patchProject({ targetDate: event.target.value })} />
             </Field>
-            <Field id="capture-project-goal" label="Rolls up into">
-              <NativeSelect id="capture-project-goal" value={draft.project.goalKey} onChange={(event) => patchProject({ goalKey: event.target.value })}>
-                <option value="">No goal</option>
-                {goalChoices.map((choice) => (
-                  <option key={choice.value} value={choice.value}>
-                    {choice.label}
-                  </option>
-                ))}
-              </NativeSelect>
-            </Field>
             <Field id="capture-project-description" label="Description" count={{ value: draft.project.description, max: LIMITS.projectDescription }}>
               <Textarea id="capture-project-description" rows={2} value={draft.project.description} maxLength={LIMITS.projectDescription} onChange={(event) => patchProject({ description: event.target.value })} />
             </Field>
           </div>
         ) : null}
-        {draft.project.mode === "none" ? <p className="text-[13px] text-muted-foreground">The tasks will not belong to a project. They can still point at a goal.</p> : null}
+        {draft.project.mode === "none" ? (
+          <p className="text-[13px] text-muted-foreground">
+            The tasks will stand on their own, outside any project.{draft.goals.some((goal) => goal.include && goal.mode === "new") ? " New goals need a project: pick or name one above, or untick them." : ""}
+          </p>
+        ) : null}
       </section>
 
       {/* Goals */}

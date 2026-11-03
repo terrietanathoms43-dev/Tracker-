@@ -3,14 +3,18 @@ import type { OrgRole } from "@/lib/constants";
 import {
   canApproveTask,
   canCapture,
-  canDecideRequest,
+  canCompleteGoal,
+  canCreateTask,
+  canDeleteTask,
   canEditTask,
   canInvite,
+  canManageApprovals,
   canManageInvitation,
   canManageOrg,
   canManagePlanning,
-  canReadRequest,
+  canReadPlanning,
   canReadTask,
+  canRejectTask,
   canResolveComment,
   canSeeMembers,
   canSeeReports,
@@ -29,7 +33,7 @@ const task = (overrides: Partial<TaskScope> = {}): TaskScope => ({
   assigneeIds: ["u2"],
   createdBy: "u3",
   approverId: null,
-  requesterId: null,
+  proposalStatus: null,
   ...overrides,
 });
 
@@ -39,15 +43,18 @@ describe("workspace boundary", () => {
     expect(canReadTask(admin, task())).toBe(false);
     expect(canEditTask(admin, task())).toBe(false);
     expect(canApproveTask(admin, task())).toBe(false);
-    expect(canReadRequest(admin, { orgId: "org1", requesterId: "u1" })).toBe(false);
   });
 });
 
 describe("tasks", () => {
-  it("lets every worker read, and a stakeholder only their own converted tasks", () => {
+  it("lets everyone in the workspace read, stakeholders included", () => {
     expect(canReadTask(viewer("member"), task())).toBe(true);
-    expect(canReadTask(viewer("stakeholder"), task())).toBe(false);
-    expect(canReadTask(viewer("stakeholder"), task({ requesterId: "u1" }))).toBe(true);
+    expect(canReadTask(viewer("stakeholder"), task())).toBe(true);
+  });
+
+  it("lets everyone add a task (a stakeholder's becomes a proposal)", () => {
+    expect(canCreateTask(viewer("stakeholder"))).toBe(true);
+    expect(canCreateTask(viewer("member"))).toBe(true);
   });
 
   it("counts someone as assigned when they are on the task", () => {
@@ -64,30 +71,51 @@ describe("tasks", () => {
     expect(canEditTask(viewer("stakeholder"), task({ assigneeIds: ["u1"] }))).toBe(false);
   });
 
-  it("lets any worker add progress and resolve comments", () => {
+  it("lets a stakeholder edit or withdraw only their own open proposal", () => {
+    const mine = task({ createdBy: "u1", proposalStatus: "pending" });
+    expect(canEditTask(viewer("stakeholder"), mine)).toBe(true);
+    expect(canDeleteTask(viewer("stakeholder"), mine)).toBe(true);
+    expect(canEditTask(viewer("stakeholder"), task({ createdBy: "u1", proposalStatus: "approved" }))).toBe(false);
+    expect(canDeleteTask(viewer("member"), task({ createdBy: "u1", proposalStatus: "declined" }))).toBe(true);
+    expect(canDeleteTask(viewer("member"), task({ createdBy: "u1" }))).toBe(false);
+    expect(canDeleteTask(viewer("leader"))).toBe(true);
+  });
+
+  it("lets any worker add progress and resolve comments, once the task is live", () => {
     expect(canUpdateProgress(viewer("member"), task())).toBe(true);
     expect(canResolveComment(viewer("member"), task())).toBe(true);
+    expect(canUpdateProgress(viewer("member"), task({ proposalStatus: "approved" }))).toBe(true);
+    expect(canUpdateProgress(viewer("member"), task({ proposalStatus: "pending" }))).toBe(false);
     expect(canUpdateProgress(viewer("stakeholder"), task())).toBe(false);
     expect(canResolveComment(viewer("stakeholder"), task())).toBe(false);
   });
 
-  it("reserves approval for the approver and leaders", () => {
+  it("reserves approval for the approver and leaders, and rejection for workers who may edit", () => {
     expect(canApproveTask(viewer("member"), task())).toBe(false);
     expect(canApproveTask(viewer("member"), task({ approverId: "u1" }))).toBe(true);
     expect(canApproveTask(viewer("leader"), task())).toBe(true);
+    expect(canApproveTask(viewer("leader"), task({ proposalStatus: "pending" }))).toBe(false);
+    expect(canRejectTask(viewer("stakeholder"), task({ createdBy: "u1", proposalStatus: "pending" }))).toBe(false);
+    expect(canRejectTask(viewer("leader"), task())).toBe(true);
   });
 });
 
-describe("planning, requests, administration", () => {
-  it("lets leaders manage projects, goals and request decisions", () => {
+describe("planning, approvals, administration", () => {
+  it("lets leaders manage projects, goals, sign-off chains and goal links", () => {
     for (const role of ["leader", "admin"] as const) {
       expect(canManagePlanning(viewer(role))).toBe(true);
-      expect(canDecideRequest(viewer(role))).toBe(true);
+      expect(canManageApprovals(viewer(role))).toBe(true);
     }
     for (const role of ["member", "stakeholder"] as const) {
       expect(canManagePlanning(viewer(role))).toBe(false);
-      expect(canDecideRequest(viewer(role))).toBe(false);
+      expect(canManageApprovals(viewer(role))).toBe(false);
     }
+  });
+
+  it("lets everyone read projects and goals, and only admins, leaders and stakeholders complete a goal", () => {
+    for (const role of ["admin", "leader", "member", "stakeholder"] as const) expect(canReadPlanning(viewer(role))).toBe(true);
+    for (const role of ["admin", "leader", "stakeholder"] as const) expect(canCompleteGoal(viewer(role))).toBe(true);
+    expect(canCompleteGoal(viewer("member"))).toBe(false);
   });
 
   it("opens the Members page and Reports to everyone who does work", () => {
@@ -95,12 +123,6 @@ describe("planning, requests, administration", () => {
     expect(canSeeReports(viewer("member"))).toBe(true);
     expect(canSeeMembers(viewer("stakeholder"))).toBe(false);
     expect(canSeeReports(viewer("stakeholder"))).toBe(false);
-  });
-
-  it("shows a stakeholder only their own requests", () => {
-    expect(canReadRequest(viewer("stakeholder"), { orgId: "org1", requesterId: "u1" })).toBe(true);
-    expect(canReadRequest(viewer("stakeholder"), { orgId: "org1", requesterId: "u9" })).toBe(false);
-    expect(canReadRequest(viewer("member"), { orgId: "org1", requesterId: "u9" })).toBe(true);
   });
 
   it("keeps workspace administration to admins", () => {
@@ -120,9 +142,9 @@ describe("planning, requests, administration", () => {
 });
 
 describe("navigation", () => {
-  it("gives stakeholders two destinations and everyone else six, Reports last", () => {
-    expect(navFor({ orgRole: "stakeholder" })).toEqual(["home", "requests"]);
-    expect(navFor({ orgRole: "member" })).toEqual(["home", "my-work", "goals", "members", "requests", "reports"]);
+  it("gives stakeholders three destinations and everyone else six, Reports last", () => {
+    expect(navFor({ orgRole: "stakeholder" })).toEqual(["home", "goals", "proposals"]);
+    expect(navFor({ orgRole: "member" })).toEqual(["home", "my-work", "goals", "members", "proposals", "reports"]);
   });
 });
 

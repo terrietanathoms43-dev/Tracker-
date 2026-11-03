@@ -59,6 +59,8 @@ Open it and know the team's health: counts (active · completed in period · ove
 
 ## 9. Requests
 
+> _2026-11-03: requests were replaced by **proposals** (a task that waits for sign-off before it goes live); the brief below is kept as the original intent, the decision is in `docs/PLAN.md`._
+
 Anyone, including stakeholders, can submit a request (title, description, desired outcome, urgency). Leaders decide: approve (optionally converting to a task at once), defer (with a revisit date), reject (with a reason), convert to a task. Every decision is recorded with who, when and why. The requester follows the request and the task it became.
 
 ## 10. Reports

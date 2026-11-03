@@ -9,17 +9,18 @@ import type { FeedEntry, GoalProgress } from "@/lib/dal/dashboard";
 import type { ApprovalStagingTask } from "@/lib/dal/tasks";
 import { tasksHref } from "@/lib/tasks/filters";
 import type { TaskCounts, TaskListItem, WorkloadRow } from "@/lib/tasks/types";
-import { PendingBanner } from "./pending-banner";
+import { ProposalsBanner } from "./pending-banner";
 import { ResumePanel } from "./resume-panel";
 
-// A leader's or admin's Home (apex-ux flow B): requests waiting on them, the counts, what needs a hand, who holds
+// A leader's or admin's Home (apex-ux flow B): proposals waiting on them, the counts, what needs a hand, who holds
 // what, goals and recent decisions; then their own work, as a member's Home shows it.
 
 /** How many attention rows Home shows; the task list has the rest. */
 const ATTENTION_ROWS = 8;
 
 export type LeaderHomeData = {
-  pending: number;
+  /** Proposals waiting for this person's signature. */
+  proposals: number;
   counts: TaskCounts;
   attention: TaskListItem[];
   workload: WorkloadRow[];
@@ -46,7 +47,7 @@ export function LeaderHome({
 }) {
   return (
     <div className="grid gap-6">
-      {data.pending > 0 ? <PendingBanner count={data.pending} /> : null}
+      {data.proposals > 0 ? <ProposalsBanner count={data.proposals} /> : null}
       <CountTiles counts={data.counts} days={days} />
 
       {/* Supervisor Approval Staging Area: Eliminates hallucination before sign-off */}

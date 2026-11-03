@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { CalendarRange, Search, SlidersHorizontal, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { NativeSelect } from "@/components/native-select";
@@ -9,17 +9,22 @@ import { StatusIcon } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, TASK_STATUSES, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { BOARD_STATUSES } from "@/lib/tasks/board";
 import {
   activeFilterChips,
+  DATE_FIELD_LABELS,
+  DATE_FIELDS,
   DEFAULT_FILTERS,
+  describeDateRange,
   isFiltered,
   SORT_LABELS,
   tasksHref,
   visibleStatuses,
+  type DateField,
   type DueFilter,
   type FilterNames,
   type TaskFilters,
@@ -30,26 +35,98 @@ import { nameOf } from "@/lib/tasks/people";
 import type { GoalOption, Person } from "@/lib/tasks/types";
 
 // The task list's search, filters and sort, all kept in the URL. A filter that is on looks on: its control takes
-// the brand tint, and a row of chips under the toolbar says what is narrowing the list, each chip removable.
+// the brand tint, and a row of chips under the toolbar says what is narrowing the list, each chip removable. The
+// project is not here: the navigation's project picker narrows every screen at once.
 
 const half = "w-[calc(50%-0.25rem)]";
 /** A picker whose value narrows the list: the same tint as the active nav item, so "on" is unmistakable. */
 const ACTIVE = "[&>select]:border-primary [&>select]:bg-sidebar-accent [&>select]:font-medium [&>select]:text-foreground";
 
+/** "Dates": a range of calendar days on the created, completed or updated date (docs/PLAN.md, 2026-11-03 log). */
+export function DateRangeFilter({ filters, today, onApply, className }: { filters: Pick<TaskFilters, "dateField" | "from" | "to">; today: string; onApply: (next: Pick<TaskFilters, "dateField" | "from" | "to">) => void; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const [field, setField] = useState<DateField>(filters.dateField || "created");
+  const [from, setFrom] = useState(filters.from);
+  const [to, setTo] = useState(filters.to);
+  const on = describeDateRange(filters, today);
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setField(filters.dateField || "created");
+          setFrom(filters.from);
+          setTo(filters.to);
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button variant="outline" aria-label="Dates" data-dates-filter className={cn("h-9", on && "border-primary bg-sidebar-accent font-medium text-foreground", className)}>
+          <CalendarRange aria-hidden />
+          {on ?? "Dates"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80">
+        <form
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onApply({ dateField: from || to ? field : "", from, to });
+            setOpen(false);
+          }}
+        >
+          <div className="grid gap-1.5">
+            <Label htmlFor="dates-field" className="text-[13px]">
+              Which date
+            </Label>
+            <NativeSelect id="dates-field" value={field} onChange={(event) => setField(event.target.value as DateField)}>
+              {DATE_FIELDS.map((each) => (
+                <option key={each} value={each}>
+                  {DATE_FIELD_LABELS[each]}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="dates-from" className="text-[13px]">
+                From
+              </Label>
+              <Input id="dates-from" type="date" value={from} max={to || undefined} onChange={(event) => setFrom(event.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="dates-to" className="text-[13px]">
+                To
+              </Label>
+              <Input id="dates-to" type="date" value={to} min={from || undefined} onChange={(event) => setTo(event.target.value)} />
+            </div>
+          </div>
+          <div className="flex justify-between gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!on}
+              onClick={() => {
+                onApply({ dateField: "", from: "", to: "" });
+                setOpen(false);
+              }}
+            >
+              Clear
+            </Button>
+            <Button type="submit" size="sm" disabled={!from && !to}>
+              Apply
+            </Button>
+          </div>
+        </form>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** Search, filters and sort for /home's list and board. Every change is a URL change, so a view can be shared. */
-export function TaskToolbar({
-  filters,
-  view,
-  people,
-  projects,
-  goals,
-}: {
-  filters: TaskFilters;
-  view: TaskView;
-  people: Person[];
-  projects: { id: string; name: string }[];
-  goals: GoalOption[];
-}) {
+export function TaskToolbar({ filters, view, people, goals, today }: { filters: TaskFilters; view: TaskView; people: Person[]; goals: GoalOption[]; today: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [q, setQ] = useState(filters.q);
@@ -80,9 +157,11 @@ export function TaskToolbar({
     const next = shown.includes(status) ? shown.filter((each) => each !== status) : [...shown, status];
     apply({ status: next.length === statuses.length ? [] : next });
   };
-  const names: FilterNames = { people, projects, goals };
-  const chips = activeFilterChips(filters, names);
+  const names: FilterNames = { people, goals };
+  const chips = activeFilterChips(filters, names, today);
   const active = chips.length + (filters.status.length > 0 ? 1 : 0);
+  // Goals of the chosen project only; without a project scope, every goal.
+  const goalChoices = filters.project ? goals.filter((goal) => goal.projectId === filters.project) : goals;
   const sortSelect = (className: string, label: string) => (
     <NativeSelect aria-label={label} className={className} value={filters.sort} onChange={(event) => apply({ sort: event.target.value as TaskSort })}>
       {Object.entries(SORT_LABELS).map(([value, text]) => (
@@ -94,7 +173,7 @@ export function TaskToolbar({
   );
   const clearAll = () => {
     setQ("");
-    apply({ ...DEFAULT_FILTERS, sort: filters.sort });
+    apply({ ...DEFAULT_FILTERS, project: filters.project, sort: filters.sort });
   };
 
   return (
@@ -106,7 +185,7 @@ export function TaskToolbar({
             data-list-search
             type="search"
             aria-label="Search tasks"
-            placeholder="Search tasks…"
+            placeholder="Search titles and descriptions…"
             value={q}
             onChange={(event) => setQ(event.target.value)}
             maxLength={LIMITS.search}
@@ -175,28 +254,18 @@ export function TaskToolbar({
             <option value="week">Due this week</option>
             <option value="none">No due date</option>
           </NativeSelect>
-          {projects.length > 0 || filters.project ? (
-            <NativeSelect aria-label="Project" className={cn(half, "sm:w-44", filters.project && ACTIVE)} value={filters.project} onChange={(event) => apply({ project: event.target.value })}>
-              <option value="">All projects</option>
-              <option value="none">Unlinked (no project)</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </NativeSelect>
-          ) : null}
-          {goals.length > 0 || filters.goal ? (
+          {goalChoices.length > 0 || filters.goal ? (
             <NativeSelect aria-label="Goal" className={cn(half, "sm:w-44", filters.goal && ACTIVE)} value={filters.goal} onChange={(event) => apply({ goal: event.target.value })}>
               <option value="">All goals</option>
-              <option value="none">Unlinked (no goal)</option>
-              {goals.map((goal) => (
+              <option value="none">No goal</option>
+              {goalChoices.map((goal) => (
                 <option key={goal.id} value={goal.id}>
                   {goal.title}
                 </option>
               ))}
             </NativeSelect>
           ) : null}
+          <DateRangeFilter filters={filters} today={today} onApply={(next) => apply(next)} className={cn(half, "sm:w-auto")} />
           {sortSelect(cn(half, "sm:hidden"), "Sort order")}
           {view === "list" ? (
             <div className="flex h-9 items-center gap-2 px-1">
@@ -213,11 +282,7 @@ export function TaskToolbar({
         <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/30 bg-sidebar-accent/60 px-2.5 py-1.5 text-[13px]" role="status" aria-live="polite">
           <span className="font-medium text-primary">Filtered:</span>
           {filters.status.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => apply({ status: [] })}
-              className="inline-flex h-6 items-center gap-1 rounded-md border border-primary/30 bg-background px-2 text-foreground transition-colors hover:bg-accent"
-            >
+            <button type="button" onClick={() => apply({ status: [] })} className="inline-flex h-6 items-center gap-1 rounded-md border border-primary/30 bg-background px-2 text-foreground transition-colors hover:bg-accent">
               {filters.status.length === 1 ? TASK_STATUS_LABELS[filters.status[0]] : `${filters.status.length} statuses`}
               <X className="size-3 text-muted-foreground" aria-hidden />
               <span className="sr-only">Remove status filter</span>

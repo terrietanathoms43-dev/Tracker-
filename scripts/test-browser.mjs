@@ -77,7 +77,7 @@ const PAGE_HELPERS = `
   const headings = (e) => e.querySelectorAll("h1, h2, h3, h4").length
   const anchorFor = (near) => {
     const wanted = near.toLowerCase()
-    const pools = [[...document.querySelectorAll("h1, h2, h3, h4")], [...document.querySelectorAll("strong, span, p, label, td, th, li, div")]]
+    const pools = [[...document.querySelectorAll("h1, h2, h3, h4")], [...document.querySelectorAll("strong, span, p, label, td, th, li, div, a")]]
     for (const pool of pools) {
       const exact = pool.find(e => visible(e) && textOf(e) === wanted)
       if (exact !== undefined) return exact

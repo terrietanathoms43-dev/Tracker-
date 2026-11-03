@@ -14,6 +14,7 @@ import {
   HOME,
   note,
   only,
+  PEOPLE,
   openBrowser,
   ORG,
   ORG_COOKIE,
@@ -28,15 +29,17 @@ import {
   withBrowser,
 } from "./lib.mjs";
 
-// docs/PLAN.md §2: the sidebar on desktop; four tabs plus More on a phone.
+// docs/PLAN.md §2 (2026-11-03 log): the sidebar on desktop; four tabs plus More on a phone.
 const DESKTOP_NAV = {
-  full: ["Home", "My Work", "Goals", "Members", "Requests"],
-  stakeholder: ["Home", "Requests"],
+  full: ["Home", "My Work", "Goals", "Members", "Proposals", "Reports"],
+  stakeholder: ["Home", "Goals", "Proposals"],
 };
 const PHONE_NAV = {
-  full: ["Home", "My Work", "Goals", "More"],
-  stakeholder: ["Home", "Requests", "More"],
+  full: ["Home", "My Work", "Goals", "Members", "More"],
+  stakeholder: ["Home", "Goals", "Proposals", "More"],
 };
+/** A phone's top bar shows the person as their initials, a desktop's sidebar as their name. */
+const initialsOf = (persona) => PEOPLE[persona].name.split(" ").map((part) => part[0]).join("");
 const DESKTOP = { width: 1280, height: 900 };
 const PHONE = { width: 390, height: 844 };
 
@@ -88,7 +91,7 @@ if (only("landing")) {
     await withBrowser({ role, ...viewport }, async (browser) => {
       const landed = pathOnly(await browser.goto(HOME, 4000));
       const org = orgOf(role);
-      const greeted = (await browser.waitFor(org.name, 30_000)) && (await browser.waitFor(firstName(role), 10_000));
+      const greeted = (await browser.waitFor(org.name, 30_000)) && ((await browser.waitFor(firstName(role), size === "desktop" ? 10_000 : 3_000)) || (await browser.has(initialsOf(role))));
       const wrongOrg = org === ORG ? OTHER_ORG : ORG;
       const leaked = await browser.has(wrongOrg.name);
       const expected = (size === "desktop" ? DESKTOP_NAV : PHONE_NAV)[role === "stakeholder" ? "stakeholder" : "full"];

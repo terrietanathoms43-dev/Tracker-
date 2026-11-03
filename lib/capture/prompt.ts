@@ -18,7 +18,6 @@ export const proposalSchema = z.object({
     newName: z.string().nullable(),
     newDescription: z.string().nullable(),
     newTargetDate: z.string().nullable(),
-    goalKey: z.string().nullable(),
   }),
   goals: z.array(
     z.object({
@@ -52,7 +51,7 @@ export type Proposal = z.infer<typeof proposalSchema>;
 /** The standing instructions: stable text first, so repeated drafts share a cached prefix. */
 export const SYSTEM_PROMPT = `You turn the transcript or notes of a team meeting into a plan for a small team's work tracker.
 
-The tracker has people, projects, goals and tasks. A task is one piece of work with a title, optionally some people assigned, a due date, a priority, a first next action and a project or goal it belongs to. A goal is an outcome the team wants; a goal may have sub-goals one level deep. A project groups tasks and may roll up into a goal.
+The tracker has people, projects, goals and tasks, in that order: a project is the top of the funnel, every goal belongs to one project, and a task belongs to a goal (and so to that goal's project), to a project alone, or to nothing. A task is one piece of work with a title, optionally some people assigned, a due date, a priority and a first next action. A goal is an outcome the team wants; a goal may have sub-goals one level deep, in the same project. New goals go in the meeting's project, so a meeting that proposes goals needs a project (existing or new).
 
 Rules:
 - Propose only work the meeting actually committed to: someone agreed to do it, or the group clearly decided it will be done. Discussion, options and opinions are not tasks.
@@ -69,12 +68,13 @@ Rules:
 /** The per-draft message: the workspace's facts, then the transcript, kept apart from the instructions. */
 export function buildUserMessage(context: CaptureContext, transcript: string): string {
   const people = context.people.map((person) => `- ${person.id} — ${nameOf(person)}`).join("\n") || "- (nobody)";
-  const projects = context.projects.map((project) => `- ${project.id} — ${project.name}${project.goal ? ` (rolls up into goal: ${project.goal.title})` : ""}`).join("\n") || "- (none yet)";
+  const projects = context.projects.map((project) => `- ${project.id} — ${project.name}`).join("\n") || "- (none yet)";
   const goals =
     context.goals
       .map((goal) => {
         const parent = goal.parentGoalId ? context.goals.find((each) => each.id === goal.parentGoalId) : null;
-        return `- ${goal.id} — ${goal.title}${parent ? ` (sub-goal of: ${parent.title})` : ""}${goal.targetDate ? ` (target ${goal.targetDate})` : ""}`;
+        const project = context.projects.find((each) => each.id === goal.projectId);
+        return `- ${goal.id} — ${goal.title}${project ? ` (in project: ${project.name})` : ""}${parent ? ` (sub-goal of: ${parent.title})` : ""}${goal.targetDate ? ` (target ${goal.targetDate})` : ""}`;
       })
       .join("\n") || "- (none yet)";
   const starting = context.projects.find((project) => project.id === context.defaultProjectId);
@@ -87,7 +87,7 @@ export function buildUserMessage(context: CaptureContext, transcript: string): s
     "Projects (id — name):",
     projects,
     "",
-    "Goals (id — title):",
+    "Goals (id — title, with the project each is in):",
     goals,
     "",
     starting ? `The person started from the project "${starting.name}" (${starting.id}); put the work there unless the meeting was clearly about something else.` : "No project was chosen in advance.",
@@ -190,7 +190,6 @@ export function proposalToDraft(proposal: Proposal, context: CaptureContext): Ca
     name: newName,
     description: text(proposedProject.newDescription, LIMITS.projectDescription),
     targetDate: isDay(proposedProject.newTargetDate) ? proposedProject.newTargetDate : "",
-    goalKey: goalRef(proposedProject.goalKey),
   };
 
   return {

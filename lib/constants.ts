@@ -19,13 +19,14 @@ export const ORG_ROLE_LABELS: Record<OrgRole, string> = {
 /** One line per role, for pickers and invitations. */
 export const ORG_ROLE_DESCRIPTIONS: Record<OrgRole, string> = {
   admin: "Everything, plus members and workspace settings",
-  leader: "Manages projects and goals, approves work, decides requests",
-  member: "Works on tasks, updates progress, submits requests",
-  stakeholder: "Submits requests and follows what happens to them",
+  leader: "Manages projects and goals, approves work and proposals",
+  member: "Works on tasks, updates progress, proposes work",
+  stakeholder: "Proposes tasks, follows them, and signs off goals",
 };
 
 // --- tasks --------------------------------------------------------------------
 
+/** The one set of task statuses, used everywhere: lists, the board, every form, the reports. */
 export const TASK_STATUSES = [
   "not_started",
   "in_progress",
@@ -83,8 +84,28 @@ export const TASK_ACTIVITY_KINDS = [
   "comment_reopened",
   "link_added",
   "link_removed",
+  "proposal_signed",
+  "proposal_approved",
+  "proposal_declined",
+  "proposal_resubmitted",
 ] as const;
 export type TaskActivityKind = (typeof TASK_ACTIVITY_KINDS)[number];
+
+// --- proposals (docs/PLAN.md, 2026-11-03 log) ------------------------------------
+
+/** A task that needs sign-off before it is live: waiting, approved (live), or declined (back to the proposer). */
+export const PROPOSAL_STATUSES = ["pending", "approved", "declined"] as const;
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
+
+export const PROPOSAL_STATUS_LABELS: Record<ProposalStatus, string> = {
+  pending: "Waiting for sign-off",
+  approved: "Approved",
+  declined: "Declined",
+};
+
+/** What one step of a sign-off chain can say. */
+export const APPROVAL_DECISIONS = ["approved", "declined"] as const;
+export type ApprovalDecision = (typeof APPROVAL_DECISIONS)[number];
 
 // --- projects and goals ------------------------------------------------------
 
@@ -97,40 +118,14 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   archived: "Archived",
 };
 
-export const GOAL_STATUSES = ["active", "achieved", "paused"] as const;
+export const GOAL_STATUSES = ["active", "completed", "paused"] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 
 export const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
   active: "Active",
-  achieved: "Achieved",
+  completed: "Completed",
   paused: "Paused",
 };
-
-// --- requests -----------------------------------------------------------------
-
-export const REQUEST_URGENCIES = ["low", "normal", "high", "critical"] as const;
-export type RequestUrgency = (typeof REQUEST_URGENCIES)[number];
-
-export const REQUEST_URGENCY_LABELS: Record<RequestUrgency, string> = {
-  low: "Low",
-  normal: "Normal",
-  high: "High",
-  critical: "Critical",
-};
-
-export const REQUEST_STATUSES = ["new", "approved", "deferred", "rejected", "converted"] as const;
-export type RequestStatus = (typeof REQUEST_STATUSES)[number];
-
-export const REQUEST_STATUS_LABELS: Record<RequestStatus, string> = {
-  new: "New",
-  approved: "Approved",
-  deferred: "Deferred",
-  rejected: "Rejected",
-  converted: "Converted to a task",
-};
-
-export const REQUEST_DECISIONS = ["approved", "deferred", "rejected", "converted", "reopened"] as const;
-export type RequestDecision = (typeof REQUEST_DECISIONS)[number];
 
 // --- notifications -----------------------------------------------------------
 
@@ -140,7 +135,8 @@ export const NOTIFICATION_KINDS = [
   "approval_requested",
   "approval_decided",
   "blocked",
-  "request_decided",
+  "proposal_waiting",
+  "proposal_decided",
   "commented",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -154,6 +150,9 @@ export const ORG_COOKIE = "trackwise.org";
 
 /** Cookie holding the person's /home tab order, hidden tabs and landing tab (written client-side). */
 export const HOME_TABS_COOKIE = "trackwise.homeTabs";
+
+/** Cookie holding the project every work screen is narrowed to ("" = all projects; written client-side). */
+export const PROJECT_SCOPE_COOKIE = "trackwise.project";
 
 export const INVITE_TTL_DAYS = 7;
 

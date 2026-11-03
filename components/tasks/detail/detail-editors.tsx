@@ -12,10 +12,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { TaskPriority, TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
+import type { Recurrence } from "@/lib/recurrence";
 import { idsOf, sameIds } from "@/lib/tasks/assignees";
 import type { Assignees, Person } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneePicker } from "../assignee-picker";
+import { RecurrencePicker } from "../recurrence-picker";
 import { StatusMenuItems, useChangeStatus } from "../status-menu";
 
 // The task page's inline editors: each saves one field through editTask (or a status through the shared
@@ -127,6 +129,26 @@ export function AssigneesEditor({ taskId, assignees, people, viewerId }: { taskI
 }
 
 type PickField = "projectId" | "goalId" | "priority";
+
+/** The time of day a task is due, next to its date; blank means no particular time. */
+export function TimeEditor({ taskId, time }: { taskId: string; time: string | null }) {
+  const [pending, startTransition] = useTransition();
+  const save = (value: string) => startTransition(async () => void toastResult(await editTask({ taskId, field: "dueTime", value })));
+  return <Input type="time" aria-label="Due time" className="w-32" value={time ?? ""} disabled={pending} onChange={(event) => save(event.target.value)} />;
+}
+
+/** How often the task repeats, saved as it changes (a change of rule is one history line). */
+export function RecurrenceEditor({ taskId, recurrence, dueDate }: { taskId: string; recurrence: Recurrence | null; dueDate: string | null }) {
+  const [value, setValue] = useState<Recurrence | null>(recurrence);
+  const [pending, startTransition] = useTransition();
+  const save = (next: Recurrence | null) => {
+    setValue(next);
+    startTransition(async () => {
+      if (!toastResult(await editTask({ taskId, field: "recurrence", value: next }))) setValue(recurrence);
+    });
+  };
+  return <RecurrencePicker value={value} onChange={save} anchor={dueDate} idPrefix={`repeat-${taskId}`} disabled={pending} />;
+}
 
 /** A native select that saves on change: project, goal or priority. */
 export function PickEditor({

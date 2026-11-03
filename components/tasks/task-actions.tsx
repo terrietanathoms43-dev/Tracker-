@@ -3,7 +3,7 @@
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { TaskStatus } from "@/lib/constants";
 import type { CreateDefaults } from "@/lib/tasks/types";
-import { CommandPalette } from "./command-palette";
+import { CommandPalette, rememberRecentTask } from "./command-palette";
 import { CreateTaskDialog, TransitionDialog, UpdateProgressDialog } from "./task-dialogs";
 import { useShortcuts } from "./use-shortcuts";
 import { prefetchTaskFormOptions } from "./use-task-form-options";
@@ -48,13 +48,18 @@ export function useTaskActions(): TaskActions {
   return value;
 }
 
-/** Rendered by the task page so U and the palette know which task is open (reading the URL here would block prerendering). */
-export function CurrentTask({ id }: { id: string }) {
+/**
+ * Rendered by the task page so U and the palette know which task is open (reading the URL here would block
+ * prerendering), and so the palette's Recent list remembers it.
+ */
+export function CurrentTask({ id, title, actionable = true }: { id: string; title: string; actionable?: boolean }) {
   const { setCurrentTask } = useTaskActions();
   useEffect(() => {
+    rememberRecentTask({ id, title });
+    if (!actionable) return;
     setCurrentTask(id);
     return () => setCurrentTask(null);
-  }, [id, setCurrentTask]);
+  }, [id, title, actionable, setCurrentTask]);
   return null;
 }
 

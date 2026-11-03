@@ -29,7 +29,7 @@ export async function memberDirectory(viewer: Viewer): Promise<MemberDirectoryRo
   if (!canSeeMembers(viewer)) return [];
   const today = dayKey(new Date(), viewer.timezone);
   const openWork = (extra = sql``) =>
-    sql<number>`(select count(*)::int from task_assignees ta join tasks t on t.id = ta.task_id where ta.user_id = ${users.id} and t.org_id = ${viewer.orgId} and t.status not in (${closed}) ${extra})`;
+    sql<number>`(select count(*)::int from task_assignees ta join tasks t on t.id = ta.task_id where ta.user_id = ${users}.id and t.org_id = ${viewer.orgId} and t.status not in (${closed}) and (t.proposal_status is null or t.proposal_status = 'approved') ${extra})`;
   const rows = await db
     .select({
       id: users.id,

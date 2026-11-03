@@ -11,10 +11,10 @@ const context: CaptureContext = {
     { id: "u-sam", name: "Sam Dev", email: "sam@trackwise.test", image: null },
     { id: "u-morgan", name: "Morgan Lead", email: "morgan@trackwise.test", image: null },
   ],
-  projects: [{ id: "p-incidents", name: "Incident tooling", goal: { id: "g-incidents", title: "Cut incident response time in half" } }],
+  projects: [{ id: "p-incidents", name: "Incident tooling" }],
   goals: [
-    { id: "g-incidents", title: "Cut incident response time in half", parentGoalId: null, targetDate: "2027-01-10" },
-    { id: "g-invites", title: "Invitations work without a support call", parentGoalId: "g-onboarding", targetDate: "2026-12-01" },
+    { id: "g-incidents", title: "Cut incident response time in half", parentGoalId: null, targetDate: "2027-01-10", projectId: "p-incidents" },
+    { id: "g-invites", title: "Invitations work without a support call", parentGoalId: "g-onboarding", targetDate: "2026-12-01", projectId: "p-incidents" },
   ],
   defaultProjectId: "",
 };
@@ -76,7 +76,7 @@ describe("proposalToDraft", () => {
       {
         meetingTitle: "",
         summary: "Decided things.",
-        project: { existingId: "p-nope", newName: null, newDescription: null, newTargetDate: null, goalKey: null },
+        project: { existingId: "p-nope", newName: null, newDescription: null, newTargetDate: null },
         goals: [{ key: "g1", existingId: "g-nope", title: "A fresh outcome", description: null, targetDate: "soon", parentGoalId: "g-invites", evidence: "we want it" }],
         tasks: [
           { key: "t1", title: "Do the thing", description: null, nextAction: null, assigneeIds: ["u-jordan", "u-ghost"], unmatchedNames: ["Priya"], dueDate: "2026-02-30", priority: "normal", goalKey: "g1", evidence: "do it" },
@@ -97,23 +97,23 @@ describe("proposalToDraft", () => {
 
   it("falls back to the project the person started from", () => {
     const draft = proposalToDraft(
-      { meetingTitle: "Standup", summary: "", project: { existingId: null, newName: null, newDescription: null, newTargetDate: null, goalKey: null }, goals: [], tasks: [] },
+      { meetingTitle: "Standup", summary: "", project: { existingId: null, newName: null, newDescription: null, newTargetDate: null }, goals: [], tasks: [] },
       { ...context, defaultProjectId: "p-incidents" },
     );
     expect(draft.project).toMatchObject({ mode: "existing", existingId: "p-incidents" });
   });
 
-  it("takes a new project with the goal it should roll up into", () => {
+  it("takes a new project with its name and target", () => {
     const draft = proposalToDraft(
       {
         meetingTitle: "Kick-off",
         summary: "",
-        project: { existingId: null, newName: "Status page", newDescription: "Public status page.", newTargetDate: "2026-12-15", goalKey: "g-incidents" },
+        project: { existingId: null, newName: "Status page", newDescription: "Public status page.", newTargetDate: "2026-12-15" },
         goals: [],
         tasks: [],
       },
       context,
     );
-    expect(draft.project).toMatchObject({ mode: "new", name: "Status page", targetDate: "2026-12-15", goalKey: "g-incidents" });
+    expect(draft.project).toMatchObject({ mode: "new", name: "Status page", targetDate: "2026-12-15" });
   });
 });

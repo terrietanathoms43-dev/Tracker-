@@ -7,22 +7,26 @@ import { toast } from "sonner";
 import { createGoal, updateGoal } from "@/actions/goals";
 import { Field } from "@/components/field";
 import { NativeSelect } from "@/components/native-select";
+import { RecurrencePicker } from "@/components/tasks/recurrence-picker";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-result";
+import type { ParentOption } from "@/lib/dal/goals";
 import { subGoalDeadlineProblem } from "@/lib/goals/deadlines";
 import { LIMITS } from "@/lib/limits";
+import type { Recurrence } from "@/lib/recurrence";
 import { nameOf } from "@/lib/tasks/people";
 import type { Person } from "@/lib/tasks/types";
 import { formatDay } from "@/lib/time";
 
 // New goal, New sub-goal and Edit goal: one dialog, one form. Leaders and admins only; the page decides whether to
-// render it. A sub-goal sits under one top-level goal and can't be due after it (docs/PLAN.md, 2026-10-30 log).
+// render it. Every goal belongs to a project (docs/PLAN.md, 2026-11-03 log): the dialog asks for one, offers to
+// make a new project on the spot, and a sub-goal takes its parent's. A goal may repeat (weekly standup duties):
+// completing it makes the next one, tasks included.
 
-type Values = { title: string; description: string; successCriteria: string; ownerId: string; parentGoalId: string; projectIds: string[]; targetDate: string };
+type Values = { title: string; description: string; successCriteria: string; ownerId: string; projectId: string; newProjectName: string; parentGoalId: string; targetDate: string; recurrence: Recurrence | null };
 type Errors = Record<string, string[] | undefined>;
 
 /** The goal being edited, as the goal page has it. */
@@ -32,23 +36,22 @@ export type EditableGoal = {
   description: string | null;
   successCriteria: string | null;
   ownerId: string | null;
+  projectId: string;
   parentGoalId: string | null;
-  projectIds: string[];
   targetDate: string | null;
+  recurrence: Recurrence | null;
   /** A goal with sub-goals can't become a sub-goal, so the dialog hides "Part of" for it. */
   subGoals: number;
 };
 
-/** An active project the dialog can attach to the goal, with the goal it already rolls up into (if any). */
-export type ProjectOption = { id: string; name: string; goal: { id: string; title: string } | null };
+export type ProjectChoice = { id: string; name: string };
 
-/** A top-level goal a sub-goal can belong to, with the date the sub-goal has to respect. */
-export type ParentOption = { id: string; title: string; targetDate: string | null };
+const NEW_PROJECT = "__new__";
 
 /**
  * Renders its own trigger ("New goal", "New sub-goal", or "Edit" for an existing goal) and the dialog behind it.
- * Only the title is required; the owner starts as the viewer. With `parent` set the dialog makes a sub-goal of that
- * goal and says so instead of offering a picker. Ctrl/⌘+Enter submits; the action's field errors show under each field.
+ * Only the title and the project are required; the owner starts as the viewer. With `parent` set the dialog makes
+ * a sub-goal of that goal and says so instead of offering pickers. Ctrl/⌘+Enter submits.
  */
 export function GoalDialog({
   goal,
@@ -56,6 +59,7 @@ export function GoalDialog({
   projects = [],
   parents = [],
   parent,
+  defaultProjectId = "",
   viewerId,
   today,
   variant = "default",
@@ -63,10 +67,12 @@ export function GoalDialog({
 }: {
   goal?: EditableGoal;
   people: Person[];
-  projects?: ProjectOption[];
+  projects?: ProjectChoice[];
   parents?: ParentOption[];
   /** Preset parent: the dialog creates a sub-goal of this goal (the goal page's "New sub-goal"). */
   parent?: ParentOption;
+  /** The project a new goal starts in (the page's, or the navigation's scope). */
+  defaultProjectId?: string;
   viewerId: string;
   today: string;
   variant?: "default" | "outline";
@@ -79,23 +85,31 @@ export function GoalDialog({
     description: goal?.description ?? "",
     successCriteria: goal?.successCriteria ?? "",
     ownerId: editing ? (goal.ownerId ?? "") : viewerId,
+    projectId: goal?.projectId ?? parent?.projectId ?? defaultProjectId,
+    newProjectName: "",
     parentGoalId: goal?.parentGoalId ?? parent?.id ?? "",
-    projectIds: goal?.projectIds ?? [],
     targetDate: goal?.targetDate ?? "",
+    recurrence: goal?.recurrence ?? null,
   });
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Values>(initial);
   const [errors, setErrors] = useState<Errors>({});
   const [pending, startTransition] = useTransition();
-  const set = (key: keyof Values, value: Values[keyof Values]) => setValues((current) => ({ ...current, [key]: value }));
+  const set = <K extends keyof Values>(key: K, value: Values[K]) => setValues((current) => ({ ...current, [key]: value }));
   const error = (key: keyof Values) => errors[key]?.[0];
 
-  // The parent in force: the preset one, or whichever the picker has; its date bounds this goal's date.
+  // The parent in force: the preset one, or whichever the picker has; its date bounds this goal's date and its
+  // project is this goal's project.
   const chosenParent = parent ?? parents.find((option) => option.id === values.parentGoalId) ?? null;
   const isSubGoal = values.parentGoalId !== "";
   const canPickParent = parent === undefined && (goal === undefined || goal.subGoals === 0) && parents.some((option) => option.id !== goal?.id);
+  const projectId = chosenParent ? chosenParent.projectId : values.projectId;
+  const makingProject = projectId === NEW_PROJECT;
   // The same rule the server applies, shown while typing instead of after the save.
   const dateProblem = subGoalDeadlineProblem(chosenParent?.targetDate ?? null, values.targetDate || null, today);
+  const needsProject = !chosenParent && projectId === "";
+  const repeatNeedsDate = values.recurrence !== null && values.targetDate === "";
+  const parentChoices = parents.filter((option) => option.id !== goal?.id && (values.projectId === "" || values.projectId === NEW_PROJECT || option.projectId === values.projectId));
 
   function show() {
     // Start from the goal as it is now: someone may have changed it since the page first rendered.
@@ -105,9 +119,10 @@ export function GoalDialog({
   }
 
   function submit() {
-    if (pending || values.title.trim() === "" || dateProblem !== null) return;
+    if (pending || values.title.trim() === "" || dateProblem !== null || needsProject || repeatNeedsDate || (makingProject && values.newProjectName.trim() === "")) return;
     startTransition(async () => {
-      const result: ActionResult<{ id: string } | undefined> = editing ? await updateGoal({ goalId: goal.id, ...values }) : await createGoal(values);
+      const payload = { ...values, projectId: makingProject ? "" : chosenParent ? chosenParent.projectId : values.projectId, newProjectName: makingProject ? values.newProjectName : "" };
+      const result: ActionResult<{ id: string; projectId: string } | undefined> = editing ? await updateGoal({ goalId: goal.id, ...payload }) : await createGoal(payload);
       if (!result.ok) {
         const fields = result.fieldErrors ?? {};
         if (Object.keys(fields).length > 0) setErrors(fields);
@@ -143,9 +158,7 @@ export function GoalDialog({
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>
-              {parent
-                ? `A step towards “${parent.title}”. Its tasks count towards that goal too.`
-                : "Say what success looks like. Projects and tasks roll up into it."}
+              {parent ? `A step towards “${parent.title}”, in the same project. Its tasks count towards that goal too.` : "Say what success looks like. A goal lives in a project; its tasks roll up into it."}
             </DialogDescription>
           </DialogHeader>
           <form
@@ -172,7 +185,27 @@ export function GoalDialog({
                 aria-invalid={error("title") ? true : undefined}
               />
             </Field>
-            <Field id="goal-criteria" label="Success looks like" hint="Optional: how you'll know it's achieved." error={error("successCriteria")} count={{ value: values.successCriteria, max: LIMITS.successCriteria }}>
+            {!chosenParent ? (
+              <div className="grid items-start gap-4 sm:grid-cols-2">
+                <Field id="goal-project" label="Project" error={error("projectId")}>
+                  <NativeSelect id="goal-project" value={projectId} onChange={(event) => set("projectId", event.target.value)} aria-invalid={error("projectId") || needsProject ? true : undefined}>
+                    <option value="">{projects.length === 0 ? "No projects yet: name one →" : "Pick a project…"}</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                    <option value={NEW_PROJECT}>+ New project…</option>
+                  </NativeSelect>
+                </Field>
+                {makingProject ? (
+                  <Field id="goal-new-project" label="New project's name" error={error("newProjectName")} count={{ value: values.newProjectName, max: LIMITS.projectName }}>
+                    <Input id="goal-new-project" value={values.newProjectName} onChange={(event) => set("newProjectName", event.target.value)} placeholder="e.g. Lumen Health" maxLength={LIMITS.projectName} autoFocus />
+                  </Field>
+                ) : null}
+              </div>
+            ) : null}
+            <Field id="goal-criteria" label="Success looks like" hint="Optional: how you'll know it's done." error={error("successCriteria")} count={{ value: values.successCriteria, max: LIMITS.successCriteria }}>
               <Textarea
                 id="goal-criteria"
                 value={values.successCriteria}
@@ -183,36 +216,23 @@ export function GoalDialog({
               />
             </Field>
             <Field id="goal-description" label="Description" hint="Optional: why it matters." error={error("description")} count={{ value: values.description, max: LIMITS.goalDescription }}>
-              <Textarea
-                id="goal-description"
-                value={values.description}
-                onChange={(event) => set("description", event.target.value)}
-                rows={3}
-                maxLength={LIMITS.goalDescription}
-              />
+              <Textarea id="goal-description" value={values.description} onChange={(event) => set("description", event.target.value)} rows={3} maxLength={LIMITS.goalDescription} />
             </Field>
-            {canPickParent ? (
-              <Field id="goal-parent" label="Part of" hint="Optional: make this a sub-goal of a bigger goal." error={error("parentGoalId")}>
+            {canPickParent && parentChoices.length > 0 ? (
+              <Field id="goal-parent" label="Part of" hint="Optional: make this a sub-goal of a bigger goal in the same project." error={error("parentGoalId")}>
                 <NativeSelect id="goal-parent" value={values.parentGoalId} onChange={(event) => set("parentGoalId", event.target.value)} aria-invalid={error("parentGoalId") ? true : undefined}>
                   <option value="">On its own (a top-level goal)</option>
-                  {parents
-                    .filter((option) => option.id !== goal?.id)
-                    .map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.title}
-                      </option>
-                    ))}
+                  {parentChoices.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.title}
+                    </option>
+                  ))}
                 </NativeSelect>
               </Field>
             ) : null}
             <div className="grid items-start gap-4 sm:grid-cols-2">
               <Field id="goal-owner" label="Owner" error={error("ownerId")}>
-                <NativeSelect
-                  id="goal-owner"
-                  value={values.ownerId}
-                  onChange={(event) => set("ownerId", event.target.value)}
-                  aria-invalid={error("ownerId") ? true : undefined}
-                >
+                <NativeSelect id="goal-owner" value={values.ownerId} onChange={(event) => set("ownerId", event.target.value)} aria-invalid={error("ownerId") ? true : undefined}>
                   {values.ownerId === "" ? <option value="">No owner</option> : null}
                   {ownerMissing ? <option value={values.ownerId}>Current owner</option> : null}
                   {people.map((person) => (
@@ -226,8 +246,8 @@ export function GoalDialog({
               <Field
                 id="goal-target"
                 label="Target date"
-                hint={chosenParent?.targetDate ? `Optional. On or before ${formatDay(chosenParent.targetDate, today)}, the parent goal's target.` : "Optional."}
-                error={dateProblem ?? error("targetDate")}
+                hint={chosenParent?.targetDate ? `Optional. On or before ${formatDay(chosenParent.targetDate, today)}, the parent goal's target.` : "Optional, unless it repeats."}
+                error={dateProblem ?? error("targetDate") ?? (repeatNeedsDate ? "A repeating goal needs a first target date." : undefined)}
               >
                 <Input
                   id="goal-target"
@@ -235,38 +255,20 @@ export function GoalDialog({
                   value={values.targetDate}
                   max={chosenParent?.targetDate ?? undefined}
                   onChange={(event) => set("targetDate", event.target.value)}
-                  aria-invalid={dateProblem || error("targetDate") ? true : undefined}
+                  aria-invalid={dateProblem || error("targetDate") || repeatNeedsDate ? true : undefined}
                 />
               </Field>
             </div>
-            {!isSubGoal && (projects.length > 0 || values.projectIds.length > 0) ? (
-              <Field id="goal-projects" label="Projects" hint="Optional: the projects that roll up into this goal." error={error("projectIds")}>
-                <ul className="grid max-h-40 gap-0.5 overflow-y-auto rounded-md border p-1" aria-labelledby="goal-projects">
-                  {projects.map((project) => {
-                    const on = values.projectIds.includes(project.id);
-                    return (
-                      <li key={project.id}>
-                        <label className="flex cursor-pointer items-center gap-2.5 rounded-[5px] px-2 py-1.5 text-sm transition-colors hover:bg-accent">
-                          <Checkbox
-                            checked={on}
-                            onCheckedChange={(next) =>
-                              set("projectIds", next === true ? [...values.projectIds, project.id] : values.projectIds.filter((each) => each !== project.id))
-                            }
-                          />
-                          <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                          {project.goal && project.goal.id !== goal?.id ? <span className="shrink-0 text-[13px] text-muted-foreground">in {project.goal.title}</span> : null}
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
+            {!isSubGoal ? (
+              <Field id="goal-repeat-unit" label="Repeat" hint="Completing a repeating goal makes the next one, with fresh copies of its tasks." error={error("recurrence")}>
+                <RecurrencePicker value={values.recurrence} onChange={(next) => set("recurrence", next)} anchor={values.targetDate || null} withTime={false} idPrefix="goal-repeat" />
               </Field>
             ) : null}
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={pending || values.title.trim() === "" || dateProblem !== null}>
+              <Button type="submit" disabled={pending || values.title.trim() === "" || dateProblem !== null || needsProject || repeatNeedsDate || (makingProject && values.newProjectName.trim() === "")}>
                 {pending ? (editing ? "Saving…" : "Creating…") : editing ? "Save goal" : parent ? "Create sub-goal" : "Create goal"}
               </Button>
             </div>

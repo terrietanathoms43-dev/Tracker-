@@ -26,8 +26,9 @@ import { requireViewerContext } from "@/lib/viewer";
 
 // Capture from a meeting (docs/PLAN.md, 2026-11-01 log), in two steps that never blur: `draftFromTranscript` asks
 // the helper and returns a draft without writing anything; `applyCapture` takes the draft a person edited and
-// approved and creates the project, goals and tasks in one transaction, through the same rules as the forms
-// (assignment validated, sub-goal deadlines checked, history and notifications as for any new task).
+// approved and creates the project, its goals and the tasks in one transaction, through the same rules as the
+// forms (goals need a project, assignment validated, sub-goal deadlines checked, history and notifications as
+// for any new task). Leaders and admins capture, so what they create goes live at once.
 
 /** How many drafts one person may ask for in ten minutes: each is a model call that costs money. */
 const DRAFTS_PER_WINDOW = 6;
@@ -66,7 +67,7 @@ async function activeProject(tx: Tx, orgId: string, projectId: string) {
   return row;
 }
 
-/** Creates what the person approved. Goals first (a project may roll up into one), then the project, then the tasks. */
+/** Creates what the person approved. The project first (goals need one), then the goals in it, then the tasks. */
 export async function applyCapture(input: z.input<typeof captureDraftSchema>): Promise<ActionResult<CaptureOutcome>> {
   return runAction("capture.apply", captureDraftSchema, input, async (draft) => {
     const { viewer } = await requireViewerContext();
@@ -79,67 +80,7 @@ export async function applyCapture(input: z.input<typeof captureDraftSchema>): P
     const meeting = draft.meetingTitle || "a meeting";
 
     const outcome = await db.transaction(async (tx): Promise<CaptureOutcome> => {
-      // The goals this workspace has, for every reference the draft makes to one by id.
-      const wantedGoalIds = [
-        ...draft.goals.filter((goal) => goal.mode === "existing").map((goal) => goal.existingId),
-        ...draft.goals.map((goal) => goal.parentGoalId),
-        ...draft.tasks.map((task) => task.goalKey),
-        draft.project.goalKey,
-      ].filter((id) => id !== "");
-      const knownGoals =
-        wantedGoalIds.length === 0
-          ? []
-          : await tx
-              .select({ id: goals.id, parentGoalId: goals.parentGoalId, targetDate: goals.targetDate, status: goals.status })
-              .from(goals)
-              .where(and(eq(goals.orgId, viewer.orgId), inArray(goals.id, [...new Set(wantedGoalIds)])));
-      const knownGoal = (id: string) => knownGoals.find((goal) => goal.id === id);
-
-      // 1. Goals: an existing one is just referenced; a new one is created (as a sub-goal when a parent was picked).
-      const goalIdByKey = new Map<string, string>();
-      const createdGoalIds: string[] = [];
-      for (const goal of draft.goals) {
-        if (!goal.include) continue;
-        if (goal.mode === "existing") {
-          if (!knownGoal(goal.existingId)) throw new GuardError("not_found", `The goal for "${goal.title}" doesn't exist any more. Untick it or make it a new goal.`);
-          goalIdByKey.set(goal.key, goal.existingId);
-          continue;
-        }
-        if (goal.title === "") throw new GuardError("forbidden", "Every new goal needs a title.");
-        let parentGoalId: string | null = null;
-        if (goal.parentGoalId !== "") {
-          const parent = knownGoal(goal.parentGoalId);
-          if (!parent || parent.parentGoalId !== null) throw new GuardError("forbidden", `"${goal.title}" can only sit under a top-level goal.`);
-          const problem = subGoalDeadlineProblem(parent.targetDate, goal.targetDate || null, today);
-          if (problem) throw new GuardError("forbidden", `"${goal.title}": ${problem}`);
-          parentGoalId = parent.id;
-        }
-        const [created] = await tx
-          .insert(goals)
-          .values({
-            orgId: viewer.orgId,
-            parentGoalId,
-            title: goal.title,
-            description: goal.description || null,
-            ownerId: viewer.userId,
-            targetDate: goal.targetDate || null,
-            createdBy: viewer.userId,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning({ id: goals.id });
-        goalIdByKey.set(goal.key, created.id);
-        createdGoalIds.push(created.id);
-      }
-      /** A task's or project's goal: a draft goal that was created or referenced, or an existing goal by id. */
-      const resolveGoal = (key: string): string | null => {
-        if (key === "") return null;
-        const fromDraft = goalIdByKey.get(key);
-        if (fromDraft) return fromDraft;
-        return knownGoal(key)?.id ?? null;
-      };
-
-      // 2. The project.
+      // 1. The project: goals must sit in one.
       let projectId: string | null = null;
       if (draft.project.mode === "existing") {
         if (draft.project.existingId === "") throw new GuardError("forbidden", "Pick the project the work belongs to, or choose a new one.");
@@ -150,7 +91,6 @@ export async function applyCapture(input: z.input<typeof captureDraftSchema>): P
           .insert(projects)
           .values({
             orgId: viewer.orgId,
-            goalId: resolveGoal(draft.project.goalKey),
             name: draft.project.name,
             description: draft.project.description || null,
             ownerId: viewer.userId,
@@ -163,18 +103,86 @@ export async function applyCapture(input: z.input<typeof captureDraftSchema>): P
         projectId = created.id;
       }
 
-      // 3. The tasks, exactly as createTask makes them (actions/tasks.ts): assignment validated, history, notices.
+      // The goals this workspace has, for every reference the draft makes to one by id.
+      const wantedGoalIds = [
+        ...draft.goals.filter((goal) => goal.mode === "existing").map((goal) => goal.existingId),
+        ...draft.goals.map((goal) => goal.parentGoalId),
+        ...draft.tasks.map((task) => task.goalKey),
+      ].filter((id) => id !== "");
+      const knownGoals =
+        wantedGoalIds.length === 0
+          ? []
+          : await tx
+              .select({ id: goals.id, parentGoalId: goals.parentGoalId, projectId: goals.projectId, targetDate: goals.targetDate, status: goals.status })
+              .from(goals)
+              .where(and(eq(goals.orgId, viewer.orgId), inArray(goals.id, [...new Set(wantedGoalIds)])));
+      const knownGoal = (id: string) => knownGoals.find((goal) => goal.id === id);
+
+      // 2. Goals: an existing one is just referenced; a new one is created in the project (a sub-goal in its parent's).
+      const goalIdByKey = new Map<string, string>();
+      const goalProjectById = new Map<string, string>(knownGoals.map((goal) => [goal.id, goal.projectId]));
+      const createdGoalIds: string[] = [];
+      for (const goal of draft.goals) {
+        if (!goal.include) continue;
+        if (goal.mode === "existing") {
+          if (!knownGoal(goal.existingId)) throw new GuardError("not_found", `The goal for "${goal.title}" doesn't exist any more. Untick it or make it a new goal.`);
+          goalIdByKey.set(goal.key, goal.existingId);
+          continue;
+        }
+        if (goal.title === "") throw new GuardError("forbidden", "Every new goal needs a title.");
+        let parentGoalId: string | null = null;
+        let goalProject = projectId;
+        if (goal.parentGoalId !== "") {
+          const parent = knownGoal(goal.parentGoalId);
+          if (!parent || parent.parentGoalId !== null) throw new GuardError("forbidden", `"${goal.title}" can only sit under a top-level goal.`);
+          const problem = subGoalDeadlineProblem(parent.targetDate, goal.targetDate || null, today);
+          if (problem) throw new GuardError("forbidden", `"${goal.title}": ${problem}`);
+          parentGoalId = parent.id;
+          goalProject = parent.projectId;
+        }
+        if (goalProject === null) throw new GuardError("forbidden", `Goals belong to a project. Pick or name a project for "${goal.title}", or untick it.`);
+        const [created] = await tx
+          .insert(goals)
+          .values({
+            orgId: viewer.orgId,
+            projectId: goalProject,
+            parentGoalId,
+            title: goal.title,
+            description: goal.description || null,
+            ownerId: viewer.userId,
+            targetDate: goal.targetDate || null,
+            createdBy: viewer.userId,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({ id: goals.id });
+        goalIdByKey.set(goal.key, created.id);
+        goalProjectById.set(created.id, goalProject);
+        createdGoalIds.push(created.id);
+      }
+      /** A task's goal: a draft goal that was created or referenced, or an existing goal by id. */
+      const resolveGoal = (key: string): string | null => {
+        if (key === "") return null;
+        const fromDraft = goalIdByKey.get(key);
+        if (fromDraft) return fromDraft;
+        return knownGoal(key)?.id ?? null;
+      };
+
+      // 3. The tasks, exactly as createTask makes them (actions/tasks.ts): in their goal's project, assignment
+      // validated, history, notices. A leader's or admin's tasks are live at once.
       const taskIds: string[] = [];
       for (const task of draft.tasks) {
         if (!task.include || task.title === "") continue;
         const assignment = await validateAssignment(tx, viewer.orgId, task.assigneeIds);
+        const goalId = resolveGoal(task.goalKey);
+        const taskProject = goalId ? (goalProjectById.get(goalId) ?? projectId) : projectId;
         const description = task.description || (task.evidence ? `From ${meeting}: “${task.evidence}”` : null);
         const [created] = await tx
           .insert(tasks)
           .values({
             orgId: viewer.orgId,
-            projectId,
-            goalId: resolveGoal(task.goalKey),
+            projectId: taskProject,
+            goalId,
             title: task.title,
             description,
             createdBy: viewer.userId,

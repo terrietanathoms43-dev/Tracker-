@@ -1,22 +1,27 @@
 /**
  * The demo content behind test mode (scripts/test-accounts.ts turns it into rows). Pure data, no I/O.
  *
- * Every time is "days ago" (or "due in days") relative to the moment of seeding, so the dashboards always look
- * alive: in Trackwise Demo two tasks are overdue, two await Morgan's approval, three are blocked, six finished in
- * the last two weeks, two were rejected, two are unassigned, two have two people on them, one goal has a sub-goal
- * with a task of its own, two tasks carry open comments (so they can't be completed until those are resolved), and
- * the six requests cover every state.
+ * The shape is the funnel (docs/PLAN.md, 2026-11-03 log): projects first, goals inside them, tasks under goals,
+ * in a project alone, or standing on their own. Every time is "days ago" (or "due in days") relative to the
+ * moment of seeding, so the dashboards always look alive: in Trackwise Demo two tasks are overdue, two await
+ * Morgan's approval, three are blocked, six finished in the last two weeks, two were rejected, two are unassigned,
+ * two have two people on them, one goal has a sub-goal with a task of its own, two tasks carry open comments (so
+ * they can't be completed until those are resolved), one goal is past its target and shouts, one goal repeats
+ * weekly, one task repeats daily at 8:00, three goals lead into one another, Lumen Health asks for sign-off
+ * (Morgan then Avery, Jordan skips the queue) and four proposals cover every state.
  *
  * How a task spec becomes rows (taskRows in test-accounts.ts):
  *   - `updates` are progress updates, oldest first; the newest one's body / next action is copied onto the task
  *     (latest_progress / next_action). `comments` are kind=comment and never touch those columns; one marked
  *     `resolved` has resolved_at / resolved_by set.
- *   - A task with a `project` takes its goal from that project (goal_id stays empty); `goal` links a task to a goal
- *     directly, without a project. Goal progress counts both paths, and a sub-goal's tasks count for its parent too.
+ *   - A task with a `goal` is in that goal's project; `project` alone puts it in the project; neither makes it
+ *     standalone.
  *   - `blocked`, `approval`, `completed` and `rejection` describe how the task reached its current status, and
  *     produce the matching task_activity rows (blocked, approval_requested, approved + completed, rejected).
+ *   - `proposal` makes the task a proposal with the given chain, each step signed, declined or waiting.
  */
-import type { OrgRole, RequestStatus, RequestUrgency, TaskPriority, TaskStatus } from "@/lib/constants";
+import type { ApprovalDecision, OrgRole, ProposalStatus, TaskPriority, TaskStatus } from "@/lib/constants";
+import type { Recurrence } from "@/lib/recurrence";
 import { OTHER_ORG, TEST_EMAIL_DOMAIN, TEST_ORG, TEST_PERSONAS, type TestPersona } from "@/lib/test-mode";
 
 // --- people ---------------------------------------------------------------------
@@ -31,25 +36,8 @@ export const PEOPLE: Record<Person, { email: string; name: string }> = {
 
 // --- shapes ---------------------------------------------------------------------
 
-export type SeedGoal = {
-  key: string;
-  title: string;
-  description: string;
-  owner: Person;
-  /** The goal this one is a sub-goal of, by key (one level). Its target must not pass the parent's. */
-  parent?: string;
-  createdBy: Person;
-  status: "active" | "achieved" | "paused";
-  targetInDays: number;
-  successCriteria: string;
-  createdDaysAgo: number;
-  /** When the status last changed (achieved / paused); defaults to createdDaysAgo. */
-  updatedDaysAgo?: number;
-};
-
 export type SeedProject = {
   key: string;
-  goal: string | null;
   name: string;
   description: string;
   owner: Person;
@@ -59,38 +47,52 @@ export type SeedProject = {
   createdDaysAgo: number;
   /** When the status last changed (completed / archived); defaults to createdDaysAgo. */
   updatedDaysAgo?: number;
+  /** New tasks wait for this chain, in order (empty = any leader or admin); `bypass` skip the queue. */
+  approvers?: Person[];
+  bypass?: Person[];
 };
 
-export type SeedDecision = { decision: "approved" | "deferred" | "rejected" | "converted" | "reopened"; by: Person; daysAgo: number; reason: string };
-
-export type SeedRequest = {
+export type SeedGoal = {
   key: string;
+  /** The project it belongs to (a sub-goal takes its parent's). */
+  project: string;
   title: string;
   description: string;
-  desiredOutcome: string;
-  urgency: RequestUrgency;
-  link?: string;
-  requester: Person;
-  status: RequestStatus;
+  owner: Person;
+  /** The goal this one is a sub-goal of, by key (one level). Its target must not pass the parent's. */
+  parent?: string;
+  createdBy: Person;
+  status: "active" | "completed" | "paused";
+  targetInDays: number;
+  successCriteria: string;
   createdDaysAgo: number;
-  /** Oldest first. The request row mirrors the newest one (a reopened request is back to "new" and undecided). */
-  decisions: SeedDecision[];
-  deferInDays?: number;
+  /** When the status last changed (completed / paused); defaults to createdDaysAgo. */
+  updatedDaysAgo?: number;
+  recurrence?: Recurrence;
+  approvers?: Person[];
+  bypass?: Person[];
 };
 
 export type SeedUpdate = { daysAgo: number; author: Person; body: string; next: string | null; blocker?: string };
 
 export type SeedComment = { daysAgo: number; author: Person; body: string; /** Marked resolved by `resolvedBy` a little after it was written. */ resolvedBy?: Person };
 
+export type SeedStep = {
+  /** Who the step names; null means any leader or admin. */
+  user: Person | null;
+  decision?: ApprovalDecision;
+  by?: Person;
+  daysAgo?: number;
+  note?: string;
+};
+
 export type SeedTask = {
-  /** Only for tasks something else points at (a request, a notification). */
+  /** Only for tasks something else points at (a notification). */
   key?: string;
   title: string;
   description?: string;
   project?: string;
   goal?: string;
-  /** The request this task was converted from (the request's converted_task_id points back). */
-  request?: string;
   /** The people on it (any number; empty = unassigned). */
   assignees: Person[];
   createdBy: Person;
@@ -98,6 +100,9 @@ export type SeedTask = {
   priority: TaskPriority;
   createdDaysAgo: number;
   dueInDays: number | null;
+  /** "HH:MM". */
+  dueTime?: string;
+  recurrence?: Recurrence;
   /** Manual importance (higher sorts first); most tasks leave it at 0. */
   sortRank?: number;
   updates: SeedUpdate[];
@@ -109,15 +114,16 @@ export type SeedTask = {
   approval?: { daysAgo: number; approver: Person };
   completed?: { daysAgo: number; summary: string; approvedBy?: Person };
   rejection?: { daysAgo: number; by: Person; reason: string };
+  /** A proposal: its state and the chain it carries (task_approvals rows). */
+  proposal?: { status: ProposalStatus; steps: SeedStep[] };
 };
 
 export type SeedNotification = {
   person: Person;
-  kind: "assigned" | "handover" | "approval_requested" | "approval_decided" | "blocked" | "request_decided" | "commented";
+  kind: "assigned" | "handover" | "approval_requested" | "approval_decided" | "blocked" | "proposal_waiting" | "proposal_decided" | "commented";
   title: string;
   body?: string;
   task?: string;
-  request?: string;
   daysAgo: number;
   read: boolean;
 };
@@ -127,9 +133,10 @@ export type OrgSeed = {
   createdBy: Person;
   members: { person: Person; role: OrgRole }[];
   joinedDaysAgo: number;
-  goals: SeedGoal[];
   projects: SeedProject[];
-  requests: SeedRequest[];
+  goals: SeedGoal[];
+  /** "from leads into to", by goal key. */
+  goalLinks: { from: string; to: string }[];
   tasks: SeedTask[];
   notifications: SeedNotification[];
 };
@@ -139,9 +146,56 @@ const GRAFANA = "https://grafana.example.com/d";
 
 // --- Trackwise Demo ------------------------------------------------------------------
 
+const DEMO_PROJECTS: SeedProject[] = [
+  {
+    key: "onboarding",
+    name: "Onboarding flow",
+    description: "Sign-up, workspace setup, invitations and the first-task checklist.",
+    owner: "leader",
+    createdBy: "leader",
+    status: "active",
+    targetInDays: 45,
+    createdDaysAgo: 28,
+  },
+  {
+    key: "incidents",
+    name: "Incident tooling",
+    description: "Paging, runbooks, dashboards, the status page and the incident timeline.",
+    owner: "member",
+    createdBy: "leader",
+    status: "active",
+    targetInDays: 90,
+    createdDaysAgo: 27,
+  },
+  {
+    key: "lumen",
+    name: "Lumen Health",
+    description: "The patient-intake pilot for Lumen Health. New tasks are signed off by Morgan, then Avery; Jordan skips the queue.",
+    owner: "leader",
+    createdBy: "admin",
+    status: "active",
+    targetInDays: 60,
+    createdDaysAgo: 14,
+    approvers: ["leader", "admin"],
+    bypass: ["member"],
+  },
+  {
+    key: "billing",
+    name: "Billing jobs migration",
+    description: "Move the invoice, dunning and usage-export jobs off the old cron VM onto the queue workers.",
+    owner: "member2",
+    createdBy: "leader",
+    status: "completed",
+    targetInDays: -2,
+    createdDaysAgo: 30,
+    updatedDaysAgo: 2.5,
+  },
+];
+
 const DEMO_GOALS: SeedGoal[] = [
   {
     key: "onboarding",
+    project: "onboarding",
     title: "Ship the self-serve onboarding",
     description: "New teams should get from sign-up to their first tracked task without a call with us.",
     owner: "leader",
@@ -153,6 +207,7 @@ const DEMO_GOALS: SeedGoal[] = [
   },
   {
     key: "invite-flow",
+    project: "onboarding",
     title: "Invitations work without a support call",
     description: "Half of the onboarding tickets are about invitation emails that never arrived or links that expired.",
     owner: "member2",
@@ -164,7 +219,20 @@ const DEMO_GOALS: SeedGoal[] = [
     createdDaysAgo: 20,
   },
   {
+    key: "status-page",
+    project: "incidents",
+    title: "Public status page live",
+    description: "Customers find out about incidents from us, not from each other.",
+    owner: "member",
+    createdBy: "leader",
+    status: "active",
+    targetInDays: -5,
+    successCriteria: "status.example.com shows every incident within five minutes of the page.",
+    createdDaysAgo: 26,
+  },
+  {
     key: "incidents",
+    project: "incidents",
     title: "Cut incident response time in half",
     description: "Median time from page to mitigation is 48 minutes; most of it goes on finding the right dashboard and person.",
     owner: "admin",
@@ -175,12 +243,50 @@ const DEMO_GOALS: SeedGoal[] = [
     createdDaysAgo: 27,
   },
   {
+    key: "reviews",
+    project: "incidents",
+    title: "Every incident gets a review",
+    description: "A written review within a week of every incident, with the changes it led to.",
+    owner: "leader",
+    createdBy: "leader",
+    status: "active",
+    targetInDays: 100,
+    successCriteria: "Ten incidents in a row reviewed within seven days.",
+    createdDaysAgo: 10,
+  },
+  {
+    key: "lumen-intake",
+    project: "lumen",
+    title: "Patient intake form ships",
+    description: "Lumen's front desk stops re-typing paper forms.",
+    owner: "leader",
+    createdBy: "admin",
+    status: "active",
+    targetInDays: 40,
+    successCriteria: "Every new patient at the pilot clinic is registered through the form for two weeks.",
+    createdDaysAgo: 14,
+  },
+  {
+    key: "ops-week",
+    project: "lumen",
+    title: "Weekly ops duties",
+    description: "The things the pilot needs every week: the Monday standup, the summary to Lumen, the data check. Completing the week makes next week's.",
+    owner: "member2",
+    createdBy: "leader",
+    status: "active",
+    targetInDays: 4,
+    successCriteria: "Every duty done by Sunday.",
+    createdDaysAgo: 3,
+    recurrence: { unit: "week", interval: 1 },
+  },
+  {
     key: "billing",
+    project: "billing",
     title: "Retire the legacy billing jobs",
     description: "The nightly cron jobs on the old VM build invoices and dunning emails, fail silently, and nobody owns the box.",
     owner: "member2",
     createdBy: "leader",
-    status: "achieved",
+    status: "completed",
     targetInDays: -2,
     successCriteria: "Every billing job runs on the queue workers with alerts, and the old VM is shut down.",
     createdDaysAgo: 30,
@@ -188,118 +294,10 @@ const DEMO_GOALS: SeedGoal[] = [
   },
 ];
 
-const DEMO_PROJECTS: SeedProject[] = [
-  {
-    key: "onboarding",
-    goal: "onboarding",
-    name: "Onboarding flow",
-    description: "Sign-up, workspace setup, invitations and the first-task checklist.",
-    owner: "leader",
-    createdBy: "leader",
-    status: "active",
-    targetInDays: 30,
-    createdDaysAgo: 27,
-  },
-  {
-    key: "incidents",
-    goal: "incidents",
-    name: "Incident tooling",
-    description: "Paging, runbooks, dashboards and the incident timeline.",
-    owner: "member",
-    createdBy: "leader",
-    status: "active",
-    targetInDays: 50,
-    createdDaysAgo: 26,
-  },
-  {
-    key: "billing",
-    goal: "billing",
-    name: "Billing jobs migration",
-    description: "Move the invoice, dunning and usage-export jobs off the old cron VM onto the queue workers.",
-    owner: "member2",
-    createdBy: "leader",
-    status: "completed",
-    targetInDays: -2,
-    createdDaysAgo: 29,
-    updatedDaysAgo: 2.5,
-  },
-];
-
-const DEMO_REQUESTS: SeedRequest[] = [
-  {
-    key: "invoices",
-    title: "Export invoices as CSV for finance",
-    description: "Finance rebuilds the monthly invoice list by hand from the admin console.",
-    desiredOutcome: "A monthly CSV of invoices, so month-end close takes an hour instead of two days.",
-    urgency: "high",
-    requester: "stakeholder",
-    status: "new",
-    createdDaysAgo: 1,
-    decisions: [],
-  },
-  {
-    key: "timezones",
-    title: "Show incident start times in our time zone",
-    description: "The incident timeline and the digest email show UTC. On the last two calls we argued about when things started.",
-    desiredOutcome: "Every time on an incident shows in the reader's own time zone.",
-    urgency: "high",
-    link: "https://status.example.com/incidents/2291",
-    requester: "stakeholder",
-    status: "converted",
-    createdDaysAgo: 4,
-    decisions: [
-      { decision: "approved", by: "leader", daysAgo: 3.2, reason: "Confusing times slowed the last two incident calls; worth fixing now." },
-      { decision: "converted", by: "leader", daysAgo: 3, reason: "Jordan is taking it this week." },
-    ],
-  },
-  {
-    key: "sso",
-    title: "Single sign-on for the admin console",
-    description: "Security asked that staff stop sharing passwords for the console.",
-    desiredOutcome: "Console access through our Okta tenant.",
-    urgency: "normal",
-    requester: "admin",
-    status: "approved",
-    createdDaysAgo: 6,
-    decisions: [{ decision: "approved", by: "leader", daysAgo: 2, reason: "Security needs it; planned for the sprint after onboarding ships." }],
-  },
-  {
-    key: "status-dark",
-    title: "Dark mode for the public status page",
-    description: "A few customers asked for it on the community forum.",
-    desiredOutcome: "The status page follows the visitor's system theme.",
-    urgency: "low",
-    requester: "member",
-    status: "deferred",
-    createdDaysAgo: 12,
-    decisions: [{ decision: "deferred", by: "leader", daysAgo: 8, reason: "Nice to have; revisit after the incident work." }],
-    deferInDays: 21,
-  },
-  {
-    key: "rust",
-    title: "Rewrite the reporting service in Rust",
-    description: "Reports time out for our three largest customers.",
-    desiredOutcome: "Reports that finish in under ten seconds.",
-    urgency: "normal",
-    requester: "member2",
-    status: "rejected",
-    createdDaysAgo: 15,
-    decisions: [{ decision: "rejected", by: "leader", daysAgo: 11, reason: "A rewrite is too risky this quarter; the slow query is being indexed instead." }],
-  },
-  {
-    key: "bulk-invite",
-    title: "Bulk-invite teammates from a CSV",
-    description: "Larger customers want to invite a whole department at once instead of one email at a time.",
-    desiredOutcome: "Upload a CSV of emails and roles from the workspace settings.",
-    urgency: "normal",
-    requester: "admin",
-    status: "new",
-    createdDaysAgo: 14,
-    decisions: [
-      { decision: "deferred", by: "leader", daysAgo: 10, reason: "After the invite-link work lands." },
-      { decision: "reopened", by: "leader", daysAgo: 1, reason: "Invite links are live and a 200-seat customer is asking for this now." },
-    ],
-  },
+/** The chain the branch view shows: a status page leads to faster responses, which lead to reviews. */
+const DEMO_GOAL_LINKS = [
+  { from: "status-page", to: "incidents" },
+  { from: "incidents", to: "reviews" },
 ];
 
 const DEMO_TASKS: SeedTask[] = [
@@ -307,9 +305,8 @@ const DEMO_TASKS: SeedTask[] = [
   {
     key: "tz-timestamps",
     title: "Show incident timestamps in the viewer's time zone",
-    description: "From Taylor's request: the timeline, the incident header and the digest email all print UTC.",
-    project: "incidents",
-    request: "timezones",
+    description: "From Taylor: the timeline, the incident header and the digest email all print UTC.",
+    goal: "incidents",
     assignees: ["member"],
     createdBy: "leader",
     status: "in_progress",
@@ -326,7 +323,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     title: "Rate-limit the public sign-up endpoint",
     description: "A bot created 400 workspaces in an hour last week.",
-    project: "onboarding",
+    goal: "onboarding",
     assignees: ["member2"],
     createdBy: "leader",
     status: "in_progress",
@@ -343,7 +340,7 @@ const DEMO_TASKS: SeedTask[] = [
     key: "pager",
     title: "Route pages to the secondary on-call after 10 minutes",
     description: "Two incidents last month sat unacknowledged for over 20 minutes.",
-    project: "incidents",
+    goal: "incidents",
     assignees: ["member"],
     createdBy: "leader",
     status: "in_progress",
@@ -364,7 +361,7 @@ const DEMO_TASKS: SeedTask[] = [
   },
   {
     title: "Build the first-task checklist on the empty home screen",
-    project: "onboarding",
+    goal: "onboarding",
     assignees: ["member2"],
     createdBy: "leader",
     status: "in_progress",
@@ -386,9 +383,7 @@ const DEMO_TASKS: SeedTask[] = [
     priority: "normal",
     createdDaysAgo: 5,
     dueInDays: 3,
-    updates: [
-      { daysAgo: 1, author: "member", body: "Runbook links added to the 12 API alerts; the database alerts still have none.", next: "Add links to the 7 database alerts and lint the alert rules in CI." },
-    ],
+    updates: [{ daysAgo: 1, author: "member", body: "Runbook links added to the 12 API alerts; the database alerts still have none.", next: "Add links to the 7 database alerts and lint the alert rules in CI." }],
     links: [{ url: `${GRAFANA}/alerting/list?search=api`, label: "API alert rules" }],
   },
   {
@@ -399,13 +394,11 @@ const DEMO_TASKS: SeedTask[] = [
     priority: "normal",
     createdDaysAgo: 2,
     dueInDays: 4,
-    updates: [
-      { daysAgo: 1, author: "leader", body: "New credentials are in the vault; three of five services switched.", next: "Switch the worker and the cron service, then revoke the old user." },
-    ],
+    updates: [{ daysAgo: 1, author: "leader", body: "New credentials are in the vault; three of five services switched.", next: "Switch the worker and the cron service, then revoke the old user." }],
   },
   {
     title: "Draft the incident review template",
-    goal: "incidents",
+    goal: "reviews",
     assignees: ["leader"],
     createdBy: "leader",
     status: "in_progress",
@@ -426,6 +419,68 @@ const DEMO_TASKS: SeedTask[] = [
     dueInDays: 9,
     updates: [{ daysAgo: 1.5, author: "member2", body: "Drafted the new copy with support's three most common questions answered.", next: "Review the wording with Morgan and ship it behind the flag." }],
   },
+  {
+    title: "Publish the status page under status.example.com",
+    description: "The last thing between the status page and customers: DNS and the custom domain on the provider.",
+    goal: "status-page",
+    assignees: ["member"],
+    createdBy: "leader",
+    status: "in_progress",
+    priority: "high",
+    createdDaysAgo: 12,
+    dueInDays: -5,
+    updates: [{ daysAgo: 6, author: "member", body: "Provider account set up and the components defined.", next: "Point the DNS record at the provider and verify the certificate." }],
+  },
+
+  // --- the pilot's weekly duties (a repeating goal) and a repeating task -------------------------
+  {
+    title: "Run the Monday standup with Lumen",
+    goal: "ops-week",
+    assignees: ["member2"],
+    createdBy: "leader",
+    status: "completed",
+    priority: "normal",
+    createdDaysAgo: 3,
+    dueInDays: -2,
+    updates: [{ daysAgo: 2, author: "member2", body: "Standup held; two questions about the consent step noted.", next: null }],
+    completed: { daysAgo: 2, summary: "Held. Notes in the shared doc." },
+  },
+  {
+    title: "Send Lumen the weekly summary",
+    goal: "ops-week",
+    assignees: ["member2"],
+    createdBy: "leader",
+    status: "not_started",
+    priority: "normal",
+    createdDaysAgo: 3,
+    dueInDays: 4,
+    updates: [],
+  },
+  {
+    title: "Check the intake data export",
+    goal: "ops-week",
+    assignees: ["member"],
+    createdBy: "leader",
+    status: "not_started",
+    priority: "low",
+    createdDaysAgo: 3,
+    dueInDays: 3,
+    updates: [],
+  },
+  {
+    key: "tapes",
+    title: "Change the backup tapes",
+    description: "Swap the overnight tape set in the server room and log the serial numbers. Repeats every day at 8:00.",
+    assignees: ["member"],
+    createdBy: "admin",
+    status: "not_started",
+    priority: "normal",
+    createdDaysAgo: 1,
+    dueInDays: 0,
+    dueTime: "08:00",
+    recurrence: { unit: "day", interval: 1, time: "08:00" },
+    updates: [],
+  },
 
   // --- not started (two unassigned) ---------------------------------------------------
   { title: "Archive unused staging buckets", assignees: ["member2"], createdBy: "leader", status: "not_started", priority: "low", createdDaysAgo: 4, dueInDays: 14, updates: [] },
@@ -440,8 +495,20 @@ const DEMO_TASKS: SeedTask[] = [
     dueInDays: 2,
     updates: [],
   },
-  { title: "Evaluate a hosted status page provider", goal: "incidents", assignees: [], createdBy: "leader", status: "not_started", priority: "normal", createdDaysAgo: 1, dueInDays: null, updates: [] },
+  { title: "Evaluate a hosted status page provider", goal: "status-page", assignees: [], createdBy: "leader", status: "not_started", priority: "normal", createdDaysAgo: 1, dueInDays: null, updates: [] },
   { title: "Translate the invitation email into Spanish", project: "onboarding", assignees: [], createdBy: "admin", status: "not_started", priority: "low", createdDaysAgo: 2, dueInDays: 12, updates: [] },
+  {
+    title: "Wire the intake form to the clinic's calendar",
+    description: "Jordan skips Lumen's sign-off queue, so this went live at once.",
+    goal: "lumen-intake",
+    assignees: ["member"],
+    createdBy: "member",
+    status: "not_started",
+    priority: "high",
+    createdDaysAgo: 1,
+    dueInDays: 10,
+    updates: [],
+  },
 
   // --- blocked ------------------------------------------------------------------------
   {
@@ -456,19 +523,13 @@ const DEMO_TASKS: SeedTask[] = [
     dueInDays: 6,
     updates: [
       { daysAgo: 6, author: "member", body: "Added the SPF and DKIM records in the staging zone.", next: "Add the same records to the production DNS zone." },
-      {
-        daysAgo: 2,
-        author: "member",
-        body: "Production DNS change requested.",
-        next: "Verify the domain once the records are live.",
-        blocker: "The production DNS change waits for IT's Thursday change window.",
-      },
+      { daysAgo: 2, author: "member", body: "Production DNS change requested.", next: "Verify the domain once the records are live.", blocker: "The production DNS change waits for IT's Thursday change window." },
     ],
     blocked: { daysAgo: 2, reason: "The production DNS change waits for IT's Thursday change window.", by: "IT (DNS change request #5521)" },
   },
   {
     title: "Upgrade the paging integration to the v2 API",
-    project: "incidents",
+    goal: "incidents",
     assignees: ["member2"],
     createdBy: "leader",
     status: "blocked",
@@ -477,13 +538,7 @@ const DEMO_TASKS: SeedTask[] = [
     dueInDays: 20,
     updates: [
       { daysAgo: 12, author: "member2", body: "Client library updated; staging webhooks verified.", next: "Migrate the production webhook." },
-      {
-        daysAgo: 5,
-        author: "member2",
-        body: "The production migration fails: the v2 API rejects our account's legacy token.",
-        next: "Apply the vendor's new token and retry.",
-        blocker: "Vendor support case #88213 is open.",
-      },
+      { daysAgo: 5, author: "member2", body: "The production migration fails: the v2 API rejects our account's legacy token.", next: "Apply the vendor's new token and retry.", blocker: "Vendor support case #88213 is open." },
     ],
     comments: [{ daysAgo: 4, author: "leader", body: "I've escalated the vendor case with our account manager." }],
     links: [{ url: "https://support.example.com/cases/88213", label: "Vendor case #88213" }],
@@ -491,22 +546,14 @@ const DEMO_TASKS: SeedTask[] = [
   },
   {
     title: "Send a welcome email after workspace creation",
-    project: "onboarding",
+    goal: "onboarding",
     assignees: ["member"],
     createdBy: "member",
     status: "blocked",
     priority: "high",
     createdDaysAgo: 8,
     dueInDays: 3,
-    updates: [
-      {
-        daysAgo: 1.5,
-        author: "member",
-        body: "Template written and reviewed by Morgan.",
-        next: "Trigger it from the workspace-created event.",
-        blocker: "Needs the verified sending domain first.",
-      },
-    ],
+    updates: [{ daysAgo: 1.5, author: "member", body: "Template written and reviewed by Morgan.", next: "Trigger it from the workspace-created event.", blocker: "Needs the verified sending domain first." }],
     blocked: { daysAgo: 1.5, reason: "Needs the verified sending domain before anything can be sent.", by: "Jordan (sending domain task)" },
   },
 
@@ -514,7 +561,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     key: "invite-links",
     title: "Invite teammates by link from onboarding",
-    project: "onboarding",
+    goal: "invite-flow",
     assignees: ["member"],
     createdBy: "leader",
     status: "awaiting_approval",
@@ -550,7 +597,7 @@ const DEMO_TASKS: SeedTask[] = [
   // --- rejected --------------------------------------------------------------------------
   {
     title: "Add a second paging provider as a fallback",
-    project: "incidents",
+    goal: "incidents",
     assignees: ["member2"],
     createdBy: "member2",
     status: "rejected",
@@ -562,7 +609,7 @@ const DEMO_TASKS: SeedTask[] = [
   },
   {
     title: "Port the dunning emails to the old template engine",
-    project: "billing",
+    goal: "billing",
     assignees: ["member"],
     createdBy: "admin",
     status: "rejected",
@@ -576,7 +623,7 @@ const DEMO_TASKS: SeedTask[] = [
   // --- completed in the last two weeks -------------------------------------------------------
   {
     title: "Move the invoice job to the queue workers",
-    project: "billing",
+    goal: "billing",
     assignees: ["member2"],
     createdBy: "leader",
     status: "completed",
@@ -593,7 +640,7 @@ const DEMO_TASKS: SeedTask[] = [
   {
     key: "dunning",
     title: "Move the dunning emails to the new mailer",
-    project: "billing",
+    goal: "billing",
     assignees: ["member"],
     createdBy: "leader",
     status: "completed",
@@ -610,7 +657,7 @@ const DEMO_TASKS: SeedTask[] = [
   },
   {
     title: "Shut down the legacy billing VM",
-    project: "billing",
+    goal: "billing",
     assignees: ["member2"],
     createdBy: "admin",
     status: "completed",
@@ -622,7 +669,7 @@ const DEMO_TASKS: SeedTask[] = [
   },
   {
     title: "Fix the flaky sign-up integration test",
-    project: "onboarding",
+    goal: "onboarding",
     assignees: ["member"],
     createdBy: "member",
     status: "completed",
@@ -635,7 +682,7 @@ const DEMO_TASKS: SeedTask[] = [
   },
   {
     title: "Add p95 latency panels to the incident dashboard",
-    project: "incidents",
+    goal: "incidents",
     assignees: ["member2"],
     createdBy: "member",
     status: "completed",
@@ -661,61 +708,103 @@ const DEMO_TASKS: SeedTask[] = [
     updates: [{ daysAgo: 12.1, author: "leader", body: "Shadow shift done; Sam carried the primary pager for a week.", next: null }],
     completed: { daysAgo: 12, summary: "Sam is on the rotation from next week." },
   },
+
+  // --- proposals: every state --------------------------------------------------------------
+  {
+    key: "invoices",
+    title: "Export invoices as CSV for finance",
+    description: "Finance rebuilds the monthly invoice list by hand from the admin console. A monthly CSV of invoices would make month-end close an hour instead of two days.",
+    assignees: [],
+    createdBy: "stakeholder",
+    status: "not_started",
+    priority: "high",
+    createdDaysAgo: 1,
+    dueInDays: null,
+    updates: [],
+    proposal: { status: "pending", steps: [{ user: null }] },
+  },
+  {
+    key: "sms",
+    title: "Add appointment reminders by SMS",
+    description: "Lumen's no-show rate is 18%. A reminder the day before should halve it.",
+    goal: "lumen-intake",
+    assignees: ["member2"],
+    createdBy: "member2",
+    status: "not_started",
+    priority: "normal",
+    createdDaysAgo: 2,
+    dueInDays: 21,
+    updates: [],
+    proposal: { status: "pending", steps: [{ user: "leader" }, { user: "admin" }] },
+  },
+  {
+    key: "spanish-intake",
+    title: "Translate the intake form into Spanish",
+    description: "A third of the pilot clinic's patients prefer Spanish.",
+    goal: "lumen-intake",
+    assignees: ["member2"],
+    createdBy: "member2",
+    status: "not_started",
+    priority: "normal",
+    createdDaysAgo: 3,
+    dueInDays: 30,
+    updates: [],
+    proposal: { status: "pending", steps: [{ user: "leader", decision: "approved", by: "leader", daysAgo: 2 }, { user: "admin" }] },
+  },
+  {
+    key: "rust",
+    title: "Rewrite the reporting service in Rust",
+    description: "Reports time out for our three largest customers. Reports that finish in under ten seconds would stop the escalations.",
+    assignees: [],
+    createdBy: "stakeholder",
+    status: "not_started",
+    priority: "normal",
+    createdDaysAgo: 15,
+    dueInDays: null,
+    updates: [],
+    proposal: { status: "declined", steps: [{ user: null, decision: "declined", by: "leader", daysAgo: 11, note: "A rewrite is too risky this quarter; the slow query is being indexed instead." }] },
+  },
+  {
+    key: "history-card",
+    title: "Show appointment history on the patient card",
+    description: "Signed off by Morgan and Avery: a live task now.",
+    goal: "lumen-intake",
+    assignees: ["member2"],
+    createdBy: "member2",
+    status: "in_progress",
+    priority: "normal",
+    createdDaysAgo: 6,
+    dueInDays: 15,
+    updates: [{ daysAgo: 1, author: "member2", body: "Card layout done; pulling the last five visits from the API.", next: "Paginate past five and handle patients with none." }],
+    proposal: {
+      status: "approved",
+      steps: [
+        { user: "leader", decision: "approved", by: "leader", daysAgo: 5 },
+        { user: "admin", decision: "approved", by: "admin", daysAgo: 4, note: "Go ahead." },
+      ],
+    },
+  },
 ];
 
 const DEMO_NOTIFICATIONS: SeedNotification[] = [
-  // Morgan: two approvals waiting, a blocker, a reply.
+  // Morgan: two approvals waiting, a blocker, a reply, a proposal to sign.
   { person: "leader", kind: "approval_requested", title: 'Jordan Dev asked you to approve "Invite teammates by link from onboarding"', task: "invite-links", daysAgo: 0.5, read: false },
   { person: "leader", kind: "approval_requested", title: 'Sam Dev asked you to approve "Clean up feature flags older than 90 days"', task: "flags", daysAgo: 1, read: false },
-  {
-    person: "leader",
-    kind: "blocked",
-    title: 'Jordan Dev is blocked on "Verify the sending domain for invitation emails"',
-    body: "The production DNS change waits for IT's Thursday change window.",
-    task: "sending-domain",
-    daysAgo: 2,
-    read: false,
-  },
-  {
-    person: "leader",
-    kind: "commented",
-    title: 'Jordan Dev commented on "Route pages to the secondary on-call after 10 minutes"',
-    body: "Only the production switch; doing it once today's deploy freeze lifts.",
-    task: "pager",
-    daysAgo: 0.8,
-    read: true,
-  },
+  { person: "leader", kind: "blocked", title: 'Jordan Dev is blocked on "Verify the sending domain for invitation emails"', body: "The production DNS change waits for IT's Thursday change window.", task: "sending-domain", daysAgo: 2, read: false },
+  { person: "leader", kind: "commented", title: 'Jordan Dev commented on "Route pages to the secondary on-call after 10 minutes"', body: "Only the production switch; doing it once today's deploy freeze lifts.", task: "pager", daysAgo: 0.8, read: true },
+  { person: "leader", kind: "proposal_waiting", title: "Proposal to sign off: Add appointment reminders by SMS", body: "Step 1 of 2.", task: "sms", daysAgo: 2, read: false },
+  { person: "leader", kind: "proposal_waiting", title: "Proposal to sign off: Export invoices as CSV for finance", body: "Step 1 of 1.", task: "invoices", daysAgo: 1, read: false },
+  // Avery: a proposal that reached their step.
+  { person: "admin", kind: "proposal_waiting", title: "Proposal to sign off: Translate the intake form into Spanish", body: "Step 2 of 2.", task: "spanish-intake", daysAgo: 2, read: false },
   // Jordan: an assignment, comments, an approval decided.
   { person: "member", kind: "assigned", title: 'Morgan Lead assigned you "Show incident timestamps in the viewer\'s time zone"', task: "tz-timestamps", daysAgo: 3, read: true },
-  {
-    person: "member",
-    kind: "commented",
-    title: 'Morgan Lead commented on "Route pages to the secondary on-call after 10 minutes"',
-    body: "This is past its due date. Anything I can take off your plate to get it switched on?",
-    task: "pager",
-    daysAgo: 1,
-    read: false,
-  },
-  {
-    person: "member",
-    kind: "commented",
-    title: 'Avery Admin commented on "Invite teammates by link from onboarding"',
-    body: "Lovely. The acceptance numbers look great.",
-    task: "invite-links",
-    daysAgo: 0.3,
-    read: false,
-  },
+  { person: "member", kind: "commented", title: 'Morgan Lead commented on "Route pages to the secondary on-call after 10 minutes"', body: "This is past its due date. Anything I can take off your plate to get it switched on?", task: "pager", daysAgo: 1, read: false },
+  { person: "member", kind: "commented", title: 'Avery Admin commented on "Invite teammates by link from onboarding"', body: "Lovely. The acceptance numbers look great.", task: "invite-links", daysAgo: 0.3, read: false },
   { person: "member", kind: "approval_decided", title: 'Morgan Lead approved "Move the dunning emails to the new mailer"', task: "dunning", daysAgo: 6, read: true },
-  // Taylor: their request became a task.
-  {
-    person: "stakeholder",
-    kind: "request_decided",
-    title: 'Your request "Show incident start times in our time zone" is now a task',
-    body: "Jordan is taking it this week.",
-    request: "timezones",
-    daysAgo: 3,
-    read: true,
-  },
+  // Sam: a proposal approved.
+  { person: "member2", kind: "proposal_decided", title: "Approved: Show appointment history on the patient card", body: "Go ahead.", task: "history-card", daysAgo: 4, read: true },
+  // Taylor: a proposal declined.
+  { person: "stakeholder", kind: "proposal_decided", title: "Declined: Rewrite the reporting service in Rust", body: "A rewrite is too risky this quarter; the slow query is being indexed instead.", task: "rust", daysAgo: 11, read: true },
 ];
 
 export const DEMO: OrgSeed = {
@@ -729,9 +818,9 @@ export const DEMO: OrgSeed = {
     { person: "stakeholder", role: "stakeholder" },
   ],
   joinedDaysAgo: 30,
-  goals: DEMO_GOALS,
   projects: DEMO_PROJECTS,
-  requests: DEMO_REQUESTS,
+  goals: DEMO_GOALS,
+  goalLinks: DEMO_GOAL_LINKS,
   tasks: DEMO_TASKS,
   notifications: DEMO_NOTIFICATIONS,
 };
@@ -746,9 +835,23 @@ export const OTHER: OrgSeed = {
     { person: "casey", role: "member" },
   ],
   joinedDaysAgo: 20,
+  projects: [
+    {
+      key: "help-center",
+      name: "Help center refresh",
+      description: "Rewrite the top 20 articles and the reply macros.",
+      owner: "other",
+      createdBy: "other",
+      status: "active",
+      targetInDays: 30,
+      createdDaysAgo: 18,
+      approvers: ["other"],
+    },
+  ],
   goals: [
     {
       key: "support",
+      project: "help-center",
       title: "Answer every support ticket within a day",
       description: "Customers wait up to three days for a first reply.",
       owner: "other",
@@ -759,36 +862,11 @@ export const OTHER: OrgSeed = {
       createdDaysAgo: 18,
     },
   ],
-  projects: [
-    {
-      key: "help-center",
-      goal: "support",
-      name: "Help center refresh",
-      description: "Rewrite the top 20 articles and the reply macros.",
-      owner: "other",
-      createdBy: "other",
-      status: "active",
-      targetInDays: 30,
-      createdDaysAgo: 18,
-    },
-  ],
-  requests: [
-    {
-      key: "weekends",
-      title: "Phone support on weekends",
-      description: "Enterprise customers ask for weekend cover.",
-      desiredOutcome: "A phone line staffed on Saturdays and Sundays.",
-      urgency: "normal",
-      requester: "casey",
-      status: "new",
-      createdDaysAgo: 2,
-      decisions: [],
-    },
-  ],
+  goalLinks: [],
   tasks: [
     {
       title: "Reply to the Acme escalation",
-      project: "help-center",
+      goal: "support",
       assignees: ["casey"],
       createdBy: "other",
       status: "in_progress",
@@ -800,7 +878,7 @@ export const OTHER: OrgSeed = {
     { title: "Refresh the help-center reply macros", project: "help-center", assignees: ["other"], createdBy: "other", status: "not_started", priority: "normal", createdDaysAgo: 3, dueInDays: 7, updates: [] },
     {
       title: "Publish the holiday support hours",
-      project: "help-center",
+      goal: "support",
       assignees: ["casey"],
       createdBy: "other",
       status: "completed",
@@ -809,6 +887,19 @@ export const OTHER: OrgSeed = {
       dueInDays: -1,
       updates: [{ daysAgo: 2.1, author: "casey", body: "Hours posted on the help center and in the auto-reply.", next: null }],
       completed: { daysAgo: 2, summary: "Holiday hours are live on the help center and in the auto-reply." },
+    },
+    {
+      title: "Phone support on weekends",
+      description: "Enterprise customers ask for weekend cover: a phone line staffed on Saturdays and Sundays.",
+      project: "help-center",
+      assignees: [],
+      createdBy: "casey",
+      status: "not_started",
+      priority: "normal",
+      createdDaysAgo: 2,
+      dueInDays: null,
+      updates: [],
+      proposal: { status: "pending", steps: [{ user: "other" }] },
     },
   ],
   notifications: [],

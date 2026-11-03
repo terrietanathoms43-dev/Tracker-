@@ -80,7 +80,7 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
   const after = row.after ?? {};
   switch (row.kind) {
     case "created":
-      return { phrase: "created the task", change: null };
+      return { phrase: after.proposal === true ? "proposed the task" : "created the task", change: null };
     case "edited":
       return editedPhrase(before, after);
     case "status_changed":
@@ -119,6 +119,14 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
       return { phrase: `added evidence: ${text(after.label) ?? text(after.url) ?? "a link"}`, change: null };
     case "link_removed":
       return { phrase: `removed evidence: ${text(before.label) ?? text(before.url) ?? "a link"}`, change: null };
+    case "proposal_signed":
+      return { phrase: text(after.step) ? `signed off step ${text(after.step)} of the proposal` : "signed off the proposal", change: null };
+    case "proposal_approved":
+      return { phrase: "approved the proposal: it is now a live task", change: null };
+    case "proposal_declined":
+      return { phrase: "declined the proposal", change: null };
+    case "proposal_resubmitted":
+      return { phrase: "sent the proposal for sign-off again", change: null };
     default:
       return { phrase: "updated it", change: null };
   }
@@ -159,7 +167,7 @@ export function phraseHistory(row: HistoryRow, timeZone: string, now: Date): His
 }
 
 /** The activity kinds worth a line in the Home and Members feeds (docs/PLAN.md §8): decisions and problems, not edits. */
-export const FEED_KINDS = ["completed", "blocked", "unblocked", "approved", "sent_back", "rejected", "due_changed", "reopened"] as const satisfies readonly TaskActivityKind[];
+export const FEED_KINDS = ["completed", "blocked", "unblocked", "approved", "sent_back", "rejected", "due_changed", "reopened", "proposal_approved", "proposal_declined"] as const satisfies readonly TaskActivityKind[];
 export type FeedKind = (typeof FEED_KINDS)[number];
 
 const FEED_VERBS: Record<FeedKind, string> = {
@@ -171,6 +179,8 @@ const FEED_VERBS: Record<FeedKind, string> = {
   rejected: "rejected",
   due_changed: "changed the due date of",
   reopened: "reopened",
+  proposal_approved: "approved the proposal",
+  proposal_declined: "declined the proposal",
 };
 
 /** One row of the feed query (lib/dal/tasks.ts recentActivity), before it is phrased. */

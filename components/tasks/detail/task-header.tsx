@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ArrowLeft, Link2, NotebookPen } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Link2, NotebookPen, Repeat } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -12,7 +12,9 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
+import { describeRecurrence, formatTime } from "@/lib/recurrence";
 import type { TaskAbilities, TaskDetail } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneeStack } from "../assignee-stack";
@@ -75,8 +77,9 @@ function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boole
 
 /** What this is and who holds it, at a glance: title, status, assignee, due date and priority. */
 export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; abilities: TaskAbilities; today: string }) {
-  // A stakeholder follows a task from their request; the task list isn't theirs to browse.
-  const back = !abilities.progress && detail.request ? { href: `/requests/${detail.request.id}`, label: "Request" } : { href: "/home?view=list", label: "Tasks" };
+  // A proposal belongs on the Proposals page; a stakeholder's way around is the goals, not the task list.
+  const proposal = detail.proposalStatus === "pending" || detail.proposalStatus === "declined";
+  const back = proposal ? { href: "/proposals", label: "Proposals" } : !abilities.progress ? { href: "/goals", label: "Goals" } : { href: "/home?view=list", label: "Tasks" };
   return (
     <header className="mb-5">
       <Link href={back.href} className="inline-flex items-center gap-1.5 rounded-md text-[13px] text-muted-foreground hover:text-foreground">
@@ -108,7 +111,7 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
             </TooltipTrigger>
             <TooltipContent>Copy link</TooltipContent>
           </Tooltip>
-          {abilities.progress ? (
+          {abilities.progress && !proposal ? (
             <Button variant="outline" className="hidden sm:inline-flex" onClick={() => window.dispatchEvent(new Event(FOCUS_UPDATE_EVENT))}>
               <NotebookPen aria-hidden />
               Update progress
@@ -118,7 +121,14 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-muted-foreground">
-        <StatusBadge status={detail.status} />
+        {proposal ? (
+          <span className="inline-flex h-6 items-center gap-1.5 rounded-md bg-status-awaiting-bg px-2 text-[13px] font-medium whitespace-nowrap text-status-awaiting-fg">
+            <ClipboardCheck className="size-3.5" aria-hidden />
+            {PROPOSAL_STATUS_LABELS[detail.proposalStatus!]}
+          </span>
+        ) : (
+          <StatusBadge status={detail.status} />
+        )}
         {detail.assignees.length > 0 ? (
           <AssigneeStack assignees={detail.assignees} names />
         ) : (
@@ -130,6 +140,13 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
         {detail.dueDate ? (
           <span>
             Due <DueLabel due={detail.dueDate} today={today} status={detail.status} />
+            {detail.dueTime ? ` · ${formatTime(detail.dueTime)}` : ""}
+          </span>
+        ) : null}
+        {detail.recurrence ? (
+          <span className="inline-flex items-center gap-1">
+            <Repeat className="size-3.5" aria-hidden />
+            {describeRecurrence(detail.recurrence, detail.dueDate)}
           </span>
         ) : null}
         {detail.priority !== "normal" ? (

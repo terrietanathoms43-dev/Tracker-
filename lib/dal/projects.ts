@@ -1,25 +1,28 @@
 import "server-only";
-import { and, asc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, sql, type SQL } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { goals, projects, users } from "@/db/schema";
+import { projects, users } from "@/db/schema";
 import type { ProjectStatus } from "@/lib/constants";
 import { progressForProjects } from "@/lib/dal/tasks";
 import { canReadPlanning, type Viewer } from "@/lib/permissions";
 import type { Person, TaskProgress } from "@/lib/tasks/types";
 
-// Reads of projects: the list with progress, one project, the projects under a goal, and the row lock the actions
-// use. Projects are workspace-wide; every worker reads them, stakeholders never do.
+// Reads of projects: the list with progress, one project, the pickers, and the row lock the actions use. A project
+// is the top of the funnel (docs/PLAN.md, 2026-11-03 log): its goals sit under it and its tasks count towards it.
+// Everyone in the workspace reads projects.
 
-/** One project as the list, the project page and a goal's page show it: plain JSON, progress included. */
+/** One project as the list, the project page and the pickers show it: plain JSON, progress included. */
 export type ProjectListItem = {
   id: string;
   name: string;
   description: string | null;
   status: ProjectStatus;
   owner: Person | null;
-  /** The goal it rolls up into, whatever that goal's status. */
-  goal: { id: string; title: string } | null;
   targetDate: string | null;
+  /** New tasks here wait for the sign-off chain. */
+  requiresApproval: boolean;
+  /** Active goals under it. */
+  goals: number;
   progress: TaskProgress;
   createdAt: string;
   updatedAt: string;
@@ -31,10 +34,10 @@ const projectColumns = {
   description: projects.description,
   status: projects.status,
   targetDate: projects.targetDate,
+  requiresApproval: projects.requiresApproval,
   createdAt: projects.createdAt,
   updatedAt: projects.updatedAt,
-  goalId: goals.id,
-  goalTitle: goals.title,
+  goals: sql<number>`(select count(*)::int from goals g where g.project_id = ${projects}.id and g.status = 'active' and g.parent_goal_id is null)`,
   ownerId: users.id,
   ownerName: users.name,
   ownerEmail: users.email,
@@ -47,10 +50,10 @@ type ProjectRow = {
   description: string | null;
   status: ProjectStatus;
   targetDate: string | null;
+  requiresApproval: boolean;
   createdAt: Date;
   updatedAt: Date;
-  goalId: string | null;
-  goalTitle: string | null;
+  goals: number;
   ownerId: string | null;
   ownerName: string | null;
   ownerEmail: string | null;
@@ -66,8 +69,9 @@ function toItem(row: ProjectRow, progress: Map<string, TaskProgress>): ProjectLi
     description: row.description,
     status: row.status,
     owner: row.ownerId ? { id: row.ownerId, name: row.ownerName, email: row.ownerEmail, image: row.ownerImage } : null,
-    goal: row.goalId && row.goalTitle ? { id: row.goalId, title: row.goalTitle } : null,
     targetDate: row.targetDate,
+    requiresApproval: row.requiresApproval,
+    goals: row.goals,
     progress: progress.get(row.id) ?? EMPTY_PROGRESS,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -81,13 +85,12 @@ const listOrder = [
   asc(projects.name),
 ];
 
-/** Projects of this workspace matching `where`, each with its owner, its goal and its progress. */
+/** Projects of this workspace matching `where`, each with its owner and its progress. */
 async function selectProjects(viewer: Viewer, where: SQL | undefined): Promise<ProjectListItem[]> {
   const rows = await db
     .select(projectColumns)
     .from(projects)
     .leftJoin(users, eq(users.id, projects.ownerId))
-    .leftJoin(goals, and(eq(goals.id, projects.goalId), eq(goals.orgId, viewer.orgId)))
     .where(and(eq(projects.orgId, viewer.orgId), where))
     .orderBy(...listOrder);
   const progress = await progressForProjects(
@@ -110,45 +113,25 @@ export async function getProject(viewer: Viewer, id: string): Promise<ProjectLis
   return project ?? null;
 }
 
-/** Every project that rolls up into a goal, closed ones included (they still count towards its progress). */
-export async function projectsForGoal(viewer: Viewer, goalId: string): Promise<ProjectListItem[]> {
-  if (!canReadPlanning(viewer)) return [];
-  return selectProjects(viewer, eq(projects.goalId, goalId));
-}
+/** Every project a picker can offer, active ones first: the navigation's scope picker lists them all. */
+export type ProjectOption = { id: string; name: string; status: ProjectStatus };
 
-/** The active projects for the goal dialog's attach list: id, name and the goal each already rolls up into. */
-export async function projectOptions(viewer: Viewer): Promise<{ id: string; name: string; goal: { id: string; title: string } | null }[]> {
+export async function projectOptions(viewer: Viewer, { activeOnly = true }: { activeOnly?: boolean } = {}): Promise<ProjectOption[]> {
   if (!canReadPlanning(viewer)) return [];
-  const rows = await db
-    .select({ id: projects.id, name: projects.name, goalId: goals.id, goalTitle: goals.title })
+  return db
+    .select({ id: projects.id, name: projects.name, status: projects.status })
     .from(projects)
-    .leftJoin(goals, and(eq(goals.id, projects.goalId), eq(goals.orgId, viewer.orgId)))
-    .where(and(eq(projects.orgId, viewer.orgId), eq(projects.status, "active")))
-    .orderBy(asc(projects.name));
-  return rows.map((row) => ({ id: row.id, name: row.name, goal: row.goalId && row.goalTitle ? { id: row.goalId, title: row.goalTitle } : null }));
+    .where(and(eq(projects.orgId, viewer.orgId), activeOnly ? eq(projects.status, "active") : undefined))
+    .orderBy(sql`(case ${projects.status} when 'active' then 0 when 'completed' then 1 else 2 end)`, asc(projects.name));
 }
 
-/**
- * The projects rolling up into a goal, replaced by `projectIds`: named active projects of this workspace attach,
- * anything currently attached but not named detaches (its tasks stay — they just stop counting towards the goal).
- * A project can only roll up into one goal, so attaching moves it off its previous one.
- */
-export async function setGoalProjects(tx: Tx, orgId: string, goalId: string, projectIds: string[]): Promise<void> {
-  const keep = new Set(
-    projectIds.length === 0
-      ? []
-      : (
-          await tx
-            .select({ id: projects.id })
-            .from(projects)
-            .where(and(eq(projects.orgId, orgId), eq(projects.status, "active"), inArray(projects.id, projectIds)))
-        ).map((row) => row.id),
-  );
-  const attached = (await tx.select({ id: projects.id }).from(projects).where(eq(projects.goalId, goalId))).map((row) => row.id);
-  const removed = attached.filter((id) => !keep.has(id));
-  const added = [...keep].filter((id) => !attached.includes(id));
-  if (removed.length > 0) await tx.update(projects).set({ goalId: null, updatedAt: new Date() }).where(inArray(projects.id, removed));
-  if (added.length > 0) await tx.update(projects).set({ goalId, updatedAt: new Date() }).where(inArray(projects.id, added));
+/** A project of this workspace by id, for the actions that put something in it (null when it isn't one). */
+export async function findProject(handle: Tx | typeof db, orgId: string, projectId: string) {
+  const [row] = await handle
+    .select({ id: projects.id, name: projects.name, status: projects.status, requiresApproval: projects.requiresApproval })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)));
+  return row ?? null;
 }
 
 /**
@@ -157,7 +140,7 @@ export async function setGoalProjects(tx: Tx, orgId: string, goalId: string, pro
  */
 export async function lockProject(tx: Tx, orgId: string, id: string) {
   const [row] = await tx
-    .select({ id: projects.id, name: projects.name, status: projects.status, goalId: projects.goalId, ownerId: projects.ownerId })
+    .select({ id: projects.id, name: projects.name, status: projects.status, ownerId: projects.ownerId, requiresApproval: projects.requiresApproval })
     .from(projects)
     .where(and(eq(projects.id, id), eq(projects.orgId, orgId)))
     .for("update");

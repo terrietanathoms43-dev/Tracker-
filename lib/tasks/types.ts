@@ -1,4 +1,5 @@
-import type { OrgRole, TaskActivityKind, TaskPriority, TaskStatus } from "@/lib/constants";
+import type { ApprovalDecision, OrgRole, ProposalStatus, TaskActivityKind, TaskPriority, TaskStatus } from "@/lib/constants";
+import type { Recurrence } from "@/lib/recurrence";
 
 // Shapes that cross from server to client: plain JSON only (instants as ISO strings, calendar days as
 // "YYYY-MM-DD"), so a server component can hand them straight to a client component.
@@ -9,18 +10,27 @@ export type Person = { id: string; name: string | null; email: string | null; im
 /** Who a task is assigned to: any number of people, all equal (docs/PLAN.md, 2026-10-18 and 2026-10-30 logs). */
 export type Assignees = Person[];
 
-/** One row of any task list, board column or My Work group. */
+/** One row of any task list, board column or My Work group. The row expands to show the longer fields. */
 export type TaskListItem = {
   id: string;
   title: string;
+  /** Cut to a few hundred characters for the expanded row; the task page has it all. */
+  description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
   dueDate: string | null;
+  /** "HH:MM" when a time of day matters. */
+  dueTime: string | null;
+  /** "Every day at 8:00 AM" for a repeating task, else null. */
+  repeats: string | null;
   nextAction: string | null;
+  latestProgress: string | null;
   assignees: Assignees;
   project: { id: string; name: string } | null;
-  goalId: string | null;
-  /** Leaders and admins only: whether the row's menu offers Delete. */
+  goal: { id: string; title: string } | null;
+  /** Null for a live task; a proposal's state otherwise. */
+  proposal: ProposalStatus | null;
+  /** Whether the row's menu offers Delete (leaders, or the proposer of an open proposal). */
   canDelete: boolean;
   updatedAt: string;
   /** Attention lists only: why it is there ("Overdue", "Your approval", …). */
@@ -33,8 +43,8 @@ export type TaskPage = { items: TaskListItem[]; nextCursor: string | null };
 /** A worker in a picker, with the role that decides default approvers. */
 export type PersonOption = Person & { role: OrgRole };
 
-/** A goal in a picker: a sub-goal's label carries its parent ("Ship onboarding › Invite flow"). */
-export type GoalOption = { id: string; title: string };
+/** A goal in a picker: a sub-goal's label carries its parent ("Ship onboarding › Invite flow"); every goal names its project. */
+export type GoalOption = { id: string; title: string; projectId: string };
 
 /** What the New task form needs: who you are, who can own work, and what it can belong to. */
 export type TaskFormOptions = {
@@ -44,6 +54,8 @@ export type TaskFormOptions = {
   goals: GoalOption[];
   /** Whether "From a meeting" is offered to this person (lib/capture/availability.ts); filled in by the action. */
   canCapture: boolean;
+  /** A stakeholder's new tasks are proposals: the forms say so before the save. */
+  proposesOnly: boolean;
 };
 
 /**
@@ -61,6 +73,18 @@ export type CreateDefaults = {
 
 export type EvidenceLink = { id: string; url: string; label: string | null; addedBy: string };
 
+/** One step of a proposal's sign-off chain, as the task page and the Proposals page show it. */
+export type ApprovalStepView = {
+  id: string;
+  position: number;
+  /** Who the step names; null means any leader or admin. */
+  user: Person | null;
+  decision: ApprovalDecision | null;
+  decidedBy: Person | null;
+  decidedAt: string | null;
+  note: string | null;
+};
+
 /** Everything the task page shows about the task itself. */
 export type TaskDetail = {
   id: string;
@@ -69,12 +93,17 @@ export type TaskDetail = {
   status: TaskStatus;
   priority: TaskPriority;
   dueDate: string | null;
+  dueTime: string | null;
+  recurrence: Recurrence | null;
+  seriesId: string | null;
   project: { id: string; name: string } | null;
   goal: { id: string; title: string } | null;
-  request: { id: string; title: string } | null;
   assignees: Assignees;
   approver: Person | null;
   creator: Person;
+  proposalStatus: ProposalStatus | null;
+  /** The sign-off chain, in order (empty for a task that was live from the start). */
+  approvals: ApprovalStepView[];
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
@@ -92,7 +121,7 @@ export type TaskDetail = {
 };
 
 /** What the viewer may do on one task, decided on the server from lib/permissions.ts. */
-export type TaskAbilities = { edit: boolean; progress: boolean; approve: boolean; reject: boolean };
+export type TaskAbilities = { edit: boolean; progress: boolean; approve: boolean; reject: boolean; decideProposal: boolean };
 
 /** What the Update progress form and the status dialogs need about one task. */
 export type UpdateContext = {
@@ -106,6 +135,8 @@ export type UpdateContext = {
     blockedBy: string | null;
     /** Comments still open: completing is refused until they are resolved. */
     openComments: number;
+    /** A repeating task: completing it makes the next occurrence. */
+    repeats: string | null;
   };
   people: PersonOption[];
   defaultApprover: string | null;

@@ -1,15 +1,13 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { goals, projects, taskActivity, taskAssignees, tasks, taskUpdates } from "@/db/schema";
 import { CLOSED_STATUSES, type ProjectStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { pendingProposals, type ProposalListItem } from "@/lib/dal/approvals";
 import { listWorkers } from "@/lib/dal/orgs";
-import { listRequests } from "@/lib/dal/requests";
-import { approvalStagingTasks, assigneesJson, progressForGoals, progressForProjects, type ApprovalStagingTask } from "@/lib/dal/tasks";
+import { approvalStagingTasks, assigneesJson, liveOnly, progressForGoals, progressForProjects, type ApprovalStagingTask } from "@/lib/dal/tasks";
 import type { Viewer } from "@/lib/permissions";
-import { isRevisitDue } from "@/lib/requests/filters";
-import type { RequestListItem } from "@/lib/requests/types";
 import type { Assignees } from "@/lib/tasks/types";
 import { calendarDaysBetween, dayKey } from "@/lib/time";
 import { healthOf, sortByHealth, type HealthStatus } from "./health";
@@ -19,8 +17,9 @@ import { daysOf, shiftDay, timelineWindow, type ReportRange } from "./range";
 
 // The rows behind /reports and its CSV exports. Every query is scoped to viewer.orgId in SQL and every number a
 // report prints is a count of these rows: nothing is estimated, weighted or ranked. Callers check access first
-// (lib/reports/build.ts). A report may be about one project (`project`: an id, "none" for work in no project, ""
-// for the whole workspace); every section narrows the same way, so its numbers always agree.
+// (lib/reports/build.ts). A report is about live tasks only (proposals still waiting are not work yet) and may be
+// about one project (`project`: an id, or "" for the whole workspace, the navigation's scope); every section
+// narrows the same way, so its numbers always agree.
 
 /** A task as a report prints it. `completedDay` is the calendar day it was completed on, in the viewer's timezone. */
 export type ReportTask = {
@@ -37,7 +36,7 @@ export type ReportTask = {
   nextAction: string | null;
   blockedReason: string | null;
   blockedBy: string | null;
-  /** The goal it serves, directly or through its project. */
+  /** The goal it serves. */
   goalId: string | null;
   project: { id: string; name: string } | null;
   evidence: { url: string; label: string | null }[];
@@ -127,6 +126,7 @@ export type GoalHealthRow = {
   id: string;
   title: string;
   parentGoalId: string | null;
+  projectName: string;
   targetDate: string | null;
   total: number;
   completed: number;
@@ -148,11 +148,10 @@ export type BlockedDurationStats = {
   currentlyBlocked: number;
 };
 
-/** What is waiting for someone to decide: tasks awaiting approval, and requests nobody has settled. */
+/** What is waiting for someone to decide: tasks awaiting approval, and proposals nobody has signed off. */
 export type PendingDecisions = {
   approvals: ApprovalStagingTask[];
-  /** New requests, deferred ones whose revisit day has come, and approved ones not yet turned into a task. */
-  requests: RequestListItem[];
+  proposals: ProposalListItem[];
 };
 
 /** A project the report can be narrowed to. */
@@ -167,15 +166,14 @@ export type ReportProjectOption = {
 const CLOSED = [...CLOSED_STATUSES];
 const isOpen = notInArray(tasks.status, CLOSED);
 
-/** The tasks the report is about: everything, work in no project, or one project's (an undefined condition is dropped by `and`). */
+/** The tasks the report is about: everything, or one project's (an undefined condition is dropped by `and`). */
 function projectCondition(project: ReportProject): SQL | undefined {
-  if (project === "none") return isNull(tasks.projectId);
-  if (project !== "") return eq(tasks.projectId, project);
-  return undefined;
+  if (project === "" || project === "none") return project === "none" ? isNull(tasks.projectId) : undefined;
+  return eq(tasks.projectId, project);
 }
 
 /** Whether the viewer is on the task, in SQL. */
-const mineSql = (userId: string) => sql<boolean>`exists (select 1 from task_assignees ta where ta.task_id = ${tasks.id} and ta.user_id = ${userId})`;
+const mineSql = (userId: string) => sql<boolean>`exists (select 1 from task_assignees ta where ta.task_id = ${tasks}.id and ta.user_id = ${userId})`;
 
 /**
  * `column` falls on a calendar day from `range.from` to `range.to` (both included) in `timeZone`. Written as two
@@ -204,15 +202,15 @@ async function reportTasks(viewer: Viewer, project: ReportProject, where: SQL, o
       nextAction: tasks.nextAction,
       blockedReason: tasks.blockedReason,
       blockedBy: tasks.blockedBy,
-      goalId: sql<string | null>`coalesce(${tasks.goalId}, ${projects.goalId})`,
+      goalId: tasks.goalId,
       projectId: projects.id,
       projectName: projects.name,
       people: assigneesJson,
-      evidence: sql<ReportTask["evidence"]>`coalesce((select json_agg(json_build_object('url', l.url, 'label', l.label) order by l.created_at) from task_links l where l.task_id = ${tasks.id}), '[]'::json)`,
+      evidence: sql<ReportTask["evidence"]>`coalesce((select json_agg(json_build_object('url', l.url, 'label', l.label) order by l.created_at) from task_links l where l.task_id = ${tasks}.id), '[]'::json)`,
     })
     .from(tasks)
     .leftJoin(projects, and(eq(projects.id, tasks.projectId), eq(projects.orgId, viewer.orgId)))
-    .where(and(eq(tasks.orgId, viewer.orgId), projectCondition(project), where))
+    .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, projectCondition(project), where))
     .orderBy(...orderBy)
     .limit(1000);
   return rows.map(({ people, completedAt, updatedAt, projectId, projectName, ...row }) => ({
@@ -226,16 +224,7 @@ async function reportTasks(viewer: Viewer, project: ReportProject, where: SQL, o
 
 // --- the scope ----------------------------------------------------------------------------------------------------
 
-/** The projects a report can be narrowed to: active ones first, then completed, then archived, by name. */
-export async function reportProjectOptions(viewer: Viewer): Promise<ReportProjectOption[]> {
-  return db
-    .select({ id: projects.id, name: projects.name, status: projects.status })
-    .from(projects)
-    .where(eq(projects.orgId, viewer.orgId))
-    .orderBy(sql`(case ${projects.status} when 'active' then 0 when 'completed' then 1 else 2 end)`, asc(projects.name));
-}
-
-/** The project a report is narrowed to, or null for "" / "none" / an id this workspace doesn't have. */
+/** The project a report is narrowed to, or null for "" / an id this workspace doesn't have. */
 export async function reportProject(viewer: Viewer, project: ReportProject): Promise<ReportProjectOption | null> {
   if (project === "" || project === "none") return null;
   const [row] = await db
@@ -270,10 +259,11 @@ export function stalledTasks(viewer: Viewer, project: ReportProject): Promise<Re
 /**
  * Is the work as a whole on pace? The scope's tasks (rejected ones aside) done against the share a straight line
  * from the start to the target date expects by today (lib/reports/pace.ts). For one project the line runs from
- * its creation to its target date; for the whole workspace, from the oldest task to the latest top-level goal's
- * target date. Work in no project has no target to pace against.
+ * its creation to its target date (or, without one, its latest goal's); for the whole workspace, from the oldest
+ * task to the latest top-level goal's target date.
  */
 export async function reportPace(viewer: Viewer, today: string, project: ReportProject): Promise<Pace> {
+  const scopedGoals = project !== "" && project !== "none" ? eq(goals.projectId, project) : undefined;
   const [[counts], [chosen], [goal]] = await Promise.all([
     db
       .select({
@@ -282,7 +272,7 @@ export async function reportPace(viewer: Viewer, today: string, project: ReportP
         first: sql<Date | null>`min(${tasks.createdAt})`,
       })
       .from(tasks)
-      .where(and(eq(tasks.orgId, viewer.orgId), projectCondition(project))),
+      .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, projectCondition(project))),
     project !== "" && project !== "none"
       ? db
           .select({
@@ -292,19 +282,17 @@ export async function reportPace(viewer: Viewer, today: string, project: ReportP
           .from(projects)
           .where(and(eq(projects.orgId, viewer.orgId), eq(projects.id, project)))
       : Promise.resolve([] as { createdAt: Date; targetDate: string | null }[]),
-    project === ""
-      ? db
-          .select({
-            targetDate: sql<string | null>`max(${goals.targetDate})::text`,
-          })
-          .from(goals)
-          .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active"), isNull(goals.parentGoalId)))
-      : Promise.resolve([] as { targetDate: string | null }[]),
+    db
+      .select({
+        targetDate: sql<string | null>`max(${goals.targetDate})::text`,
+      })
+      .from(goals)
+      .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active"), isNull(goals.parentGoalId), scopedGoals)),
   ]);
   const firstTask = counts?.first ? dayKey(new Date(counts.first), viewer.timezone) : null;
   const projectStart = chosen ? dayKey(chosen.createdAt, viewer.timezone) : null;
   const start = [firstTask, projectStart].filter((day): day is string => day !== null).sort()[0] ?? null;
-  const target = chosen ? chosen.targetDate : project === "" ? (goal?.targetDate ?? null) : null;
+  const target = chosen ? (chosen.targetDate ?? goal?.targetDate ?? null) : (goal?.targetDate ?? null);
   return paceOf({
     done: counts?.done ?? 0,
     total: counts?.total ?? 0,
@@ -320,7 +308,7 @@ export async function progressUpdateCount(viewer: Viewer, range: ReportRange, pr
     .select({ n: sql<number>`count(*)::int` })
     .from(taskUpdates)
     .innerJoin(tasks, eq(tasks.id, taskUpdates.taskId))
-    .where(and(eq(tasks.orgId, viewer.orgId), projectCondition(project), eq(taskUpdates.kind, "progress"), withinDays(taskUpdates.createdAt, range, viewer.timezone)));
+    .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, projectCondition(project), eq(taskUpdates.kind, "progress"), withinDays(taskUpdates.createdAt, range, viewer.timezone)));
   return row?.n ?? 0;
 }
 
@@ -347,13 +335,13 @@ export async function contributionCounts(viewer: Viewer, range: ReportRange, tod
       .select({ personId: taskAssignees.userId, n })
       .from(taskAssignees)
       .innerJoin(tasks, eq(tasks.id, taskAssignees.taskId))
-      .where(and(eq(tasks.orgId, viewer.orgId), scoped, eq(tasks.status, "completed"), withinDays(tasks.completedAt, range, viewer.timezone)))
+      .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, scoped, eq(tasks.status, "completed"), withinDays(tasks.completedAt, range, viewer.timezone)))
       .groupBy(taskAssignees.userId),
     db
       .select({ personId: taskAssignees.userId, n })
       .from(taskAssignees)
       .innerJoin(tasks, eq(tasks.id, taskAssignees.taskId))
-      .where(and(eq(tasks.orgId, viewer.orgId), scoped, eq(tasks.status, "completed"), withinDays(tasks.completedAt, priorRange, viewer.timezone)))
+      .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, scoped, eq(tasks.status, "completed"), withinDays(tasks.completedAt, priorRange, viewer.timezone)))
       .groupBy(taskAssignees.userId),
     db
       .select({
@@ -364,7 +352,7 @@ export async function contributionCounts(viewer: Viewer, range: ReportRange, tod
       })
       .from(taskAssignees)
       .innerJoin(tasks, eq(tasks.id, taskAssignees.taskId))
-      .where(and(eq(tasks.orgId, viewer.orgId), scoped, isOpen))
+      .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, scoped, isOpen))
       .groupBy(taskAssignees.userId),
   ]);
   const [completedBy, priorCompletedBy] = [tally(completed), tally(priorCompleted)];
@@ -394,17 +382,17 @@ export async function contributionCounts(viewer: Viewer, range: ReportRange, tod
 
 // --- the daily chart ----------------------------------------------------------------------------------------------
 
-/** The goals whose deadlines the chart marks: every active one, or, for one project, its goal and that goal's parent. */
+/** The goals whose deadlines the chart marks: every active one, or, for one project, the goals in it. */
 function goalMarkerCondition(project: ReportProject): SQL | undefined {
   if (project === "" || project === "none") return undefined;
-  return sql`exists (select 1 from ${projects} p where p.id = ${project} and p.org_id = ${goals.orgId} and (p.goal_id = ${goals.id} or p.goal_id in (select c.id from ${goals} c where c.parent_goal_id = ${goals.id})))`;
+  return eq(goals.projectId, project);
 }
 
 /**
  * One entry per calendar day of the chart's window (lib/reports/range.ts: the range, then two weeks past today):
  * what was completed, which blockers were raised, what was due and is still open (overdue), what falls due from
  * today on, and the goal deadlines with each goal's health, with the tasks behind each count so a bar can be split
- * into them.
+ * into them. `activity` is every history row of every task in scope that day: the chart's y axis.
  */
 export async function reportTimeline(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<TimelineDay[]> {
   const window = timelineWindow(range, today);
@@ -436,7 +424,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       })
       .from(tasks)
       .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(tasks.orgId, viewer.orgId), scoped, eq(tasks.status, "completed"), isNotNull(tasks.completedAt), withinDays(tasks.completedAt, past, viewer.timezone)))
+      .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, scoped, eq(tasks.status, "completed"), isNotNull(tasks.completedAt), withinDays(tasks.completedAt, past, viewer.timezone)))
       .orderBy(asc(tasks.completedAt)),
     db
       .select({
@@ -449,7 +437,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       .from(taskActivity)
       .innerJoin(tasks, eq(tasks.id, taskActivity.taskId))
       .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(taskActivity.orgId, viewer.orgId), scoped, eq(taskActivity.kind, "blocked"), withinDays(taskActivity.createdAt, past, viewer.timezone)))
+      .where(and(eq(taskActivity.orgId, viewer.orgId), liveOnly, scoped, eq(taskActivity.kind, "blocked"), withinDays(taskActivity.createdAt, past, viewer.timezone)))
       .orderBy(asc(taskActivity.createdAt)),
     // Every open task due anywhere in the window: before today it is overdue, from today on it is due.
     db
@@ -462,9 +450,9 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       })
       .from(tasks)
       .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(tasks.orgId, viewer.orgId), scoped, isOpen, dueWithin(window)))
+      .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, scoped, isOpen, dueWithin(window)))
       .orderBy(asc(tasks.dueDate), asc(tasks.title)),
-    // The pulse behind the bars: every history row of every task in scope, by day.
+    // The y axis: every history row of every task in scope, by day (completed +1, comment +1, edit +1, …).
     db
       .select({
         day: sql<string>`to_char(${taskActivity.createdAt} at time zone ${viewer.timezone}, 'YYYY-MM-DD')`,
@@ -580,7 +568,7 @@ export async function blockedDurationStats(viewer: Viewer, project: ReportProjec
   const rows = await db
     .select({ id: tasks.id, updatedAt: tasks.updatedAt })
     .from(tasks)
-    .where(and(eq(tasks.orgId, viewer.orgId), projectCondition(project), eq(tasks.status, "blocked")));
+    .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, projectCondition(project), eq(tasks.status, "blocked")));
 
   if (rows.length === 0) return { averageDays: 0, maxDays: 0, currentlyBlocked: 0 };
 
@@ -595,33 +583,25 @@ export async function blockedDurationStats(viewer: Viewer, project: ReportProjec
 }
 
 /**
- * The health board: every active project and top-level goal judged by lib/reports/health.ts and listed worst first.
- * Narrowed to a project, it shows that project (whatever its status) and the goal it rolls up into, with that
- * goal's parent; narrowed to "no project", the goals alone.
+ * The health board: every active project and every active top-level goal judged by lib/reports/health.ts and
+ * listed worst first. Narrowed to a project, it shows that project (whatever its status) and the goals inside it.
  */
 export async function projectAndGoalHealth(viewer: Viewer, today: string, project: ReportProject): Promise<HealthBoard> {
-  const projectWhere = project === "none" ? sql`false` : project !== "" ? eq(projects.id, project) : eq(projects.status, "active");
+  const one = project !== "" && project !== "none";
+  const projectWhere = project === "none" ? sql`false` : one ? eq(projects.id, project) : eq(projects.status, "active");
   const activeProjects = await db
     .select({
       id: projects.id,
       name: projects.name,
       status: projects.status,
       targetDate: projects.targetDate,
-      goalId: projects.goalId,
       createdAt: projects.createdAt,
     })
     .from(projects)
     .where(and(eq(projects.orgId, viewer.orgId), projectWhere))
     .orderBy(sql`${projects.targetDate} asc nulls last`, asc(projects.name));
 
-  // One project's goal chain: its goal and, when that is a sub-goal, the parent too.
-  const chain = project !== "" && project !== "none" ? activeProjects.map((row) => row.goalId).filter((id): id is string => id !== null) : null;
-  const goalWhere =
-    chain === null
-      ? and(eq(goals.status, "active"), isNull(goals.parentGoalId))!
-      : chain.length === 0
-        ? sql`false`
-        : or(inArray(goals.id, chain), sql`${goals.id} in (select g.parent_goal_id from ${goals} g where g.id in ${chain} and g.parent_goal_id is not null)`)!;
+  const goalWhere = project === "none" ? sql`false` : and(eq(goals.status, "active"), isNull(goals.parentGoalId), one ? eq(goals.projectId, project) : undefined)!;
   const activeGoals = await db
     .select({
       id: goals.id,
@@ -629,8 +609,10 @@ export async function projectAndGoalHealth(viewer: Viewer, today: string, projec
       parentGoalId: goals.parentGoalId,
       targetDate: goals.targetDate,
       createdAt: goals.createdAt,
+      projectName: projects.name,
     })
     .from(goals)
+    .innerJoin(projects, eq(projects.id, goals.projectId))
     .where(and(eq(goals.orgId, viewer.orgId), goalWhere))
     .orderBy(sql`${goals.targetDate} asc nulls last`, asc(goals.title));
 
@@ -662,6 +644,7 @@ export async function projectAndGoalHealth(viewer: Viewer, today: string, projec
       id: goal.id,
       title: goal.title,
       parentGoalId: goal.parentGoalId,
+      projectName: goal.projectName,
       targetDate: goal.targetDate,
       ...progress,
       pct: pctOf(progress.completed, progress.total),
@@ -704,12 +687,10 @@ export async function projectAndGoalHealth(viewer: Viewer, today: string, projec
 
 /**
  * What is waiting on a decision: tasks awaiting approval (the same list as a leader's Home, narrowed to the project)
- * and the requests nobody has settled. Requests belong to no project, so a project report leaves them out.
+ * and the proposals still waiting for a signature, oldest first.
  */
-export async function pendingDecisions(viewer: Viewer, today: string, project: ReportProject): Promise<PendingDecisions> {
-  const [approvals, open] = await Promise.all([approvalStagingTasks(viewer, project), project === "" ? listRequests(viewer, { view: "open" }) : Promise.resolve([])]);
-  const requests = open
-    .filter((request) => request.status === "new" || request.status === "approved" || (request.status === "deferred" && isRevisitDue(request, today)))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  return { approvals, requests };
+export async function pendingDecisions(viewer: Viewer, project: ReportProject): Promise<PendingDecisions> {
+  const scope = project === "none" ? "" : project;
+  const [approvals, proposals] = await Promise.all([approvalStagingTasks(viewer, scope), pendingProposals(viewer, scope)]);
+  return { approvals, proposals };
 }

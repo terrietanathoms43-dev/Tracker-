@@ -11,6 +11,7 @@ import {
   SidebarMainNav,
   SidebarNotifications,
   SidebarOrg,
+  SidebarProjectScope,
   TabsSkeleton,
   TopBarSkeleton,
 } from "@/components/shell/shell-sections";
@@ -28,7 +29,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <Suspense fallback={<OrgSkeleton />}>
               <SidebarOrg />
             </Suspense>
-            <div className="mt-2">
+            <div className="mt-2 grid gap-2">
+              <Suspense fallback={<Skeleton className="h-9 w-full" />}>
+                <SidebarProjectScope />
+              </Suspense>
               <SidebarSearch />
             </div>
           </div>

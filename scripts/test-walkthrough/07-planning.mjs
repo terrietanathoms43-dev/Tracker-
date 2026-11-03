@@ -1,16 +1,19 @@
-// Projects and goals (docs/PLAN.md §6): Morgan creates a goal, a project under it (goal preselected) and a task
-// from the project page (project preselected); progress rolls up to both; edit, pause, reactivate and achieve
-// the goal; complete, archive and reactivate the project; a member reads without management controls; a
-// stakeholder is redirected or gets Not found; another workspace sees nothing by id or in its lists.
+// Projects and goals, the funnel (docs/PLAN.md §6, 2026-11-03 log): Morgan creates a project, a goal inside it
+// from the project page (project preselected), a task from the goal page (project and goal preselected); progress
+// rolls up to both; the goal is connected to another and shows on the branch view; the navigation's project picker
+// narrows the task list and the goals; edit, pause, reactivate and complete the goal; complete, archive and
+// reactivate the project; a member reads without management controls; a stakeholder reads too; another workspace
+// sees nothing by id or in its lists.
 //
 // Usage: node scripts/test-walkthrough/07-planning.mjs [--base=http://localhost:3021]
 import { closePool, finish, openBrowser, query, sleep, step, stoppedOn, tidy } from "./lib.mjs";
 
 const stamp = Date.now().toString(36);
-const GOAL = `Walkthrough goal ${stamp}`;
 const PROJECT = `Walkthrough project ${stamp}`;
+const GOAL = `Walkthrough goal ${stamp}`;
 const TASK = `Walkthrough task ${stamp}`;
 const browsers = {};
+const org = "select id from organizations where slug = 'trackwise-demo'";
 
 const value = (browser, selector) => browser.evaluate(`document.querySelector(${JSON.stringify(selector)})?.value ?? null`);
 const hasBar = (browser) => browser.evaluate(`!!document.querySelector("#quick-add-title")`);
@@ -22,113 +25,147 @@ let projectPath = null;
 
 try {
   const lead = (browsers.lead = await openBrowser({ role: "leader", width: 1280, height: 900 }));
-  await lead.goto("/goals", 4000);
-  step("leader sees Goals", await lead.waitFor("What the team is working towards"));
-  await lead.click("New goal");
-  step("the goal dialog opens", await lead.waitFor("Say what success looks like"));
-  step("the owner defaults to someone", (await value(lead, "#goal-owner")) !== "");
-  await lead.type("#goal-title", GOAL);
-  await lead.type("#goal-criteria", "Every walkthrough step passes.");
-  await lead.click("Create goal", { exact: true });
-  step("creating a goal shows the toast", await lead.waitFor("Goal created."));
-  // By id from the database rather than the toast's Open button: synthetic pointer events on sonner's swipe
-  // handler raise setPointerCapture errors that have nothing to do with the app.
-  const [goalRow] = await query("select id from goals where title = $1", [GOAL]);
-  step("the goal is in the database", Boolean(goalRow?.id));
-  goalPath = `/goals/${goalRow.id}`;
-  await lead.goto(goalPath, 3500);
-  step("the goal page shows its title and an empty progress line", (await lead.waitFor(GOAL)) && (await lead.has("No tasks yet")));
-  await lead.shot("07-goal-new");
 
+  // --- 1. a project, then a goal inside it ------------------------------------------------------------------------
+  await lead.goto("/home?view=projects", 4000);
+  step("leader sees Projects", await lead.waitFor("The top of the funnel"));
   await lead.click("New project");
-  step("the project dialog opens from the goal page", await lead.waitFor("A project groups related tasks"));
-  step("the goal is preselected", (await value(lead, "#project-goal")) === goalPath.split("/").pop());
+  step("the project dialog opens", await lead.waitFor("A project holds goals"));
   await lead.type("#project-name", PROJECT);
   await lead.click("Create project", { exact: true });
   step("creating a project shows the toast", await lead.waitFor("Project created."));
-  step("the goal page lists the project", await lead.waitFor(PROJECT));
   const [projectRow] = await query("select id from projects where name = $1", [PROJECT]);
   step("the project is in the database", Boolean(projectRow?.id));
   projectPath = `/projects/${projectRow.id}`;
   await lead.goto(projectPath, 3500);
-  step("the project starts empty", await lead.waitFor("No tasks in this project yet."));
+  step("the project page starts with no goals and no tasks", (await lead.waitFor("No goals yet")) && (await lead.has("No tasks in this project yet.")));
 
-  step("the project page has the add bar", await hasBar(lead));
+  await lead.click("New goal", { exact: true });
+  step("the goal dialog opens from the project page", await lead.waitFor("A goal lives in a project"));
+  step("the project is preselected", (await value(lead, "#goal-project")) === projectRow.id);
+  await lead.type("#goal-title", GOAL);
+  await lead.type("#goal-criteria", "Every walkthrough step passes.");
+  await lead.click("Create goal", { exact: true, within: "[role=dialog]" });
+  step("creating a goal shows the toast", await lead.waitFor("Goal created."));
+  const [goalRow] = await query("select id, project_id from goals where title = $1", [GOAL]);
+  step("the goal is in the database, in the project", goalRow?.project_id === projectRow.id, JSON.stringify(goalRow));
+  goalPath = `/goals/${goalRow.id}`;
+  step("the project page lists the goal", await lead.waitFor(GOAL));
+  await lead.shot("07-project-with-goal");
+
+  // --- 2. a task from the goal page ------------------------------------------------------------------------------------
+  await lead.goto(goalPath, 3500);
+  step("the goal page shows its title, its project and an empty progress line", (await lead.waitFor(GOAL)) && (await lead.has(PROJECT)) && (await lead.has("No tasks yet")));
+  step("the goal page has the add bar", await hasBar(lead));
   await sleep(1500);
-  step("the project is preselected", (await value(lead, "#quick-add-project")) === projectPath.split("/").pop());
+  step("the project and the goal are preselected", (await value(lead, "#quick-add-project")) === projectRow.id && (await value(lead, "#quick-add-goal")) === goalRow.id);
   await lead.type("#quick-add-title", TASK);
   await lead.click("Add task", { exact: true });
   step("creating a task shows the toast", await lead.waitFor("Task created."));
-  step("the project lists the task and counts it", (await lead.waitFor(TASK)) && (await lead.waitFor("of 1 task completed")));
-  await lead.shot("07-project-with-task");
+  const [taskRow] = await query("select project_id, goal_id from tasks where title = $1", [TASK]);
+  step("the task is in the goal and in the goal's project", taskRow?.goal_id === goalRow.id && taskRow?.project_id === projectRow.id, JSON.stringify(taskRow));
+  step("the goal lists the task and counts it", (await lead.waitFor(TASK)) && (await lead.waitFor("of 1 task completed")));
+  await lead.goto(projectPath, 3500);
+  step("the project counts the task too", (await lead.waitFor("of 1 task completed")) && (await lead.has(TASK)));
 
+  // --- 3. connections and the branch view ---------------------------------------------------------------------------------
+  const [other] = await query(`select id, title from goals where org_id = (${org}) and status = 'active' and parent_goal_id is null and title = 'Cut incident response time in half'`);
   await lead.goto(goalPath, 3500);
-  step("the goal counts the task through its project", (await lead.waitFor("of 1 task completed")) && (await lead.has(TASK)));
+  await lead.click("Edit connections", { exact: true, wait: 1000 });
+  step("the connections dialog opens", await lead.waitFor("Connect this goal"));
+  await lead.click(other.title, { within: "[role=dialog]", wait: 400 });
+  await lead.click("Save connections", { exact: true, within: "[role=dialog]", wait: 2500 });
+  step("saving shows the toast", await lead.waitFor("Connections saved."));
+  step("the goal page says what it comes after", await lead.waitForNear("Comes after", other.title));
+  const [link] = await query("select from_goal_id from goal_links where to_goal_id = $1", [goalRow.id]);
+  step("the link is in the database", link?.from_goal_id === other.id);
+  await lead.goto("/goals?view=branches", 4000);
+  step("the branch view draws the goal as a node with an arrow into it", (await lead.waitFor(GOAL)) && (await lead.evaluate(`document.querySelector('[data-goal-node="${goalRow.id}"]') !== null && document.querySelectorAll('[data-edge="link"]').length > 0`)) === true);
+  await lead.shot("07-branch-view", { full: true });
 
+  // --- 4. the navigation's project picker narrows the screens -----------------------------------------------------------
+  await lead.goto("/home?view=list", 4000);
+  await lead.select("[data-project-scope]", projectRow.id);
+  step("choosing the project in the navigation narrows the list to it", (await lead.waitFor(`In ${PROJECT}`)) && (await lead.has(TASK)) && !(await lead.has("Route pages to the secondary on-call")));
+  await lead.goto("/goals", 4000);
+  step("the goals page follows the picker", (await lead.waitFor(`What ${PROJECT} is working towards`)) && (await lead.has(GOAL)) && !(await lead.has("Ship the self-serve onboarding")));
+  await lead.select("[data-project-scope]", "");
+  step("All projects brings everything back", await lead.waitFor("Ship the self-serve onboarding"));
+
+  // --- 5. edit, pause, complete, reopen ---------------------------------------------------------------------------------
+  await lead.goto(goalPath, 3500);
   await lead.click("Edit", { exact: true });
   step("Edit starts from the current title", (await value(lead, "#goal-title")) === GOAL);
   await lead.type("#goal-title", `${GOAL} edited`);
   await lead.click("Save goal", { exact: true });
   step("saving the goal shows the toast and the new title", (await lead.waitFor("Goal saved.")) && (await lead.waitFor(`${GOAL} edited`)));
-
   await lead.click("Pause", { exact: true });
   step("pausing shows the badge", (await lead.waitFor("Goal paused.")) && (await lead.waitFor("Paused")));
   await sleep(800);
   step("a paused goal offers no add bar", !(await hasBar(lead)));
   await lead.click("Reactivate", { exact: true });
   step("reactivating works", await lead.waitFor("Goal is active again."));
-  await lead.click("Mark achieved", { exact: true });
-  step("achieving works", await lead.waitFor("Goal marked achieved."));
+  await lead.click("Mark completed", { exact: true });
+  step("completing works", await lead.waitFor("Goal completed."));
   await lead.goto("/goals", 3000);
-  step("an achieved goal is hidden by default", !(await lead.has(`${GOAL} edited`)));
+  step("a completed goal is hidden by default", !(await lead.has(`${GOAL} edited`)));
   await lead.goto("/goals?all=1", 3000);
   step("and shown with ?all=1", await lead.waitFor(`${GOAL} edited`));
   await lead.goto(goalPath, 3000);
-  await lead.click("Reactivate", { exact: true });
-  step("an achieved goal can be reactivated", await lead.waitFor("Goal is active again."));
+  await lead.click("Reopen", { exact: true });
+  step("a completed goal can be reopened", await lead.waitFor("Goal is active again."));
 
+  // --- 6. the project's own states --------------------------------------------------------------------------------------
   await lead.goto(projectPath, 3000);
   await lead.click("Mark completed", { exact: true });
   step("completing a project works", await lead.waitFor("Project marked completed."));
   await sleep(800);
   step("a completed project offers no add bar", !(await hasBar(lead)));
   await lead.click("Archive", { exact: true });
-  step("archiving shows the banner and keeps the task", (await lead.waitFor("This project is archived. Its tasks stay readable.")) && (await lead.has(TASK)));
+  step("archiving shows the banner and keeps the task", (await lead.waitFor("This project is archived.")) && (await lead.has(TASK)));
   await lead.shot("07-project-archived");
-  await lead.goto("/projects", 3000);
-  step("an archived project is hidden by default", !(await lead.has(PROJECT)));
+  await lead.goto("/home?view=projects", 3000);
+  const listsProject = () => lead.evaluate(`[...document.querySelectorAll("main a")].some((a) => a.textContent.trim() === ${JSON.stringify(PROJECT)})`);
+  step("an archived project is hidden by default", (await lead.waitFor("Show completed and archived")) && !(await listsProject()));
+  await lead.goto("/home?view=projects&all=1", 3000);
+  const shown = await (async () => {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      if (await listsProject()) return true;
+      await sleep(300);
+    }
+    return false;
+  })();
+  step("and shown with ?all=1", shown);
   await lead.goto(projectPath, 3000);
   await lead.click("Reactivate", { exact: true });
   step("an archived project can be reactivated", await lead.waitFor("Project is active again."));
   step("no console errors for the leader", lead.problems.length === 0, JSON.stringify(lead.problems.slice(0, 2)));
 
+  // --- 7. who reads what -----------------------------------------------------------------------------------------------
   const member = (browsers.member = await openBrowser({ role: "member", width: 1280, height: 900 }));
   await member.goto("/goals", 4000);
   step("a member sees Goals without New goal", (await member.waitFor("What the team is working towards")) && !(await hasButton(member, "/New goal/")));
   await member.goto(goalPath, 3500);
-  step("a member reads the goal without Edit or status actions", (await member.waitFor(`${GOAL} edited`)) && !(await hasButton(member, "/^(Edit|Mark achieved|Pause|New project)$/")));
+  step("a member reads the goal without Edit or status actions", (await member.waitFor(`${GOAL} edited`)) && !(await hasButton(member, "/^(Edit|Mark completed|Pause|Edit connections)$/")));
   step("a member may still add a task to the goal", await hasBar(member));
   await member.goto(projectPath, 3500);
-  step("a member reads the project without management controls", (await member.waitFor(PROJECT)) && !(await hasButton(member, "/^(Edit|Mark completed|Archive)$/")));
+  step("a member reads the project without management controls", (await member.waitFor(PROJECT)) && !(await hasButton(member, "/^(Edit|Mark completed|Archive|New goal)$/")));
   await member.shot("07-member-project");
 
   const stakeholder = (browsers.stakeholder = await openBrowser({ role: "stakeholder", width: 1280, height: 900 }));
   await stakeholder.goto("/goals", 4000);
-  step("a stakeholder is sent home from /goals", await stakeholder.waitForPath("/home"));
-  await stakeholder.goto("/projects", 3500);
-  step("a stakeholder is sent home from /projects", await stakeholder.waitForPath("/home"));
+  step("a stakeholder reads the goals", await stakeholder.waitFor("What the team is working towards"));
   await stakeholder.goto(goalPath, 3500);
-  step("a stakeholder gets Not found for a goal by id", await stakeholder.waitFor("Not found"));
-  await stakeholder.goto(projectPath, 3500);
-  step("a stakeholder gets Not found for a project by id", await stakeholder.waitFor("Not found"));
+  step("a stakeholder reads a goal with Mark completed and nothing else", (await stakeholder.waitFor(`${GOAL} edited`)) && (await hasButton(stakeholder, "/^Mark completed$/")) && !(await hasButton(stakeholder, "/^(Edit|Pause|New sub-goal)$/")));
 
-  const other = (browsers.other = await openBrowser({ role: "other", width: 1280, height: 900 }));
-  await other.goto(goalPath, 4000);
-  step("another workspace gets Not found for the goal", await other.waitFor("Not found"));
-  await other.goto(projectPath, 3500);
-  step("another workspace gets Not found for the project", await other.waitFor("Not found"));
-  await other.goto("/goals?all=1", 3500);
-  step("another workspace's goals show none of ours", (await other.waitFor("Goals")) && !(await other.has("Walkthrough goal")) && !(await other.has("Ship the self-serve onboarding")));
+  const otherWs = (browsers.other = await openBrowser({ role: "other", width: 1280, height: 900 }));
+  await otherWs.goto(goalPath, 4000);
+  step("another workspace gets Not found for the goal", await otherWs.waitFor("Not found"));
+  await otherWs.goto(projectPath, 3500);
+  step("another workspace gets Not found for the project", await otherWs.waitFor("Not found"));
+  await otherWs.goto("/goals?all=1", 3500);
+  step("another workspace's goals show none of ours", (await otherWs.waitFor("Goals")) && !(await otherWs.has("Walkthrough goal")) && !(await otherWs.has("Ship the self-serve onboarding")));
 } catch (error) {
   await stoppedOn(error, "07", browsers);
   step("flow ran to the end", false);

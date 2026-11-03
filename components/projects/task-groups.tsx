@@ -13,7 +13,7 @@ const OPEN_STATUSES: TaskStatus[] = ["not_started", "in_progress", "awaiting_app
 const isClosed = (task: TaskListItem) => CLOSED_STATUSES.includes(task.status);
 
 /** Completed and rejected tasks behind a native disclosure: there for the record, out of the way of open work. */
-export function ClosedTasks({ items, today }: { items: TaskListItem[]; today: string }) {
+export function ClosedTasks({ items, today, readOnly = false }: { items: TaskListItem[]; today: string; readOnly?: boolean }) {
   if (items.length === 0) return null;
   return (
     <details className="group min-w-0">
@@ -23,7 +23,7 @@ export function ClosedTasks({ items, today }: { items: TaskListItem[]; today: st
         <span className="text-[13px] font-normal text-muted-foreground tabular-nums">{items.length}</span>
       </summary>
       <div className="mt-2 overflow-hidden rounded-lg border bg-card">
-        <TaskList page={{ items, nextCursor: null }} today={today} showReason={false} />
+        <TaskList page={{ items, nextCursor: null }} today={today} showReason={false} readOnly={readOnly} />
       </div>
     </details>
   );
@@ -40,12 +40,15 @@ export function PlanningTasks({
   groupByStatus = false,
   action,
   empty,
+  readOnly = false,
 }: {
   items: TaskListItem[];
   today: string;
   groupByStatus?: boolean;
   action?: ReactNode;
   empty: ReactNode;
+  /** A stakeholder reads the rows without their menus. */
+  readOnly?: boolean;
 }) {
   const open = items.filter((task) => !isClosed(task));
   const closed = items.filter(isClosed);
@@ -66,12 +69,12 @@ export function PlanningTasks({
             <p className="rounded-lg border border-dashed bg-card px-4 py-4 text-base text-muted-foreground">Nothing open right now.</p>
           ) : groupByStatus ? (
             OPEN_STATUSES.map((status) => (
-              <TaskSection key={status} title={TASK_STATUS_LABELS[status]} items={open.filter((task) => task.status === status)} today={today} reasonless />
+              <TaskSection key={status} title={TASK_STATUS_LABELS[status]} items={open.filter((task) => task.status === status)} today={today} reasonless readOnly={readOnly} />
             ))
           ) : (
-            <TaskSection title="Open" id="open-tasks" items={open} today={today} reasonless />
+            <TaskSection title="Open" id="open-tasks" items={open} today={today} reasonless readOnly={readOnly} />
           )}
-          <ClosedTasks items={closed} today={today} />
+          <ClosedTasks items={closed} today={today} readOnly={readOnly} />
         </div>
       )}
     </section>

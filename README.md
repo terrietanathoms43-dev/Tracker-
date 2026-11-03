@@ -22,7 +22,7 @@ Without SMTP settings, sign-in links and every other email are printed to the de
 ### Test personas (development only)
 
 ```bash
-npm run test:seed               # six .test personas, two workspaces, realistic tasks/goals/requests
+npm run test:seed               # six .test personas, two workspaces, realistic projects/goals/tasks/proposals
 node scripts/test-browser.mjs leader /home --width=1280 --height=900   # screenshot, signed in as Morgan
 npm run test:walk               # every walkthrough script, then tidy
 ```
@@ -35,7 +35,7 @@ Set `TEST_MODE_SECRET` (16+ characters) in `.env.local` first. The roster and ru
 npm run typecheck && npm run lint && npm run test:unit && npm run build
 ```
 
-The unit tests are deliberately few: permissions, task status transitions, request decisions, the My Work grouping, CSV safety, and an opt-in cross-workspace isolation test. Flows are proven by the walkthroughs.
+The unit tests are deliberately few: permissions, task status transitions, the sign-off policy, recurrence, the goal graph, the My Work grouping, CSV safety, and an opt-in cross-workspace isolation test. Flows are proven by the walkthroughs.
 
 ## How the code is organised
 

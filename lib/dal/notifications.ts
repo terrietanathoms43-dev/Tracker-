@@ -46,7 +46,7 @@ export type Preferences = {
   emailApproval: boolean;
   emailHandover: boolean;
   emailBlocked: boolean;
-  emailRequestDecision: boolean;
+  emailProposal: boolean;
   emailComment: boolean;
 };
 
@@ -55,7 +55,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   emailApproval: true,
   emailHandover: true,
   emailBlocked: true,
-  emailRequestDecision: true,
+  emailProposal: true,
   emailComment: false,
 };
 
@@ -68,7 +68,7 @@ export async function getPreferences(userId: string): Promise<Preferences> {
     emailApproval: row.emailApproval,
     emailHandover: row.emailHandover,
     emailBlocked: row.emailBlocked,
-    emailRequestDecision: row.emailRequestDecision,
+    emailProposal: row.emailProposal,
     emailComment: row.emailComment,
   };
 }

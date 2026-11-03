@@ -2,84 +2,95 @@ import { GitBranch } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ApprovalSettingsDialog } from "@/components/approvals/approval-settings-dialog";
+import { GoalPastTargetStrip } from "@/components/goals/goal-alerts";
+import { GoalConnections } from "@/components/goals/goal-connections";
 import { GoalDialog } from "@/components/goals/goal-dialog";
-import { GoalStatusBadge, OwnerLabel, TargetLabel } from "@/components/goals/goal-parts";
-import { GoalProjects } from "@/components/goals/goal-projects";
+import { GoalStatusBadge, isPastTarget, OwnerLabel, RepeatLabel, TargetLabel } from "@/components/goals/goal-parts";
 import { GoalStatusActions } from "@/components/goals/goal-status-actions";
 import { PlanningHeader, PlanningSummary } from "@/components/goals/planning-header";
 import { SubGoals } from "@/components/goals/sub-goals";
-import { ProjectDialog } from "@/components/projects/project-dialog";
 import { PlanningTasks } from "@/components/projects/task-groups";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
-import { activeGoalOptions, getGoal, ownerOptions, parentGoalOptions, subGoalsOf } from "@/lib/dal/goals";
-import { projectOptions, projectsForGoal } from "@/lib/dal/projects";
+import { approvalSettings } from "@/lib/dal/approvals";
+import { connectionsOf, getGoal, listGoals, ownerOptions, parentGoalOptions, subGoalsOf } from "@/lib/dal/goals";
+import { projectOptions } from "@/lib/dal/projects";
 import { tasksForGoal } from "@/lib/dal/tasks";
-import { canCreateTask, canManagePlanning } from "@/lib/permissions";
+import { canCompleteGoal, canCreateTask, canManagePlanning, isStakeholder } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
 
-// /goals/[id]: one goal, its progress, and the sub-goals, projects and tasks that move it.
+// /goals/[id]: one goal, its progress, its place among the other goals, and the sub-goals and tasks that move it.
 
 export const metadata: Metadata = { title: "Goal" };
 
 /**
- * "How far along is this goal, and what work moves it?" Header and progress first, then (for a top-level goal) its
- * sub-goals, then the projects that roll up into it, then its tasks: direct, through those projects, and through its
- * sub-goals. A sub-goal's page points back at its parent. A foreign id, or a stakeholder, gets Not found.
+ * "How far along is this goal, and what work moves it?" Header and progress first (a goal past its target shouts
+ * until someone marks it completed), then (for a top-level goal) its sub-goals, its connections, then its tasks:
+ * direct and through its sub-goals. A sub-goal's page points back at its parent. A foreign id gets Not found.
  */
 export default async function GoalPage(props: PageProps<"/goals/[id]">) {
   const { id } = await props.params;
   const viewer = await requireViewer();
   const manage = canManagePlanning(viewer);
   // One round trip; nothing renders unless getGoal finds the goal in this workspace for a viewer who may read it.
-  const [goal, subGoals, projects, tasks, people, goalOptions, allProjects, parents] = await Promise.all([
+  const [goal, subGoals, tasks, connections, people, projects, parents, allGoals] = await Promise.all([
     getGoal(viewer, id),
     subGoalsOf(viewer, id),
-    projectsForGoal(viewer, id),
     tasksForGoal(viewer, id),
+    connectionsOf(viewer, id),
     manage ? ownerOptions(viewer) : [],
-    manage ? activeGoalOptions(viewer) : [],
     manage ? projectOptions(viewer) : [],
     manage ? parentGoalOptions(viewer) : [],
+    manage ? listGoals(viewer, { includeCompleted: false, topLevelOnly: true }) : [],
   ]);
   if (goal === null) notFound();
+  const settings = manage ? await approvalSettings(viewer, { goalId: goal.id }) : null;
   const today = dayKey(new Date(), viewer.timezone);
   const active = goal.status === "active";
   const topLevel = goal.parent === null;
+  const late = isPastTarget(goal, today);
+  const statusActions = <GoalStatusActions goalId={goal.id} status={goal.status} canComplete={canCompleteGoal(viewer)} canManage={manage} loud={late} />;
+  const editDialog = manage ? (
+    <GoalDialog
+      goal={{
+        id: goal.id,
+        title: goal.title,
+        description: goal.description,
+        successCriteria: goal.successCriteria,
+        ownerId: goal.owner?.id ?? null,
+        projectId: goal.project.id,
+        parentGoalId: goal.parent?.id ?? null,
+        targetDate: goal.targetDate,
+        recurrence: goal.recurrence,
+        subGoals: goal.subGoals,
+      }}
+      people={people}
+      projects={projects.map(({ id: projectId, name }) => ({ id: projectId, name }))}
+      parents={parents}
+      viewerId={viewer.userId}
+      today={today}
+    />
+  ) : null;
 
   return (
     <div className="mx-auto max-w-3xl">
       <PlanningHeader
-        back={goal.parent ? { href: `/goals/${goal.parent.id}`, label: goal.parent.title } : { href: "/goals", label: "Goals" }}
+        back={goal.parent ? { href: `/goals/${goal.parent.id}`, label: goal.parent.title } : { href: `/projects/${goal.project.id}`, label: goal.project.name }}
         title={goal.title}
         actions={
-          manage ? (
-            <>
-              <GoalDialog
-                goal={{
-                  id: goal.id,
-                  title: goal.title,
-                  description: goal.description,
-                  successCriteria: goal.successCriteria,
-                  ownerId: goal.owner?.id ?? null,
-                  parentGoalId: goal.parent?.id ?? null,
-                  projectIds: projects.map((project) => project.id),
-                  targetDate: goal.targetDate,
-                  subGoals: goal.subGoals,
-                }}
-                people={people}
-                projects={allProjects}
-                parents={parents}
-                viewerId={viewer.userId}
-                today={today}
-              />
-              <GoalStatusActions goalId={goal.id} status={goal.status} />
-            </>
-          ) : null
+          <>
+            {editDialog}
+            {manage && settings ? <ApprovalSettingsDialog scope={{ goalId: goal.id }} settings={settings} people={people} what="this goal" /> : null}
+            {late ? null : statusActions}
+          </>
         }
         meta={
           <>
             <GoalStatusBadge status={goal.status} />
+            <Link href={`/projects/${goal.project.id}`} className="rounded-sm text-foreground underline-offset-4 hover:underline">
+              {goal.project.name}
+            </Link>
             {goal.parent ? (
               <Link href={`/goals/${goal.parent.id}`} className="inline-flex items-center gap-1 rounded-sm text-foreground underline-offset-4 hover:underline">
                 <GitBranch className="size-3.5 text-muted-foreground" aria-hidden />
@@ -89,10 +100,12 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
             ) : null}
             <OwnerLabel owner={goal.owner} className="text-foreground" />
             {goal.targetDate ? <TargetLabel day={goal.targetDate} today={today} active={active} /> : null}
+            <RepeatLabel repeats={goal.repeats} />
           </>
         }
       />
-      {active && canCreateTask(viewer) ? <QuickAddTask today={today} defaults={{ goalId: goal.id }} /> : null}
+      {late && goal.targetDate ? <GoalPastTargetStrip targetDate={goal.targetDate} today={today} actions={statusActions} /> : null}
+      {active && canCreateTask(viewer) ? <QuickAddTask today={today} defaults={{ projectId: goal.project.id, goalId: goal.id }} /> : null}
       <div className="grid gap-8">
         <PlanningSummary successCriteria={goal.successCriteria} description={goal.description} progress={goal.progress} />
         {topLevel ? (
@@ -101,26 +114,20 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
             today={today}
             action={
               manage && active ? (
-                <GoalDialog people={people} parent={{ id: goal.id, title: goal.title, targetDate: goal.targetDate }} viewerId={viewer.userId} today={today} variant="outline" />
+                <GoalDialog people={people} parent={{ id: goal.id, title: goal.title, targetDate: goal.targetDate, projectId: goal.project.id }} viewerId={viewer.userId} today={today} variant="outline" />
               ) : null
             }
-            empty={
-              manage && active
-                ? "No sub-goals yet. Split a big goal into steps, each with its own target on or before this goal's."
-                : "This goal has no sub-goals."
-            }
+            empty={manage && active ? "No sub-goals yet. Split a big goal into steps, each with its own target on or before this goal's." : "This goal has no sub-goals."}
           />
         ) : null}
-        <GoalProjects
-          projects={projects}
-          today={today}
-          action={manage && active ? <ProjectDialog people={people} goals={goalOptions} viewerId={viewer.userId} goalId={goal.id} variant="outline" /> : null}
+        <GoalConnections
+          goalId={goal.id}
+          comesAfter={connections.comesAfter}
+          leadsTo={connections.leadsTo}
+          choices={allGoals.map((each) => ({ id: each.id, title: each.title, projectName: each.project.name }))}
+          canEdit={manage}
         />
-        <PlanningTasks
-          items={tasks}
-          today={today}
-          empty={active ? "No tasks serve this goal yet. Add one above, or put a project under it." : "No tasks served this goal."}
-        />
+        <PlanningTasks items={tasks} today={today} readOnly={isStakeholder(viewer)} empty={active ? "No tasks serve this goal yet. Add one above." : "No tasks served this goal."} />
       </div>
     </div>
   );

@@ -6,14 +6,18 @@ import { z } from "zod";
 import { LIMITS } from "@/lib/limits";
 import { cappedText, optionalLink, optionalText, requiredLink, requiredText } from "@/lib/sanitize";
 import { db, type Tx } from "@/db";
-import { goals, notifications, projects, taskLinks, taskUpdates, tasks } from "@/db/schema";
+import { notifications, taskApprovals, taskLinks, taskUpdates, tasks } from "@/db/schema";
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { TASK_PRIORITIES, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { chainFor, currentStep, type ChainStep } from "@/lib/approvals/policy";
+import { lockTaskApprovals, readPolicy } from "@/lib/dal/approvals";
 import { recordActivity } from "@/lib/dal/activity";
 import { applyAssignment, snapshotAssignment, validateAssignment } from "@/lib/dal/assignments";
+import { findGoal } from "@/lib/dal/goals";
 import { listHistory, lockComment } from "@/lib/dal/history";
 import { findMembership, leaderIds } from "@/lib/dal/orgs";
-import { getTaskBasics, listTasks, lockTask, searchTasks, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
+import { findProject } from "@/lib/dal/projects";
+import { getTaskBasics, listTasks, lockTask, recentTasks, searchTasks, seriesHasOpenTask, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
 import { captureProviderFor } from "@/lib/capture/availability";
 import { log } from "@/lib/log";
 import { dispatch, type Notice } from "@/lib/notify";
@@ -32,18 +36,21 @@ import {
   type TaskScope,
   type Viewer,
 } from "@/lib/permissions";
+import { projectScopeFor } from "@/lib/project-scope-server";
+import { describeRecurrence, nextAfterFinishing, normalizeRecurrence, sameRecurrence, type Recurrence } from "@/lib/recurrence";
 import { defaultApproverFor } from "@/lib/tasks/approver";
 import { sameIds } from "@/lib/tasks/assignees";
 import { parseFilters } from "@/lib/tasks/filters";
 import { planTransition, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
 import type { HistoryPage, TaskFormOptions, TaskListItem, TaskPage, UpdateContext } from "@/lib/tasks/types";
-import { dayKey } from "@/lib/time";
+import { dayKey, formatDay } from "@/lib/time";
 import { requireViewer, requireViewerContext } from "@/lib/viewer";
 
 // Every change to a task, and the reads its client components need. Each mutation follows the action skeleton
 // (apex-architecture §4): zod → requireViewer → lock the row by id and workspace → permission → one transaction
 // (state + task_activity + notices collected) → dispatch after commit → refresh() → ok(data, "Toast.").
-// Assignment is a set of people (lib/dal/assignments.ts).
+// Assignment is a set of people (lib/dal/assignments.ts). A new task may be a proposal (lib/approvals/policy.ts);
+// a repeating task makes its next occurrence when it is completed (lib/recurrence.ts).
 
 // --- shared checks -----------------------------------------------------------------------------------------
 
@@ -51,6 +58,9 @@ const id = z.string().min(1).max(64);
 const idList = z.array(id).max(50).default([]);
 const httpUrl = optionalLink();
 const day = z.union([z.literal(""), z.iso.date({ error: "Pick a date." })]).default("");
+const clock = z.union([z.literal(""), z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Pick a time.")]).default("");
+/** A repeat rule as the forms send it: null (or anything unreadable) means it doesn't repeat. */
+const recurrenceInput = z.unknown().transform((value) => normalizeRecurrence(value)).default(null);
 
 const taskHref = (taskId: string) => `/tasks/${taskId}`;
 
@@ -60,19 +70,27 @@ async function requireWorker(tx: Tx, orgId: string, userId: string, message: str
   if (membership === null || membership.role === "stakeholder") throw new GuardError("forbidden", message);
 }
 
-async function findProject(tx: Tx, orgId: string, projectId: string) {
-  const [row] = await tx
-    .select({ id: projects.id, name: projects.name, status: projects.status })
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)));
-  if (!row) throw new GuardError("not_found", "That project doesn't exist, or you can't see it.");
-  return row;
-}
-
-async function findGoal(tx: Tx, orgId: string, goalId: string) {
-  const [row] = await tx.select({ id: goals.id, title: goals.title }).from(goals).where(and(eq(goals.id, goalId), eq(goals.orgId, orgId)));
-  if (!row) throw new GuardError("not_found", "That goal doesn't exist, or you can't see it.");
-  return row;
+/**
+ * Where a task sits in the funnel: a goal fixes the project (a task under a goal is in that goal's project); a
+ * project alone is fine; neither is a standalone task. Archived projects and inactive goals take no new work.
+ */
+async function resolvePlacement(tx: Tx, orgId: string, input: { projectId: string; goalId: string }): Promise<{ projectId: string | null; goalId: string | null }> {
+  let projectId: string | null = input.projectId || null;
+  let goalId: string | null = input.goalId || null;
+  if (goalId) {
+    const goal = await findGoal(tx, orgId, goalId);
+    if (!goal) throw new GuardError("not_found", "That goal doesn't exist, or you can't see it.");
+    if (goal.status !== "active") throw new GuardError("forbidden", "That goal isn't active. Pick another one.");
+    projectId = goal.projectId;
+  }
+  if (projectId) {
+    const project = await findProject(tx, orgId, projectId);
+    if (!project) throw new GuardError("not_found", "That project doesn't exist, or you can't see it.");
+    if (project.status === "archived") throw new GuardError("forbidden", "That project is archived. Pick another one.");
+  } else {
+    goalId = null;
+  }
+  return { projectId, goalId };
 }
 
 /** Adds an evidence link in the caller's transaction and returns its audit row (nothing for an empty url). */
@@ -133,6 +151,90 @@ async function noticesFor(
   return out;
 }
 
+// --- proposals: the chain a new task gets -----------------------------------------------------------------------
+
+/** Who hears that a step is theirs: the person it names, or every leader and admin when it names nobody. */
+export async function stepRecipients(tx: Tx, orgId: string, step: { userId: string | null }): Promise<string[]> {
+  return step.userId ? [step.userId] : leaderIds(tx, orgId);
+}
+
+/**
+ * Writes a proposal's chain (steps naming the proposer already signed), marks the task pending and returns the
+ * notice for whoever is up first. Null chain: the task is live and nothing is written.
+ */
+export async function startChain(tx: Tx, viewer: Viewer, task: { id: string; title: string }, chain: ChainStep[], now: Date): Promise<Notice[]> {
+  await tx.insert(taskApprovals).values(
+    chain.map((step) => ({
+      taskId: task.id,
+      position: step.position,
+      userId: step.userId,
+      decision: step.autoSigned ? ("approved" as const) : null,
+      decidedBy: step.autoSigned ? viewer.userId : null,
+      decidedAt: step.autoSigned ? now : null,
+      createdAt: now,
+    })),
+  );
+  const next = currentStep(chain.map((step) => ({ position: step.position, userId: step.userId, decision: step.autoSigned ? ("approved" as const) : null })));
+  if (next === null) return [];
+  const recipients = await stepRecipients(tx, viewer.orgId, next);
+  return [{ orgId: viewer.orgId, actorId: viewer.userId, recipients, kind: "proposal_waiting", title: `Proposal to sign off: ${task.title}`, body: `Step ${next.position} of ${chain.length}.`, href: taskHref(task.id) }];
+}
+
+/** The chain a task in this placement gets for this creator, read from the goal's and project's policies. */
+export async function chainForPlacement(tx: Tx, viewer: Viewer, placement: { projectId: string | null; goalId: string | null }): Promise<ChainStep[] | null> {
+  const [goalPolicy, projectPolicy] = await Promise.all([
+    readPolicy(tx, viewer.orgId, placement.goalId ? { goalId: placement.goalId } : null),
+    readPolicy(tx, viewer.orgId, placement.projectId ? { projectId: placement.projectId } : null),
+  ]);
+  return chainFor({ creatorId: viewer.userId, creatorRole: viewer.orgRole, goal: goalPolicy, project: projectPolicy });
+}
+
+// --- repeats: the next occurrence -------------------------------------------------------------------------------
+
+type LockedTask = NonNullable<Awaited<ReturnType<typeof lockTask>>>["task"];
+
+/**
+ * When a repeating task is completed, the next occurrence is made in the same transaction: the same title, people,
+ * project and goal, due on the next scheduled day after today (never in the past). Only the latest occurrence
+ * makes one, so completing twice, or an old reopened copy, never doubles it. Returns the new due day, or null.
+ */
+async function spawnNextOccurrence(tx: Tx, viewer: Viewer, task: LockedTask, assignment: string[], now: Date): Promise<string | null> {
+  const rule: Recurrence | null = task.recurrence ?? null;
+  if (rule === null) return null;
+  const seriesId = task.seriesId ?? task.id;
+  if (await seriesHasOpenTask(tx, viewer.orgId, seriesId, task.id)) return null;
+  const today = dayKey(now, viewer.timezone);
+  const due = nextAfterFinishing(rule, task.dueDate, task.dueDate, today);
+  const [created] = await tx
+    .insert(tasks)
+    .values({
+      orgId: viewer.orgId,
+      projectId: task.projectId,
+      goalId: task.goalId,
+      title: task.title,
+      description: task.description,
+      createdBy: task.createdBy,
+      priority: task.priority,
+      dueDate: due,
+      dueTime: task.dueTime,
+      recurrence: rule,
+      seriesId,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning({ id: tasks.id });
+  await applyAssignment(tx, created.id, viewer.userId, [], assignment, now);
+  await recordActivity(
+    tx,
+    { orgId: viewer.orgId, taskId: created.id, actorId: viewer.userId },
+    [{ kind: "created", after: { title: task.title, repeatOf: task.id }, note: `Next occurrence of a repeating task (${describeRecurrence(rule, due)}).` }],
+    now,
+  );
+  return due;
+}
+
+const withNextDue = (message: string, due: string | null, today: string) => (due ? `${message} The next one is due ${formatDay(due, today)}.` : message);
+
 // --- create ---------------------------------------------------------------------------------------------------
 
 const createSchema = z.object({
@@ -142,53 +244,62 @@ const createSchema = z.object({
   goalId: z.string().max(64).default(""),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
   dueDate: day,
+  dueTime: clock,
+  recurrence: recurrenceInput,
   nextAction: optionalText(LIMITS.nextAction),
   description: optionalText(LIMITS.taskDescription),
 });
 
-/** Creates a task. Only the title is required; everyone assigned but the creator hears about it. */
-export async function createTask(input: z.input<typeof createSchema>): Promise<ActionResult<{ id: string }>> {
+/**
+ * Creates a task. Only the title is required. A task in a goal is in that goal's project. Where the project or goal
+ * requires sign-off (or the creator is a stakeholder) the task is a proposal: nobody is assigned anything until it is
+ * approved. A repeat rule needs a due date to count from.
+ */
+export async function createTask(input: z.input<typeof createSchema>): Promise<ActionResult<{ id: string; proposal: boolean }>> {
   return runAction("tasks.create", createSchema, input, async (data) => {
     const viewer = await requireViewer();
     if (!canCreateTask(viewer)) throw new GuardError("forbidden");
+    if (data.recurrence !== null && data.dueDate === "") return fail("A repeating task needs a first due date.", { dueDate: ["Pick the first day it is due."] });
     const now = new Date();
     const notices: Notice[] = [];
-    const taskId = await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx) => {
       const assignment = await validateAssignment(tx, viewer.orgId, data.assigneeIds);
-      if (data.projectId) {
-        const project = await findProject(tx, viewer.orgId, data.projectId);
-        if (project.status === "archived") throw new GuardError("forbidden", "That project is archived. Pick another one.");
-      }
-      if (data.goalId) await findGoal(tx, viewer.orgId, data.goalId);
+      const placement = await resolvePlacement(tx, viewer.orgId, data);
+      const chain = await chainForPlacement(tx, viewer, placement);
       const [created] = await tx
         .insert(tasks)
         .values({
           orgId: viewer.orgId,
-          projectId: data.projectId || null,
-          goalId: data.goalId || null,
+          projectId: placement.projectId,
+          goalId: placement.goalId,
           title: data.title,
           description: data.description || null,
           createdBy: viewer.userId,
           priority: data.priority,
           dueDate: data.dueDate || null,
-          nextAction: data.nextAction || null,
+          dueTime: data.dueTime || null,
+          recurrence: data.recurrence,
+          proposalStatus: chain === null ? null : "pending",
           createdAt: now,
           updatedAt: now,
         })
         .returning({ id: tasks.id });
+      if (data.recurrence !== null) await tx.update(tasks).set({ seriesId: created.id }).where(eq(tasks.id, created.id));
       await applyAssignment(tx, created.id, viewer.userId, [], assignment, now);
-      const drafts: ActivityDraft[] = [{ kind: "created", after: { title: data.title } }];
+      const drafts: ActivityDraft[] = [{ kind: "created", after: { title: data.title, proposal: chain !== null } }];
       // Assigning work to yourself alone is not news worth a history line.
       const justMe = sameIds(assignment, [viewer.userId]);
       if (!justMe && assignment.length > 0) drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
       await recordActivity(tx, { orgId: viewer.orgId, taskId: created.id, actorId: viewer.userId }, drafts, now);
-      notices.push(...assignedNotice(viewer, { id: created.id, title: data.title, nextAction: data.nextAction || null }, assignment, true));
-      return created.id;
+      if (chain === null) notices.push(...assignedNotice(viewer, { id: created.id, title: data.title, nextAction: data.nextAction || null }, assignment, true));
+      else notices.push(...(await startChain(tx, viewer, { id: created.id, title: data.title }, chain, now)));
+      if (data.nextAction) await tx.update(tasks).set({ nextAction: data.nextAction }).where(eq(tasks.id, created.id));
+      return { id: created.id, proposal: chain !== null };
     });
-    log.info("tasks.created", { orgId: viewer.orgId, taskId, by: viewer.userId });
+    log.info("tasks.created", { orgId: viewer.orgId, taskId: outcome.id, proposal: outcome.proposal, by: viewer.userId });
     await dispatch(notices);
     refresh();
-    return ok({ id: taskId }, "Task created.");
+    return ok(outcome, outcome.proposal ? "Proposed. It goes live once it is signed off." : "Task created.");
   });
 }
 
@@ -213,8 +324,8 @@ export async function setAssignees(input: z.input<typeof assignSchema>): Promise
       await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, task.id));
       const [beforeNames, afterNames] = await Promise.all([snapshotAssignment(tx, before), snapshotAssignment(tx, after)]);
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [{ kind: "assigned", before: beforeNames, after: afterNames }], now);
-      const newcomers = after.filter((userId) => !before.includes(userId));
-      notices.push(...assignedNotice(viewer, task, newcomers, false));
+      // People on a proposal hear once it is approved, not before.
+      if (task.proposalStatus === null || task.proposalStatus === "approved") notices.push(...assignedNotice(viewer, task, after.filter((userId) => !before.includes(userId)), false));
       return true;
     });
     if (!changed) return ok(undefined);
@@ -232,8 +343,10 @@ const editSchema = z.discriminatedUnion("field", [
   z.object({ taskId: id, field: z.literal("description"), value: cappedText(LIMITS.taskDescription) }),
   z.object({ taskId: id, field: z.literal("priority"), value: z.enum(TASK_PRIORITIES) }),
   z.object({ taskId: id, field: z.literal("dueDate"), value: day }),
+  z.object({ taskId: id, field: z.literal("dueTime"), value: clock }),
   z.object({ taskId: id, field: z.literal("projectId"), value: z.string().max(64) }),
   z.object({ taskId: id, field: z.literal("goalId"), value: z.string().max(64) }),
+  z.object({ taskId: id, field: z.literal("recurrence"), value: recurrenceInput }),
 ]);
 
 const EDIT_TOASTS: Record<z.infer<typeof editSchema>["field"], string> = {
@@ -241,11 +354,16 @@ const EDIT_TOASTS: Record<z.infer<typeof editSchema>["field"], string> = {
   description: "Description saved.",
   priority: "Priority changed.",
   dueDate: "Due date changed.",
+  dueTime: "Due time changed.",
   projectId: "Project changed.",
   goalId: "Goal changed.",
+  recurrence: "Repeat changed.",
 };
 
-/** One field at a time, from the task page's inline editors; each change leaves one audit row. */
+/**
+ * One field at a time, from the task page's inline editors; each change leaves one audit row. Picking a goal puts
+ * the task in that goal's project; picking a project the goal isn't in takes the goal off.
+ */
 export async function editTask(input: z.input<typeof editSchema>): Promise<ActionResult> {
   return runAction("tasks.edit", editSchema, input, async (data) => {
     const viewer = await requireViewer();
@@ -255,25 +373,50 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
       if (locked === null) throw new GuardError("not_found");
       const { task, scope } = locked;
       if (!canEditTask(viewer, scope)) throw new GuardError("forbidden");
-      const value = data.value === "" ? null : data.value;
-      const before = task[data.field] ?? null;
-      if (before === value) return false;
 
       const short = (v: unknown) => (typeof v === "string" && v.length > 500 ? `${v.slice(0, 500)}…` : v);
       let draft: ActivityDraft;
-      if (data.field === "priority") draft = { kind: "priority_changed", before: { priority: before }, after: { priority: value } };
-      else if (data.field === "dueDate") draft = { kind: "due_changed", before: { dueDate: before }, after: { dueDate: value } };
-      else if (data.field === "projectId") {
+      let patch: Partial<typeof task> = {};
+      if (data.field === "recurrence") {
+        const before = task.recurrence ?? null;
+        if (sameRecurrence(before, data.value)) return false;
+        if (data.value !== null && task.dueDate === null) throw new GuardError("forbidden", "Set a due date first: a repeating task counts from its first due day.");
+        patch = { recurrence: data.value, seriesId: data.value === null ? task.seriesId : (task.seriesId ?? task.id) };
+        draft = { kind: "edited", before: { recurrence: before ? describeRecurrence(before, task.dueDate) : null }, after: { recurrence: data.value ? describeRecurrence(data.value, task.dueDate) : null } };
+      } else if (data.field === "goalId") {
+        const value = data.value === "" ? null : data.value;
+        if ((task.goalId ?? null) === value) return false;
+        const placement = await resolvePlacement(tx, viewer.orgId, { projectId: task.projectId ?? "", goalId: value ?? "" });
+        const goal = value === null ? null : await findGoal(tx, viewer.orgId, value);
+        patch = { goalId: placement.goalId, projectId: value === null ? task.projectId : placement.projectId };
+        draft = { kind: "edited", before: { goalId: task.goalId }, after: { goalId: value, goalTitle: goal?.title ?? null } };
+      } else if (data.field === "projectId") {
+        const value = data.value === "" ? null : data.value;
+        if ((task.projectId ?? null) === value) return false;
         // Names are kept in the audit row so the history still reads right after a rename.
         const project = value === null ? null : await findProject(tx, viewer.orgId, value);
+        if (value !== null && !project) throw new GuardError("not_found", "That project doesn't exist, or you can't see it.");
         if (project?.status === "archived") throw new GuardError("forbidden", "That project is archived. Pick another one.");
-        draft = { kind: "edited", before: { projectId: before }, after: { projectId: value, projectName: project?.name ?? null } };
-      } else if (data.field === "goalId") {
-        const goal = value === null ? null : await findGoal(tx, viewer.orgId, value);
-        draft = { kind: "edited", before: { goalId: before }, after: { goalId: value, goalTitle: goal?.title ?? null } };
-      } else draft = { kind: "edited", before: { [data.field]: short(before) }, after: { [data.field]: short(value) } };
+        const goal = task.goalId ? await findGoal(tx, viewer.orgId, task.goalId) : null;
+        const keepGoal = goal !== null && goal.projectId === value;
+        patch = { projectId: value, goalId: keepGoal ? task.goalId : null };
+        draft = { kind: "edited", before: { projectId: task.projectId }, after: { projectId: value, projectName: project?.name ?? null } };
+      } else {
+        const value = data.value === "" ? null : data.value;
+        const before = task[data.field] ?? null;
+        if (before === value) return false;
+        patch = { [data.field]: value };
+        if (data.field === "priority") draft = { kind: "priority_changed", before: { priority: before }, after: { priority: value } };
+        else if (data.field === "dueDate") {
+          if (value === null && task.recurrence) throw new GuardError("forbidden", "This task repeats, so it needs a due date. Stop the repeat first.");
+          draft = { kind: "due_changed", before: { dueDate: before }, after: { dueDate: value } };
+        } else draft = { kind: "edited", before: { [data.field]: short(before) }, after: { [data.field]: short(value) } };
+      }
 
-      await tx.update(tasks).set({ [data.field]: value, updatedAt: now }).where(eq(tasks.id, task.id));
+      await tx
+        .update(tasks)
+        .set({ ...patch, updatedAt: now })
+        .where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [draft], now);
       return true;
     });
@@ -314,7 +457,7 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
     const viewer = await requireViewer();
     const now = new Date();
     const notices: Notice[] = [];
-    const outcome = await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null } | null> => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
       const { task, assignment, scope } = locked;
@@ -327,21 +470,24 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       }
       const transition: TransitionInput = { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary, note: data.note };
       const plan = planTransition(task, data.status, transition, now, via);
-      if (!plan.ok) return plan.error;
+      if (!plan.ok) return { error: plan.error };
       if (plan.activities.length === 0) return null;
       const evidence = data.status === "completed" ? await insertLink(tx, task.id, viewer.userId, data.evidenceUrl, data.evidenceLabel, now) : [];
       await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [...plan.activities, ...evidence], now);
       notices.push(...(await noticesFor(tx, viewer, task, assignment, plan.activities, data.approverId || task.approverId, data.note || null)));
-      return null;
+      const nextDue = data.status === "completed" ? await spawnNextOccurrence(tx, viewer, task, assignment, now) : null;
+      return { nextDue };
     });
-    if (outcome !== null) return fail(outcome);
+    if (outcome !== null && "error" in outcome) return fail(outcome.error);
     log.info("tasks.status_changed", { orgId: viewer.orgId, taskId: data.taskId, to: data.status, via: data.via, by: viewer.userId });
     await dispatch(notices);
     refresh();
-    if (data.via === "approve") return ok(undefined, "Approved.");
+    const today = dayKey(now, viewer.timezone);
+    const nextDue = outcome?.nextDue ?? null;
+    if (data.via === "approve") return ok(undefined, withNextDue("Approved.", nextDue, today));
     if (data.via === "send_back") return ok(undefined, "Sent back.");
-    return ok(undefined, STATUS_TOASTS[data.status] ?? "Status changed.");
+    return ok(undefined, withNextDue(STATUS_TOASTS[data.status] ?? "Status changed.", nextDue, today));
   });
 }
 
@@ -352,35 +498,36 @@ const progressSchema = z
     taskId: id,
     progress: requiredText(1, LIMITS.progressNote, "Say what you got done."),
     nextAction: optionalText(LIMITS.nextAction),
-    blocked: z.boolean().default(false),
-    blockedReason: optionalText(LIMITS.blockedReason),
+    /** The status the update leaves the task in; "" keeps it as it is. The one set of statuses, as everywhere. */
+    status: z.enum(["", ...TASK_STATUSES]).default(""),
+    reason: optionalText(LIMITS.blockedReason),
     blockedBy: optionalText(LIMITS.blockedBy),
     evidenceUrl: httpUrl,
     evidenceLabel: optionalText(LIMITS.evidenceLabel),
     handOverTo: z.string().max(64).default(""),
-    markAs: z.enum(["", "in_progress", "awaiting_approval", "completed"]).default(""),
     approverId: z.string().max(64).default(""),
     summary: optionalText(LIMITS.completionSummary),
   })
   .superRefine((value, ctx) => {
-    if (value.markAs !== "completed" && value.nextAction === "") ctx.addIssue({ code: "custom", path: ["nextAction"], message: "Say what happens next." });
-    if (value.blocked && value.blockedReason === "") ctx.addIssue({ code: "custom", path: ["blockedReason"], message: "Say what is blocking it." });
-    if (value.blocked && value.markAs !== "") ctx.addIssue({ code: "custom", path: ["markAs"], message: "A blocked task can't also be completed or sent for approval." });
-    if (value.markAs === "awaiting_approval" && value.approverId === "") ctx.addIssue({ code: "custom", path: ["approverId"], message: "Choose who approves it." });
+    const closing = value.status === "completed" || value.status === "rejected";
+    if (!closing && value.nextAction === "") ctx.addIssue({ code: "custom", path: ["nextAction"], message: "Say what happens next." });
+    if (value.status === "blocked" && value.reason === "") ctx.addIssue({ code: "custom", path: ["reason"], message: "Say what is blocking it." });
+    if (value.status === "rejected" && value.reason === "") ctx.addIssue({ code: "custom", path: ["reason"], message: "Give a reason for rejecting it." });
+    if (value.status === "awaiting_approval" && value.approverId === "") ctx.addIssue({ code: "custom", path: ["approverId"], message: "Choose who approves it." });
   });
 
 /**
- * The signature action (docs/BRIEF.md §6): what got done, what happens next, and optionally a blocker, evidence,
- * a handover and a new status, written in one transaction (the update row, the task's denormalised latest
- * progress and next action, the audit rows) with the notices sent after it commits. A handover makes the chosen
- * person the task's only person.
+ * The signature action (docs/BRIEF.md §6): what got done, what happens next, and optionally evidence, a handover
+ * and a new status (the same six statuses as everywhere else), written in one transaction (the update row, the
+ * task's denormalised latest progress and next action, the audit rows) with the notices sent after it commits.
+ * A handover makes the chosen person the task's only person. Completing a repeating task makes the next one.
  */
 export async function updateProgress(input: z.input<typeof progressSchema>): Promise<ActionResult> {
   return runAction("tasks.progress", progressSchema, input, async (data) => {
     const viewer = await requireViewer();
     const now = new Date();
     const notices: Notice[] = [];
-    const outcome = await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null }> => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
       const { task, assignment, scope } = locked;
@@ -390,28 +537,27 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
       const handingOver = data.handOverTo !== "" && !sameIds(assignment, [data.handOverTo]);
       const after = handingOver ? [data.handOverTo] : assignment;
 
-      // The status the update leaves the task in: blocked if ticked, else the "Mark as" choice; un-ticking
-      // "I'm blocked" on a blocked task unblocks it.
-      let target: TaskStatus | null = null;
-      if (data.blocked) target = task.status === "blocked" ? null : "blocked";
-      else if (data.markAs !== "") target = data.markAs;
-      else if (task.status === "blocked") target = "in_progress";
+      // The status the update leaves the task in: what was picked, or no change.
+      const target: TaskStatus | null = data.status === "" || data.status === task.status ? null : data.status;
 
       const drafts: ActivityDraft[] = [{ kind: "progress_updated", after: { progress: data.progress.slice(0, 500), nextAction: data.nextAction || null } }];
       let patch: Record<string, unknown> = {};
       if (target !== null) {
         const via: TransitionVia = task.status === "awaiting_approval" && target === "completed" ? "approve" : "status";
-        if (!mayMove(viewer, scope, task.status, target, via)) throw new GuardError("forbidden", "Only the approver can complete a task that is waiting for approval.");
+        if (!mayMove(viewer, scope, task.status, target, via)) {
+          throw new GuardError("forbidden", target === "rejected" ? "Only people who may edit this task can reject it." : "Only the approver can complete a task that is waiting for approval.");
+        }
         if (target === "awaiting_approval") {
           await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
           if (after.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
         }
-        const plan = planTransition(task, target, { reason: data.blockedReason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
-        if (!plan.ok) return plan.error;
+        const plan = planTransition(task, target, { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
+        if (!plan.ok) return { error: plan.error };
         patch = plan.patch;
         drafts.push(...plan.activities);
-      } else if (data.blocked && (data.blockedReason !== task.blockedReason || (data.blockedBy || null) !== task.blockedBy)) {
-        patch = { blockedReason: data.blockedReason, blockedBy: data.blockedBy || null };
+      } else if (task.status === "blocked" && data.status === "blocked" && (data.reason !== task.blockedReason || (data.blockedBy || null) !== task.blockedBy)) {
+        // Still blocked, with the reason brought up to date.
+        patch = { blockedReason: data.reason, blockedBy: data.blockedBy || null };
       }
 
       if (handingOver) {
@@ -438,7 +584,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         kind: "progress",
         body: data.progress,
         nextAction: data.nextAction || null,
-        blocker: data.blocked ? data.blockedReason : null,
+        blocker: data.status === "blocked" ? data.reason : null,
         createdAt: now,
       });
       await tx
@@ -446,13 +592,14 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         .set({ ...patch, latestProgress: data.progress, nextAction: data.nextAction || null, updatedAt: now })
         .where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
-      return null;
+      const nextDue = target === "completed" ? await spawnNextOccurrence(tx, viewer, task, after, now) : null;
+      return { nextDue };
     });
-    if (outcome !== null) return fail(outcome);
-    log.info("tasks.progress_updated", { orgId: viewer.orgId, taskId: data.taskId, by: viewer.userId, markAs: data.markAs || null, blocked: data.blocked });
+    if ("error" in outcome) return fail(outcome.error);
+    log.info("tasks.progress_updated", { orgId: viewer.orgId, taskId: data.taskId, by: viewer.userId, status: data.status || null });
     await dispatch(notices);
     refresh();
-    return ok(undefined, "Update saved.");
+    return ok(undefined, withNextDue("Update saved.", outcome.nextDue, dayKey(now, viewer.timezone)));
   });
 }
 
@@ -572,11 +719,12 @@ export async function removeLink(input: z.input<typeof removeLinkSchema>): Promi
 
 const moreSchema = z.object({ query: z.record(z.string(), z.string()), cursor: id });
 
-/** The next page of the task list for the same filters (the list's "Load more"). */
+/** The next page of the task list for the same filters (the list's "Load more"); the project comes from the navigation's scope. */
 export async function loadMoreTasks(input: z.input<typeof moreSchema>): Promise<ActionResult<TaskPage>> {
   return runAction("tasks.more", moreSchema, input, async ({ query, cursor }) => {
     const viewer = await requireViewer();
-    return ok(await listTasks(viewer, parseFilters(query), { today: dayKey(new Date(), viewer.timezone), cursor }));
+    const project = await projectScopeFor(viewer);
+    return ok(await listTasks(viewer, parseFilters(query, project), { today: dayKey(new Date(), viewer.timezone), cursor }));
   });
 }
 
@@ -594,11 +742,11 @@ export async function loadHistory(input: z.input<typeof historySchema>): Promise
 
 const searchSchema = z.object({ q: z.string().max(LIMITS.search) });
 
-/** Task titles for the command palette. */
+/** Tasks for the command palette: a title and description search, or the most recently touched ones when nothing is typed. */
 export async function paletteSearch(input: z.input<typeof searchSchema>): Promise<ActionResult<TaskListItem[]>> {
   return runAction("tasks.search", searchSchema, input, async ({ q }) => {
     const viewer = await requireViewer();
-    return ok(await searchTasks(viewer, q));
+    return ok(q.trim() === "" ? await recentTasks(viewer) : await searchTasks(viewer, q));
   });
 }
 
@@ -606,18 +754,18 @@ export async function paletteSearch(input: z.input<typeof searchSchema>): Promis
 const offersCapture = (viewer: Viewer, email: string | null) => canCapture(viewer) && captureProviderFor(email) !== null;
 
 /** What the palette may offer this viewer: their navigation, whether they can create tasks, and capture. */
-export async function getPaletteContext(): Promise<ActionResult<{ nav: NavKey[]; canCreate: boolean; canCapture: boolean }>> {
+export async function getPaletteContext(): Promise<ActionResult<{ nav: NavKey[]; canCreate: boolean; canCapture: boolean; worker: boolean }>> {
   return runAction("tasks.palette_context", z.object({}), {}, async () => {
     const { viewer, user } = await requireViewerContext();
-    return ok({ nav: navFor(viewer), canCreate: canCreateTask(viewer), canCapture: offersCapture(viewer, user.email) });
+    return ok({ nav: navFor(viewer), canCreate: canCreateTask(viewer), canCapture: offersCapture(viewer, user.email), worker: viewer.orgRole !== "stakeholder" });
   });
 }
 
-/** The New task form's pickers. Stakeholders ask for work through requests instead. */
+/** The New task form's pickers. */
 export async function getTaskFormOptions(): Promise<ActionResult<TaskFormOptions>> {
   return runAction("tasks.form_options", z.object({}), {}, async () => {
     const { viewer, user } = await requireViewerContext();
-    if (!canCreateTask(viewer)) throw new GuardError("forbidden", "Only people who work in this workspace can create tasks. Submit a request instead.");
+    if (!canCreateTask(viewer)) throw new GuardError("forbidden");
     return ok({ ...(await taskFormOptions(viewer)), canCapture: offersCapture(viewer, user.email) });
   });
 }
@@ -638,6 +786,7 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
         blockedReason: task.blockedReason,
         blockedBy: task.blockedBy,
         openComments: task.openComments,
+        repeats: task.recurrence ? describeRecurrence(task.recurrence, task.dueDate) : null,
       },
       people,
       defaultApprover: defaultApproverFor(people, task.approverId, task.assigneeIds),
@@ -646,6 +795,7 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
         progress: canUpdateProgress(viewer, task.scope),
         approve: canApproveTask(viewer, task.scope),
         reject: canRejectTask(viewer, task.scope),
+        decideProposal: false,
       },
     });
   });
@@ -655,19 +805,23 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
 
 const deleteSchema = z.object({ taskId: id });
 
-/** Removes the task and everything hanging off it (assignees, updates, links, history — all cascade). */
+/** Removes the task and everything hanging off it (assignees, updates, links, history — all cascade). A proposer may withdraw their own open proposal. */
 export async function deleteTask(input: z.input<typeof deleteSchema>): Promise<ActionResult> {
   return runAction("tasks.delete", deleteSchema, input, async (data) => {
     const viewer = await requireViewer();
-    await db.transaction(async (tx) => {
+    const proposal = await db.transaction(async (tx) => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
-      if (!canDeleteTask(viewer)) throw new GuardError("forbidden", "Only leaders and admins can delete tasks.");
+      if (!canDeleteTask(viewer, locked.scope)) throw new GuardError("forbidden", "Only leaders and admins can delete tasks.");
       await tx.delete(tasks).where(and(eq(tasks.id, data.taskId), eq(tasks.orgId, viewer.orgId)));
       await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/tasks/${data.taskId}`)));
+      return locked.task.proposalStatus === "pending" || locked.task.proposalStatus === "declined";
     });
     log.info("tasks.deleted", { orgId: viewer.orgId, taskId: data.taskId, by: viewer.userId });
     refresh();
-    return ok(undefined, "Task deleted.");
+    return ok(undefined, proposal ? "Proposal withdrawn." : "Task deleted.");
   });
 }
+
+/** Re-exported for the proposals action, which continues a chain this file started. */
+export { lockTaskApprovals };

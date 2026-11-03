@@ -31,7 +31,8 @@ const PREFERENCE: Record<NotificationKind, keyof Preferences> = {
   approval_requested: "emailApproval",
   approval_decided: "emailApproval",
   blocked: "emailBlocked",
-  request_decided: "emailRequestDecision",
+  proposal_waiting: "emailProposal",
+  proposal_decided: "emailProposal",
   commented: "emailComment",
 };
 

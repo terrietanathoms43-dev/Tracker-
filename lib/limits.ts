@@ -16,6 +16,8 @@ export const LIMITS = {
   completionSummary: 2_000,
   /** The note an approver sends a task back with. */
   sendBackNote: 1_000,
+  /** The note a proposal is declined with (the proposer reads it). */
+  approvalNote: 1_000,
   evidenceLabel: 120,
   /** Anything longer is not a link a person would click; http(s) is checked on top of this. */
   url: 2_048,
@@ -26,6 +28,8 @@ export const LIMITS = {
   successCriteria: 2_000,
   projectName: 200,
   projectDescription: 4_000,
+  /** How many people a sign-off chain or a bypass list may name. */
+  approvalPeople: 20,
 
   // Workspace and people
   workspaceName: 80,
@@ -33,12 +37,6 @@ export const LIMITS = {
   email: 254,
   /** 20 addresses of at most 254 characters, plus their separators. */
   inviteEmails: 5_300,
-
-  // Requests
-  requestTitle: 200,
-  requestDescription: 10_000,
-  desiredOutcome: 2_000,
-  decisionReason: 1_000,
 
   // Capture from a meeting (docs/PLAN.md, 2026-11-01 log): a pasted transcript and the draft it becomes.
   /** About an hour of talk; longer meetings are pasted in two parts. */

@@ -33,11 +33,11 @@ try {
 
   // --- 2. the Update progress form refuses to complete ---------------------------------------------------------------
   await jordan.type(`#progress-${task.id}`, "Switched the policy on in production.");
-  await jordan.select(`#mark-${task.id}`, "completed");
+  await jordan.select(`#status-${task.id}`, "completed");
   await sleep(500);
   step("choosing Completed explains the hold", await jordan.waitFor(`Resolve the ${task.open} open comments before completing this task.`));
   step("and the Save button is held back", (await jordan.evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Save update")?.disabled`)) === true);
-  await jordan.select(`#mark-${task.id}`, "");
+  await jordan.select(`#status-${task.id}`, "");
 
   // --- 3. the status dialog refuses too ------------------------------------------------------------------------------------
   await jordan.click("Change status", { wait: 800 });
@@ -71,7 +71,7 @@ try {
   await jordan.waitFor("Comment resolved.");
   await jordan.waitForGone("Comment resolved.", 8000);
   await jordan.type(`#progress-${task.id}`, "Policy enabled in production; test page delivered to the secondary.");
-  await jordan.select(`#mark-${task.id}`, "completed");
+  await jordan.select(`#status-${task.id}`, "completed");
   await sleep(500);
   step("with nothing open, Completed is offered without a warning", !(await jordan.has("before completing this task")));
   await jordan.click("Save update", { exact: true, wait: 3000 });
@@ -98,11 +98,9 @@ try {
   step("no console errors", morgan.problems.length === 0 && jordan.problems.length === 0, JSON.stringify([...morgan.problems, ...jordan.problems].slice(0, 2)));
 
   // --- 7. who may not -------------------------------------------------------------------------------------------------------
-  const [converted] = await query(
-    `select t.id from tasks t join requests r on r.converted_task_id = t.id join users u on u.id = r.requester_id where t.org_id = (${org}) and u.email = 'taylor@trackwise.test' limit 1`,
-  );
+  const [readable] = await query(`select id from tasks where org_id = (${org}) and proposal_status is null and status = 'in_progress' order by created_at limit 1`);
   const taylor = (browsers.taylor = await openBrowser({ role: "stakeholder", width: 1280, height: 900 }));
-  await taylor.goto(`/tasks/${converted.id}`, 4000);
+  await taylor.goto(`/tasks/${readable.id}`, 4000);
   step("a stakeholder reads the task without Resolve or Reopen", (await taylor.waitFor("Next action")) && !(await buttonTexts(taylor)).some((text) => /^(Resolve|Reopen)$/.test(text)));
 } catch (error) {
   await stoppedOn(error, "09", browsers);

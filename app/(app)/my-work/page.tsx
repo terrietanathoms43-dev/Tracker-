@@ -3,16 +3,19 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { MyWorkDates } from "@/components/tasks/my-work-dates";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { TaskSection } from "@/components/tasks/task-section";
 import { RECENTLY_FINISHED_DAYS } from "@/lib/constants";
 import { myWorkGroups } from "@/lib/dal/tasks";
 import { isStakeholder } from "@/lib/permissions";
-import { tasksHref } from "@/lib/tasks/filters";
+import { scopedProject } from "@/lib/project-scope-server";
+import { describeDateRange, parseFilters, tasksHref } from "@/lib/tasks/filters";
 import { dayKey } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
 
-// /my-work: the viewer's own work in four groups.
+// /my-work: the viewer's own work in four groups, narrowed to the navigation's project and, when asked, to a range
+// of dates (made, completed or updated between two days: docs/PLAN.md, 2026-11-03 log).
 
 export const metadata: Metadata = { title: "My Work" };
 
@@ -20,22 +23,27 @@ export const metadata: Metadata = { title: "My Work" };
 const CAP = 10;
 
 /** "Where did I stop, what's next?": my work in four groups, each task in exactly one of them (docs/PLAN.md §5). */
-export default async function MyWorkPage() {
+export default async function MyWorkPage(props: PageProps<"/my-work">) {
   const viewer = await requireViewer();
   if (isStakeholder(viewer)) redirect("/home");
+  const [raw, scope] = await Promise.all([props.searchParams, scopedProject(viewer)]);
   const today = dayKey(new Date(), viewer.timezone);
-  const groups = await myWorkGroups(viewer, today);
+  const dates = parseFilters(raw);
+  const project = scope?.id ?? "";
+  const groups = await myWorkGroups(viewer, today, { project, dates });
   const nothing = groups.attention.length + groups.continueWorking.length + groups.waiting.length + groups.finished.length === 0;
+  const range = describeDateRange(dates, today);
+  const mine = { assignee: "me" as const };
 
   return (
     <>
-      <PageHeader title="My Work" description="Where you stopped, and what's next." />
-      <QuickAddTask today={today} />
+      <PageHeader title="My Work" description={`Where you stopped, and what's next.${scope ? ` In ${scope.name}.` : ""}`} action={<MyWorkDates filters={dates} today={today} />} />
+      <QuickAddTask today={today} defaults={scope && scope.status === "active" ? { projectId: scope.id } : {}} />
       {nothing ? (
         <EmptyState
           icon={ListChecks}
-          title="Nothing is assigned to you yet"
-          description="Tasks assigned to you show up here, grouped by what needs doing next."
+          title={range ? "Nothing of yours in those dates" : "Nothing is assigned to you yet"}
+          description={range ? `No task assigned to you was ${range.toLowerCase()}. Clear the dates to see everything.` : "Tasks assigned to you show up here, grouped by what needs doing next."}
         />
       ) : (
         <div className="grid gap-8">
@@ -51,7 +59,7 @@ export default async function MyWorkPage() {
             items={groups.continueWorking.slice(0, CAP)}
             total={groups.continueWorking.length}
             today={today}
-            seeAllHref={tasksHref({ assignee: "me", status: ["in_progress", "not_started"] })}
+            seeAllHref={tasksHref({ ...mine, status: ["in_progress", "not_started"] })}
             empty="Nothing in progress. Pick something up from the task list, or create a task."
           />
           <TaskSection
@@ -60,15 +68,15 @@ export default async function MyWorkPage() {
             items={groups.waiting.slice(0, CAP)}
             total={groups.waiting.length}
             today={today}
-            seeAllHref={tasksHref({ assignee: "me", status: ["awaiting_approval", "blocked"] })}
+            seeAllHref={tasksHref({ ...mine, status: ["awaiting_approval", "blocked"] })}
           />
           <TaskSection
-            title="Recently finished"
-            description={`Completed in the last ${RECENTLY_FINISHED_DAYS} days.`}
+            title={range ? "Finished" : "Recently finished"}
+            description={range ? `Completed, ${range.toLowerCase().replace(/^\w+ /, "")}.` : `Completed in the last ${RECENTLY_FINISHED_DAYS} days.`}
             items={groups.finished.slice(0, CAP)}
             total={groups.finished.length}
             today={today}
-            seeAllHref={tasksHref({ assignee: "me", status: ["completed"], sort: "updated" })}
+            seeAllHref={tasksHref({ ...mine, status: ["completed"], sort: "updated", dateField: dates.dateField, from: dates.from, to: dates.to })}
           />
         </div>
       )}

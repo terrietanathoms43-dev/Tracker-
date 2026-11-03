@@ -85,7 +85,7 @@ export function fakeProposal(context: CaptureContext, transcript: string): Propo
   const proposal: Proposal = {
     meetingTitle: "Meeting notes",
     summary: "",
-    project: { existingId: null, newName: null, newDescription: null, newTargetDate: null, goalKey: null },
+    project: { existingId: null, newName: null, newDescription: null, newTargetDate: null },
     goals: [],
     tasks: [],
   };
@@ -131,7 +131,6 @@ export function fakeProposal(context: CaptureContext, transcript: string): Propo
     }
   }
 
-  if (proposal.project.goalKey === null && proposal.project.newName !== null && proposal.goals.length > 0) proposal.project.goalKey = proposal.goals[0].key;
   proposal.summary = `Read ${proposal.tasks.length} action ${proposal.tasks.length === 1 ? "item" : "items"} and ${proposal.goals.length} ${proposal.goals.length === 1 ? "goal" : "goals"} from the notes. (Test mode: a plain parser stands in for the model and only reads lines starting with "Action item:", "Goal:", "Project:" and "Meeting:".)`;
   return proposal;
 }

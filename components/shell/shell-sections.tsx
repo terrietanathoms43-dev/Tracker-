@@ -1,10 +1,13 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { unreadCount } from "@/lib/dal/notifications";
+import { projectOptions } from "@/lib/dal/projects";
 import { navFor, type NavKey } from "@/lib/permissions";
+import { scopedProject } from "@/lib/project-scope-server";
 import { getViewerContext, requireUser } from "@/lib/viewer";
 import { BottomTabs } from "./bottom-tabs";
 import { NotificationBell } from "./notification-bell";
 import { OrgSwitcher } from "./org-switcher";
+import { ProjectScopeButton, ProjectScopeSelect } from "./project-scope-picker";
 import { SearchButton } from "./search-button";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
@@ -35,6 +38,14 @@ export async function SidebarOrg() {
   return <OrgSwitcher orgs={orgs} activeOrgId={viewer?.orgId ?? null} />;
 }
 
+/** The project every work screen is narrowed to (docs/PLAN.md, 2026-11-03 log). */
+export async function SidebarProjectScope() {
+  const { viewer } = await context();
+  if (viewer === null) return null;
+  const [options, scope] = await Promise.all([projectOptions(viewer, { activeOnly: false }), scopedProject(viewer)]);
+  return <ProjectScopeSelect options={options} value={scope?.id ?? ""} />;
+}
+
 export async function SidebarMainNav() {
   const { viewer } = await context();
   return <SidebarNav items={viewer ? navFor(viewer) : NO_WORKSPACE_NAV} />;
@@ -53,11 +64,12 @@ export async function SidebarAccount() {
 
 export async function MobileTopBar() {
   const { viewer, user, orgs } = await context();
-  const unread = viewer ? await unreadCount(viewer) : 0;
+  const [unread, options, scope] = viewer ? await Promise.all([unreadCount(viewer), projectOptions(viewer, { activeOnly: false }), scopedProject(viewer)]) : [0, [], null];
   return (
     <>
       <OrgSwitcher orgs={orgs} activeOrgId={viewer?.orgId ?? null} compact />
       <div className="ml-auto flex items-center gap-1">
+        {viewer ? <ProjectScopeButton options={options} value={scope?.id ?? ""} /> : null}
         {viewer && viewer.orgRole !== "stakeholder" ? <SearchButton /> : null}
         {viewer ? <NotificationBell unread={unread} variant="icon" /> : null}
         <UserMenu user={user} variant="avatar" hasWorkspace={viewer !== null} />

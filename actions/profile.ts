@@ -43,7 +43,7 @@ const preferencesSchema = z
     emailApproval: z.boolean(),
     emailHandover: z.boolean(),
     emailBlocked: z.boolean(),
-    emailRequestDecision: z.boolean(),
+    emailProposal: z.boolean(),
     emailComment: z.boolean(),
   })
   .partial()

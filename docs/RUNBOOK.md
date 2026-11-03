@@ -17,6 +17,8 @@ The app runs on the team VPS under pm2 (port 3015, behind the reverse proxy); th
 
 `./deploy.sh` = `git pull` → `npm ci` → `npm run build` → `pm2 startOrRestart` → `pm2 save`. Push the schema **before** the code that needs it: `npm run db:push` from a machine whose `.env.local` holds the production `DATABASE_URL` (`DATABASE_URL_DIRECT` for Neon). Once real data exists, schema changes are additive only.
 
+**The 2026-11-03 release** (projects → goals → tasks, proposals) is the one exception: on a database still in the old shape run, in this order, `npm run db:backup` (every table to `backups/<stamp>/`), `npm run db:migrate-hierarchy` (one transaction, idempotent; prints every goal it moved) and then `npm run db:push`. The database this repo's `.env.local` pointed at was migrated on 2026-11-03; a database that already shows "Nothing to do" from the migration script needs only `db:push`.
+
 ## Database
 
 - Schema is `db/schema.ts`; no migrations folder.
