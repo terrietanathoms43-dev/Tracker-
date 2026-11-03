@@ -11,13 +11,14 @@ import { ApprovalBadge, ProjectStatusBadge } from "@/components/projects/project
 import { ProjectStatusActions } from "@/components/projects/project-status-actions";
 import { PlanningTasks } from "@/components/projects/task-groups";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
+import { SelectionProvider } from "@/components/tasks/selection";
 import { Button } from "@/components/ui/button";
 import { captureProviderFor } from "@/lib/capture/availability";
 import { approvalSettings } from "@/lib/dal/approvals";
 import { listGoals, ownerOptions } from "@/lib/dal/goals";
 import { getProject } from "@/lib/dal/projects";
 import { tasksForProject } from "@/lib/dal/tasks";
-import { canCapture, canCreateTask, canManagePlanning, isStakeholder } from "@/lib/permissions";
+import { canCapture, canCreateTask, canManagePlanning, isLeader, isStakeholder } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
 import { requireViewerContext } from "@/lib/viewer";
 
@@ -128,7 +129,9 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
             </div>
           )}
         </section>
-        <PlanningTasks items={tasks} today={today} groupByStatus readOnly={isStakeholder(viewer)} empty={active ? "No tasks in this project yet. Add the first one above." : "No tasks in this project."} />
+        <SelectionProvider enabled={!isStakeholder(viewer)} canDelete={isLeader(viewer)}>
+          <PlanningTasks items={tasks} today={today} groupByStatus readOnly={isStakeholder(viewer)} empty={active ? "No tasks in this project yet. Add the first one above." : "No tasks in this project."} />
+        </SelectionProvider>
       </div>
     </div>
   );

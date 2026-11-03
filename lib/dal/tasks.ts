@@ -6,6 +6,7 @@ import { goals, projects, taskActivity, taskLinks, tasks, users } from "@/db/sch
 import { CLOSED_STATUSES, DUE_SOON_DAYS, RECENTLY_FINISHED_DAYS, type ProposalStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { assignmentOf } from "@/lib/dal/assignments";
 import { listWorkers } from "@/lib/dal/orgs";
+import { pinnedProjectIds } from "@/lib/dal/projects";
 import { canDeleteTask, isStakeholder, type TaskScope, type Viewer } from "@/lib/permissions";
 import { describeRecurrence, type Recurrence } from "@/lib/recurrence";
 import { BOARD_STATUSES, toBoardColumns, type BoardColumns } from "@/lib/tasks/board";
@@ -833,11 +834,12 @@ export async function activePlanning(viewer: Viewer): Promise<Pick<TaskFormOptio
 
 /** What the New task form offers: the workers, the active projects and the active goals. */
 export async function taskFormOptions(viewer: Viewer): Promise<TaskFormOptions> {
-  const [people, planning] = await Promise.all([taskPeople(viewer), activePlanning(viewer)]);
+  const [people, planning, pinnedProjects] = await Promise.all([taskPeople(viewer), activePlanning(viewer), pinnedProjectIds(viewer)]);
   return {
     viewerId: viewer.userId,
     people: people.map(({ id, name, email, image }) => ({ id, name, email, image })),
     ...planning,
+    pinnedProjects,
     canCapture: false,
     proposesOnly: isStakeholder(viewer),
   };

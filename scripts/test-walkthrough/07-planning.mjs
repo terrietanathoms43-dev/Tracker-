@@ -6,7 +6,7 @@
 // sees nothing by id or in its lists.
 //
 // Usage: node scripts/test-walkthrough/07-planning.mjs [--base=http://localhost:3021]
-import { closePool, finish, openBrowser, query, sleep, step, stoppedOn, tidy } from "./lib.mjs";
+import { closePool, finish, openBrowser, pickChoice, pickedValue, query, sleep, step, stoppedOn, tidy } from "./lib.mjs";
 
 const stamp = Date.now().toString(36);
 const PROJECT = `Walkthrough project ${stamp}`;
@@ -15,7 +15,7 @@ const TASK = `Walkthrough task ${stamp}`;
 const browsers = {};
 const org = "select id from organizations where slug = 'trackwise-demo'";
 
-const value = (browser, selector) => browser.evaluate(`document.querySelector(${JSON.stringify(selector)})?.value ?? null`);
+const value = pickedValue;
 const hasBar = (browser) => browser.evaluate(`!!document.querySelector("#quick-add-title")`);
 const hasButton = (browser, pattern) =>
   browser.evaluate(`[...document.querySelectorAll("main button")].some((b) => b.offsetParent !== null && ${pattern}.test(b.textContent.trim()))`);
@@ -85,11 +85,11 @@ try {
 
   // --- 4. the navigation's project picker narrows the screens -----------------------------------------------------------
   await lead.goto("/home?view=list", 4000);
-  await lead.select("[data-project-scope]", projectRow.id);
+  step("the navigation's project picker finds the project by search", await pickChoice(lead, "[data-project-scope]", PROJECT));
   step("choosing the project in the navigation narrows the list to it", (await lead.waitFor(`In ${PROJECT}`)) && (await lead.has(TASK)) && !(await lead.has("Route pages to the secondary on-call")));
   await lead.goto("/goals", 4000);
   step("the goals page follows the picker", (await lead.waitFor(`What ${PROJECT} is working towards`)) && (await lead.has(GOAL)) && !(await lead.has("Ship the self-serve onboarding")));
-  await lead.select("[data-project-scope]", "");
+  await pickChoice(lead, "[data-project-scope]", "All projects", { search: "" });
   step("All projects brings everything back", await lead.waitFor("Ship the self-serve onboarding"));
 
   // --- 5. edit, pause, complete, reopen ---------------------------------------------------------------------------------

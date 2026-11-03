@@ -8,7 +8,8 @@ import { useId, useMemo, useRef, useState, useSyncExternalStore, useTransition, 
 import { toast } from "sonner";
 import { createTask } from "@/actions/tasks";
 import { CharacterCounter } from "@/components/character-counter";
-import { NativeSelect } from "@/components/native-select";
+import { GoalPicker } from "@/components/goals/goal-picker";
+import { ProjectPicker } from "@/components/projects/project-picker";
 import { Button } from "@/components/ui/button";
 import { TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
@@ -244,9 +245,9 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
   ].filter((part): part is string => part !== null);
 
   const showProject = options === null || options.projects.length > 0 || projectId !== "";
-  // Goals follow the project: only the chosen project's goals are offered, and only once a project is chosen.
-  const goalChoices = projectId ? (options?.goals ?? []).filter((goal) => goal.projectId === projectId) : [];
-  const showGoal = projectId !== "" && (goalChoices.length > 0 || goalId !== "");
+  // The goal picker stays once the workspace has goals: with a project chosen it offers that project's goals (and
+  // says when there are none); without one, every goal, and picking a goal puts the task in its project.
+  const showGoal = options === null || options.goals.length > 0 || goalId !== "";
   const proposes = options?.proposesOnly === true;
 
   return (
@@ -400,35 +401,37 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
           />
 
           {showProject ? (
-            <NativeSelect
+            <ProjectPicker
               id="quick-add-project"
-              aria-label="Project"
-              className="w-full min-w-40 sm:w-52"
+              label="Project"
+              className="w-full sm:w-52"
               value={projectId}
-              disabled={options === null}
-              onChange={(event) => {
-                setProjectId(event.target.value);
-                setGoalId("");
+              options={options?.projects ?? null}
+              pinned={options?.pinnedProjects ?? []}
+              noneLabel="No project"
+              onChange={(next) => {
+                setProjectId(next);
+                // A goal from another project can't follow the task.
+                if (goalId && !options?.goals.some((goal) => goal.id === goalId && goal.projectId === next)) setGoalId("");
               }}
-            >
-              <option value="">{options === null ? "Loading…" : "No project"}</option>
-              {(options?.projects ?? []).map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </NativeSelect>
+            />
           ) : null}
 
           {showGoal ? (
-            <NativeSelect id="quick-add-goal" aria-label="Goal" className="w-full min-w-40 sm:w-52" value={goalId} onChange={(event) => setGoalId(event.target.value)}>
-              <option value="">No goal</option>
-              {goalChoices.map((goal) => (
-                <option key={goal.id} value={goal.id}>
-                  {goal.title}
-                </option>
-              ))}
-            </NativeSelect>
+            <GoalPicker
+              id="quick-add-goal"
+              label="Goal"
+              className="w-full sm:w-56"
+              value={goalId}
+              goals={options?.goals ?? null}
+              projects={options?.projects ?? []}
+              projectId={projectId}
+              onChange={(next) => {
+                setGoalId(next);
+                const goal = options?.goals.find((each) => each.id === next);
+                if (goal && goal.projectId !== projectId) setProjectId(goal.projectId);
+              }}
+            />
           ) : null}
 
           {/* Who it goes to, right here: a typed @mention still wins, and picking clears the mention from the title. */}

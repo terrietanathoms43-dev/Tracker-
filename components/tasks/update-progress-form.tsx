@@ -173,7 +173,7 @@ export function UpdateProgressForm({
       <div className="grid items-start gap-3 sm:grid-cols-2">
         <div className="grid gap-1.5">
           <Label htmlFor={field("status")} className="text-[13px] text-muted-foreground">
-            Status
+            Status after this update
           </Label>
           <div className="flex items-center gap-2">
             <StatusIcon status={effective} />

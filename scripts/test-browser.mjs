@@ -259,6 +259,53 @@ export async function openBrowser({ role = "public", width = 390, height = 844, 
       return clicked;
     },
 
+    // Click whatever one CSS selector finds (a picker's trigger, a checkbox): the same press as click(), by selector.
+    async clickSelector(selector, { wait = 600, timeout = 8_000 } = {}) {
+      const clicked = await attempt(`(() => {
+        ${PAGE_HELPERS}
+        const el = document.querySelector(${JSON.stringify(selector)})
+        if (el === null || !visible(el) || el.disabled || !hydrated(el)) return false
+        el.scrollIntoView({ block: "center" })
+        const press = { bubbles: true, cancelable: true, button: 0, pointerType: "mouse", isPrimary: true }
+        el.dispatchEvent(new PointerEvent("pointerdown", press))
+        el.dispatchEvent(new MouseEvent("mousedown", press))
+        el.dispatchEvent(new PointerEvent("pointerup", press))
+        el.dispatchEvent(new MouseEvent("mouseup", press))
+        el.click()
+        return true
+      })()`, timeout);
+      await sleep(wait);
+      return clicked;
+    },
+
+    // Drag one element onto another with real mouse events through the browser (a canvas dot, a sortable grip).
+    async dragTo(fromSelector, toSelector, { steps = 12, wait = 1500 } = {}) {
+      const points = await evaluate(`(() => {
+        const a = document.querySelector(${JSON.stringify(fromSelector)})
+        const b = document.querySelector(${JSON.stringify(toSelector)})
+        if (!a || !b) return null
+        a.scrollIntoView({ block: "center" })
+        const r = a.getBoundingClientRect(); const t = b.getBoundingClientRect()
+        return { x1: r.left + r.width / 2, y1: r.top + r.height / 2, x2: t.left + t.width / 2, y2: t.top + t.height / 2 }
+      })()`);
+      if (!points) return false;
+      const { x1, y1, x2, y2 } = points;
+      await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: x1, y: y1 });
+      await send("Input.dispatchMouseEvent", { type: "mousePressed", x: x1, y: y1, button: "left", buttons: 1, clickCount: 1 });
+      for (let i = 1; i <= steps; i++) {
+        await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: x1 + ((x2 - x1) * i) / steps, y: y1 + ((y2 - y1) * i) / steps, button: "left", buttons: 1 });
+        await sleep(30);
+      }
+      await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: x2, y: y2, button: "left", buttons: 0, clickCount: 1 });
+      await sleep(wait);
+      return true;
+    },
+
+    // Wait until a CSS selector finds a visible element (a popover, a dialog, a row).
+    async waitForSelector(selector, timeout = 8_000) {
+      return attempt(`(() => { ${PAGE_HELPERS}; const el = document.querySelector(${JSON.stringify(selector)}); return el !== null && visible(el) })()`, timeout);
+    },
+
     // Type into an input found by its placeholder, or by a CSS selector, the way React expects (native setter + input event).
     async type(target, text, { wait = 300, near = null, timeout = 8_000 } = {}) {
       const typed = await attempt(`(() => {

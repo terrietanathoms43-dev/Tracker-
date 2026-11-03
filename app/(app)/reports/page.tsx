@@ -14,7 +14,7 @@ import { CsvLink, ReportControls } from "@/components/reports/report-controls";
 import { ReportTiles } from "@/components/reports/report-tiles";
 import { ReportVerdict } from "@/components/reports/report-verdict";
 import { BlockedList, DeliveredList, OpenList, StalledList } from "@/components/reports/task-facts";
-import { canSeeReports, isAdmin, isLeader } from "@/lib/permissions";
+import { canSeeReports, isAdmin, isLeader, isStakeholder } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
 import { buildReport } from "@/lib/reports/build";
 import { parseReportCut, parseReportRange, type ReportCut } from "@/lib/reports/params";
@@ -37,12 +37,14 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const project = scope?.id ?? "";
   const report = await buildReport(viewer, range, today, project);
 
-  // Role cuts: a leader or admin may switch; a member only gets their own.
+  // Role cuts: a leader or admin may switch; a member only gets their own; a stakeholder gets the Executive view,
+  // the one made for them (docs/PLAN.md, 2026-11-04 log).
   const leader = isLeader(viewer);
   const defaultCut: ReportCut = isAdmin(viewer) ? "exec" : leader ? "leader" : "member";
-  const cut = leader ? parseReportCut(searchParams, defaultCut) : "member";
+  const cut: ReportCut = leader ? parseReportCut(searchParams, defaultCut) : isStakeholder(viewer) ? "exec" : "member";
 
   const scopeLabel = scope ? scope.name : "All projects";
+  const stakeholder = isStakeholder(viewer);
   const csv = { range, project };
 
   const goalNotes = Object.fromEntries(
@@ -160,11 +162,13 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
                 <StalledList tasks={report.stalled} today={today} />
               </Panel>
             </div>
-            <div id="people" className="scroll-mt-20">
-              <Panel title="People" aside={<CsvLink {...csv} table="contributions" label="People" />}>
-                <ContributionsTable rows={report.contributions} />
-              </Panel>
-            </div>
+            {stakeholder ? null : (
+              <div id="people" className="scroll-mt-20">
+                <Panel title="People" aside={<CsvLink {...csv} table="contributions" label="People" />}>
+                  <ContributionsTable rows={report.contributions} />
+                </Panel>
+              </div>
+            )}
           </>
         ) : null}
 

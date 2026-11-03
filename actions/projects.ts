@@ -11,9 +11,9 @@ import { ERR, fail, GuardError, ok, runAction, type ActionResult } from "@/lib/a
 import { PROJECT_STATUSES, type ProjectStatus } from "@/lib/constants";
 import { saveApprovalSettings } from "@/lib/dal/approvals";
 import { ownerError } from "@/lib/dal/goals";
-import { lockProject } from "@/lib/dal/projects";
+import { lockProject, savePins } from "@/lib/dal/projects";
 import { log } from "@/lib/log";
-import { canManageApprovals, canManagePlanning } from "@/lib/permissions";
+import { canManageApprovals, canManagePlanning, canReadPlanning } from "@/lib/permissions";
 import { requireViewer } from "@/lib/viewer";
 
 // Every change to a project. Projects are the top of the funnel (docs/PLAN.md, 2026-11-03 log), workspace-wide and
@@ -147,5 +147,23 @@ export async function saveProjectApprovals(input: z.input<typeof approvalsSchema
     log.info("projects.approvals", { orgId: viewer.orgId, projectId: data.projectId, requiresApproval: data.requiresApproval, steps: data.stepUserIds.length, by: viewer.userId });
     refresh();
     return ok(undefined, data.requiresApproval ? "New tasks in this project now wait for sign-off." : "Sign-off settings saved.");
+  });
+}
+
+// --- pins -------------------------------------------------------------------------------------------------------
+
+const pinsSchema = z.object({ projectIds: z.array(id).max(50).default([]) });
+
+/**
+ * The projects this person keeps at the top of every project picker, in the order given (docs/PLAN.md, 2026-11-04
+ * log). A preference of the person in this workspace, not of the workspace: nobody else's pickers change.
+ */
+export async function setProjectPins(input: z.input<typeof pinsSchema>): Promise<ActionResult<{ projectIds: string[] }>> {
+  return runAction("projects.pins", pinsSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    if (!canReadPlanning(viewer)) throw new GuardError("forbidden");
+    const projectIds = await db.transaction((tx) => savePins(tx, viewer, data.projectIds));
+    refresh();
+    return ok({ projectIds });
   });
 }

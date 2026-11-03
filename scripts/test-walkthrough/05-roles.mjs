@@ -33,11 +33,13 @@ try {
 
   // --- stakeholder ------------------------------------------------------------------------------------------------
   const taylor = (browsers.taylor = await openBrowser({ role: "stakeholder", width: 390, height: 844 }));
-  for (const path of ["/home?view=list", "/my-work", "/members", "/reports"]) {
+  for (const path of ["/home?view=list", "/my-work", "/members"]) {
     await taylor.goto(path, 2000);
     // The redirect streams in after the prerendered shell, so wait for the address rather than reading it at once.
     step(`a stakeholder asking for ${path} is sent home`, await taylor.waitForPath("/home", 20_000), await taylor.path());
   }
+  await taylor.goto("/reports", 6000);
+  step("a stakeholder reads the Executive report without the People table", (await taylor.waitFor("Decisions waiting", 20_000)) && !(await taylor.has("Download People as CSV")));
   await taylor.goto(`/tasks/${rows.plainTask.id}`, 6000);
   step("a stakeholder reads a task", await taylor.waitFor("Next action"));
   step("with no update form, comment box or status menu", !(await taylor.has("Save update")) && !(await taylor.has("Add a comment")) && !(await taylor.evaluate(`!!document.querySelector('[aria-label="Change status"]')`)));

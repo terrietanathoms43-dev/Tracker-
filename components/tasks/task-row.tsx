@@ -3,9 +3,10 @@
 import { cn } from "cn";
 import { ChevronDown, ClipboardCheck, Repeat } from "lucide-react";
 import Link from "next/link";
-import { useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
 import { StatusIcon } from "@/components/status-badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
 import { describeAssignees } from "@/lib/tasks/assignees";
 import type { TaskListItem } from "@/lib/tasks/types";
@@ -13,6 +14,7 @@ import { formatTime } from "@/lib/recurrence";
 import { AssigneeStack } from "./assignee-stack";
 import { DueLabel } from "./due-label";
 import { ReasonChip } from "./reason-chip";
+import { useTaskSelection } from "./selection";
 import { TaskActionSheet, TaskMenu } from "./task-menu";
 import { useLongPress } from "./use-long-press";
 
@@ -40,6 +42,12 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const { handlers, swallowClick } = useLongPress(() => setSheetOpen(true));
+  // Ticking rows (docs/PLAN.md, 2026-11-04 log): only where the page put a selection around its lists.
+  const selection = useTaskSelection();
+  const selectable = selection !== null && !readOnly;
+  const selected = selectable && selection.selected.has(task.id);
+  const register = selectable ? selection.register : null;
+  useEffect(() => register?.(task.id), [register, task.id]);
   const rejected = task.status === "rejected";
   // "Overdue" is already said by the red due label, so that chip would say it twice.
   const reason = showReason && task.reason !== "Overdue" ? task.reason : undefined;
@@ -47,7 +55,7 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
   const where = [task.project?.name, task.goal?.title].filter(Boolean).join(" › ");
 
   return (
-    <li className="group relative" {...handlers} data-task-row={task.id} data-expanded={open || undefined}>
+    <li className={cn("group relative", selected && "bg-sidebar-accent/50")} {...handlers} data-task-row={task.id} data-expanded={open || undefined} data-selected={selected || undefined}>
       <div
         className={cn("flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-accent/60 sm:px-4", open && "bg-accent/40")}
         onClick={(event) => {
@@ -56,6 +64,11 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
           setOpen((value) => !value);
         }}
       >
+        {selectable ? (
+          <span data-no-expand className={cn("-ml-1 flex items-center", selected || selection.selected.size > 0 ? "opacity-100" : "opacity-60 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100")}>
+            <Checkbox checked={selected} onCheckedChange={() => selection.toggle(task.id)} aria-label={`Select ${task.title}`} data-select-task={task.id} />
+          </span>
+        ) : null}
         <StatusIcon status={task.status} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5 md:flex-row md:items-baseline md:gap-3">
           <Link

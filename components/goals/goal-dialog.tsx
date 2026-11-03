@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { createGoal, updateGoal } from "@/actions/goals";
 import { Field } from "@/components/field";
+import { ProjectPicker } from "@/components/projects/project-picker";
 import { NativeSelect } from "@/components/native-select";
 import { RecurrencePicker } from "@/components/tasks/recurrence-picker";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,7 @@ export function GoalDialog({
   people,
   projects = [],
   parents = [],
+  pinnedProjectIds = [],
   parent,
   defaultProjectId = "",
   viewerId,
@@ -69,6 +71,8 @@ export function GoalDialog({
   people: Person[];
   projects?: ProjectChoice[];
   parents?: ParentOption[];
+  /** The viewer's pinned projects, first in the picker. */
+  pinnedProjectIds?: string[];
   /** Preset parent: the dialog creates a sub-goal of this goal (the goal page's "New sub-goal"). */
   parent?: ParentOption;
   /** The project a new goal starts in (the page's, or the navigation's scope). */
@@ -188,15 +192,16 @@ export function GoalDialog({
             {!chosenParent ? (
               <div className="grid items-start gap-4 sm:grid-cols-2">
                 <Field id="goal-project" label="Project" error={error("projectId")}>
-                  <NativeSelect id="goal-project" value={projectId} onChange={(event) => set("projectId", event.target.value)} aria-invalid={error("projectId") || needsProject ? true : undefined}>
-                    <option value="">{projects.length === 0 ? "No projects yet: name one →" : "Pick a project…"}</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                    <option value={NEW_PROJECT}>+ New project…</option>
-                  </NativeSelect>
+                  <ProjectPicker
+                    id="goal-project"
+                    value={projectId}
+                    options={makingProject ? [{ id: NEW_PROJECT, name: "New project (named below)" }, ...projects] : projects}
+                    pinned={pinnedProjectIds}
+                    placeholder={projects.length === 0 ? "No projects yet: name one →" : "Pick a project…"}
+                    extra={{ value: NEW_PROJECT, label: "+ New project…" }}
+                    invalid={Boolean(error("projectId"))}
+                    onChange={(next) => set("projectId", next)}
+                  />
                 </Field>
                 {makingProject ? (
                   <Field id="goal-new-project" label="New project's name" error={error("newProjectName")} count={{ value: values.newProjectName, max: LIMITS.projectName }}>

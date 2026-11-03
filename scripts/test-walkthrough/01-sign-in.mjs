@@ -32,11 +32,11 @@ import {
 // docs/PLAN.md §2 (2026-11-03 log): the sidebar on desktop; four tabs plus More on a phone.
 const DESKTOP_NAV = {
   full: ["Home", "My Work", "Goals", "Members", "Proposals", "Reports"],
-  stakeholder: ["Home", "Goals", "Proposals"],
+  stakeholder: ["Home", "Goals", "Proposals", "Reports"],
 };
 const PHONE_NAV = {
   full: ["Home", "My Work", "Goals", "Members", "More"],
-  stakeholder: ["Home", "Goals", "Proposals", "More"],
+  stakeholder: ["Home", "Goals", "Proposals", "Reports", "More"],
 };
 /** A phone's top bar shows the person as their initials, a desktop's sidebar as their name. */
 const initialsOf = (persona) => PEOPLE[persona].name.split(" ").map((part) => part[0]).join("");

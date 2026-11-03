@@ -6,7 +6,8 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { createTask } from "@/actions/tasks";
 import { Field } from "@/components/field";
-import { NativeSelect } from "@/components/native-select";
+import { GoalPicker } from "@/components/goals/goal-picker";
+import { ProjectPicker } from "@/components/projects/project-picker";
 import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,8 +52,6 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
   const me = (ready: typeof options): string[] => (ready && ready.people.some((person) => person.id === ready.viewerId) ? [ready.viewerId] : []);
   const value = assignment ?? me(options);
   const goals = options?.goals ?? [];
-  // A goal belongs to a project: the goal list follows the project, and picking a goal fixes the project.
-  const goalChoices = projectId ? goals.filter((goal) => goal.projectId === projectId) : goals;
   const proposes = options?.proposesOnly === true;
 
   function submit() {
@@ -112,44 +111,36 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
         </div>
         {loading || options.projects.length > 0 || projectId ? (
           <Field id="task-project" label="Project" error={error("projectId")}>
-            <NativeSelect
+            <ProjectPicker
               id="task-project"
               value={projectId}
-              disabled={loading}
-              onChange={(event) => {
-                setProjectId(event.target.value);
+              options={options?.projects ?? null}
+              pinned={options?.pinnedProjects ?? []}
+              noneLabel="No project (standalone task)"
+              invalid={Boolean(error("projectId"))}
+              onChange={(next) => {
+                setProjectId(next);
                 // A goal from another project can't follow the task.
-                if (goalId && !goals.some((goal) => goal.id === goalId && goal.projectId === event.target.value)) setGoalId("");
+                if (goalId && !goals.some((goal) => goal.id === goalId && goal.projectId === next)) setGoalId("");
               }}
-            >
-              <option value="">{loading ? "Loading…" : "No project (standalone task)"}</option>
-              {(options?.projects ?? []).map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </NativeSelect>
+            />
           </Field>
         ) : null}
-        {loading || goalChoices.length > 0 || goalId ? (
+        {loading || goals.length > 0 || goalId ? (
           <Field id="task-goal" label="Goal" hint={projectId ? undefined : "Picking a goal puts the task in that goal's project."} error={error("goalId")}>
-            <NativeSelect
+            <GoalPicker
               id="task-goal"
               value={goalId}
-              disabled={loading}
-              onChange={(event) => {
-                setGoalId(event.target.value);
-                const goal = goals.find((each) => each.id === event.target.value);
+              goals={options?.goals ?? null}
+              projects={options?.projects ?? []}
+              projectId={projectId}
+              invalid={Boolean(error("goalId"))}
+              onChange={(next) => {
+                setGoalId(next);
+                const goal = goals.find((each) => each.id === next);
                 if (goal) setProjectId(goal.projectId);
               }}
-            >
-              <option value="">{loading ? "Loading…" : "No goal"}</option>
-              {goalChoices.map((goal) => (
-                <option key={goal.id} value={goal.id}>
-                  {goal.title}
-                </option>
-              ))}
-            </NativeSelect>
+            />
           </Field>
         ) : null}
       </div>

@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { LastFilters } from "@/components/tasks/last-filters";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
+import { SelectionProvider } from "@/components/tasks/selection";
 import { TaskBoard } from "@/components/tasks/task-board";
 import { TaskList } from "@/components/tasks/task-list";
 import { TaskToolbar } from "@/components/tasks/task-toolbar";
@@ -11,7 +12,7 @@ import { ViewTabs } from "@/components/home/view-tabs";
 import { Button } from "@/components/ui/button";
 import { boardTasks, listTasks, taskFormOptions } from "@/lib/dal/tasks";
 import type { HomeTabConfig } from "@/lib/home-tabs";
-import type { Viewer } from "@/lib/permissions";
+import { isLeader, type Viewer } from "@/lib/permissions";
 import type { ScopedProject } from "@/lib/project-scope-server";
 import { BOARD_STATUSES } from "@/lib/tasks/board";
 import { filtersToParams, isFiltered, tasksHref, type TaskFilters, type TaskView } from "@/lib/tasks/filters";
@@ -62,9 +63,11 @@ export async function TasksView({ viewer, filters, view, tabsConfig, scope }: { 
           />
         )
       ) : page ? (
-        <div className="overflow-hidden rounded-lg border bg-card">
-          <TaskList page={page} today={today} query={Object.fromEntries(query)} />
-        </div>
+        <SelectionProvider canDelete={isLeader(viewer)}>
+          <div className="overflow-hidden rounded-lg border bg-card">
+            <TaskList page={page} today={today} query={Object.fromEntries(query)} />
+          </div>
+        </SelectionProvider>
       ) : columns ? (
         <TaskBoard columns={columns} today={today} statuses={filters.status.length > 0 ? BOARD_STATUSES.filter((status) => filters.status.includes(status)) : BOARD_STATUSES} />
       ) : null}

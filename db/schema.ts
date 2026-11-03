@@ -291,6 +291,25 @@ export const goalLinks = pgTable(
   (t) => [primaryKey({ columns: [t.fromGoalId, t.toGoalId] }), index("goal_links_to_idx").on(t.toGoalId), index("goal_links_org_idx").on(t.orgId)],
 );
 
+/** The projects a person pinned to the top of their project pickers, in their own order, per workspace. */
+export const projectPins = pgTable(
+  "project_pins",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.projectId] }), index("project_pins_user_org_idx").on(t.userId, t.orgId)],
+);
+
 /**
  * The sign-off chain of a project or a goal (exactly one of the two is set), in order. A step with no user means
  * "any leader or admin". A goal's chain, when the goal requires approval, overrides its project's.

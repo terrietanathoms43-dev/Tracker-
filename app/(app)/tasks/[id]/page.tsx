@@ -7,6 +7,7 @@ import { TaskHistory } from "@/components/tasks/detail/task-history";
 import { CurrentTask } from "@/components/tasks/task-actions";
 import { canDecideProposal } from "@/lib/approvals/policy";
 import { listHistory } from "@/lib/dal/history";
+import { pinnedProjectIds } from "@/lib/dal/projects";
 import { activePlanning, getTask, listLinks, taskPeople } from "@/lib/dal/tasks";
 import { canApproveTask, canEditTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
 import { describeRecurrence } from "@/lib/recurrence";
@@ -29,12 +30,13 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const viewer = await requireViewer();
   const worker = isWorker(viewer);
   // One round trip; nothing is rendered unless the viewer may read the task (a foreign id is simply not found).
-  const [found, links, history, people, planning] = await Promise.all([
+  const [found, links, history, people, planning, pinnedProjects] = await Promise.all([
     getTask(viewer, id),
     listLinks(viewer, id),
     listHistory(viewer, id, null),
     worker ? taskPeople(viewer) : [],
     activePlanning(viewer),
+    pinnedProjectIds(viewer),
   ]);
   if (found === null || !canReadTask(viewer, found.scope)) notFound();
   const { detail, scope } = found;
@@ -79,6 +81,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           people={people.map(({ id: personId, name, email, image }) => ({ id: personId, name, email, image }))}
           viewerId={viewer.userId}
           projects={planning.projects}
+          pinnedProjects={pinnedProjects}
           goals={planning.goals}
           today={today}
           timeZone={viewer.timezone}

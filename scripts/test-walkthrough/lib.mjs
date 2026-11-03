@@ -139,3 +139,21 @@ export function tidy() {
   const run = spawnSync(process.execPath, ["node_modules/tsx/dist/cli.mjs", "scripts/test-accounts.ts", "tidy"], { stdio: "inherit" });
   if (run.status !== 0) throw new Error("tidy failed: is the database reachable?");
 }
+
+/**
+ * Picks a row in one of the command-style pickers (the navigation's project picker, a form's project or goal):
+ * opens `trigger` (a CSS selector), types `search` (the choice's text unless given), clicks the row that says
+ * `choice`. "All projects" / "No project" rows aren't projects, so search for "" to reach them.
+ */
+export async function pickChoice(browser, trigger, choice, { search = choice, wait = 1200 } = {}) {
+  if (!(await browser.clickSelector(trigger))) return false;
+  if (!(await browser.waitForSelector("[cmdk-input]", 6000))) return false;
+  if (search !== "") await browser.type("[cmdk-input]", search);
+  const picked = await browser.click(choice, { within: "[cmdk-list]", wait });
+  if (!picked) await browser.press("Escape", 300);
+  return picked;
+}
+
+/** The chosen value of a picker trigger (its data-value) or of a plain input / select. */
+export const pickedValue = (browser, selector) =>
+  browser.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; return el.tagName === "BUTTON" ? (el.dataset.value ?? null) : (el.value ?? null) })()`);

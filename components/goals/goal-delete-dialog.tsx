@@ -1,0 +1,64 @@
+"use client";
+
+import { Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+import { deleteGoal } from "@/actions/goals";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+// Delete a goal (docs/PLAN.md, 2026-11-04 log): a quiet button in the goal page's actions, a dialog that says
+// exactly what happens to what sits under it, then the project page. Leaders and admins only; the page decides.
+
+export function GoalDeleteDialog({ goal }: { goal: { id: string; title: string; projectId: string; projectName: string; tasks: number; subGoals: number } }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const confirm = () =>
+    startTransition(async () => {
+      const result = await deleteGoal({ goalId: goal.id });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      setOpen(false);
+      toast.success(result.message ?? "Goal deleted.");
+      router.push(`/projects/${result.data.projectId}`);
+    });
+  const consequences = [
+    goal.tasks > 0 ? `${goal.tasks} ${goal.tasks === 1 ? "task stays" : "tasks stay"} in ${goal.projectName}, without a goal. Their history keeps a line saying why.` : "No task is linked to it directly.",
+    goal.subGoals > 0 ? `${goal.subGoals} ${goal.subGoals === 1 ? "sub-goal becomes a" : "sub-goals become"} top-level ${goal.subGoals === 1 ? "goal" : "goals"} of ${goal.projectName}, tasks included.` : null,
+    "Its connections to other goals and its sign-off settings are removed.",
+  ].filter((line): line is string => line !== null);
+
+  return (
+    <>
+      <Button variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => setOpen(true)} data-delete-goal>
+        <Trash2 aria-hidden />
+        Delete
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this goal?</DialogTitle>
+            <DialogDescription>&ldquo;{goal.title}&rdquo; is removed for good. Nothing under it is lost:</DialogDescription>
+          </DialogHeader>
+          <ul className="grid list-disc gap-1.5 pl-5 text-base">
+            {consequences.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)} disabled={pending}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirm} disabled={pending}>
+              {pending ? "Deleting…" : "Delete goal"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

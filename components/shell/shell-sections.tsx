@@ -1,13 +1,13 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { unreadCount } from "@/lib/dal/notifications";
-import { projectOptions } from "@/lib/dal/projects";
+import { pinnedProjectIds, projectOptions } from "@/lib/dal/projects";
 import { navFor, type NavKey } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
 import { getViewerContext, requireUser } from "@/lib/viewer";
 import { BottomTabs } from "./bottom-tabs";
 import { NotificationBell } from "./notification-bell";
 import { OrgSwitcher } from "./org-switcher";
-import { ProjectScopeButton, ProjectScopeSelect } from "./project-scope-picker";
+import { ProjectScopePicker } from "./project-scope-picker";
 import { SearchButton } from "./search-button";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
@@ -42,8 +42,8 @@ export async function SidebarOrg() {
 export async function SidebarProjectScope() {
   const { viewer } = await context();
   if (viewer === null) return null;
-  const [options, scope] = await Promise.all([projectOptions(viewer, { activeOnly: false }), scopedProject(viewer)]);
-  return <ProjectScopeSelect options={options} value={scope?.id ?? ""} />;
+  const [options, pinned, scope] = await Promise.all([projectOptions(viewer, { activeOnly: false }), pinnedProjectIds(viewer), scopedProject(viewer)]);
+  return <ProjectScopePicker options={options} pinned={pinned} value={scope?.id ?? ""} variant="nav" />;
 }
 
 export async function SidebarMainNav() {
@@ -64,12 +64,12 @@ export async function SidebarAccount() {
 
 export async function MobileTopBar() {
   const { viewer, user, orgs } = await context();
-  const [unread, options, scope] = viewer ? await Promise.all([unreadCount(viewer), projectOptions(viewer, { activeOnly: false }), scopedProject(viewer)]) : [0, [], null];
+  const [unread, options, pinned, scope] = viewer ? await Promise.all([unreadCount(viewer), projectOptions(viewer, { activeOnly: false }), pinnedProjectIds(viewer), scopedProject(viewer)]) : [0, [], [], null];
   return (
     <>
       <OrgSwitcher orgs={orgs} activeOrgId={viewer?.orgId ?? null} compact />
       <div className="ml-auto flex items-center gap-1">
-        {viewer ? <ProjectScopeButton options={options} value={scope?.id ?? ""} /> : null}
+        {viewer ? <ProjectScopePicker options={options} pinned={pinned} value={scope?.id ?? ""} variant="icon" /> : null}
         {viewer && viewer.orgRole !== "stakeholder" ? <SearchButton /> : null}
         {viewer ? <NotificationBell unread={unread} variant="icon" /> : null}
         <UserMenu user={user} variant="avatar" hasWorkspace={viewer !== null} />

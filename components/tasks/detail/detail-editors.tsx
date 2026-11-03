@@ -4,7 +4,9 @@ import { ChevronDown, Pencil } from "lucide-react";
 import { useState, useTransition } from "react";
 import { editTask, setAssignees } from "@/actions/tasks";
 import { CharacterCounter } from "@/components/character-counter";
+import { GoalPicker } from "@/components/goals/goal-picker";
 import { NativeSelect } from "@/components/native-select";
+import { ProjectPicker, type ProjectPickerOption } from "@/components/projects/project-picker";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -14,7 +16,7 @@ import type { TaskPriority, TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import type { Recurrence } from "@/lib/recurrence";
 import { idsOf, sameIds } from "@/lib/tasks/assignees";
-import type { Assignees, Person } from "@/lib/tasks/types";
+import type { Assignees, GoalOption, Person } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneePicker } from "../assignee-picker";
 import { RecurrencePicker } from "../recurrence-picker";
@@ -187,6 +189,42 @@ export function PickEditor({
         </option>
       ))}
     </NativeSelect>
+  );
+}
+
+/** The task's project, saved as it is picked (a goal from another project comes off, the server says). */
+export function ProjectEditor({ taskId, value, options, pinned }: { taskId: string; value: string; options: ProjectPickerOption[]; pinned: string[] }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <ProjectPicker
+      label="Project"
+      className="w-full max-w-xs"
+      value={value}
+      options={options}
+      pinned={pinned}
+      noneLabel="No project (standalone)"
+      disabled={pending}
+      triggerProps={{ "data-task-project": "" }}
+      onChange={(next) => startTransition(async () => void toastResult(await editTask({ taskId, field: "projectId", value: next })))}
+    />
+  );
+}
+
+/** The task's goal, saved as it is picked; a goal puts the task in that goal's project. */
+export function GoalEditor({ taskId, value, goals, projects, projectId }: { taskId: string; value: string; goals: GoalOption[]; projects: { id: string; name: string }[]; projectId: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <GoalPicker
+      label="Goal"
+      className="w-full max-w-xs"
+      value={value}
+      goals={goals}
+      projects={projects}
+      projectId={projectId}
+      disabled={pending}
+      triggerProps={{ "data-task-goal": "" }}
+      onChange={(next) => startTransition(async () => void toastResult(await editTask({ taskId, field: "goalId", value: next })))}
+    />
   );
 }
 

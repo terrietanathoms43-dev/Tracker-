@@ -7,8 +7,8 @@ import { LIMITS } from "@/lib/limits";
 import { cappedText, optionalLink, optionalText, requiredLink, requiredText } from "@/lib/sanitize";
 import { db, type Tx } from "@/db";
 import { notifications, taskApprovals, taskLinks, taskUpdates, tasks } from "@/db/schema";
-import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
-import { TASK_PRIORITIES, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { fail, GuardError, guardMessage, ok, runAction, type ActionResult } from "@/lib/action-result";
+import { TASK_PRIORITIES, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
 import { chainFor, currentStep, type ChainStep } from "@/lib/approvals/policy";
 import { lockTaskApprovals, readPolicy } from "@/lib/dal/approvals";
 import { recordActivity } from "@/lib/dal/activity";
@@ -825,3 +825,155 @@ export async function deleteTask(input: z.input<typeof deleteSchema>): Promise<A
 
 /** Re-exported for the proposals action, which continues a chain this file started. */
 export { lockTaskApprovals };
+
+// --- several tasks at once (docs/PLAN.md, 2026-11-04 log) ---------------------------------------------------------
+
+const bulkIds = z.array(id).min(1, "Pick at least one task.").max(100, "Pick at most 100 tasks at a time.");
+
+export type BulkOutcome = { done: number; failed: { id: string; title: string; error: string }[] };
+type Locked = NonNullable<Awaited<ReturnType<typeof lockTask>>>;
+
+/**
+ * Runs `each` for every task in a transaction of its own, so one refusal never undoes the others. A refusal is
+ * named with the task's title and the reason, in the words the task's own page would use.
+ */
+async function runBulk(viewer: Viewer, taskIds: string[], each: (tx: Tx, locked: Locked) => Promise<Notice[]>): Promise<{ outcome: BulkOutcome; notices: Notice[] }> {
+  const outcome: BulkOutcome = { done: 0, failed: [] };
+  const notices: Notice[] = [];
+  for (const taskId of [...new Set(taskIds)]) {
+    let title = "A task";
+    try {
+      notices.push(
+        ...(await db.transaction(async (tx) => {
+          const locked = await lockTask(tx, viewer.orgId, taskId);
+          if (locked === null) throw new GuardError("not_found", "That task doesn't exist, or you can't see it.");
+          title = locked.task.title;
+          return each(tx, locked);
+        })),
+      );
+      outcome.done += 1;
+    } catch (error) {
+      if (!(error instanceof GuardError)) throw error;
+      outcome.failed.push({ id: taskId, title, error: guardMessage(error) });
+    }
+  }
+  return { outcome, notices };
+}
+
+/** "3 tasks marked completed. 1 couldn't: “Fix the digest” (Resolve the 2 open comments…)." Nothing done is a failure. */
+function bulkResult(outcome: BulkOutcome, did: string): ActionResult<BulkOutcome> {
+  const head = outcome.done > 0 ? `${outcome.done} ${outcome.done === 1 ? "task" : "tasks"} ${did}.` : "";
+  if (outcome.failed.length === 0) return ok(outcome, head);
+  const tail = `${outcome.failed.length} couldn't: ${outcome.failed.map((each) => `“${each.title}” (${each.error})`).join("; ")}`;
+  if (outcome.done === 0) return fail(`Nothing changed. ${tail}`);
+  return ok(outcome, `${head} ${tail}`);
+}
+
+const bulkStatusSchema = z.object({
+  taskIds: bulkIds,
+  status: z.enum(TASK_STATUSES),
+  reason: optionalText(LIMITS.blockedReason),
+  blockedBy: optionalText(LIMITS.blockedBy),
+  approverId: z.string().max(64).default(""),
+  summary: optionalText(LIMITS.completionSummary),
+});
+
+/** The same status change as the row menu makes, for every ticked task, with one reason / approver / summary. */
+export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>): Promise<ActionResult<BulkOutcome>> {
+  return runAction("tasks.bulk_status", bulkStatusSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    const { outcome, notices } = await runBulk(viewer, data.taskIds, async (tx, { task, assignment, scope }) => {
+      const via: TransitionVia = task.status === "awaiting_approval" && data.status === "completed" ? "approve" : "status";
+      if (!mayMove(viewer, scope, task.status, data.status, via)) throw new GuardError("forbidden", "you can't change its status");
+      if (data.status === "awaiting_approval" && data.approverId) {
+        await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
+        if (assignment.includes(data.approverId)) throw new GuardError("forbidden", "the approver is assigned to it");
+      }
+      const plan = planTransition(task, data.status, { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
+      if (!plan.ok) throw new GuardError("conflict", plan.error);
+      if (plan.activities.length === 0) return [];
+      await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
+      await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, plan.activities, now);
+      const sent = await noticesFor(tx, viewer, task, assignment, plan.activities, data.approverId || task.approverId, null);
+      if (data.status === "completed") await spawnNextOccurrence(tx, viewer, task, assignment, now);
+      return sent;
+    });
+    log.info("tasks.bulk_status", { orgId: viewer.orgId, to: data.status, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
+    await dispatch(notices);
+    refresh();
+    return bulkResult(outcome, `marked ${TASK_STATUS_LABELS[data.status].toLowerCase()}`);
+  });
+}
+
+const bulkAssignSchema = z.object({ taskIds: bulkIds, assigneeIds: idList, mode: z.enum(["replace", "add"]).default("replace") });
+
+/** Puts these people on every ticked task (replacing whoever is on it, or adding to them). */
+export async function bulkAssign(input: z.input<typeof bulkAssignSchema>): Promise<ActionResult<BulkOutcome>> {
+  return runAction("tasks.bulk_assign", bulkAssignSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    const { outcome, notices } = await runBulk(viewer, data.taskIds, async (tx, { task, assignment: before, scope }) => {
+      if (!canEditTask(viewer, scope)) throw new GuardError("forbidden", "you can't edit it");
+      const wanted = data.mode === "add" ? [...new Set([...before, ...data.assigneeIds])] : data.assigneeIds;
+      const after = await validateAssignment(tx, viewer.orgId, wanted);
+      if (sameIds(before, after)) return [];
+      await applyAssignment(tx, task.id, viewer.userId, before, after, now);
+      await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, task.id));
+      const [beforeNames, afterNames] = await Promise.all([snapshotAssignment(tx, before), snapshotAssignment(tx, after)]);
+      await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [{ kind: "assigned", before: beforeNames, after: afterNames }], now);
+      return task.proposalStatus === null || task.proposalStatus === "approved" ? assignedNotice(viewer, task, after.filter((userId) => !before.includes(userId)), false) : [];
+    });
+    log.info("tasks.bulk_assign", { orgId: viewer.orgId, mode: data.mode, people: data.assigneeIds.length, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
+    await dispatch(notices);
+    refresh();
+    return bulkResult(outcome, data.mode === "add" ? "given more people" : data.assigneeIds.length === 0 ? "unassigned" : "assigned");
+  });
+}
+
+const bulkMoveSchema = z.object({ taskIds: bulkIds, projectId: z.string().max(64).default(""), goalId: z.string().max(64).default("") });
+
+/** Puts every ticked task in a project and, if given, a goal; neither makes them standalone tasks. */
+export async function bulkMove(input: z.input<typeof bulkMoveSchema>): Promise<ActionResult<BulkOutcome>> {
+  return runAction("tasks.bulk_move", bulkMoveSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    const { outcome, notices } = await runBulk(viewer, data.taskIds, async (tx, { task, scope }) => {
+      if (!canEditTask(viewer, scope)) throw new GuardError("forbidden", "you can't edit it");
+      const placement = await resolvePlacement(tx, viewer.orgId, data);
+      if ((task.projectId ?? null) === placement.projectId && (task.goalId ?? null) === placement.goalId) return [];
+      const project = placement.projectId ? await findProject(tx, viewer.orgId, placement.projectId) : null;
+      const goal = placement.goalId ? await findGoal(tx, viewer.orgId, placement.goalId) : null;
+      await tx.update(tasks).set({ projectId: placement.projectId, goalId: placement.goalId, updatedAt: now }).where(eq(tasks.id, task.id));
+      await recordActivity(
+        tx,
+        { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId },
+        [{ kind: "edited", before: { projectId: task.projectId, goalId: task.goalId }, after: { projectId: placement.projectId, projectName: project?.name ?? null, goalId: placement.goalId, goalTitle: goal?.title ?? null } }],
+        now,
+      );
+      return [];
+    });
+    log.info("tasks.bulk_move", { orgId: viewer.orgId, projectId: data.projectId || null, goalId: data.goalId || null, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
+    await dispatch(notices);
+    refresh();
+    return bulkResult(outcome, data.projectId || data.goalId ? "moved" : "made standalone");
+  });
+}
+
+const bulkDeleteSchema = z.object({ taskIds: bulkIds });
+
+/** Deletes every ticked task the person may delete (leaders and admins; a proposer their own open proposal). */
+export async function bulkDelete(input: z.input<typeof bulkDeleteSchema>): Promise<ActionResult<BulkOutcome>> {
+  return runAction("tasks.bulk_delete", bulkDeleteSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const { outcome } = await runBulk(viewer, data.taskIds, async (tx, { task, scope }) => {
+      if (!canDeleteTask(viewer, scope)) throw new GuardError("forbidden", "only leaders and admins delete tasks");
+      await tx.delete(tasks).where(and(eq(tasks.id, task.id), eq(tasks.orgId, viewer.orgId)));
+      await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/tasks/${task.id}`)));
+      return [];
+    });
+    log.info("tasks.bulk_delete", { orgId: viewer.orgId, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
+    refresh();
+    return bulkResult(outcome, "deleted");
+  });
+}

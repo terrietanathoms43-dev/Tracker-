@@ -14,7 +14,7 @@ const TASK = `Walkthrough sub-goal task ${stamp}`;
 const browsers = {};
 const org = "select id from organizations where slug = 'trackwise-demo'";
 
-const value = (browser, selector) => browser.evaluate(`document.querySelector(${JSON.stringify(selector)})?.value ?? null`);
+const value = (browser, selector) => browser.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; return el.tagName === "BUTTON" ? (el.dataset.value ?? null) : (el.value ?? null) })()`);
 const hasButton = (browser, pattern) =>
   browser.evaluate(`[...document.querySelectorAll("main button")].some((b) => b.offsetParent !== null && ${pattern}.test(b.textContent.trim()))`);
 const shift = (day, days) => {
@@ -86,8 +86,11 @@ try {
   await morgan.goto("/home?view=list", 4000);
   await morgan.press("n", 800);
   await morgan.click("More options", { exact: true, wait: 1500 });
-  const options = await morgan.evaluate(`[...document.querySelectorAll("#task-goal option")].map((o) => o.textContent)`);
+  await morgan.clickSelector("#task-goal");
+  await morgan.waitForSelector("[data-goal-picker]", 6000);
+  const options = await morgan.evaluate(`[...document.querySelectorAll("[data-goal-item]")].map((o) => o.textContent.trim())`);
   step("the goal picker labels the sub-goal with its parent", Array.isArray(options) && options.includes(`${parent.title} › ${SUB_GOAL}`), JSON.stringify(options));
+  await morgan.press("Escape", 500);
   await morgan.press("Escape", 500);
   step("no console errors for the leader", morgan.problems.length === 0, JSON.stringify(morgan.problems.slice(0, 2)));
 

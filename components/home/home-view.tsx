@@ -16,6 +16,8 @@ import type { Membership } from "@/lib/dal/orgs";
 import { canCompleteGoal, isAdmin, isLeader, isStakeholder, type Viewer } from "@/lib/permissions";
 import type { ScopedProject } from "@/lib/project-scope-server";
 import { DEFAULT_PERIOD, periodStart } from "@/lib/dashboard/period";
+import { buildReport } from "@/lib/reports/build";
+import { parseReportRange } from "@/lib/reports/params";
 import { dayKey, greetingFor } from "@/lib/time";
 import type { SessionUser } from "@/lib/viewer";
 
@@ -51,8 +53,13 @@ export async function HomeView({ viewer, user, org, tabsConfig, scope }: { viewe
   const description = `${org.name} · ${ORG_ROLE_LABELS[viewer.orgRole]}${scope ? ` · ${scope.name}` : ""}`;
 
   if (isStakeholder(viewer)) {
-    const [proposals, lateGoals] = await Promise.all([listProposals(viewer, { project }), goalsPastTarget(viewer, today, project)]);
-    return <StakeholderHome title={title} description={description} proposals={proposals} lateGoals={lateGoals} now={now} today={today} timeZone={timeZone} scope={scope} />;
+    const [proposals, lateGoals, report, goals] = await Promise.all([
+      listProposals(viewer, { project }),
+      goalsPastTarget(viewer, today, project),
+      buildReport(viewer, parseReportRange({}, today), today, project),
+      activeGoalProgress(viewer, GOALS_SHOWN + 2, project),
+    ]);
+    return <StakeholderHome title={title} description={description} proposals={proposals} lateGoals={lateGoals} summary={report.summary} goals={goals} now={now} today={today} timeZone={timeZone} scope={scope} />;
   }
 
   const leader = isLeader(viewer);

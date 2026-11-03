@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 import { deleteTask, editTask, getTaskFormOptions, setAssignees } from "@/actions/tasks";
-import { NativeSelect } from "@/components/native-select";
+import { GoalPicker } from "@/components/goals/goal-picker";
+import { ProjectPicker } from "@/components/projects/project-picker";
 import { StatusIcon } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -114,11 +115,6 @@ function AttachDialog({ task, kind, onClose }: { task: TaskListItem; kind: "goal
   const { pending, save } = useSave(onClose);
   const field = kind === "goal" ? "goalId" : "projectId";
   const [value, setValue] = useState(kind === "goal" ? (task.goal?.id ?? "") : (task.project?.id ?? ""));
-  // Goals follow the task's project; without one, any goal (which puts the task in that goal's project).
-  const choices =
-    kind === "goal"
-      ? options?.goals.filter((g) => !task.project || g.projectId === task.project.id).map((g) => ({ value: g.id, label: g.title }))
-      : options?.projects.map((p) => ({ value: p.id, label: p.name }));
   return (
     <Dialog open onOpenChange={(o) => (o ? undefined : onClose())}>
       <DialogContent>
@@ -126,14 +122,11 @@ function AttachDialog({ task, kind, onClose }: { task: TaskListItem; kind: "goal
           <DialogTitle>Attach to {kind === "goal" ? "a goal" : "a project"}</DialogTitle>
           <DialogDescription className="truncate">{task.title}</DialogDescription>
         </DialogHeader>
-        <NativeSelect aria-label={kind === "goal" ? "Goal" : "Project"} className="w-full" value={value} disabled={pending || options === null} onChange={(e) => setValue(e.target.value)}>
-          <option value="">{kind === "goal" ? "No goal" : "No project"}</option>
-          {choices?.map((choice) => (
-            <option key={choice.value} value={choice.value}>
-              {choice.label}
-            </option>
-          ))}
-        </NativeSelect>
+        {kind === "goal" ? (
+          <GoalPicker label="Goal" value={value} onChange={setValue} goals={options?.goals ?? null} projects={options?.projects ?? []} projectId={task.project?.id ?? ""} disabled={pending} />
+        ) : (
+          <ProjectPicker label="Project" value={value} onChange={setValue} options={options?.projects ?? null} pinned={options?.pinnedProjects ?? []} noneLabel="No project" disabled={pending} />
+        )}
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             Cancel

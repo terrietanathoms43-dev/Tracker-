@@ -52,8 +52,8 @@ const WORKER_SCREENS = [
   "/onboarding?new=1",
 ];
 /** A stakeholder's screens, and where the worker-only ones send her. */
-const STAKEHOLDER_SCREENS = ["/home", "/goals", "/goals?view=branches", `/goals/${ids.goal}`, `/projects/${ids.project}`, `/tasks/${ids.task}`, "/proposals", `/tasks/${ids.taylorProposal}`, "/notifications", "/settings", "/settings/workspace"];
-const STAKEHOLDER_REDIRECTS = ["/my-work", "/home?view=list", "/members", "/reports", "/capture"];
+const STAKEHOLDER_SCREENS = ["/home", "/goals", "/goals?view=branches", `/goals/${ids.goal}`, `/projects/${ids.project}`, `/tasks/${ids.task}`, "/proposals", `/tasks/${ids.taylorProposal}`, "/reports", "/notifications", "/settings", "/settings/workspace"];
+const STAKEHOLDER_REDIRECTS = ["/my-work", "/home?view=list", "/members", "/capture"];
 /** Riley's own screens, and the Trackwise Demo ids that must be invisible to Other Co. */
 const OTHER_SCREENS = ["/home", "/my-work", "/home?view=list", "/projects", "/goals", "/members", "/proposals", "/reports", "/settings/workspace"];
 const OTHER_NOT_FOUND = [`/tasks/${ids.task}`, `/tasks/${ids.proposal}`, `/projects/${ids.project}`, `/goals/${ids.goal}`, `/goals/${ids.subGoal}`];
@@ -115,7 +115,11 @@ if (only("stakeholder")) {
       for (const path of STAKEHOLDER_SCREENS) await sweep(browser, "stakeholder", size, path);
       if (size === "desktop") {
         const labels = await navLabels(browser);
-        step("a stakeholder's navigation is Home, Goals and Proposals", Array.isArray(labels) && labels.join(",") === "Home,Goals,Proposals", JSON.stringify(labels));
+        step("a stakeholder's navigation is Home, Goals, Proposals and Reports", Array.isArray(labels) && labels.join(",") === "Home,Goals,Proposals,Reports", JSON.stringify(labels));
+        await browser.goto("/reports?cut=leader", 4000);
+        step("a stakeholder's Reports is the Executive view, whatever the address asks for", (await browser.waitFor("Decisions waiting", 20_000)) && !(await browser.has("Workload")) && (await browser.evaluate(`document.querySelector('nav[aria-label="Report view"]') === null`)) === true);
+        await browser.goto("/home", 4000);
+        step("a stakeholder's Home leads with how the work stands", (await browser.waitFor("How the work stands")) && (await browser.has("Open the full report")));
       }
       for (const path of STAKEHOLDER_REDIRECTS) {
         const landed = pathOnly(await browser.goto(path, 3000));

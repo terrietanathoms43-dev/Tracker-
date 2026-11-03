@@ -98,6 +98,9 @@ export const canManagePlanning = (viewer: Viewer) => isLeader(viewer);
 /** Marking a goal completed (or open again): admins, leaders and stakeholders. Members never sign a goal off. */
 export const canCompleteGoal = (viewer: Viewer) => isLeader(viewer) || isStakeholder(viewer);
 
+/** Deleting a goal keeps its tasks and sub-goals (docs/PLAN.md, 2026-11-04 log): whoever manages planning. */
+export const canDeleteGoal = canManagePlanning;
+
 /** The sign-off chain and bypass list of a project or goal, and the links between goals: whoever manages planning. */
 export const canManageApprovals = canManagePlanning;
 export const canLinkGoals = canManagePlanning;
@@ -109,7 +112,8 @@ export const canCapture = (viewer: Viewer) => isLeader(viewer);
 
 /** The Members page (the roster) is for the people who do the work; a stakeholder reads the roster under Settings. */
 export const canSeeMembers = (viewer: Viewer) => isWorker(viewer);
-export const canSeeReports = (viewer: Viewer) => isWorker(viewer);
+/** Reports are for everyone in the workspace: the Executive view was made for stakeholders (docs/PLAN.md, 2026-11-04 log). */
+export const canSeeReports = (viewer: Viewer) => viewer.orgId.length > 0;
 export const canManageOrg = (viewer: Viewer) => isAdmin(viewer);
 
 /** Admins invite anyone; leaders invite members and stakeholders, never another admin. */
@@ -137,6 +141,6 @@ export type NavKey = "home" | "my-work" | "tasks" | "goals" | "members" | "propo
  * make; everyone else the lot. The tasks views are reached through the /home tab row, so there is no Tasks item.
  */
 export function navFor(viewer: Pick<Viewer, "orgRole">): NavKey[] {
-  if (viewer.orgRole === "stakeholder") return ["home", "goals", "proposals"];
+  if (viewer.orgRole === "stakeholder") return ["home", "goals", "proposals", "reports"];
   return ["home", "my-work", "goals", "members", "proposals", "reports"];
 }

@@ -12,10 +12,10 @@ import { requireViewerContext } from "@/lib/viewer";
 /** A byte-order mark so spreadsheet apps read the file as UTF-8 (names, dashes) rather than a legacy code page. */
 const UTF8_BOM = "﻿";
 
-/** The same rows as the report page, for the same people (signed in, not a stakeholder), as a file. */
+/** The same rows as the report page, for the same people (anyone signed in to the workspace), as a file. */
 export async function GET(request: NextRequest) {
   const { viewer, org } = await requireViewerContext();
-  if (!canSeeReports(viewer)) return new NextResponse("Reports are for the people who do the work in this workspace.", { status: 403 });
+  if (!canSeeReports(viewer)) return new NextResponse("Reports are for the members of a workspace.", { status: 403 });
 
   const raw = Object.fromEntries(request.nextUrl.searchParams);
   const table = parseReportTable(raw);

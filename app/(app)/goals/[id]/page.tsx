@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ApprovalSettingsDialog } from "@/components/approvals/approval-settings-dialog";
 import { GoalPastTargetStrip } from "@/components/goals/goal-alerts";
 import { GoalConnections } from "@/components/goals/goal-connections";
+import { GoalDeleteDialog } from "@/components/goals/goal-delete-dialog";
 import { GoalDialog } from "@/components/goals/goal-dialog";
 import { GoalStatusBadge, isPastTarget, OwnerLabel, RepeatLabel, TargetLabel } from "@/components/goals/goal-parts";
 import { GoalStatusActions } from "@/components/goals/goal-status-actions";
@@ -12,11 +13,12 @@ import { PlanningHeader, PlanningSummary } from "@/components/goals/planning-hea
 import { SubGoals } from "@/components/goals/sub-goals";
 import { PlanningTasks } from "@/components/projects/task-groups";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
+import { SelectionProvider } from "@/components/tasks/selection";
 import { approvalSettings } from "@/lib/dal/approvals";
 import { connectionsOf, getGoal, listGoals, ownerOptions, parentGoalOptions, subGoalsOf } from "@/lib/dal/goals";
-import { projectOptions } from "@/lib/dal/projects";
+import { pinnedProjectIds, projectOptions } from "@/lib/dal/projects";
 import { tasksForGoal } from "@/lib/dal/tasks";
-import { canCompleteGoal, canCreateTask, canManagePlanning, isStakeholder } from "@/lib/permissions";
+import { canCompleteGoal, canCreateTask, canManagePlanning, isLeader, isStakeholder } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
 
@@ -34,7 +36,7 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
   const viewer = await requireViewer();
   const manage = canManagePlanning(viewer);
   // One round trip; nothing renders unless getGoal finds the goal in this workspace for a viewer who may read it.
-  const [goal, subGoals, tasks, connections, people, projects, parents, allGoals] = await Promise.all([
+  const [goal, subGoals, tasks, connections, people, projects, parents, allGoals, pinned] = await Promise.all([
     getGoal(viewer, id),
     subGoalsOf(viewer, id),
     tasksForGoal(viewer, id),
@@ -43,6 +45,7 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
     manage ? projectOptions(viewer) : [],
     manage ? parentGoalOptions(viewer) : [],
     manage ? listGoals(viewer, { includeCompleted: false, topLevelOnly: true }) : [],
+    manage ? pinnedProjectIds(viewer) : [],
   ]);
   if (goal === null) notFound();
   const settings = manage ? await approvalSettings(viewer, { goalId: goal.id }) : null;
@@ -68,9 +71,13 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
       people={people}
       projects={projects.map(({ id: projectId, name }) => ({ id: projectId, name }))}
       parents={parents}
+      pinnedProjectIds={pinned}
       viewerId={viewer.userId}
       today={today}
     />
+  ) : null;
+  const deleteDialog = manage ? (
+    <GoalDeleteDialog goal={{ id: goal.id, title: goal.title, projectId: goal.project.id, projectName: goal.project.name, tasks: tasks.filter((task) => task.goal?.id === goal.id).length, subGoals: goal.subGoals }} />
   ) : null;
 
   return (
@@ -83,6 +90,7 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
             {editDialog}
             {manage && settings ? <ApprovalSettingsDialog scope={{ goalId: goal.id }} settings={settings} people={people} what="this goal" /> : null}
             {late ? null : statusActions}
+            {deleteDialog}
           </>
         }
         meta={
@@ -127,7 +135,9 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
           choices={allGoals.map((each) => ({ id: each.id, title: each.title, projectName: each.project.name }))}
           canEdit={manage}
         />
-        <PlanningTasks items={tasks} today={today} readOnly={isStakeholder(viewer)} empty={active ? "No tasks serve this goal yet. Add one above." : "No tasks served this goal."} />
+        <SelectionProvider enabled={!isStakeholder(viewer)} canDelete={isLeader(viewer)}>
+          <PlanningTasks items={tasks} today={today} readOnly={isStakeholder(viewer)} empty={active ? "No tasks serve this goal yet. Add one above." : "No tasks served this goal."} />
+        </SelectionProvider>
       </div>
     </div>
   );

@@ -122,7 +122,7 @@ describe("planning, approvals, administration", () => {
     expect(canSeeMembers(viewer("member"))).toBe(true);
     expect(canSeeReports(viewer("member"))).toBe(true);
     expect(canSeeMembers(viewer("stakeholder"))).toBe(false);
-    expect(canSeeReports(viewer("stakeholder"))).toBe(false);
+    expect(canSeeReports(viewer("stakeholder"))).toBe(true);
   });
 
   it("keeps workspace administration to admins", () => {
@@ -143,7 +143,7 @@ describe("planning, approvals, administration", () => {
 
 describe("navigation", () => {
   it("gives stakeholders three destinations and everyone else six, Reports last", () => {
-    expect(navFor({ orgRole: "stakeholder" })).toEqual(["home", "goals", "proposals"]);
+    expect(navFor({ orgRole: "stakeholder" })).toEqual(["home", "goals", "proposals", "reports"]);
     expect(navFor({ orgRole: "member" })).toEqual(["home", "my-work", "goals", "members", "proposals", "reports"]);
   });
 });

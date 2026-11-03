@@ -1,7 +1,7 @@
 import "server-only";
-import { and, asc, eq, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { projects, users } from "@/db/schema";
+import { projectPins, projects, users } from "@/db/schema";
 import type { ProjectStatus } from "@/lib/constants";
 import { progressForProjects } from "@/lib/dal/tasks";
 import { canReadPlanning, type Viewer } from "@/lib/permissions";
@@ -123,6 +123,27 @@ export async function projectOptions(viewer: Viewer, { activeOnly = true }: { ac
     .from(projects)
     .where(and(eq(projects.orgId, viewer.orgId), activeOnly ? eq(projects.status, "active") : undefined))
     .orderBy(sql`(case ${projects.status} when 'active' then 0 when 'completed' then 1 else 2 end)`, asc(projects.name));
+}
+
+/** The projects this person pinned in this workspace, in the order they arranged them (docs/PLAN.md, 2026-11-04 log). */
+export async function pinnedProjectIds(viewer: Viewer): Promise<string[]> {
+  if (!canReadPlanning(viewer)) return [];
+  const rows = await db
+    .select({ id: projectPins.projectId })
+    .from(projectPins)
+    .where(and(eq(projectPins.userId, viewer.userId), eq(projectPins.orgId, viewer.orgId)))
+    .orderBy(asc(projectPins.position), asc(projectPins.createdAt));
+  return rows.map((row) => row.id);
+}
+
+/** Replaces this person's pins in this workspace with `projectIds`, in that order (ids of other workspaces are dropped). */
+export async function savePins(tx: Tx, viewer: Viewer, projectIds: string[]): Promise<string[]> {
+  const unique = [...new Set(projectIds)];
+  const known = unique.length === 0 ? [] : await tx.select({ id: projects.id }).from(projects).where(and(eq(projects.orgId, viewer.orgId), inArray(projects.id, unique)));
+  const keep = unique.filter((each) => known.some((row) => row.id === each));
+  await tx.delete(projectPins).where(and(eq(projectPins.userId, viewer.userId), eq(projectPins.orgId, viewer.orgId)));
+  if (keep.length > 0) await tx.insert(projectPins).values(keep.map((projectId, position) => ({ userId: viewer.userId, orgId: viewer.orgId, projectId, position })));
+  return keep;
 }
 
 /** A project of this workspace by id, for the actions that put something in it (null when it isn't one). */

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { LIMITS } from "@/lib/limits";
 import { optionalText, requiredText } from "@/lib/sanitize";
 import { db, type Tx } from "@/db";
-import { goalLinks, goals, projects, tasks } from "@/db/schema";
+import { goalLinks, goals, notifications, projects, tasks } from "@/db/schema";
 import { ERR, fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { GOAL_STATUSES, type GoalStatus } from "@/lib/constants";
 import { saveApprovalSettings } from "@/lib/dal/approvals";
@@ -18,14 +18,14 @@ import { liveOnly } from "@/lib/dal/tasks";
 import { parentDeadlineProblem, subGoalDeadlineProblem } from "@/lib/goals/deadlines";
 import { wouldCycle } from "@/lib/goals/graph";
 import { log } from "@/lib/log";
-import { canCompleteGoal, canLinkGoals, canManageApprovals, canManagePlanning } from "@/lib/permissions";
+import { canCompleteGoal, canDeleteGoal, canLinkGoals, canManageApprovals, canManagePlanning } from "@/lib/permissions";
 import { nextAfterFinishing, normalizeRecurrence, type Recurrence } from "@/lib/recurrence";
 import { calendarDaysBetween, dayKey, formatDay } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
 
 // Every change to a goal. Goals belong to a project (docs/PLAN.md, 2026-11-03 log) and are managed by leaders and
 // admins (canManagePlanning); marking one completed is for admins, leaders and stakeholders (canCompleteGoal).
-// They are paused or completed, never deleted, so the work that served them keeps its history. A goal may be a
+// They are paused or completed, or deleted without their tasks (2026-11-04 log), so the work keeps its history. A goal may be a
 // sub-goal of one top-level goal in the same project (2026-10-30 log); a sub-goal's target date never passes its
 // parent's. A repeating goal makes its next occurrence, tasks included, when it is completed.
 
@@ -299,6 +299,52 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
   });
 }
 
+// --- delete --------------------------------------------------------------------------------------------------------
+
+const deleteSchema = z.object({ goalId: id });
+
+/**
+ * Deletes a goal (docs/PLAN.md, 2026-11-04 log). Nothing under it is lost: its own tasks stay in the project
+ * without a goal (each gets a history line saying why), its sub-goals become top-level goals of the same project
+ * with their tasks, and only the goal's links, sign-off chain and notifications go with it.
+ */
+export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<ActionResult<{ projectId: string; tasks: number; subGoals: number }>> {
+  return runAction("goals.delete", deleteSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    if (!canDeleteGoal(viewer)) throw new GuardError("forbidden", "Only leaders and admins can delete a goal.");
+    const now = new Date();
+    const outcome = await db.transaction(async (tx) => {
+      const goal = await lockGoal(tx, viewer.orgId, data.goalId);
+      if (goal === null) throw new GuardError("not_found");
+      const subGoals = await tx
+        .update(goals)
+        .set({ parentGoalId: null, updatedAt: now })
+        .where(and(eq(goals.orgId, viewer.orgId), eq(goals.parentGoalId, goal.id)))
+        .returning({ id: goals.id });
+      const detached = await tx
+        .update(tasks)
+        .set({ goalId: null, updatedAt: now })
+        .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id)))
+        .returning({ id: tasks.id });
+      for (const task of detached) {
+        await recordActivity(
+          tx,
+          { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId },
+          [{ kind: "edited", before: { goalId: goal.id, goalTitle: goal.title }, after: { goalId: null, goalTitle: null }, note: `The goal “${goal.title}” was deleted; the task stays in its project.` }],
+          now,
+        );
+      }
+      await tx.delete(goals).where(eq(goals.id, goal.id));
+      await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/goals/${goal.id}`)));
+      return { projectId: goal.projectId, tasks: detached.length, subGoals: subGoals.length };
+    });
+    log.info("goals.deleted", { orgId: viewer.orgId, goalId: data.goalId, tasks: outcome.tasks, subGoals: outcome.subGoals, by: viewer.userId });
+    refresh();
+    const kept = [outcome.tasks > 0 ? `${outcome.tasks} ${outcome.tasks === 1 ? "task stays" : "tasks stay"} in the project` : null, outcome.subGoals > 0 ? `${outcome.subGoals} ${outcome.subGoals === 1 ? "sub-goal is" : "sub-goals are"} now top-level` : null].filter(Boolean);
+    return ok(outcome, kept.length > 0 ? `Goal deleted. ${kept.join("; ")}.` : "Goal deleted.");
+  });
+}
+
 // --- connections (the branch view) --------------------------------------------------------------------------------
 
 const connectionsSchema = z.object({ goalId: id, comesAfter: z.array(id).max(50).default([]), leadsTo: z.array(id).max(50).default([]) });
@@ -339,6 +385,49 @@ export async function setGoalConnections(input: z.input<typeof connectionsSchema
     log.info("goals.connections", { orgId: viewer.orgId, goalId: data.goalId, comesAfter: data.comesAfter.length, leadsTo: data.leadsTo.length, by: viewer.userId });
     refresh();
     return ok(undefined, "Connections saved.");
+  });
+}
+
+const linkSchema = z.object({ fromGoalId: id, toGoalId: id });
+
+/** Draws one arrow on the branch view: `from` leads into `to`. Refused when it would close a loop. */
+export async function linkGoals(input: z.input<typeof linkSchema>): Promise<ActionResult> {
+  return runAction("goals.link", linkSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    if (!canLinkGoals(viewer)) throw new GuardError("forbidden");
+    if (data.fromGoalId === data.toGoalId) return fail("A goal can't lead into itself.");
+    const result = await db.transaction(async (tx): Promise<ActionResult<{ from: string; to: string }>> => {
+      const [from, to] = await Promise.all([lockGoal(tx, viewer.orgId, data.fromGoalId), findGoal(tx, viewer.orgId, data.toGoalId)]);
+      if (from === null || to === null) throw new GuardError("not_found", "One of those goals doesn't exist, or you can't see it.");
+      if (to.parentGoalId === from.id || from.parentGoalId === to.id) return fail("A goal already leads to its own sub-goals; that arrow is drawn for you.");
+      const edges = await linkEdgesForCycleCheck(tx, viewer.orgId);
+      if (edges.some((edge) => edge.from === from.id && edge.to === to.id)) return ok({ from: from.title, to: to.title });
+      if (wouldCycle(edges, from.id, to.id)) return fail(`“${from.title}” can't lead into “${to.title}”: that would make a loop, because “${to.title}” already leads to it.`);
+      await tx.insert(goalLinks).values({ orgId: viewer.orgId, fromGoalId: from.id, toGoalId: to.id, createdBy: viewer.userId }).onConflictDoNothing();
+      await tx.update(goals).set({ updatedAt: new Date() }).where(inArray(goals.id, [from.id, to.id]));
+      return ok({ from: from.title, to: to.title });
+    });
+    if (!result.ok) return result;
+    log.info("goals.linked", { orgId: viewer.orgId, from: data.fromGoalId, to: data.toGoalId, by: viewer.userId });
+    refresh();
+    return ok(undefined, `“${result.data.from}” now leads to “${result.data.to}”.`);
+  });
+}
+
+/** Takes one arrow off the branch view. */
+export async function unlinkGoals(input: z.input<typeof linkSchema>): Promise<ActionResult> {
+  return runAction("goals.unlink", linkSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    if (!canLinkGoals(viewer)) throw new GuardError("forbidden");
+    await db.transaction(async (tx) => {
+      const from = await lockGoal(tx, viewer.orgId, data.fromGoalId);
+      if (from === null) throw new GuardError("not_found");
+      await tx.delete(goalLinks).where(and(eq(goalLinks.orgId, viewer.orgId), eq(goalLinks.fromGoalId, data.fromGoalId), eq(goalLinks.toGoalId, data.toGoalId)));
+      await tx.update(goals).set({ updatedAt: new Date() }).where(eq(goals.id, from.id));
+    });
+    log.info("goals.unlinked", { orgId: viewer.orgId, from: data.fromGoalId, to: data.toGoalId, by: viewer.userId });
+    refresh();
+    return ok(undefined, "Connection removed.");
   });
 }
 

@@ -5,10 +5,11 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { MyWorkDates } from "@/components/tasks/my-work-dates";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
+import { SelectionProvider } from "@/components/tasks/selection";
 import { TaskSection } from "@/components/tasks/task-section";
 import { RECENTLY_FINISHED_DAYS } from "@/lib/constants";
 import { myWorkGroups } from "@/lib/dal/tasks";
-import { isStakeholder } from "@/lib/permissions";
+import { isLeader, isStakeholder } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
 import { describeDateRange, parseFilters, tasksHref } from "@/lib/tasks/filters";
 import { dayKey } from "@/lib/time";
@@ -46,6 +47,7 @@ export default async function MyWorkPage(props: PageProps<"/my-work">) {
           description={range ? `No task assigned to you was ${range.toLowerCase()}. Clear the dates to see everything.` : "Tasks assigned to you show up here, grouped by what needs doing next."}
         />
       ) : (
+        <SelectionProvider canDelete={isLeader(viewer)}>
         <div className="grid gap-8">
           <TaskSection
             title="Needs attention"
@@ -79,6 +81,7 @@ export default async function MyWorkPage(props: PageProps<"/my-work">) {
             seeAllHref={tasksHref({ ...mine, status: ["completed"], sort: "updated", dateField: dates.dateField, from: dates.from, to: dates.to })}
           />
         </div>
+        </SelectionProvider>
       )}
     </>
   );

@@ -8,6 +8,7 @@
 //
 // Usage: node scripts/test-walkthrough/10-reports.mjs [--only=exec,project,member] [--base=http://localhost:3021]
 import { closePool, finish, only, openBrowser, query, step, stoppedOn } from "./lib.mjs";
+import { pickChoice } from "./lib.mjs";
 
 const browsers = {};
 const org = "select id from organizations where slug = 'trackwise-demo'";
@@ -128,7 +129,7 @@ try {
     const morgan = (browsers.morgan = await openBrowser({ role: "leader", width: 1280, height: 900 }));
     await morgan.goto("/reports?cut=exec", 4000);
     await morgan.settle(20_000);
-    step("the navigation's project picker offers the project", await morgan.select("[data-project-scope]", project.name));
+    step("the navigation's project picker offers the project", await pickChoice(morgan, "[data-project-scope]", project.name));
     step("the header says which project the report is about", await morgan.waitFor(`Trackwise Demo · ${project.name}`, 20_000));
     step("the picker shows it is narrowing (brand tint)", (await morgan.evaluate(`getComputedStyle(document.querySelector('[data-project-scope]')).fontWeight`)) >= "500");
     step("Delivered counts that project's completions", await morgan.waitForNear("Delivered in range", String(deliveredInProject)), `${deliveredInProject} expected`);
@@ -146,7 +147,7 @@ try {
     await morgan.goto("/home?view=list", 4000);
     step("the task list follows the same picker", await morgan.waitFor(`In ${project.name}`));
 
-    await morgan.select("[data-project-scope]", "");
+    await pickChoice(morgan, "[data-project-scope]", "All projects", { search: "" });
     await morgan.goto("/reports?cut=exec", 4000);
     step("All projects widens the report again", await morgan.waitFor("Trackwise Demo · All projects", 20_000));
     step("no console errors while narrowing", morgan.problems.length === 0, JSON.stringify(morgan.problems.slice(0, 2)));

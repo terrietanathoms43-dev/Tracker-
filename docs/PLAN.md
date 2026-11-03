@@ -81,6 +81,15 @@
 > - **Reports**: the Executive view is verdict → chart → decisions → health board → stalled → people. The chart's **y axis is activity per day** (every history row of every task in scope: a completion, a comment, an edit, each +1) drawn as a stronger grey line with its wash; the task blocks are **counts, not heights**: one fixed block per task, shrunk only when a day's stack would not fit. **Today** is a strong primary line the full height of the plot with a bold label.
 > - **Seed**: Trackwise Demo now has four projects (Lumen Health asks for sign-off: Morgan then Avery, Jordan skips the queue), eight goals (one past its target, one weekly, a three-goal chain), a daily 8:00 task, and five proposals across every state; walkthroughs `04-proposals`, `12-repeats` and the reworked `02`, `05`, `07`, `08`, `10` cover it.
 
+> **Decision log (2026-11-04, pickers, batches, stakeholders' reports):**
+>
+> - **One project picker component** (`components/projects/project-picker.tsx`): a searchable list behind the navigation's scope (sidebar and phone icon), the add bar, the New task and goal dialogs, the task page and the row menu's Attach dialog. **Pinned** projects come first in the order the person drags them into (`project_pins`, per person and workspace, `setProjectPins`); then **Recent** (this browser, localStorage `trackwise.recentProjects`); then the rest, closed ones grouped last where offered. A matching **goal picker** (`components/goals/goal-picker.tsx`, recents in `trackwise.recentGoals`) lists the chosen project's goals, says when there are none, or every goal under its project's name; picking a goal sets the project. The goal control no longer disappears when a project is chosen.
+> - **Update progress is unmistakably a form**: a tinted, accent-edged section with its own heading and sentence, the control reads "Status after this update", and the Details row reads "Current status".
+> - **Delete a goal** (`deleteGoal`, leaders and admins): its own tasks stay in the project without a goal (a history line says why), its sub-goals become top-level goals of the same project, its links, chain and notifications go. The dialog says so with counts, then lands on the project.
+> - **Several tasks at once** (`components/tasks/selection.tsx`): rows on the List tab, My Work and the project and goal pages tick; a bar sets a status (the same questions as the form for Blocked, Awaiting approval, Completed, Rejected), assigns (replace or add), moves (project / goal) or deletes. Each task runs the same rules in its own transaction (`bulkChangeStatus`, `bulkAssign`, `bulkMove`, `bulkDelete`); the toast names the ones that couldn't and they stay ticked.
+> - **Branches canvas**: drag the dot on a card onto another goal to draw "leads to" (`linkGoals`, same loop rule), press the × on an arrow to remove it (`unlinkGoals`). The Connections card stays as the keyboard way.
+> - **Stakeholders get Reports**: the Executive view, the one made for them (no view tabs, no People table), and the navigation shows Home · Goals · Proposals · Reports. Their Home opens with the verdict strip for the last 30 days and the goals' progress, then their proposals.
+
 This file is the hand-off for anyone building Trackwise. Read `docs/BRIEF.md` for intent; this file says _how_. Follow the `apex-architecture`, `apex-ui` and `apex-ux` skills for everything not spelled out here. If something is genuinely impossible, say so in the report rather than silently choosing differently.
 
 Owner context: the owner's own dev team and their manager. One workspace in practice, multi-tenant in design. Fresh database; nothing is migrated from Supabase.
@@ -142,7 +151,7 @@ Fonts: Geist Sans + Geist Mono.
 /api/test-login            dev-only persona sign-in (§9)
 ```
 
-Navigation: **Home · My Work · Goals · Members · Proposals · Reports** (sidebar, desktop), with the **project picker** under the workspace switcher. Phone bottom tabs: Home · My Work · Goals · Members · More (Proposals, Reports, User settings, Workspace, Sign out); the project picker is an icon in the top bar. The tab row under the /home header (_Overview · List · Board · Projects_, draggable per person — see the 2026-10-28 log) reaches the tasks views and projects; goals are reached from projects and the Goals page. Stakeholders see Home · Goals · Proposals. User settings and Workspace live in the account menu. A signed-in person with no workspace sees Home only.
+Navigation: **Home · My Work · Goals · Members · Proposals · Reports** (sidebar, desktop), with the **project picker** under the workspace switcher. Phone bottom tabs: Home · My Work · Goals · Members · More (Proposals, Reports, User settings, Workspace, Sign out); the project picker is an icon in the top bar. The tab row under the /home header (_Overview · List · Board · Projects_, draggable per person — see the 2026-10-28 log) reaches the tasks views and projects; goals are reached from projects and the Goals page. Stakeholders see Home · Goals · Proposals · Reports (the Executive view). User settings and Workspace live in the account menu. A signed-in person with no workspace sees Home only.
 
 ## 3. Tenancy, roles, visibility
 
@@ -153,7 +162,7 @@ Navigation: **Home · My Work · Goals · Members · Proposals · Reports** (sid
    - **admin**: everything in the workspace, plus settings, members, invitations, delete; signs any proposal step.
    - **leader**: read everything; create/edit/archive projects and goals, their sign-off chains and connections; mark goals completed; create/edit/assign any task; approve or send back; reject; sign the proposal steps that name them (or nobody); see Members and Reports; turn a meeting transcript into goals and tasks (`/capture`).
    - **member**: read all tasks, projects, goals and proposals; create tasks (a proposal where the project or goal asks for sign-off); edit a task they created or are assigned to; update progress, comment on and resolve comments on any live task; hand over. Members page read-only. Reports visible (the My work view). Never completes a goal.
-   - **stakeholder**: read projects, goals and tasks; propose tasks and follow them; mark goals completed. Nothing else; nav shows Home, Goals and Proposals.
+   - **stakeholder**: read projects, goals and tasks; propose tasks and follow them; mark goals completed; read the Executive report. Nothing else; nav shows Home, Goals, Proposals and Reports.
 - `Viewer = { userId, orgId, orgRole, timezone }`. Every DAL function takes it and filters by `orgId` in SQL; lookups by id also check `orgId`.
 
 ## 4. Schema

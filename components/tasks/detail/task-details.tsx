@@ -11,7 +11,7 @@ import type { GoalOption, Person, TaskAbilities, TaskDetail } from "@/lib/tasks/
 import { AssigneeStack } from "../assignee-stack";
 import { DueLabel } from "../due-label";
 import { ApprovalChain } from "../proposal-strip";
-import { AssigneesEditor, DescriptionEditor, DueEditor, PickEditor, RecurrenceEditor, StatusEditor, TimeEditor } from "./detail-editors";
+import { AssigneesEditor, DescriptionEditor, DueEditor, GoalEditor, PickEditor, ProjectEditor, RecurrenceEditor, StatusEditor, TimeEditor } from "./detail-editors";
 
 // The task page's Details card: description and the facts that rarely change.
 
@@ -42,6 +42,7 @@ export function TaskDetails({
   people,
   viewerId,
   projects,
+  pinnedProjects,
   goals,
   today,
   timeZone,
@@ -52,6 +53,8 @@ export function TaskDetails({
   people: Person[];
   viewerId: string;
   projects: { id: string; name: string }[];
+  /** The viewer's pinned projects, first in the picker. */
+  pinnedProjects: string[];
   goals: GoalOption[];
   today: string;
   timeZone: string;
@@ -59,11 +62,8 @@ export function TaskDetails({
 }) {
   const edit = abilities.edit;
   const live = detail.proposalStatus === null || detail.proposalStatus === "approved";
-  // Only this project's goals are offered; with no project, any goal (which moves the task into that goal's project).
-  const goalChoices = withCurrent(
-    detail.project ? goals.filter((goal) => goal.projectId === detail.project!.id) : goals,
-    detail.goal ? { ...detail.goal, projectId: detail.project?.id ?? "" } : null,
-  );
+  // The task's own goal stays offered even when it is no longer active (the picker needs it to show the name).
+  const goalChoices = withCurrent(goals, detail.goal ? { ...detail.goal, projectId: detail.project?.id ?? "" } : null);
   return (
     <section aria-labelledby="details-heading" className="rounded-xl border bg-card">
       <h2 id="details-heading" className="border-b px-5 py-3 text-base font-semibold md:px-6">
@@ -72,7 +72,7 @@ export function TaskDetails({
       <div className="grid gap-3 px-5 py-4 md:px-6">
         <DescriptionEditor key={detail.description ?? ""} taskId={detail.id} description={detail.description} editable={edit} />
         <dl className="divide-y border-t">
-          {live ? <Row label="Status">{abilities.progress ? <StatusEditor taskId={detail.id} status={detail.status} allowReject={abilities.reject} /> : <StatusBadge status={detail.status} />}</Row> : null}
+          {live ? <Row label="Current status">{abilities.progress ? <StatusEditor taskId={detail.id} status={detail.status} allowReject={abilities.reject} /> : <StatusBadge status={detail.status} />}</Row> : null}
           <Row label="Assigned to">
             {edit ? (
               <AssigneesEditor key={JSON.stringify(detail.assignees)} taskId={detail.id} assignees={detail.assignees} people={people} viewerId={viewerId} />
@@ -122,7 +122,7 @@ export function TaskDetails({
           <Row label="Project">
             <div className="flex flex-wrap items-center gap-2">
               {edit ? (
-                <PickEditor taskId={detail.id} field="projectId" label="Project" value={detail.project?.id ?? ""} none="No project (standalone)" options={withCurrent(projects, detail.project).map((p) => ({ value: p.id, label: p.name }))} />
+                <ProjectEditor taskId={detail.id} value={detail.project?.id ?? ""} options={withCurrent(projects, detail.project)} pinned={pinnedProjects} />
               ) : detail.project ? null : (
                 <span className="text-muted-foreground">Standalone task</span>
               )}
@@ -136,7 +136,7 @@ export function TaskDetails({
           <Row label="Goal">
             <div className="flex flex-wrap items-center gap-2">
               {edit ? (
-                <PickEditor taskId={detail.id} field="goalId" label="Goal" value={detail.goal?.id ?? ""} none="No goal" options={goalChoices.map((g) => ({ value: g.id, label: g.title }))} />
+                <GoalEditor taskId={detail.id} value={detail.goal?.id ?? ""} goals={goalChoices} projects={withCurrent(projects, detail.project)} projectId={detail.project?.id ?? ""} />
               ) : detail.goal ? null : (
                 <span className="text-muted-foreground">No goal</span>
               )}

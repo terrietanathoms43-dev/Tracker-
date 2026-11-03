@@ -51,6 +51,8 @@ export type TaskFormOptions = {
   viewerId: string;
   people: Person[];
   projects: { id: string; name: string }[];
+  /** The ids of the projects this person pinned, in their order: the pickers show them first. */
+  pinnedProjects: string[];
   goals: GoalOption[];
   /** Whether "From a meeting" is offered to this person (lib/capture/availability.ts); filled in by the action. */
   canCapture: boolean;
