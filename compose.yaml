@@ -1,0 +1,19 @@
+name: trackwise
+
+services:
+  trackwise:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: trackwise:local
+    env_file:
+      - .env.local
+    ports:
+      - "3015:3015"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3015/').then(r => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
