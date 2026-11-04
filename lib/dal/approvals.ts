@@ -28,7 +28,7 @@ export async function readPolicy(handle: Tx | typeof db, orgId: string, scope: A
   if (!flag) return null;
   const [steps, bypass] = await Promise.all([
     handle
-      .select({ userId: approvalSteps.userId })
+      .select({ position: approvalSteps.position, userId: approvalSteps.userId })
       .from(approvalSteps)
       .where(and(eq(approvalSteps.orgId, orgId), scopeWhere(scope, approvalSteps)))
       .orderBy(asc(approvalSteps.position)),
@@ -37,13 +37,26 @@ export async function readPolicy(handle: Tx | typeof db, orgId: string, scope: A
       .from(approvalBypass)
       .where(and(eq(approvalBypass.orgId, orgId), scopeWhere(scope, approvalBypass))),
   ]);
-  return { requiresApproval: flag.requiresApproval, steps, bypass: bypass.map((row) => row.userId) };
+  return { requiresApproval: flag.requiresApproval, steps: groupSteps(steps).map((group) => ({ userIds: group.userIds })), bypass: bypass.map((row) => row.userId) };
+}
+
+/** Rows that share a position are one step any of them signs (2026-11-04 log); a row naming nobody is any leader's. */
+function groupSteps<T extends { position: number; userId: string | null }>(rows: T[]): { position: number; userIds: string[]; rows: T[] }[] {
+  const groups = new Map<number, { position: number; userIds: string[]; rows: T[] }>();
+  for (const row of rows) {
+    const group = groups.get(row.position) ?? { position: row.position, userIds: [], rows: [] };
+    if (row.userId !== null) group.userIds.push(row.userId);
+    group.rows.push(row);
+    groups.set(row.position, group);
+  }
+  return [...groups.values()].sort((a, b) => a.position - b.position);
 }
 
 /** The settings dialog's view of a chain: who signs, in order, and who skips the queue. */
 export type ApprovalSettings = {
   requiresApproval: boolean;
-  steps: { id: string; user: Person | null }[];
+  /** Each step's people, in order; an empty step is any leader or admin's. */
+  steps: { position: number; users: Person[] }[];
   bypass: { id: string; user: Person }[];
 };
 
@@ -55,7 +68,7 @@ export async function approvalSettings(viewer: Viewer, scope: ApprovalScope): Pr
   if (policy === null) return null;
   const [steps, bypass] = await Promise.all([
     db
-      .select({ id: approvalSteps.id, userId: stepUser.id, name: stepUser.name, email: stepUser.email, image: stepUser.image })
+      .select({ id: approvalSteps.id, position: approvalSteps.position, userId: stepUser.id, name: stepUser.name, email: stepUser.email, image: stepUser.image })
       .from(approvalSteps)
       .leftJoin(stepUser, eq(stepUser.id, approvalSteps.userId))
       .where(and(eq(approvalSteps.orgId, viewer.orgId), scopeWhere(scope, approvalSteps)))
@@ -69,7 +82,7 @@ export async function approvalSettings(viewer: Viewer, scope: ApprovalScope): Pr
   ]);
   return {
     requiresApproval: policy.requiresApproval,
-    steps: steps.map((row) => ({ id: row.id, user: row.userId ? { id: row.userId, name: row.name, email: row.email, image: row.image } : null })),
+    steps: groupSteps(steps).map((group) => ({ position: group.position, users: group.rows.filter((row) => row.userId !== null).map((row) => ({ id: row.userId!, name: row.name, email: row.email, image: row.image })) })),
     bypass: bypass.map((row) => ({ id: row.id, user: { id: row.userId, name: row.name, email: row.email, image: row.image } })),
   };
 }
@@ -79,9 +92,9 @@ export async function saveApprovalSettings(
   tx: Tx,
   orgId: string,
   scope: ApprovalScope,
-  settings: { requiresApproval: boolean; stepUserIds: string[]; bypassUserIds: string[] },
+  settings: { requiresApproval: boolean; steps: string[][]; bypassUserIds: string[] },
 ): Promise<void> {
-  const wanted = [...new Set([...settings.stepUserIds, ...settings.bypassUserIds])];
+  const wanted = [...new Set([...settings.steps.flat(), ...settings.bypassUserIds])];
   if (wanted.length > 0) {
     const workers = await tx
       .select({ userId: organizationMembers.userId })
@@ -92,8 +105,13 @@ export async function saveApprovalSettings(
   await tx.delete(approvalSteps).where(and(eq(approvalSteps.orgId, orgId), scopeWhere(scope, approvalSteps)));
   await tx.delete(approvalBypass).where(and(eq(approvalBypass.orgId, orgId), scopeWhere(scope, approvalBypass)));
   const target = { orgId, projectId: scope.projectId ?? null, goalId: scope.goalId ?? null };
-  const steps = [...new Set(settings.stepUserIds)];
-  if (steps.length > 0) await tx.insert(approvalSteps).values(steps.map((userId, index) => ({ ...target, position: index + 1, userId })));
+  const rows: (typeof approvalSteps.$inferInsert)[] = [];
+  settings.steps.forEach((group, index) => {
+    const people = [...new Set(group)];
+    if (people.length === 0) rows.push({ ...target, position: index + 1, userId: null });
+    for (const userId of people) rows.push({ ...target, position: index + 1, userId });
+  });
+  if (rows.length > 0) await tx.insert(approvalSteps).values(rows);
   const bypass = [...new Set(settings.bypassUserIds)];
   if (bypass.length > 0) await tx.insert(approvalBypass).values(bypass.map((userId) => ({ ...target, userId })));
   if (scope.goalId !== undefined) await tx.update(goals).set({ requiresApproval: settings.requiresApproval, updatedAt: new Date() }).where(eq(goals.id, scope.goalId));
@@ -104,12 +122,13 @@ export async function saveApprovalSettings(
 
 /** The chain a proposal carries, locked for the rest of the transaction. */
 export async function lockTaskApprovals(tx: Tx, taskId: string): Promise<(ApprovalStepState & { id: string })[]> {
-  return tx
-    .select({ id: taskApprovals.id, position: taskApprovals.position, userId: taskApprovals.userId, decision: taskApprovals.decision })
+  const rows = await tx
+    .select({ id: taskApprovals.id, position: taskApprovals.position, userId: taskApprovals.userId, userIds: taskApprovals.userIds, decision: taskApprovals.decision })
     .from(taskApprovals)
     .where(eq(taskApprovals.taskId, taskId))
     .orderBy(asc(taskApprovals.position))
     .for("update");
+  return rows.map((row) => ({ id: row.id, position: row.position, decision: row.decision, userIds: row.userIds ?? (row.userId ? [row.userId] : []) }));
 }
 
 // --- the Proposals page -----------------------------------------------------------------------------------------------
@@ -182,8 +201,8 @@ export async function listProposals(viewer: Viewer, options: { project?: string;
     .limit(300);
   return rows.map((row) => {
     const steps = row.approvals.map((step) => ({ ...step, decidedAt: step.decidedAt ? new Date(step.decidedAt).toISOString() : null }));
-    const states: ApprovalStepState[] = steps.map((step) => ({ position: step.position, userId: step.user?.id ?? null, decision: step.decision }));
-    const current = row.proposalStatus === "pending" ? currentStep(steps.map((step) => ({ ...step, userId: step.user?.id ?? null }))) : null;
+    const states: ApprovalStepState[] = steps.map((step) => ({ position: step.position, userIds: step.users.map((user) => user.id), decision: step.decision }));
+    const current = row.proposalStatus === "pending" ? currentStep(steps.map((step) => ({ ...step, userIds: step.users.map((user) => user.id) }))) : null;
     return {
       id: row.id,
       title: row.title,
@@ -219,7 +238,7 @@ export async function pendingProposals(viewer: Viewer, project = ""): Promise<Pr
 }
 
 /** Pending proposals whose current step names nobody in particular are "any leader's": used by notices. */
-export const isAnyLeaderStep = (step: { userId: string | null } | null) => step !== null && step.userId === null;
+export const isAnyLeaderStep = (step: { userIds: string[] } | null) => step !== null && step.userIds.length === 0;
 
 /** The goals of one project whose chain a form may need, with their policy flag (the project page's settings list). */
 export async function goalsRequiringApproval(viewer: Viewer, projectId: string): Promise<{ id: string; title: string }[]> {

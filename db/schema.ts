@@ -310,6 +310,22 @@ export const projectPins = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.projectId] }), index("project_pins_user_org_idx").on(t.userId, t.orgId)],
 );
 
+/** A person's running notes in a workspace: the Draft tab and the floating notepad (2026-11-04 log). */
+export const drafts = pgTable(
+  "drafts",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    body: text("body").notNull().default(""),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.orgId] })],
+);
+
 /**
  * The sign-off chain of a project or a goal (exactly one of the two is set), in order. A step with no user means
  * "any leader or admin". A goal's chain, when the goal requires approval, overrides its project's.
@@ -375,6 +391,8 @@ export const tasks = pgTable(
     recurrence: jsonb("recurrence").$type<Recurrence>(),
     /** Every occurrence of a repeating task shares the first one's id. */
     seriesId: text("series_id"),
+    /** The goal's "Everything completed" task (2026-11-04 log): completing it, last, marks the goal achieved. */
+    goalCloser: boolean("goal_closer").notNull().default(false),
     /** Null for a task that was live from the start; otherwise where its sign-off stands (task_approvals has the chain). */
     proposalStatus: proposalStatusEnum("proposal_status"),
     startedAt: tstz("started_at"),
@@ -430,8 +448,10 @@ export const taskApprovals = pgTable(
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
     position: integer("position").notNull(),
-    /** Who the step names; null means any leader or admin. */
+    /** The first person the step names (older rows; user_ids has them all); null means any leader or admin. */
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    /** Everyone the step names, any one of whom signs it (2026-11-04 log); null on rows written before groups. */
+    userIds: text("user_ids").array(),
     decision: approvalDecisionEnum("decision"),
     decidedBy: text("decided_by").references(() => users.id, { onDelete: "set null" }),
     decidedAt: tstz("decided_at"),

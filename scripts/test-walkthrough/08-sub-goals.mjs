@@ -66,7 +66,7 @@ try {
   await morgan.type("#quick-add-title", TASK);
   await morgan.click("Add task", { exact: true, wait: 2500 });
   step("adding a task shows the toast", await morgan.waitFor("Task created."));
-  step("the sub-goal counts the task", await morgan.waitFor("of 1 task completed"));
+  step("the sub-goal counts the task with its closer", await morgan.waitFor("of 2 tasks completed"));
   await morgan.goto(parentPath, 4000);
   step("the parent counts it too", await morgan.waitFor(`of ${before.n + 1} tasks completed`));
   step("and lists it among its tasks", await morgan.has(TASK));

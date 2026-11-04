@@ -9,6 +9,7 @@ import { ShowAllToggle } from "@/components/goals/show-all-toggle";
 import { PageHeader } from "@/components/page-header";
 import { goalLinksIn, listGoals, ownerOptions, parentGoalOptions } from "@/lib/dal/goals";
 import { pinnedProjectIds, projectOptions } from "@/lib/dal/projects";
+import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { openTasksForGoals } from "@/lib/dal/tasks";
 import { canLinkGoals, canManagePlanning, isStakeholder } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
@@ -28,6 +29,7 @@ export const metadata: Metadata = { title: "Goals" };
  */
 export default async function GoalsPage(props: PageProps<"/goals">) {
   const viewer = await requireViewer();
+  await catchUpRecurrences(viewer);
   const [raw, scope] = await Promise.all([props.searchParams, scopedProject(viewer)]);
   const showAll = raw.all === "1";
   const view = raw.view === "branches" ? "branches" : "list";

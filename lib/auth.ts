@@ -52,7 +52,6 @@ export const auth = betterAuth({
     google: {
       clientId: googleClientId!,
       clientSecret: googleClientSecret!,
-      hd: "intellibus.com",
       prompt: "select_account",
     },
   },

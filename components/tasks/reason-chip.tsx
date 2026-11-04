@@ -4,7 +4,7 @@ import { cn } from "cn";
 
 /** Why a task is in an attention list ("Overdue", "Your approval"): a small muted tag, red for overdue and blocked. */
 export function ReasonChip({ reason, className }: { reason: string; className?: string }) {
-  const urgent = reason === "Overdue" || reason === "Blocked";
+  const urgent = reason === "Overdue" || reason === "Blocked" || reason === "Declined";
   return (
     <span
       className={cn(

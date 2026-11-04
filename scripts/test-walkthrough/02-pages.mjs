@@ -35,6 +35,7 @@ const WORKER_SCREENS = [
   `/tasks/${ids.task}`,
   `/tasks/${ids.proposal}`,
   "/home?view=projects",
+  "/home?view=draft",
   `/projects/${ids.project}`,
   "/goals",
   "/goals?view=branches",

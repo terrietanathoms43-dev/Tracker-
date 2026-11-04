@@ -48,6 +48,9 @@ export const LIMITS = {
   captureTasks: 60,
   captureGoals: 12,
 
+  /** The Draft tab's notepad: a person's running notes in a workspace (2026-11-04 log). */
+  draft: 60_000,
+
   // Transient text (filters and the command palette) — never stored, capped to keep URLs and queries sane.
   search: 100,
 } as const;

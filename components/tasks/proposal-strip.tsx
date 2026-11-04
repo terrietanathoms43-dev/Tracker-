@@ -2,12 +2,14 @@
 
 import { cn } from "cn";
 import { Check, ClipboardCheck, Send, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { decideProposal, resubmitProposal } from "@/actions/proposals";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { describeStepPeople } from "@/lib/approvals/policy";
 import type { ProposalStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { nameOf } from "@/lib/tasks/people";
@@ -17,7 +19,7 @@ import { toastResult } from "@/lib/toast-result";
 // A proposal's state at the top of its task page (docs/PLAN.md, 2026-11-03 log): where the chain stands, and the
 // buttons for whoever is up (Approve / Decline with a note) or for the proposer of a declined one (Send again).
 
-const stepName = (step: ApprovalStepView) => (step.user ? nameOf(step.user) : "any leader or admin");
+const stepName = (step: ApprovalStepView) => describeStepPeople(step.users.map((user) => nameOf(user)));
 
 /** "Terri Tan ✓ → Max Reid (up next) → Avery Admin" as chips, so the whole chain is visible at once. */
 export function ApprovalChain({ steps, currentId, className }: { steps: ApprovalStepView[]; currentId: string | null; className?: string }) {
@@ -50,17 +52,23 @@ export function ApprovalChain({ steps, currentId, className }: { steps: Approval
 }
 
 /** Approve / Decline for the person whose step is up. Declining asks for a note the proposer reads. */
-export function DecideButtons({ taskId, size = "sm", onDone }: { taskId: string; size?: "sm" | "default"; onDone?: () => void }) {
+export function DecideButtons({ taskId, seen, size = "sm", onDone }: { taskId: string; /** The task's updatedAt as rendered: a decision on a task that changed since is refused and the page refreshed. */ seen?: string; size?: "sm" | "default"; onDone?: () => void }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [pending, startTransition] = useTransition();
+  const settle = (result: Awaited<ReturnType<typeof decideProposal>>) => {
+    const done = toastResult(result);
+    if (!done && !result.ok && result.error.includes("changed since you opened it")) router.refresh();
+    return done;
+  };
   const approve = () =>
     startTransition(async () => {
-      if (toastResult(await decideProposal({ taskId, decision: "approved" }))) onDone?.();
+      if (settle(await decideProposal({ taskId, decision: "approved", seen }))) onDone?.();
     });
   const decline = () =>
     startTransition(async () => {
-      if (toastResult(await decideProposal({ taskId, decision: "declined", note }))) {
+      if (settle(await decideProposal({ taskId, decision: "declined", note, seen }))) {
         setOpen(false);
         setNote("");
         onDone?.();
@@ -128,12 +136,15 @@ export function ProposalStrip({
   steps,
   canDecide,
   canResubmit,
+  version,
 }: {
   taskId: string;
   status: ProposalStatus | null;
   steps: ApprovalStepView[];
   canDecide: boolean;
   canResubmit: boolean;
+  /** The task's updatedAt the page rendered with. */
+  version?: string;
 }) {
   if (status !== "pending" && status !== "declined") return null;
   const ordered = [...steps].sort((a, b) => a.position - b.position);
@@ -163,7 +174,7 @@ export function ProposalStrip({
           <span className="font-medium">Proposal</span>
           {current ? ` · waiting for ${stepName(current)} to sign off (step ${current.position} of ${ordered.length})` : " · waiting for sign-off"}
         </p>
-        {canDecide ? <DecideButtons taskId={taskId} /> : null}
+        {canDecide ? <DecideButtons taskId={taskId} seen={version} /> : null}
       </div>
       <ApprovalChain steps={ordered} currentId={current?.id ?? null} />
       <p className="text-[13px] opacity-80">It becomes a live task, and the people on it are told, once every step is signed.</p>

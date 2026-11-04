@@ -18,7 +18,7 @@ function Label({ children }: { children: ReactNode }) {
 /** The strip at the top of the card for the states that need someone: blocked, awaiting approval, or closed. */
 function StatusStrip({ detail, abilities, timeZone, now }: { detail: TaskDetail; abilities: TaskAbilities; timeZone: string; now: Date }) {
   if (detail.proposalStatus === "pending" || detail.proposalStatus === "declined") {
-    return <ProposalStrip taskId={detail.id} status={detail.proposalStatus} steps={detail.approvals} canDecide={abilities.decideProposal} canResubmit={abilities.edit} />;
+    return <ProposalStrip taskId={detail.id} status={detail.proposalStatus} steps={detail.approvals} canDecide={abilities.decideProposal} canResubmit={abilities.edit} version={detail.updatedAt} />;
   }
   if (detail.status === "blocked") {
     return (

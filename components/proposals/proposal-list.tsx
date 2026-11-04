@@ -109,7 +109,7 @@ export function ProposalRow({ item, today, now, timeZone, showProposer = true }:
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <AssigneeStack assignees={item.assignees} className="relative" />
-          {item.canDecide ? <DecideButtons taskId={item.id} /> : null}
+          {item.canDecide ? <DecideButtons taskId={item.id} seen={item.updatedAt} /> : null}
           {item.isMine && item.status === "declined" ? <ResubmitButton taskId={item.id} /> : null}
           {item.isMine && item.status !== "approved" ? <WithdrawButton item={item} /> : null}
         </div>

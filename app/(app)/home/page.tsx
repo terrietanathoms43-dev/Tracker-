@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { DraftView } from "@/components/draft/draft-view";
 import { HomeView } from "@/components/home/home-view";
 import { NoWorkspaceHome } from "@/components/home/no-workspace-home";
 import { ProjectsView } from "@/components/projects/projects-view";
@@ -10,6 +11,7 @@ import { readHomeTabConfig } from "@/lib/home-tabs-server";
 import { isStakeholder } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
 import { parseFilters } from "@/lib/tasks/filters";
+import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { safeTimeZone } from "@/lib/time";
 import { getViewerContext, requireUser } from "@/lib/viewer";
 
@@ -44,6 +46,7 @@ export default async function HomePage(props: PageProps<"/home">) {
   }
 
   const { viewer, org } = context;
+  await catchUpRecurrences(viewer);
   const role = viewer.orgRole;
   const [config, scope] = await Promise.all([readHomeTabConfig(role), scopedProject(viewer)]);
   const requested = parseTabParam(typeof raw.view === "string" ? raw.view : "");
@@ -52,5 +55,6 @@ export default async function HomePage(props: PageProps<"/home">) {
 
   if (active === "home") return <HomeView viewer={viewer} user={user} org={org} tabsConfig={config} scope={scope} />;
   if (active === "projects") return <ProjectsView viewer={viewer} showAll={raw.all === "1"} tabsConfig={config} />;
+  if (active === "draft") return <DraftView viewer={viewer} user={user} tabsConfig={config} scope={scope} />;
   return <TasksView viewer={viewer} filters={parseFilters(raw, scope?.id ?? "")} view={active} tabsConfig={config} scope={scope} />;
 }

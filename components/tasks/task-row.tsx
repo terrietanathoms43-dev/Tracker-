@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronDown, ClipboardCheck, Repeat } from "lucide-react";
+import { ChevronDown, ClipboardCheck, Flag, Repeat, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type MouseEvent } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
@@ -55,7 +55,14 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
   const where = [task.project?.name, task.goal?.title].filter(Boolean).join(" › ");
 
   return (
-    <li className={cn("group relative", selected && "bg-sidebar-accent/50")} {...handlers} data-task-row={task.id} data-expanded={open || undefined} data-selected={selected || undefined}>
+    <li
+      className={cn("group relative", selected && "bg-sidebar-accent/50", task.proposal === "pending" && "bg-status-awaiting-bg/40", task.proposal === "declined" && "bg-status-blocked-bg/30")}
+      {...handlers}
+      data-task-row={task.id}
+      data-expanded={open || undefined}
+      data-selected={selected || undefined}
+      data-proposal={task.proposal ?? undefined}
+    >
       <div
         className={cn("flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-accent/60 sm:px-4", open && "bg-accent/40")}
         onClick={(event) => {
@@ -69,7 +76,13 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
             <Checkbox checked={selected} onCheckedChange={() => selection.toggle(task.id)} aria-label={`Select ${task.title}`} data-select-task={task.id} />
           </span>
         ) : null}
-        <StatusIcon status={task.status} />
+        {task.proposal === "pending" ? (
+          <ClipboardCheck className="size-4 shrink-0 text-status-awaiting-fg" aria-label="Waiting for sign-off" role="img" />
+        ) : task.proposal === "declined" ? (
+          <XCircle className="size-4 shrink-0 text-status-blocked-fg" aria-label="Declined" role="img" />
+        ) : (
+          <StatusIcon status={task.status} />
+        )}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5 md:flex-row md:items-baseline md:gap-3">
           <Link
             href={`/tasks/${task.id}`}
@@ -80,13 +93,19 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
           >
             {task.title}
           </Link>
-          {task.nextAction || reason || task.proposal === "pending" ? (
+          {task.goalCloser ? <Flag className="size-3.5 shrink-0 text-primary" aria-label="Marks the goal achieved" role="img" /> : null}
+          {task.nextAction || reason || task.proposal === "pending" || task.proposal === "declined" ? (
             <span className="flex min-w-0 items-center gap-1.5">
               {reason ? <ReasonChip reason={reason} className="sm:hidden" /> : null}
               {task.proposal === "pending" ? (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-awaiting-bg px-1.5 py-0.5 text-[11px] font-medium text-status-awaiting-fg">
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-awaiting-bg px-1.5 py-0.5 text-[11px] font-medium text-status-awaiting-fg" data-proposal-chip>
                   <ClipboardCheck className="size-3" aria-hidden />
-                  Proposal
+                  Waiting for sign-off
+                </span>
+              ) : task.proposal === "declined" ? (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-blocked-bg px-1.5 py-0.5 text-[11px] font-medium text-status-blocked-fg" data-proposal-chip>
+                  <XCircle className="size-3" aria-hidden />
+                  Declined
                 </span>
               ) : null}
               {task.nextAction ? <span className="truncate text-[13px] text-muted-foreground md:text-sm">{task.nextAction}</span> : null}

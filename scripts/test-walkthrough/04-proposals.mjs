@@ -34,10 +34,10 @@ try {
   step("its chain is one step for any leader", chain.length === 1 && chain[0].user_id === null && chain[0].decision === null, JSON.stringify(chain));
   await taylor.shot("04-stakeholder-proposed");
 
-  // --- 2. It is not work yet: the task list and My Work don't show it ----------------------------------------
+  // --- 2. It shows in the lists at once, highlighted as waiting for sign-off (2026-11-04 log) ----------------------
   const jordan = (browsers.jordan = await openBrowser({ role: "member", width: 1280, height: 900 }));
   await jordan.goto("/home?view=list&closed=1", 4000);
-  step("a pending proposal is not in the task list", (await jordan.waitFor("Tasks")) && !(await jordan.has(TITLE)));
+  step("a pending proposal is in the task list, highlighted as waiting for sign-off", (await jordan.waitFor("Tasks")) && (await jordan.waitForNear(TITLE, "Waiting for sign-off")));
   await jordan.goto("/proposals", 4000);
   step("a member sees it under Waiting on others, without Approve", (await jordan.waitForNear(TITLE, "Waiting for sign-off")) && !(await buttonTexts(jordan)).some((text) => text === "Approve"));
 

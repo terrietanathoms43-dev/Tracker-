@@ -17,6 +17,7 @@ import { SelectionProvider } from "@/components/tasks/selection";
 import { approvalSettings } from "@/lib/dal/approvals";
 import { connectionsOf, getGoal, listGoals, ownerOptions, parentGoalOptions, subGoalsOf } from "@/lib/dal/goals";
 import { pinnedProjectIds, projectOptions } from "@/lib/dal/projects";
+import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { tasksForGoal } from "@/lib/dal/tasks";
 import { canCompleteGoal, canCreateTask, canManagePlanning, isLeader, isStakeholder } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
@@ -34,6 +35,7 @@ export const metadata: Metadata = { title: "Goal" };
 export default async function GoalPage(props: PageProps<"/goals/[id]">) {
   const { id } = await props.params;
   const viewer = await requireViewer();
+  await catchUpRecurrences(viewer);
   const manage = canManagePlanning(viewer);
   // One round trip; nothing renders unless getGoal finds the goal in this workspace for a viewer who may read it.
   const [goal, subGoals, tasks, connections, people, projects, parents, allGoals, pinned] = await Promise.all([

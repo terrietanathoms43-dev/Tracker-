@@ -17,7 +17,9 @@ import { findGoal } from "@/lib/dal/goals";
 import { listHistory, lockComment } from "@/lib/dal/history";
 import { findMembership, leaderIds } from "@/lib/dal/orgs";
 import { findProject } from "@/lib/dal/projects";
-import { getTaskBasics, listTasks, lockTask, recentTasks, searchTasks, seriesHasOpenTask, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
+import { applyGoalCloser, describeCloser, type CloserOutcome } from "@/lib/dal/goal-closers";
+import { seriesAnchor, seriesHasLaterOccurrence } from "@/lib/dal/recurrence";
+import { getTaskBasics, listTasks, lockTask, recentTasks, searchTasks, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
 import { captureProviderFor } from "@/lib/capture/availability";
 import { log } from "@/lib/log";
 import { dispatch, type Notice } from "@/lib/notify";
@@ -154,8 +156,8 @@ async function noticesFor(
 // --- proposals: the chain a new task gets -----------------------------------------------------------------------
 
 /** Who hears that a step is theirs: the person it names, or every leader and admin when it names nobody. */
-export async function stepRecipients(tx: Tx, orgId: string, step: { userId: string | null }): Promise<string[]> {
-  return step.userId ? [step.userId] : leaderIds(tx, orgId);
+export async function stepRecipients(tx: Tx, orgId: string, step: { userIds: string[] }): Promise<string[]> {
+  return step.userIds.length > 0 ? step.userIds : leaderIds(tx, orgId);
 }
 
 /**
@@ -167,14 +169,15 @@ export async function startChain(tx: Tx, viewer: Viewer, task: { id: string; tit
     chain.map((step) => ({
       taskId: task.id,
       position: step.position,
-      userId: step.userId,
+      userId: step.userIds[0] ?? null,
+      userIds: step.userIds,
       decision: step.autoSigned ? ("approved" as const) : null,
       decidedBy: step.autoSigned ? viewer.userId : null,
       decidedAt: step.autoSigned ? now : null,
       createdAt: now,
     })),
   );
-  const next = currentStep(chain.map((step) => ({ position: step.position, userId: step.userId, decision: step.autoSigned ? ("approved" as const) : null })));
+  const next = currentStep(chain.map((step) => ({ position: step.position, userIds: step.userIds, decision: step.autoSigned ? ("approved" as const) : null })));
   if (next === null) return [];
   const recipients = await stepRecipients(tx, viewer.orgId, next);
   return [{ orgId: viewer.orgId, actorId: viewer.userId, recipients, kind: "proposal_waiting", title: `Proposal to sign off: ${task.title}`, body: `Step ${next.position} of ${chain.length}.`, href: taskHref(task.id) }];
@@ -202,9 +205,12 @@ async function spawnNextOccurrence(tx: Tx, viewer: Viewer, task: LockedTask, ass
   const rule: Recurrence | null = task.recurrence ?? null;
   if (rule === null) return null;
   const seriesId = task.seriesId ?? task.id;
-  if (await seriesHasOpenTask(tx, viewer.orgId, seriesId, task.id)) return null;
+  // Only the latest occurrence makes the next one: a missed series is caught up by lib/dal/recurrence.ts instead.
+  if (await seriesHasLaterOccurrence(tx, viewer.orgId, seriesId, task.dueDate)) return null;
   const today = dayKey(now, viewer.timezone);
-  const due = nextAfterFinishing(rule, task.dueDate, task.dueDate, today);
+  const anchor = (await seriesAnchor(tx, viewer.orgId, seriesId)) ?? task.dueDate;
+  const due = nextAfterFinishing(rule, anchor, task.dueDate, today);
+  if (due === null) return null;
   const [created] = await tx
     .insert(tasks)
     .values({
@@ -219,6 +225,7 @@ async function spawnNextOccurrence(tx: Tx, viewer: Viewer, task: LockedTask, ass
       dueTime: task.dueTime,
       recurrence: rule,
       seriesId,
+      goalCloser: task.goalCloser,
       createdAt: now,
       updatedAt: now,
     })
@@ -388,7 +395,7 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
         if ((task.goalId ?? null) === value) return false;
         const placement = await resolvePlacement(tx, viewer.orgId, { projectId: task.projectId ?? "", goalId: value ?? "" });
         const goal = value === null ? null : await findGoal(tx, viewer.orgId, value);
-        patch = { goalId: placement.goalId, projectId: value === null ? task.projectId : placement.projectId };
+        patch = { goalId: placement.goalId, projectId: value === null ? task.projectId : placement.projectId, goalCloser: false };
         draft = { kind: "edited", before: { goalId: task.goalId }, after: { goalId: value, goalTitle: goal?.title ?? null } };
       } else if (data.field === "projectId") {
         const value = data.value === "" ? null : data.value;
@@ -399,7 +406,7 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
         if (project?.status === "archived") throw new GuardError("forbidden", "That project is archived. Pick another one.");
         const goal = task.goalId ? await findGoal(tx, viewer.orgId, task.goalId) : null;
         const keepGoal = goal !== null && goal.projectId === value;
-        patch = { projectId: value, goalId: keepGoal ? task.goalId : null };
+        patch = { projectId: value, goalId: keepGoal ? task.goalId : null, goalCloser: keepGoal ? task.goalCloser : false };
         draft = { kind: "edited", before: { projectId: task.projectId }, after: { projectId: value, projectName: project?.name ?? null } };
       } else {
         const value = data.value === "" ? null : data.value;
@@ -457,7 +464,7 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
     const viewer = await requireViewer();
     const now = new Date();
     const notices: Notice[] = [];
-    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null } | null> => {
+    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null; closer: CloserOutcome | null } | null> => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
       const { task, assignment, scope } = locked;
@@ -472,12 +479,14 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       const plan = planTransition(task, data.status, transition, now, via);
       if (!plan.ok) return { error: plan.error };
       if (plan.activities.length === 0) return null;
+      // The goal's "Everything completed" task: refused while other tasks are open; achieves the goal when done last.
+      const closer = await applyGoalCloser(tx, viewer, task, data.status, now);
       const evidence = data.status === "completed" ? await insertLink(tx, task.id, viewer.userId, data.evidenceUrl, data.evidenceLabel, now) : [];
       await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [...plan.activities, ...evidence], now);
       notices.push(...(await noticesFor(tx, viewer, task, assignment, plan.activities, data.approverId || task.approverId, data.note || null)));
       const nextDue = data.status === "completed" ? await spawnNextOccurrence(tx, viewer, task, assignment, now) : null;
-      return { nextDue };
+      return { nextDue, closer };
     });
     if (outcome !== null && "error" in outcome) return fail(outcome.error);
     log.info("tasks.status_changed", { orgId: viewer.orgId, taskId: data.taskId, to: data.status, via: data.via, by: viewer.userId });
@@ -485,9 +494,10 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
     refresh();
     const today = dayKey(now, viewer.timezone);
     const nextDue = outcome?.nextDue ?? null;
-    if (data.via === "approve") return ok(undefined, withNextDue("Approved.", nextDue, today));
+    const achieved = describeCloser(outcome?.closer ?? null, today, formatDay);
+    if (data.via === "approve") return ok(undefined, withNextDue("Approved.", nextDue, today) + achieved);
     if (data.via === "send_back") return ok(undefined, "Sent back.");
-    return ok(undefined, withNextDue(STATUS_TOASTS[data.status] ?? "Status changed.", nextDue, today));
+    return ok(undefined, withNextDue(STATUS_TOASTS[data.status] ?? "Status changed.", nextDue, today) + achieved);
   });
 }
 
@@ -527,7 +537,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
     const viewer = await requireViewer();
     const now = new Date();
     const notices: Notice[] = [];
-    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null }> => {
+    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null; closer: CloserOutcome | null }> => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
       const { task, assignment, scope } = locked;
@@ -542,6 +552,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
 
       const drafts: ActivityDraft[] = [{ kind: "progress_updated", after: { progress: data.progress.slice(0, 500), nextAction: data.nextAction || null } }];
       let patch: Record<string, unknown> = {};
+      let closer: CloserOutcome | null = null;
       if (target !== null) {
         const via: TransitionVia = task.status === "awaiting_approval" && target === "completed" ? "approve" : "status";
         if (!mayMove(viewer, scope, task.status, target, via)) {
@@ -553,6 +564,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         }
         const plan = planTransition(task, target, { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
         if (!plan.ok) return { error: plan.error };
+        closer = await applyGoalCloser(tx, viewer, task, target, now);
         patch = plan.patch;
         drafts.push(...plan.activities);
       } else if (task.status === "blocked" && data.status === "blocked" && (data.reason !== task.blockedReason || (data.blockedBy || null) !== task.blockedBy)) {
@@ -593,13 +605,14 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         .where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
       const nextDue = target === "completed" ? await spawnNextOccurrence(tx, viewer, task, after, now) : null;
-      return { nextDue };
+      return { nextDue, closer };
     });
     if ("error" in outcome) return fail(outcome.error);
     log.info("tasks.progress_updated", { orgId: viewer.orgId, taskId: data.taskId, by: viewer.userId, status: data.status || null });
     await dispatch(notices);
     refresh();
-    return ok(undefined, withNextDue("Update saved.", outcome.nextDue, dayKey(now, viewer.timezone)));
+    const today = dayKey(now, viewer.timezone);
+    return ok(undefined, withNextDue("Update saved.", outcome.nextDue, today) + describeCloser(outcome.closer, today, formatDay));
   });
 }
 
@@ -893,6 +906,7 @@ export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>):
       const plan = planTransition(task, data.status, { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
       if (!plan.ok) throw new GuardError("conflict", plan.error);
       if (plan.activities.length === 0) return [];
+      await applyGoalCloser(tx, viewer, task, data.status, now);
       await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, plan.activities, now);
       const sent = await noticesFor(tx, viewer, task, assignment, plan.activities, data.approverId || task.approverId, null);
@@ -944,7 +958,7 @@ export async function bulkMove(input: z.input<typeof bulkMoveSchema>): Promise<A
       if ((task.projectId ?? null) === placement.projectId && (task.goalId ?? null) === placement.goalId) return [];
       const project = placement.projectId ? await findProject(tx, viewer.orgId, placement.projectId) : null;
       const goal = placement.goalId ? await findGoal(tx, viewer.orgId, placement.goalId) : null;
-      await tx.update(tasks).set({ projectId: placement.projectId, goalId: placement.goalId, updatedAt: now }).where(eq(tasks.id, task.id));
+      await tx.update(tasks).set({ projectId: placement.projectId, goalId: placement.goalId, goalCloser: task.goalCloser && placement.goalId === task.goalId, updatedAt: now }).where(eq(tasks.id, task.id));
       await recordActivity(
         tx,
         { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId },

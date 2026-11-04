@@ -16,6 +16,7 @@ import { ReportVerdict } from "@/components/reports/report-verdict";
 import { BlockedList, DeliveredList, OpenList, StalledList } from "@/components/reports/task-facts";
 import { canSeeReports, isAdmin, isLeader, isStakeholder } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
+import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { buildReport } from "@/lib/reports/build";
 import { parseReportCut, parseReportRange, type ReportCut } from "@/lib/reports/params";
 import { addDays, dayKey, formatAbsolute, formatDay } from "@/lib/time";
@@ -30,6 +31,7 @@ export const metadata: Metadata = { title: "Reports" };
 export default async function ReportsPage(props: PageProps<"/reports">) {
   const { viewer, org } = await requireViewerContext();
   if (!canSeeReports(viewer)) redirect("/home");
+  await catchUpRecurrences(viewer);
   const now = new Date();
   const today = dayKey(now, viewer.timezone);
   const [searchParams, scope] = await Promise.all([props.searchParams, scopedProject(viewer)]);

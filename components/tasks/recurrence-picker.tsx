@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { Repeat } from "lucide-react";
 import { NativeSelect } from "@/components/native-select";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { describeRecurrence, RECURRENCE_UNIT_LABELS, RECURRENCE_UNITS, WEEKDAY_SHORT, weekdayOf, type Recurrence, type RecurrenceUnit } from "@/lib/recurrence";
 
 // How often a task or goal comes round (docs/PLAN.md, 2026-11-03 log): "Doesn't repeat" by default, else every
@@ -116,6 +117,15 @@ export function RecurrencePicker({
           {describeRecurrence(value, anchor)}
           {RECURRENCE_UNITS.includes(value.unit) && anchor === null ? " · needs a first due date" : ""}
         </p>
+      ) : null}
+      {value ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Label htmlFor={`${idPrefix}-until`} className="text-[13px] text-muted-foreground">
+            Until
+          </Label>
+          <Input id={`${idPrefix}-until`} type="date" value={value.until ?? ""} min={anchor ?? undefined} disabled={disabled} className="w-40" aria-label="Repeat until" onChange={(event) => set({ until: event.target.value || undefined })} />
+          <span className="text-[12px] text-muted-foreground">{value.until ? "The last day it comes round." : "Optional: the last day it comes round."}</span>
+        </div>
       ) : null}
     </div>
   );

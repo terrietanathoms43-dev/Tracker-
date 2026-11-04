@@ -90,6 +90,16 @@
 > - **Branches canvas**: drag the dot on a card onto another goal to draw "leads to" (`linkGoals`, same loop rule), press the × on an arrow to remove it (`unlinkGoals`). The Connections card stays as the keyboard way.
 > - **Stakeholders get Reports**: the Executive view, the one made for them (no view tabs, no People table), and the navigation shows Home · Goals · Proposals · Reports. Their Home opens with the verdict strip for the last 30 days and the goals' progress, then their proposals.
 
+> **Decision log (2026-11-04, later: repeats that end and catch up, visible proposals, the closer task, sign-off groups, the Draft tab):**
+>
+> - **Repeats end**: a rule may carry `until` (the last day an occurrence may fall on); `nextAfterFinishing` returns null past it. **Missed repeats are made anyway**: `lib/dal/recurrence.ts` `catchUpRecurrences` runs at the top of every work screen (once per request, one advisory lock per workspace) and writes every occurrence a series owes up to today (five missed days, five overdue tasks, to batch), tasks and goals alike, capped at 60 per series per run. The series' first day anchors the rhythm. Finishing the latest occurrence still makes the next one; finishing an older one never does.
+> - **Proposals are visible from the start**: a task made under a sign-off rule shows at once in the List, the Board, My Work (Waiting on others) and the project and goal pages, tinted and chipped "Waiting for sign-off" (`visibleWork`); a declined one shows to its proposer, chipped "Declined" and under Needs attention. Counts, progress and reports still count live work only. **Decisions are versioned**: Approve / Decline carries the `updatedAt` the decider saw and is refused ("changed since you opened it") if the task changed, then the page refreshes; nothing is locked, so the proposer is never blocked and a stale review can never slip through.
+> - **"Everything completed"** (`tasks.goal_closer`, `lib/dal/goal-closers.ts`): every goal gets one task that stands for the goal being achieved (made with the goal, copied with a repeating goal, backfilled by `npm run db:backfill-closers`). Completing it with other live tasks still open under the goal or its sub-goals is refused with the count; completing it last marks the goal achieved in the same transaction (and makes the next occurrence of a repeating goal); reopening it reopens the goal. Moving it off its goal drops the flag. Mark completed on the goal page stays as the manager's shortcut.
+> - **Deleting a goal** may also delete its sub-goals (a checkbox); their tasks stay in the project either way.
+> - **Sign-off steps are groups**: a step names any number of people and any one of them signs it ("Max or Terri"); rows of `approval_steps` sharing a position are one step, `task_approvals.user_ids` carries a step's people on the task (older rows keep `user_id`). The dialog picks people from the searchable assignee list, per step, with reordering.
+> - **The Draft tab** (`/home?view=draft`, `drafts` table, one note per person per workspace, saved as it is typed): a notepad first; upload a transcript or notes file; "Turn into work" hands the text to the capture helper (leaders and admins; `/capture` redirects here). "Keep the notepad open while you browse" floats the same note over every page (bottom right, foldable to a tab on the right edge, off with ×; `trackwise.notepad` in the browser).
+> - **Sign-in**: `ALLOWED_EMAIL_DOMAINS` is empty by default now, so any address may sign in; a server that sets it still restricts. Google's picker hint stays narrowed only when exactly one domain is set.
+
 This file is the hand-off for anyone building Trackwise. Read `docs/BRIEF.md` for intent; this file says _how_. Follow the `apex-architecture`, `apex-ui` and `apex-ux` skills for everything not spelled out here. If something is genuinely impossible, say so in the report rather than silently choosing differently.
 
 Owner context: the owner's own dev team and their manager. One workspace in practice, multi-tenant in design. Fresh database; nothing is migrated from Supabase.
@@ -127,7 +137,7 @@ Fonts: Geist Sans + Geist Mono.
 /invite/[token]            accept a workspace invitation
 /onboarding                create workspace → invite (skippable) → done
 (app) group, authenticated, shell:
-  /home                    the tab hub: ?view=list (filters in URL) · ?view=board (status columns) ·
+  /home                    the tab hub: ?view=list (filters in URL) · ?view=board (status columns) · ?view=draft (the notepad) ·
                            ?view=projects (active projects, archived behind ?all=1) · ?view=home
                            (role-aware overview: member next steps · leader team health · stakeholder
                            proposals); bare /home opens the landing tab (cookie, List for members and

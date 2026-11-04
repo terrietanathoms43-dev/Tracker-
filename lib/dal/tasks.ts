@@ -50,6 +50,14 @@ function visibility(viewer: Viewer): SQL {
 /** Work, not proposals: a task that was live from the start, or a proposal that was approved. */
 export const liveOnly = sql`(${tasks.proposalStatus} is null or ${tasks.proposalStatus} = 'approved')`;
 
+/**
+ * What a work list shows (2026-11-04 log): live work, every proposal still waiting for sign-off (highlighted, so a
+ * task made under a sign-off rule appears the moment it is made), and the viewer's own declined ones (theirs to fix
+ * and send again). Counts, progress and reports keep to `liveOnly`.
+ */
+export const visibleWork = (viewer: Viewer): SQL =>
+  sql`(${liveOnly} or ${tasks.proposalStatus} = 'pending' or (${tasks.proposalStatus} = 'declined' and ${tasks.createdBy} = ${viewer.userId}))`;
+
 /** The project a list is narrowed to ("" means every project); an undefined condition is dropped by `and`. */
 export const projectCondition = (project: string): SQL | undefined => (project === "" ? undefined : eq(tasks.projectId, project));
 
@@ -82,10 +90,10 @@ export const openCommentsSql = sql<number>`(select count(*)::int from task_updat
 export const approvalsJson = sql<ApprovalStepView[]>`coalesce((
   select json_agg(json_build_object(
     'id', a.id, 'position', a.position, 'decision', a.decision, 'decidedAt', a.decided_at, 'note', a.note,
-    'user', case when su.id is null then null else json_build_object('id', su.id, 'name', su.name, 'email', su.email, 'image', su.image) end,
+    'users', coalesce((select json_agg(json_build_object('id', su.id, 'name', su.name, 'email', su.email, 'image', su.image) order by su.name nulls last) from users su where su.id = any(coalesce(a.user_ids, case when a.user_id is null then '{}'::text[] else array[a.user_id] end))), '[]'::json),
     'decidedBy', case when du.id is null then null else json_build_object('id', du.id, 'name', du.name, 'email', du.email, 'image', du.image) end
   ) order by a.position)
-  from task_approvals a left join users su on su.id = a.user_id left join users du on du.id = a.decided_by
+  from task_approvals a left join users du on du.id = a.decided_by
   where a.task_id = ${tasks}.id), '[]'::json)`;
 
 // --- list rows -----------------------------------------------------------------------------------------------
@@ -104,6 +112,7 @@ const listColumns = {
   updatedAt: tasks.updatedAt,
   createdBy: tasks.createdBy,
   proposalStatus: tasks.proposalStatus,
+  goalCloser: tasks.goalCloser,
   goalId: goals.id,
   goalTitle: goals.title,
   projectId: projects.id,
@@ -125,6 +134,7 @@ type ListRow = {
   updatedAt: Date;
   createdBy: string;
   proposalStatus: ProposalStatus | null;
+  goalCloser: boolean;
   goalId: string | null;
   goalTitle: string | null;
   projectId: string | null;
@@ -148,6 +158,7 @@ export function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
     project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
     goal: row.goalId && row.goalTitle ? { id: row.goalId, title: row.goalTitle } : null,
     proposal: row.proposalStatus,
+    goalCloser: row.goalCloser,
     canDelete: canDeleteTask(viewer, { createdBy: row.createdBy, proposalStatus: row.proposalStatus }),
     assignees: row.assignees,
   };
@@ -204,7 +215,7 @@ function dateFilterConditions(viewer: Viewer, filters: Pick<TaskFilters, "dateFi
 
 /** The conditions every filter shares between the list and the board (status is handled by each). */
 function filterConditions(viewer: Viewer, filters: TaskFilters, today: string): SQL[] {
-  const where: SQL[] = [visibility(viewer), liveOnly];
+  const where: SQL[] = [visibility(viewer), visibleWork(viewer)];
   if (filters.q) {
     const term = `%${escapeLike(filters.q)}%`;
     where.push(or(ilike(tasks.title, term), ilike(tasks.description, term))!);
@@ -278,7 +289,7 @@ export async function searchTasks(viewer: Viewer, q: string, limit = 8): Promise
   if (term === "") return [];
   const like = `%${escapeLike(term)}%`;
   const rows = await selectList()
-    .where(and(visibility(viewer), liveOnly, or(ilike(tasks.title, like), ilike(tasks.description, like))))
+    .where(and(visibility(viewer), visibleWork(viewer), or(ilike(tasks.title, like), ilike(tasks.description, like))))
     .orderBy(sql`(${tasks.status} in ('completed', 'rejected'))`, desc(tasks.updatedAt))
     .limit(limit);
   return rows.map((row) => toListItem(row, viewer));
@@ -287,7 +298,7 @@ export async function searchTasks(viewer: Viewer, q: string, limit = 8): Promise
 /** The tasks most recently touched in the workspace: what the palette offers before anything is typed. */
 export async function recentTasks(viewer: Viewer, limit = 6): Promise<TaskListItem[]> {
   const rows = await selectList()
-    .where(and(visibility(viewer), liveOnly))
+    .where(and(visibility(viewer), visibleWork(viewer)))
     .orderBy(desc(tasks.updatedAt))
     .limit(limit);
   return rows.map((row) => toListItem(row, viewer));
@@ -431,7 +442,7 @@ export async function myWorkRows(viewer: Viewer, options: MyWorkOptions = {}): P
     .where(
       and(
         visibility(viewer),
-        liveOnly,
+        visibleWork(viewer),
         projectCondition(options.project ?? ""),
         ...(options.dates ? dateFilterConditions(viewer, options.dates) : []),
         or(and(assignedTo(me), or(isOpen, finished)), and(eq(tasks.approverId, me), eq(tasks.status, "awaiting_approval"))),
@@ -467,7 +478,7 @@ const groupedOrder = (today: string) => [sql`(${tasks.status} in ('completed', '
 /** Every live task in a project (open first, in the smart order), for the project page to group by status. */
 export async function tasksForProject(viewer: Viewer, projectId: string): Promise<TaskListItem[]> {
   const rows = await selectList()
-    .where(and(visibility(viewer), liveOnly, eq(tasks.projectId, projectId)))
+    .where(and(visibility(viewer), visibleWork(viewer), eq(tasks.projectId, projectId)))
     .orderBy(...groupedOrder(todayFor(viewer)))
     .limit(500);
   return rows.map((row) => toListItem(row, viewer));
@@ -476,7 +487,7 @@ export async function tasksForProject(viewer: Viewer, projectId: string): Promis
 /** Every live task serving a goal: linked to it or to one of its sub-goals (open first). */
 export async function tasksForGoal(viewer: Viewer, goalId: string): Promise<TaskListItem[]> {
   const rows = await selectList()
-    .where(and(visibility(viewer), liveOnly, inGoal(viewer, goalId)))
+    .where(and(visibility(viewer), visibleWork(viewer), inGoal(viewer, goalId)))
     .orderBy(...groupedOrder(todayFor(viewer)))
     .limit(500);
   return rows.map((row) => toListItem(row, viewer));
@@ -487,7 +498,7 @@ export async function openTasksForGoals(viewer: Viewer, goalIds: string[]): Prom
   const out = new Map<string, TaskListItem[]>(goalIds.map((id) => [id, []]));
   if (goalIds.length === 0) return out;
   const rows = await selectList()
-    .where(and(visibility(viewer), liveOnly, isOpen, inArray(tasks.goalId, goalIds)))
+    .where(and(visibility(viewer), visibleWork(viewer), isOpen, inArray(tasks.goalId, goalIds)))
     .orderBy(...orderBy("smart", todayFor(viewer)))
     .limit(1000);
   for (const row of rows) {
@@ -719,6 +730,7 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     approver: row.approver,
     creator: row.creator,
     proposalStatus: t.proposalStatus,
+    goalCloser: t.goalCloser,
     approvals: row.approvals.map((step) => ({ ...step, decidedAt: step.decidedAt ? new Date(step.decidedAt).toISOString() : null })),
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),

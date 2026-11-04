@@ -9,6 +9,7 @@ import { SelectionProvider } from "@/components/tasks/selection";
 import { TaskSection } from "@/components/tasks/task-section";
 import { RECENTLY_FINISHED_DAYS } from "@/lib/constants";
 import { myWorkGroups } from "@/lib/dal/tasks";
+import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { isLeader, isStakeholder } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
 import { describeDateRange, parseFilters, tasksHref } from "@/lib/tasks/filters";
@@ -27,6 +28,7 @@ const CAP = 10;
 export default async function MyWorkPage(props: PageProps<"/my-work">) {
   const viewer = await requireViewer();
   if (isStakeholder(viewer)) redirect("/home");
+  await catchUpRecurrences(viewer);
   const [raw, scope] = await Promise.all([props.searchParams, scopedProject(viewer)]);
   const today = dayKey(new Date(), viewer.timezone);
   const dates = parseFilters(raw);

@@ -4,19 +4,27 @@ import { isAdmin, isLeader, isStakeholder, type Viewer } from "@/lib/permissions
 // Proposals (docs/PLAN.md, 2026-11-03 log): which new tasks wait for sign-off, by whom, in what order. Pure, so
 // the create action, the Proposals page and the task page's banner all agree, and the rules are unit-tested.
 
-/** What a project or a goal says about new tasks: whether they wait, who signs (in order), who skips the queue. */
+/**
+ * What a project or a goal says about new tasks: whether they wait, who signs (in order), who skips the queue. A
+ * step names any number of people and any one of them signs it ("Max or Terri"); a step naming nobody is any leader
+ * or admin's (2026-11-04 log).
+ */
 export type ApprovalPolicy = {
   requiresApproval: boolean;
-  /** The chain, in order; a null user means any leader or admin. */
-  steps: { userId: string | null }[];
+  steps: { userIds: string[] }[];
   bypass: string[];
 };
 
-/** One step of the chain a new proposal gets; `autoSigned` when the step names the proposer themselves. */
-export type ChainStep = { position: number; userId: string | null; autoSigned: boolean };
+/** One step of the chain a new proposal gets; `autoSigned` when the step names the proposer among its people. */
+export type ChainStep = { position: number; userIds: string[]; autoSigned: boolean };
 
 /** A step as the task carries it. */
-export type ApprovalStepState = { position: number; userId: string | null; decision: ApprovalDecision | null };
+export type ApprovalStepState = { position: number; userIds: string[]; decision: ApprovalDecision | null };
+
+/** "Max or Terri", or who may sign when nobody is named. */
+export function describeStepPeople(names: string[]): string {
+  return names.length === 0 ? "any leader or admin" : names.join(" or ");
+}
 
 /** A goal's policy wins over its project's when the goal asks for approval. */
 export function policyInForce(goal: ApprovalPolicy | null, project: ApprovalPolicy | null): ApprovalPolicy | null {
@@ -35,8 +43,8 @@ export function chainFor(input: { creatorId: string; creatorRole: OrgRole; goal:
   if (policy !== null && policy.bypass.includes(input.creatorId)) return null;
   const stakeholder = input.creatorRole === "stakeholder";
   if (policy === null && !stakeholder) return null;
-  const named = policy?.steps.length ? policy.steps : [{ userId: null }];
-  const chain = named.map((step, index) => ({ position: index + 1, userId: step.userId, autoSigned: step.userId !== null && step.userId === input.creatorId }));
+  const named = policy?.steps.length ? policy.steps : [{ userIds: [] as string[] }];
+  const chain = named.map((step, index) => ({ position: index + 1, userIds: step.userIds, autoSigned: step.userIds.includes(input.creatorId) }));
   return chain.every((step) => step.autoSigned) ? null : chain;
 }
 
@@ -45,12 +53,12 @@ export function currentStep<T extends ApprovalStepState>(steps: T[]): T | null {
   return [...steps].sort((a, b) => a.position - b.position).find((step) => step.decision === null) ?? null;
 }
 
-/** Whether the viewer may decide a step: the person it names, any admin, or any leader when it names nobody. */
-export function canDecideStep(viewer: Viewer, step: { userId: string | null }): boolean {
+/** Whether the viewer may decide a step: one of the people it names, any admin, or any leader when it names nobody. */
+export function canDecideStep(viewer: Viewer, step: { userIds: string[] }): boolean {
   if (isStakeholder(viewer)) return false;
   if (isAdmin(viewer)) return true;
-  if (step.userId === null) return isLeader(viewer);
-  return step.userId === viewer.userId;
+  if (step.userIds.length === 0) return isLeader(viewer);
+  return step.userIds.includes(viewer.userId);
 }
 
 /** Whether the viewer may decide the proposal's current step. */

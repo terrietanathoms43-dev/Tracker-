@@ -21,6 +21,8 @@ export type Recurrence = {
   weekdays?: number[];
   /** "HH:MM" in the workspace's day; informational (overdue is still judged by the day). */
   time?: string;
+  /** The last day an occurrence may fall on ("YYYY-MM-DD"); nothing is made after it (2026-11-04 log). */
+  until?: string;
 };
 
 export const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -45,7 +47,40 @@ export function normalizeRecurrence(value: unknown): Recurrence | null {
     if (days.length > 0) rule.weekdays = days;
   }
   if (typeof raw.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(raw.time)) rule.time = raw.time;
+  if (typeof raw.until === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.until) && !Number.isNaN(Date.parse(`${raw.until}T00:00:00Z`))) rule.until = raw.until;
   return rule;
+}
+
+/** Whether a day is still inside the rule's run (no end date means always). */
+export function withinRule(rule: Recurrence, day: string): boolean {
+  return rule.until === undefined || day <= rule.until;
+}
+
+/** The next scheduled day after `after`, or null when the rule has ended by then. */
+export function nextOccurrenceWithin(rule: Recurrence, anchor: string, after: string): string | null {
+  const next = nextOccurrence(rule, anchor, after);
+  return withinRule(rule, next) ? next : null;
+}
+
+/**
+ * Every scheduled day after `latest` that is already due (today or earlier) and inside the rule's run, oldest first,
+ * at most `cap` of them: the occurrences a missed series owes (2026-11-04 log). Empty when nothing was missed.
+ */
+export function missedOccurrences(rule: Recurrence, anchor: string, latest: string, today: string, cap = 60): string[] {
+  const out: string[] = [];
+  let day = latest;
+  while (out.length < cap) {
+    const next = nextOccurrence(rule, anchor, day);
+    if (next > today || !withinRule(rule, next)) break;
+    out.push(next);
+    day = next;
+  }
+  return out;
+}
+
+/** "Dec 31, 2026" for an end date. */
+export function formatUntil(day: string): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
 /** The same calendar day `months` later; a 31st in a short month lands on that month's last day. */
@@ -106,6 +141,7 @@ export function describeRecurrence(rule: Recurrence, anchor?: string | null): st
     if (days.length > 0) text += ` on ${days.map((day) => WEEKDAY_SHORT[day]).join(", ")}`;
   }
   if (rule.time) text += ` at ${formatTime(rule.time)}`;
+  if (rule.until) text += ` until ${formatUntil(rule.until)}`;
   return text;
 }
 
@@ -124,10 +160,11 @@ export function sameRecurrence(a: Recurrence | null, b: Recurrence | null): bool
 
 /**
  * Where the next occurrence of a finished repeating item goes: the first scheduled day after today or after its own
- * due day, whichever is later. Finishing early keeps the next turn; finishing late never schedules into the past.
+ * due day, whichever is later, or null once the rule has ended. Finishing early keeps the next turn; finishing late
+ * never schedules into the past.
  */
-export function nextAfterFinishing(rule: Recurrence, anchor: string | null, due: string | null, today: string): string {
+export function nextAfterFinishing(rule: Recurrence, anchor: string | null, due: string | null, today: string): string | null {
   const base = anchor ?? due ?? today;
   const after = due !== null && due > today ? due : today;
-  return nextOccurrence(rule, base, after);
+  return nextOccurrenceWithin(rule, base, after);
 }

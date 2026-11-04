@@ -17,6 +17,15 @@ const org = "select id from organizations where slug = 'trackwise-demo'";
 
 const value = pickedValue;
 const hasBar = (browser) => browser.evaluate(`!!document.querySelector("#quick-add-title")`);
+/** The page refreshes behind a status change; the add bar goes once the new render lands, up to a few seconds later. */
+const barGone = async (browser) => {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (!(await hasBar(browser))) return true;
+    await sleep(300);
+  }
+  return false;
+};
 const hasButton = (browser, pattern) =>
   browser.evaluate(`[...document.querySelectorAll("main button")].some((b) => b.offsetParent !== null && ${pattern}.test(b.textContent.trim()))`);
 
@@ -55,7 +64,7 @@ try {
 
   // --- 2. a task from the goal page ------------------------------------------------------------------------------------
   await lead.goto(goalPath, 3500);
-  step("the goal page shows its title, its project and an empty progress line", (await lead.waitFor(GOAL)) && (await lead.has(PROJECT)) && (await lead.has("No tasks yet")));
+  step("the goal page shows its title, its project and its Everything completed task", (await lead.waitFor(GOAL)) && (await lead.has(PROJECT)) && (await lead.has("Everything completed")) && (await lead.has("of 1 task completed")));
   step("the goal page has the add bar", await hasBar(lead));
   await sleep(1500);
   step("the project and the goal are preselected", (await value(lead, "#quick-add-project")) === projectRow.id && (await value(lead, "#quick-add-goal")) === goalRow.id);
@@ -64,9 +73,9 @@ try {
   step("creating a task shows the toast", await lead.waitFor("Task created."));
   const [taskRow] = await query("select project_id, goal_id from tasks where title = $1", [TASK]);
   step("the task is in the goal and in the goal's project", taskRow?.goal_id === goalRow.id && taskRow?.project_id === projectRow.id, JSON.stringify(taskRow));
-  step("the goal lists the task and counts it", (await lead.waitFor(TASK)) && (await lead.waitFor("of 1 task completed")));
+  step("the goal lists the task and counts it with the closer", (await lead.waitFor(TASK)) && (await lead.waitFor("of 2 tasks completed")));
   await lead.goto(projectPath, 3500);
-  step("the project counts the task too", (await lead.waitFor("of 1 task completed")) && (await lead.has(TASK)));
+  step("the project counts the task too", (await lead.waitFor("of 2 tasks completed")) && (await lead.has(TASK)));
 
   // --- 3. connections and the branch view ---------------------------------------------------------------------------------
   const [other] = await query(`select id, title from goals where org_id = (${org}) and status = 'active' and parent_goal_id is null and title = 'Cut incident response time in half'`);
@@ -101,8 +110,7 @@ try {
   step("saving the goal shows the toast and the new title", (await lead.waitFor("Goal saved.")) && (await lead.waitFor(`${GOAL} edited`)));
   await lead.click("Pause", { exact: true });
   step("pausing shows the badge", (await lead.waitFor("Goal paused.")) && (await lead.waitFor("Paused")));
-  await sleep(800);
-  step("a paused goal offers no add bar", !(await hasBar(lead)));
+  step("a paused goal offers no add bar", await barGone(lead));
   await lead.click("Reactivate", { exact: true });
   step("reactivating works", await lead.waitFor("Goal is active again."));
   await lead.click("Mark completed", { exact: true });
@@ -119,8 +127,7 @@ try {
   await lead.goto(projectPath, 3000);
   await lead.click("Mark completed", { exact: true });
   step("completing a project works", await lead.waitFor("Project marked completed."));
-  await sleep(800);
-  step("a completed project offers no add bar", !(await hasBar(lead)));
+  step("a completed project offers no add bar", await barGone(lead));
   await lead.click("Archive", { exact: true });
   step("archiving shows the banner and keeps the task", (await lead.waitFor("This project is archived.")) && (await lead.has(TASK)));
   await lead.shot("07-project-archived");

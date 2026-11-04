@@ -48,7 +48,7 @@ try {
   await pickChoice(morgan, "[data-project-scope]", "All projects", { search: "" });
 
   // --- 3. several tasks at once ----------------------------------------------------------------------------------------
-  const rows = await query(`select id, title from tasks where org_id = (${org}) and proposal_status is null and status = 'not_started' order by created_at limit 2`);
+  const rows = await query(`select id, title from tasks where org_id = (${org}) and proposal_status is null and status = 'not_started' and goal_closer = false order by created_at limit 2`);
   await morgan.goto("/home?view=list", 4000);
   await morgan.waitFor("Tasks");
   for (const row of rows) await morgan.clickSelector(`[data-select-task="${row.id}"]`);

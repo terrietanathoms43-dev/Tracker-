@@ -45,7 +45,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
     progress: canUpdateProgress(viewer, scope),
     approve: canApproveTask(viewer, scope),
     reject: canRejectTask(viewer, scope),
-    decideProposal: detail.proposalStatus === "pending" && canDecideProposal(viewer, detail.approvals.map((step) => ({ position: step.position, userId: step.user?.id ?? null, decision: step.decision }))),
+    decideProposal: detail.proposalStatus === "pending" && canDecideProposal(viewer, detail.approvals.map((step) => ({ position: step.position, userIds: step.users.map((user) => user.id), decision: step.decision }))),
   };
   const now = new Date();
   const today = dayKey(now, viewer.timezone);

@@ -11,16 +11,16 @@ import { ERR, fail, GuardError, ok, runAction, type ActionResult } from "@/lib/a
 import { GOAL_STATUSES, type GoalStatus } from "@/lib/constants";
 import { saveApprovalSettings } from "@/lib/dal/approvals";
 import { recordActivity } from "@/lib/dal/activity";
-import { applyAssignment, assignmentOf } from "@/lib/dal/assignments";
 import { findGoal, goalsById, linkEdgesForCycleCheck, lockGoal, ownerError, subGoalDeadlines } from "@/lib/dal/goals";
+import { createGoalCloser } from "@/lib/dal/goal-closers";
 import { findProject } from "@/lib/dal/projects";
-import { liveOnly } from "@/lib/dal/tasks";
+import { createGoalOccurrence, type NextGoal } from "@/lib/dal/recurrence";
 import { parentDeadlineProblem, subGoalDeadlineProblem } from "@/lib/goals/deadlines";
 import { wouldCycle } from "@/lib/goals/graph";
 import { log } from "@/lib/log";
 import { canCompleteGoal, canDeleteGoal, canLinkGoals, canManageApprovals, canManagePlanning } from "@/lib/permissions";
 import { nextAfterFinishing, normalizeRecurrence, type Recurrence } from "@/lib/recurrence";
-import { calendarDaysBetween, dayKey, formatDay } from "@/lib/time";
+import { dayKey, formatDay } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
 
 // Every change to a goal. Goals belong to a project (docs/PLAN.md, 2026-11-03 log) and are managed by leaders and
@@ -136,6 +136,8 @@ export async function createGoal(input: z.input<typeof createSchema>): Promise<A
         .values({ orgId: viewer.orgId, projectId: placed.projectId, ownerId, createdBy: viewer.userId, ...goalValues(data) })
         .returning({ id: goals.id });
       if (data.recurrence !== null) await tx.update(goals).set({ seriesId: row.id }).where(eq(goals.id, row.id));
+      // Every goal gets its "Everything completed" task (lib/dal/goal-closers.ts).
+      await createGoalCloser(tx, { orgId: viewer.orgId, goalId: row.id, projectId: placed.projectId, ownerId, targetDate: data.targetDate || null, createdBy: viewer.userId }, new Date());
       return ok({ id: row.id, projectId: placed.projectId });
     });
     if (!result.ok) return result;
@@ -195,68 +197,23 @@ export async function updateGoal(input: z.input<typeof updateSchema>): Promise<A
 
 const statusSchema = z.object({ goalId: id, status: z.enum(GOAL_STATUSES) });
 
-type NextGoal = { id: string; targetDate: string; tasks: number };
-
 /**
- * When a repeating goal is completed, the next one is made in the same transaction: same project, owner, criteria
- * and rule, target on the next scheduled day after today, and fresh copies of the goal's own tasks (each due the
- * same number of days after the new target as it was after the old one, with the same people).
+ * When a repeating goal is completed, the next one is made in the same transaction (lib/dal/recurrence.ts): same
+ * project, owner, criteria and rule, target on the next scheduled day, with fresh copies of its tasks. Only the
+ * latest occurrence makes one; a missed series is caught up when a work screen loads.
  */
 async function spawnNextGoal(tx: Tx, viewerId: string, orgId: string, goal: NonNullable<Awaited<ReturnType<typeof lockGoal>>>, today: string, now: Date): Promise<NextGoal | null> {
   const rule: Recurrence | null = goal.recurrence ?? null;
   if (rule === null) return null;
   const seriesId = goal.seriesId ?? goal.id;
-  const [open] = await tx
+  const [later] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(goals)
-    .where(and(eq(goals.orgId, orgId), eq(goals.seriesId, seriesId), ne(goals.id, goal.id), eq(goals.status, "active")));
-  if ((open?.n ?? 0) > 0) return null;
+    .where(and(eq(goals.orgId, orgId), eq(goals.seriesId, seriesId), ne(goals.id, goal.id), sql`${goals.targetDate} > ${goal.targetDate}::date`));
+  if ((later?.n ?? 0) > 0) return null;
   const targetDate = nextAfterFinishing(rule, goal.targetDate, goal.targetDate, today);
-  const shift = goal.targetDate ? calendarDaysBetween(goal.targetDate, targetDate) : 0;
-  const [created] = await tx
-    .insert(goals)
-    .values({
-      orgId,
-      projectId: goal.projectId,
-      parentGoalId: goal.parentGoalId,
-      title: goal.title,
-      description: goal.description,
-      successCriteria: goal.successCriteria,
-      ownerId: goal.ownerId,
-      targetDate,
-      recurrence: rule,
-      seriesId,
-      requiresApproval: goal.requiresApproval,
-      createdBy: viewerId,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning({ id: goals.id });
-  const copies = await tx
-    .select({ id: tasks.id, title: tasks.title, description: tasks.description, priority: tasks.priority, dueDate: tasks.dueDate, dueTime: tasks.dueTime, createdBy: tasks.createdBy })
-    .from(tasks)
-    .where(and(eq(tasks.orgId, orgId), eq(tasks.goalId, goal.id), liveOnly, ne(tasks.status, "rejected")));
-  for (const source of copies) {
-    const [task] = await tx
-      .insert(tasks)
-      .values({
-        orgId,
-        projectId: goal.projectId,
-        goalId: created.id,
-        title: source.title,
-        description: source.description,
-        createdBy: viewerId,
-        priority: source.priority,
-        dueDate: source.dueDate ? dayKey(new Date(Date.parse(`${source.dueDate}T00:00:00Z`) + shift * 86_400_000), "UTC") : null,
-        dueTime: source.dueTime,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning({ id: tasks.id });
-    await applyAssignment(tx, task.id, viewerId, [], await assignmentOf(tx, source.id), now);
-    await recordActivity(tx, { orgId, taskId: task.id, actorId: viewerId }, [{ kind: "created", after: { title: source.title, copiedFrom: source.id }, note: `Copied into the next occurrence of the goal “${goal.title}”.` }], now);
-  }
-  return { id: created.id, targetDate, tasks: copies.length };
+  if (targetDate === null) return null;
+  return createGoalOccurrence(tx, viewerId, { ...goal, orgId, recurrence: rule }, targetDate, now);
 }
 
 /**
@@ -301,29 +258,23 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
 
 // --- delete --------------------------------------------------------------------------------------------------------
 
-const deleteSchema = z.object({ goalId: id });
+const deleteSchema = z.object({ goalId: id, deleteSubGoals: z.boolean().default(false) });
 
 /**
  * Deletes a goal (docs/PLAN.md, 2026-11-04 log). Nothing under it is lost: its own tasks stay in the project
- * without a goal (each gets a history line saying why), its sub-goals become top-level goals of the same project
- * with their tasks, and only the goal's links, sign-off chain and notifications go with it.
+ * without a goal (each gets a history line saying why); its sub-goals become top-level goals of the same project
+ * with their tasks, or, when asked, go too (their tasks stay the same way); only the goal's links, sign-off chain
+ * and notifications go with it.
  */
-export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<ActionResult<{ projectId: string; tasks: number; subGoals: number }>> {
+export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<ActionResult<{ projectId: string; tasks: number; subGoals: number; subGoalsDeleted: number }>> {
   return runAction("goals.delete", deleteSchema, input, async (data) => {
     const viewer = await requireViewer();
     if (!canDeleteGoal(viewer)) throw new GuardError("forbidden", "Only leaders and admins can delete a goal.");
     const now = new Date();
-    const outcome = await db.transaction(async (tx) => {
-      const goal = await lockGoal(tx, viewer.orgId, data.goalId);
-      if (goal === null) throw new GuardError("not_found");
-      const subGoals = await tx
-        .update(goals)
-        .set({ parentGoalId: null, updatedAt: now })
-        .where(and(eq(goals.orgId, viewer.orgId), eq(goals.parentGoalId, goal.id)))
-        .returning({ id: goals.id });
+    const detach = async (tx: Tx, goal: { id: string; title: string }) => {
       const detached = await tx
         .update(tasks)
-        .set({ goalId: null, updatedAt: now })
+        .set({ goalId: null, goalCloser: false, updatedAt: now })
         .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id)))
         .returning({ id: tasks.id });
       for (const task of detached) {
@@ -334,13 +285,38 @@ export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<A
           now,
         );
       }
+      return detached.length;
+    };
+    const outcome = await db.transaction(async (tx) => {
+      const goal = await lockGoal(tx, viewer.orgId, data.goalId);
+      if (goal === null) throw new GuardError("not_found");
+      const subGoals = await tx
+        .select({ id: goals.id, title: goals.title })
+        .from(goals)
+        .where(and(eq(goals.orgId, viewer.orgId), eq(goals.parentGoalId, goal.id)));
+      let detachedTasks = await detach(tx, goal);
+      let subGoalsDeleted = 0;
+      if (data.deleteSubGoals) {
+        for (const sub of subGoals) {
+          detachedTasks += await detach(tx, sub);
+          await tx.delete(goals).where(eq(goals.id, sub.id));
+          await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/goals/${sub.id}`)));
+          subGoalsDeleted += 1;
+        }
+      } else if (subGoals.length > 0) {
+        await tx.update(goals).set({ parentGoalId: null, updatedAt: now }).where(and(eq(goals.orgId, viewer.orgId), eq(goals.parentGoalId, goal.id)));
+      }
       await tx.delete(goals).where(eq(goals.id, goal.id));
       await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/goals/${goal.id}`)));
-      return { projectId: goal.projectId, tasks: detached.length, subGoals: subGoals.length };
+      return { projectId: goal.projectId, tasks: detachedTasks, subGoals: data.deleteSubGoals ? 0 : subGoals.length, subGoalsDeleted };
     });
-    log.info("goals.deleted", { orgId: viewer.orgId, goalId: data.goalId, tasks: outcome.tasks, subGoals: outcome.subGoals, by: viewer.userId });
+    log.info("goals.deleted", { orgId: viewer.orgId, goalId: data.goalId, tasks: outcome.tasks, subGoals: outcome.subGoals, subGoalsDeleted: outcome.subGoalsDeleted, by: viewer.userId });
     refresh();
-    const kept = [outcome.tasks > 0 ? `${outcome.tasks} ${outcome.tasks === 1 ? "task stays" : "tasks stay"} in the project` : null, outcome.subGoals > 0 ? `${outcome.subGoals} ${outcome.subGoals === 1 ? "sub-goal is" : "sub-goals are"} now top-level` : null].filter(Boolean);
+    const kept = [
+      outcome.tasks > 0 ? `${outcome.tasks} ${outcome.tasks === 1 ? "task stays" : "tasks stay"} in the project` : null,
+      outcome.subGoals > 0 ? `${outcome.subGoals} ${outcome.subGoals === 1 ? "sub-goal is" : "sub-goals are"} now top-level` : null,
+      outcome.subGoalsDeleted > 0 ? `${outcome.subGoalsDeleted} ${outcome.subGoalsDeleted === 1 ? "sub-goal" : "sub-goals"} deleted too` : null,
+    ].filter(Boolean);
     return ok(outcome, kept.length > 0 ? `Goal deleted. ${kept.join("; ")}.` : "Goal deleted.");
   });
 }
@@ -436,7 +412,8 @@ export async function unlinkGoals(input: z.input<typeof linkSchema>): Promise<Ac
 const approvalsSchema = z.object({
   goalId: id,
   requiresApproval: z.boolean(),
-  stepUserIds: z.array(id).max(LIMITS.approvalPeople).default([]),
+  /** The chain, in order: each step's people, any one of whom signs it (an empty step is any leader's). */
+  steps: z.array(z.array(id).max(LIMITS.approvalPeople)).max(10).default([]),
   bypassUserIds: z.array(id).max(LIMITS.approvalPeople).default([]),
 });
 
@@ -450,7 +427,7 @@ export async function saveGoalApprovals(input: z.input<typeof approvalsSchema>):
       if (goal === null) throw new GuardError("not_found");
       await saveApprovalSettings(tx, viewer.orgId, { goalId: goal.id }, data);
     });
-    log.info("goals.approvals", { orgId: viewer.orgId, goalId: data.goalId, requiresApproval: data.requiresApproval, steps: data.stepUserIds.length, by: viewer.userId });
+    log.info("goals.approvals", { orgId: viewer.orgId, goalId: data.goalId, requiresApproval: data.requiresApproval, steps: data.steps.length, by: viewer.userId });
     refresh();
     return ok(undefined, data.requiresApproval ? "New tasks under this goal now wait for sign-off." : "Sign-off settings saved.");
   });

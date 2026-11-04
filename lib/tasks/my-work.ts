@@ -25,7 +25,7 @@ export type MyWorkGroups = {
 };
 
 /** The reason chips Needs attention can show, most pressing first. */
-export const ATTENTION_REASONS = ["Your approval", "Sent back", "Blocked", "Overdue", "Due soon"] as const;
+export const ATTENTION_REASONS = ["Your approval", "Declined", "Sent back", "Blocked", "Overdue", "Due soon"] as const;
 export type AttentionReason = (typeof ATTENTION_REASONS)[number];
 
 const PRIORITY_RANK: Record<TaskPriority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
@@ -55,6 +55,9 @@ export function attentionReason(row: MyWorkRow, viewerId: string, today: string)
   const { item } = row;
   if (item.status === "awaiting_approval" && row.approverId === viewerId) return "Your approval";
   if (!row.mine || !OPEN.has(item.status)) return null;
+  // A proposal of mine that was declined is mine to change and send again; one still waiting is on its signers.
+  if (item.proposal === "declined") return "Declined";
+  if (item.proposal === "pending") return null;
   if (row.sentBack) return "Sent back";
   // My own task waiting for someone else's approval is theirs to act on, whatever its date.
   if (item.status === "awaiting_approval") return null;
@@ -75,6 +78,7 @@ export function groupMyWork(rows: MyWorkRow[], viewerId: string, today: string):
     const { mine } = row;
     const reason = attentionReason(row, viewerId, today);
     if (reason !== null) groups.attention.push({ ...row.item, reason });
+    else if (mine && row.item.proposal === "pending") groups.waiting.push(row.item);
     else if (mine && (row.item.status === "awaiting_approval" || row.item.status === "blocked")) groups.waiting.push(row.item);
     else if (mine && (row.item.status === "in_progress" || row.item.status === "not_started")) groups.continueWorking.push(row.item);
     else if (mine && row.item.status === "completed") finished.push(row);

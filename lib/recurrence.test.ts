@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeRecurrence, nextAfterFinishing, nextOccurrence, normalizeRecurrence } from "./recurrence";
+import { describeRecurrence, missedOccurrences, nextAfterFinishing, nextOccurrence, nextOccurrenceWithin, normalizeRecurrence } from "./recurrence";
 
 // The repeat rules (docs/PLAN.md, 2026-11-03 log): the next occurrence is always strictly after the day asked for.
 
@@ -67,5 +67,30 @@ describe("describeRecurrence", () => {
     expect(describeRecurrence({ unit: "week", interval: 2, weekdays: [1, 3] })).toBe("Every 2 weeks on Mon, Wed");
     expect(describeRecurrence({ unit: "week", interval: 1 }, "2026-11-02")).toBe("Every week on Mon");
     expect(describeRecurrence({ unit: "month", interval: 3 })).toBe("Every 3 months");
+  });
+});
+
+describe("an end date", () => {
+  it("is kept when valid, stops the next occurrence, and reads in the description", () => {
+    expect(normalizeRecurrence({ unit: "day", interval: 1, until: "2026-12-31" })).toEqual({ unit: "day", interval: 1, until: "2026-12-31" });
+    expect(normalizeRecurrence({ unit: "day", interval: 1, until: "soon" })).toEqual({ unit: "day", interval: 1 });
+    expect(nextOccurrenceWithin({ unit: "day", interval: 1, until: "2026-11-05" }, "2026-11-01", "2026-11-04")).toBe("2026-11-05");
+    expect(nextOccurrenceWithin({ unit: "day", interval: 1, until: "2026-11-05" }, "2026-11-01", "2026-11-05")).toBeNull();
+    expect(nextAfterFinishing({ unit: "week", interval: 1, until: "2026-11-10" }, "2026-11-04", "2026-11-04", "2026-11-04")).toBeNull();
+    expect(describeRecurrence({ unit: "day", interval: 1, until: "2026-12-31" })).toBe("Every day until Dec 31, 2026");
+  });
+});
+
+describe("missedOccurrences", () => {
+  it("lists every scheduled day after the latest one up to today, oldest first", () => {
+    expect(missedOccurrences({ unit: "day", interval: 1 }, "2026-11-01", "2026-11-01", "2026-11-06")).toEqual(["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06"]);
+  });
+  it("is empty when nothing is owed, and stops at the end date and the cap", () => {
+    expect(missedOccurrences({ unit: "day", interval: 1 }, "2026-11-01", "2026-11-06", "2026-11-06")).toEqual([]);
+    expect(missedOccurrences({ unit: "day", interval: 1, until: "2026-11-03" }, "2026-11-01", "2026-11-01", "2026-11-06")).toEqual(["2026-11-02", "2026-11-03"]);
+    expect(missedOccurrences({ unit: "day", interval: 1 }, "2026-01-01", "2026-01-01", "2026-12-31", 3)).toHaveLength(3);
+  });
+  it("keeps the series' rhythm from its first day", () => {
+    expect(missedOccurrences({ unit: "week", interval: 2, weekdays: [1] }, "2026-11-02", "2026-11-02", "2026-12-01")).toEqual(["2026-11-16", "2026-11-30"]);
   });
 });

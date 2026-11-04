@@ -28,7 +28,13 @@ const id = z.string().min(1).max(64);
 const taskHref = (taskId: string) => `/tasks/${taskId}`;
 
 const decideSchema = z
-  .object({ taskId: id, decision: z.enum(APPROVAL_DECISIONS), note: optionalText(LIMITS.approvalNote) })
+  .object({
+    taskId: id,
+    decision: z.enum(APPROVAL_DECISIONS),
+    note: optionalText(LIMITS.approvalNote),
+    /** The task's `updatedAt` the decider looked at: a decision on a task that changed since is refused (2026-11-04 log). */
+    seen: z.string().max(40).default(""),
+  })
   .refine((data) => data.decision !== "declined" || data.note !== "", { path: ["note"], message: "Say why, so the proposer can change it." });
 
 /** Signs or declines the step that is up on a pending proposal. */
@@ -42,6 +48,7 @@ export async function decideProposal(input: z.input<typeof decideSchema>): Promi
       if (locked === null) throw new GuardError("not_found");
       const { task, assignment } = locked;
       if (task.proposalStatus !== "pending") return { error: "This proposal isn't waiting for sign-off any more." };
+      if (data.seen !== "" && task.updatedAt.toISOString() !== data.seen) return { error: "This proposal changed since you opened it. Read it again, then decide." };
       const steps = await lockTaskApprovals(tx, task.id);
       const step = currentStep(steps);
       if (step === null) return { error: "Every step of this proposal is already decided." };

@@ -30,6 +30,8 @@ export type TaskListItem = {
   goal: { id: string; title: string } | null;
   /** Null for a live task; a proposal's state otherwise. */
   proposal: ProposalStatus | null;
+  /** The goal's "Everything completed" task: completing it marks the goal achieved (2026-11-04 log). */
+  goalCloser: boolean;
   /** Whether the row's menu offers Delete (leaders, or the proposer of an open proposal). */
   canDelete: boolean;
   updatedAt: string;
@@ -79,8 +81,8 @@ export type EvidenceLink = { id: string; url: string; label: string | null; adde
 export type ApprovalStepView = {
   id: string;
   position: number;
-  /** Who the step names; null means any leader or admin. */
-  user: Person | null;
+  /** The people the step names, any one of whom signs it; empty means any leader or admin. */
+  users: Person[];
   decision: ApprovalDecision | null;
   decidedBy: Person | null;
   decidedAt: string | null;
@@ -106,6 +108,8 @@ export type TaskDetail = {
   proposalStatus: ProposalStatus | null;
   /** The sign-off chain, in order (empty for a task that was live from the start). */
   approvals: ApprovalStepView[];
+  /** The goal's "Everything completed" task. */
+  goalCloser: boolean;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;

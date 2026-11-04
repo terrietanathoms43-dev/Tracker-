@@ -123,7 +123,9 @@ if (only("routing")) {
       if (!browsers.has(role)) browsers.set(role, await openBrowser({ role, ...DESKTOP }));
       const browser = browsers.get(role);
       await browser.goto(asked, 2500);
-      const landed = pathOnly(await browser.settle());
+      let landed = pathOnly(await browser.settle());
+      // A signed-in visit is redirected from the server's stream, which can land a moment after "settled".
+      if (landed !== expected && role !== "public" && (await browser.waitForPath(expected, 20_000))) landed = pathOnly(await browser.path());
       let ok = landed === expected;
       if (ok && role === "public" && asked === "/") ok = await browser.waitFor("Sign in", 10_000);
       if (ok && expected === "/login") ok = await browser.waitFor("Sign in", 10_000);

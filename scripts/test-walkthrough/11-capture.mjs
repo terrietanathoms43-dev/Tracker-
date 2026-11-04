@@ -1,4 +1,4 @@
-// Capture from a meeting (docs/PLAN.md, 2026-11-01 log). As a leader: paste notes, get a draft, see the project,
+// Capture from a meeting, on the Draft tab (docs/PLAN.md, 2026-11-01 and 2026-11-04 logs). As a leader: jot notes, get a draft, see the project,
 // the goal, the tasks with their people, dates and the words they came from; untick one; create the rest; land on
 // the project with the tasks, the goal, the history note and the assignee's notification in the database. A member
 // and a stakeholder are turned away, and neither the add bar nor the palette offers it to them. Test personas get
@@ -29,13 +29,16 @@ try {
   if (only("flow")) {
     const morgan = (browsers.morgan = await openBrowser({ role: "leader", width: 1280, height: 900 }));
     await morgan.goto("/capture", 4000);
-    step("a leader opens the capture page", await morgan.waitFor("Transcript or notes"));
-    step("test personas are told the plain parser stands in", await morgan.has("Test mode"));
-    step("the button waits for a transcript", (await morgan.evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Draft the plan")?.disabled`)) === true);
+    step("the old capture address lands on the Draft tab", await morgan.waitForPath("/home", 20_000));
+    step("a leader sees the notepad and Turn into work", (await morgan.waitFor("Turn it into work", 20_000)) && (await morgan.evaluate(`document.querySelector("#draft-body") !== null`)));
+    step("the button waits for notes", (await morgan.evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Turn into work")?.disabled`)) === true);
 
     // --- 1. draft --------------------------------------------------------------------------------------------------
-    await morgan.type("#capture-transcript", NOTES);
-    await morgan.click("Draft the plan", { exact: true, wait: 1500 });
+    await morgan.type("#draft-body", NOTES);
+    step("the notes save themselves", await morgan.waitForSelector('[data-draft-save][data-save-state="saved"]', 10_000));
+    await morgan.click("Turn into work", { exact: true, wait: 1000 });
+    step("test personas are told the plain parser stands in", await morgan.waitFor("Test mode"));
+    await morgan.click("Draft the plan from these notes", { exact: true, wait: 1500 });
     step("the draft comes back for review", await morgan.waitFor("Will create", 30_000));
     await morgan.shot("11-review", { full: true });
     step("the meeting's name was read", (await morgan.evaluate(`document.querySelector("#capture-title")?.value`)) === "Incident review, November");
@@ -104,8 +107,8 @@ try {
   if (only("guards")) {
     const jordan = (browsers.jordan = await openBrowser({ role: "member", width: 1280, height: 900 }));
     await jordan.goto("/capture", 3500);
-    // The redirect lands on /home, which a cold dev server may still be compiling: wait for the address, not a moment.
-    step("a member is sent home", await jordan.waitForPath("/home"), await jordan.path());
+    // The redirect lands on the Draft tab, which a cold dev server may still be compiling: wait for the address, not a moment.
+    step("a member lands on their own Draft tab, without Turn into work", (await jordan.waitForPath("/home")) && (await jordan.waitFor("Jot anything", 20_000)) && !(await jordan.has("Turn into work")), await jordan.path());
     await jordan.goto("/my-work", 3000);
     await jordan.waitFor("More options");
     await sleep(1500);
@@ -117,15 +120,17 @@ try {
 
     const taylor = (browsers.taylor = await openBrowser({ role: "stakeholder", width: 1280, height: 900 }));
     await taylor.goto("/capture", 3500);
-    step("a stakeholder is sent home", await taylor.waitForPath("/home"), await taylor.path());
+    step("a stakeholder is sent home", (await taylor.waitForPath("/home")) && (await taylor.waitFor("How the work stands", 20_000)) && !(await taylor.has("Turn into work")), await taylor.path());
   }
 
   if (only("phone")) {
     const avery = (browsers.avery = await openBrowser({ role: "admin", width: 390, height: 844, dark: true }));
-    await avery.goto(`/capture?project=${project.id}`, 4000);
-    step("an admin on a phone opens it with the project preselected", (await avery.waitFor("Transcript or notes")) && (await avery.evaluate(`document.querySelector("#capture-project")?.value`)) === project.id);
-    await avery.type("#capture-transcript", NOTES);
-    await avery.click("Draft the plan", { exact: true, wait: 1500 });
+    await avery.goto("/home?view=draft", 4000);
+    step("an admin on a phone opens the Draft tab", (await avery.waitFor("Turn it into work", 20_000)) && (await avery.evaluate(`document.querySelector("#draft-body") !== null`)));
+    await avery.type("#draft-body", NOTES);
+    await avery.waitForSelector('[data-draft-save][data-save-state="saved"]', 10_000);
+    await avery.click("Turn into work", { exact: true, wait: 1000 });
+    await avery.click("Draft the plan from these notes", { exact: true, wait: 1500 });
     step("the review fits a phone", await avery.waitFor("Will create", 30_000));
     const overflow = (await avery.overflow()) ?? [];
     step("without horizontal overflow", overflow.length === 0, JSON.stringify(overflow[0] ?? ""));

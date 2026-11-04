@@ -17,6 +17,7 @@ import { captureProviderFor } from "@/lib/capture/availability";
 import { approvalSettings } from "@/lib/dal/approvals";
 import { listGoals, ownerOptions } from "@/lib/dal/goals";
 import { getProject } from "@/lib/dal/projects";
+import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { tasksForProject } from "@/lib/dal/tasks";
 import { canCapture, canCreateTask, canManagePlanning, isLeader, isStakeholder } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
@@ -34,6 +35,7 @@ export const metadata: Metadata = { title: "Project" };
 export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
   const { id } = await props.params;
   const { viewer, user } = await requireViewerContext();
+  await catchUpRecurrences(viewer);
   const manage = canManagePlanning(viewer);
   const capture = canCapture(viewer) && captureProviderFor(user.email) !== null;
   // One round trip; nothing renders unless getProject finds it in this workspace for a viewer who may read it.

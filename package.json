@@ -12,6 +12,7 @@
     "db:studio": "drizzle-kit studio",
     "db:backup": "tsx scripts/db-backup.ts",
     "db:migrate-hierarchy": "tsx scripts/migrate-hierarchy.ts",
+    "db:backfill-closers": "tsx scripts/backfill-goal-closers.ts",
     "test:seed": "tsx scripts/test-accounts.ts seed",
     "test:status": "tsx scripts/test-accounts.ts status",
     "test:tidy": "tsx scripts/test-accounts.ts tidy",

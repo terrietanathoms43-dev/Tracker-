@@ -16,6 +16,7 @@ import {
   TabsSkeleton,
   TopBarSkeleton,
 } from "@/components/shell/shell-sections";
+import { FloatingNotepad } from "@/components/draft/floating-notepad";
 import { TaskActionsProvider } from "@/components/tasks/task-actions";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -82,6 +83,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </div>
       <ShortcutsHelp />
+      <FloatingNotepad />
     </TaskActionsProvider>
   );
 }

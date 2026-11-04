@@ -130,7 +130,8 @@ export async function setProjectStatus(input: z.input<typeof statusSchema>): Pro
 const approvalsSchema = z.object({
   projectId: id,
   requiresApproval: z.boolean(),
-  stepUserIds: z.array(id).max(LIMITS.approvalPeople).default([]),
+  /** The chain, in order: each step's people, any one of whom signs it (an empty step is any leader's). */
+  steps: z.array(z.array(id).max(LIMITS.approvalPeople)).max(10).default([]),
   bypassUserIds: z.array(id).max(LIMITS.approvalPeople).default([]),
 });
 
@@ -144,7 +145,7 @@ export async function saveProjectApprovals(input: z.input<typeof approvalsSchema
       if (project === null) throw new GuardError("not_found");
       await saveApprovalSettings(tx, viewer.orgId, { projectId: project.id }, data);
     });
-    log.info("projects.approvals", { orgId: viewer.orgId, projectId: data.projectId, requiresApproval: data.requiresApproval, steps: data.stepUserIds.length, by: viewer.userId });
+    log.info("projects.approvals", { orgId: viewer.orgId, projectId: data.projectId, requiresApproval: data.requiresApproval, steps: data.steps.length, by: viewer.userId });
     refresh();
     return ok(undefined, data.requiresApproval ? "New tasks in this project now wait for sign-off." : "Sign-off settings saved.");
   });

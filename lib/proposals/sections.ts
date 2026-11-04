@@ -31,7 +31,7 @@ export function groupProposals(items: ProposalListItem[]): ProposalSections {
 export function describeChain(item: Pick<ProposalListItem, "steps" | "current">): string {
   return item.steps
     .map((step) => {
-      const name = step.user ? (step.user.name ?? step.user.email ?? "Someone") : "Any leader";
+      const name = step.users.length === 0 ? "Any leader" : step.users.map((user) => user.name ?? user.email ?? "Someone").join(" or ");
       if (step.decision === "approved") return `${name} ✓`;
       if (step.decision === "declined") return `${name} ✗`;
       return item.current?.id === step.id ? `${name} (up next)` : name;

@@ -513,6 +513,28 @@ async function seedOrg(tx: Tx, seed: OrgSeed, ids: Ids, now: number): Promise<Se
     await tx.insert(taskActivity).values(rows.flatMap((row) => row.activity));
   }
 
+  // 5. Every active goal's "Everything completed" task (lib/dal/goal-closers.ts), assigned to the goal's owner.
+  const closerRows = seed.goals
+    .filter((goal) => goal.status === "active")
+    .map((goal) => ({
+      orgId,
+      projectId: projectId(goal.project),
+      goalId: goalId(goal.key),
+      title: "Everything completed",
+      description: "Complete this last, once every other task under the goal is done: it marks the goal achieved.",
+      createdBy: who(goal.createdBy),
+      dueDate: due(goal.targetInDays),
+      goalCloser: true,
+      createdAt: at(goal.createdDaysAgo),
+      updatedAt: at(goal.createdDaysAgo),
+    }));
+  if (closerRows.length > 0) {
+    const made = await tx.insert(tasks).values(closerRows).returning({ id: tasks.id, goalId: tasks.goalId });
+    await tx.insert(taskAssignees).values(
+      made.map((row) => ({ taskId: row.id, userId: who(seed.goals.find((goal) => goalId(goal.key) === row.goalId)!.owner), assignedBy: who(seed.createdBy), assignedAt: new Date() })),
+    );
+  }
+
   if (seed.notifications.length > 0) {
     await tx.insert(notifications).values(
       seed.notifications.map((notice) => ({

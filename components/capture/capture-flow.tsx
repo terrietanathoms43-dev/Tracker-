@@ -33,10 +33,25 @@ type Stage = { kind: "input" } | { kind: "review"; draft: CaptureDraft };
 const Quote = ({ text }: { text: string }) =>
   text ? <blockquote className="border-l-2 border-border pl-2.5 text-[13px] text-muted-foreground italic">“{text}”</blockquote> : null;
 
-export function CaptureFlow({ context, provider }: { context: CaptureContext; provider: CaptureProvider }) {
+export function CaptureFlow({
+  context,
+  provider,
+  transcript: external,
+  embedded = false,
+  onRestart,
+}: {
+  context: CaptureContext;
+  provider: CaptureProvider;
+  /** Text from somewhere else (the Draft tab's notepad); with `embedded`, the transcript box is not shown. */
+  transcript?: string;
+  embedded?: boolean;
+  /** Where "Start over" goes when the flow is embedded. */
+  onRestart?: () => void;
+}) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
-  const [transcript, setTranscript] = useState("");
+  const [typed, setTranscript] = useState("");
+  const transcript = embedded ? (external ?? "") : typed;
   const [projectId, setProjectId] = useState(context.defaultProjectId);
   const [stage, setStage] = useState<Stage>({ kind: "input" });
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +105,7 @@ export function CaptureFlow({ context, provider }: { context: CaptureContext; pr
           if (!tooShort && !pending) draft();
         }}
       >
+        {embedded ? null : (
         <Field
           id="capture-transcript"
           label="Transcript or notes"
@@ -119,6 +135,8 @@ export function CaptureFlow({ context, provider }: { context: CaptureContext; pr
             className="font-mono text-[13px]"
           />
         </Field>
+        )}
+        {embedded && error ? <p className="text-[13px] text-destructive">{error}</p> : null}
         <input ref={fileInput} type="file" accept=".vtt,.srt,.txt,.md,text/plain,text/vtt" className="sr-only" aria-label="Upload a transcript file" onChange={(event) => void readFile(event.target.files?.[0])} />
 
         <div className="grid items-start gap-4 sm:grid-cols-2">
@@ -148,14 +166,27 @@ export function CaptureFlow({ context, provider }: { context: CaptureContext; pr
           </p>
           <Button type="submit" disabled={tooShort || pending}>
             <AudioLines aria-hidden />
-            {pending ? "Drafting…" : "Draft the plan"}
+            {pending ? "Drafting…" : embedded ? "Draft the plan from these notes" : "Draft the plan"}
           </Button>
         </div>
       </form>
     );
   }
 
-  return <Review draft={stage.draft} context={context} people={people} topLevelGoals={topLevelGoals} goalLabel={goalLabel} onRestart={() => setStage({ kind: "input" })} router={router} />;
+  return (
+    <Review
+      draft={stage.draft}
+      context={context}
+      people={people}
+      topLevelGoals={topLevelGoals}
+      goalLabel={goalLabel}
+      onRestart={() => {
+        setStage({ kind: "input" });
+        onRestart?.();
+      }}
+      router={router}
+    />
+  );
 }
 
 // --- the review screen ------------------------------------------------------------------------------------------------

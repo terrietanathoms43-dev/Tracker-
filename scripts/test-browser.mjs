@@ -72,7 +72,8 @@ function findChrome() {
 // It never walks past a block that has more headings than the anchor's own: that would be a wider section (every
 // team at once), and clicking the first match there is exactly how a script ends up pressing another row's button.
 const PAGE_HELPERS = `
-  const visible = (e) => e.offsetParent !== null
+  // checkVisibility sees fixed-position panels (offsetParent is null for those) and skips a closed <details>' contents.
+  const visible = (e) => (typeof e.checkVisibility === "function" ? e.checkVisibility({ visibilityProperty: true }) : e.offsetParent !== null)
   const textOf = (e) => (e.textContent ?? "").replace(/\\s+/g, " ").trim().toLowerCase()
   const headings = (e) => e.querySelectorAll("h1, h2, h3, h4").length
   const anchorFor = (near) => {
@@ -164,7 +165,12 @@ export async function openBrowser({ role = "public", width = 390, height = 844, 
     // Long enough to reach the part of a hydration error that says what differed.
     if (message.method === "Runtime.exceptionThrown") {
       const details = message.params.exceptionDetails;
-      problems.push(`exception: ${details.exception?.description ?? details.text}`.slice(0, 2500));
+      const text = `exception: ${details.exception?.description ?? details.text}`.slice(0, 2500);
+      // React's development-only performance tracks (react-server-dom's flushComponentPerformance) sometimes record a
+      // server component's end before its start on a page that ends in notFound(): "cannot have a negative time
+      // stamp". Nothing of the app's, and not in a production build, so it is not a page error.
+      if (/Failed to execute 'measure' on 'Performance'/.test(text)) return;
+      problems.push(text);
     }
     // window.confirm (if any screen uses it) is answered yes, and kept in `dialogs`.
     if (message.method === "Page.javascriptDialogOpening") {

@@ -5,17 +5,18 @@ import { HOME_TABS_COOKIE, type OrgRole } from "@/lib/constants";
 // the tab a bare /home opens on). Everything here is pure so it can be unit-tested and shared between
 // server and client.
 
-export const HOME_TAB_KEYS = ["home", "list", "board", "projects"] as const;
+export const HOME_TAB_KEYS = ["home", "list", "board", "projects", "draft"] as const;
 export type HomeTab = (typeof HOME_TAB_KEYS)[number];
 
 /** The canonical row order the defaults start from; the landing tab leads. */
-const CANONICAL_ORDER: HomeTab[] = ["list", "board", "projects", "home"];
+const CANONICAL_ORDER: HomeTab[] = ["list", "board", "projects", "home", "draft"];
 
 export const HOME_TAB_LABELS: Record<HomeTab, string> = {
   home: "Overview",
   list: "List",
   board: "Board",
   projects: "Projects",
+  draft: "Draft",
 };
 
 export type HomeTabConfig = {
