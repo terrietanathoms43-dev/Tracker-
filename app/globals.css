@@ -4,6 +4,9 @@
 /* next-themes puts .dark on <html> */
 @custom-variant dark (&:is(.dark *));
 
+/* <html data-sidebar="collapsed">: the desktop sidebar is tucked away (components/shell/sidebar-toggle.tsx) */
+@custom-variant sidebar-collapsed (&:where([data-sidebar="collapsed"] *));
+
 /*
  * Trackwise tokens, following the Apex UI standard (docs/PLAN.md §9).
  * Neutrals and status colours are the shared standard; the BRAND slots carry Trackwise's royal blue

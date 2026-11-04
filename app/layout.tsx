@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import { SIDEBAR_INIT_SCRIPT } from "@/lib/sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -31,6 +32,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
          suppressHydrationWarning
          className={`${dmSans.variable} ${plusJakartaSans.variable} ${geistMono.variable} h-full`}
       >
+         <head>
+            {/* Applies the stored sidebar choice before the first paint (lib/sidebar.ts). */}
+            <script dangerouslySetInnerHTML={{ __html: SIDEBAR_INIT_SCRIPT }} />
+         </head>
          <body className="min-h-full">
             <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
                <TooltipProvider delayDuration={300}>{children}</TooltipProvider>

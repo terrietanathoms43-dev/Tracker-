@@ -8,6 +8,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { LIMITS } from "@/lib/limits";
 import type { GoalOption } from "@/lib/tasks/types";
 import { noRecents, readRecents, RECENT_GOALS_KEY, rememberRecent, subscribeRecents } from "@/components/pickers/recents";
+import { stepThrough, useWheelStep } from "@/components/pickers/use-wheel-step";
+import { WheelHint } from "@/components/pickers/wheel-hint";
 
 // The goal picker beside the project picker in every task form (docs/PLAN.md, 2026-11-04 log): searchable, with
 // what this browser picked lately first. With a project chosen it lists that project's goals and says so when
@@ -72,6 +74,13 @@ export function GoalPicker({ id, label = "Goal", value, onChange, goals, project
     setQuery("");
   }
 
+  // The mouse wheel over the closed trigger walks the list in the order it shows (recents untouched while scrolling).
+  const wheelOrder = ["", ...recentItems.map((goal) => goal.id), ...groups.flatMap((group) => group.items.map((goal) => goal.id))];
+  const triggerRef = useWheelStep<HTMLButtonElement>((direction) => {
+    const next = stepThrough(wheelOrder, value, direction);
+    if (next !== null) onChange(next);
+  }, !disabled && !open && goals !== null);
+
   const text = chosen ? chosen.title : value !== "" && goals === null ? "Loading…" : noneLabel;
   return (
     <Popover
@@ -81,7 +90,9 @@ export function GoalPicker({ id, label = "Goal", value, onChange, goals, project
         if (!next) setQuery("");
       }}
     >
+      <WheelHint disabled={disabled || open || goals === null}>
       <PopoverTrigger
+        ref={triggerRef}
         id={id}
         aria-label={label}
         aria-invalid={invalid ? true : undefined}
@@ -97,6 +108,7 @@ export function GoalPicker({ id, label = "Goal", value, onChange, goals, project
         <span className={cn("min-w-0 flex-1 truncate", chosen === null && "text-muted-foreground")}>{text}</span>
         <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
       </PopoverTrigger>
+      </WheelHint>
       <PopoverContent align="start" className="w-(--radix-popover-trigger-width) min-w-80 max-w-[calc(100vw-1.5rem)] p-0" data-goal-picker>
         <Command shouldFilter={false} loop>
           <CommandInput value={query} onValueChange={setQuery} placeholder="Search goals…" maxLength={LIMITS.search} />

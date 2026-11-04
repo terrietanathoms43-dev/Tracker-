@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { toggleSidebar } from "@/components/shell/sidebar-toggle";
 
 // The global keys (apex-ux §9): N new task, U update progress on a task page, ⌘K / Ctrl+K the palette,
-// / focuses the list search. None of them fire while typing in a field or while a dialog or menu is open.
+// / focuses the list search, [ minimizes or shows the sidebar (desktop). None of them fire while typing in a field or while a dialog or menu is open.
 
 /** True when a key press belongs to whatever has focus (a field, an open dialog or menu), not to the app. */
 function isBusy(target: EventTarget | null): boolean {
@@ -41,6 +42,8 @@ export function useShortcuts(handlers: ShortcutHandlers) {
       } else if (key === "u") {
         event.preventDefault();
         latest.current.onUpdate();
+      } else if (key === "[") {
+        if (toggleSidebar()) event.preventDefault();
       } else if (key === "/") {
         const search = document.querySelector<HTMLInputElement>("[data-list-search]");
         if (search) {

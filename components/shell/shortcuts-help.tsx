@@ -14,6 +14,7 @@ const SHORTCUTS = [
   { keys: ["U"], does: "Update progress, on a task page" },
   { keys: ["⌘", "K"], does: "Search tasks and commands (Ctrl+K on Windows)" },
   { keys: ["/"], does: "Focus the list search" },
+  { keys: ["["], does: "Minimize or show the sidebar" },
   { keys: ["Ctrl", "Enter"], does: "Save the form you are typing in" },
   { keys: ["Esc"], does: "Close a dialog or menu" },
   { keys: ["?"], does: "This list" },
