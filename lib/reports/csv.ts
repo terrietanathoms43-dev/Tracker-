@@ -62,9 +62,10 @@ export function contributionsTable(rows: ContributionRow[]): CsvCell[][] {
   ];
 }
 
-/** What a scope row says in one column: the blocker (and who unblocks it), the next action, or the completion summary. */
+/** What a scope row says in one column: the blocker (and who unblocks it), why it was rejected, the completion summary, or the next action. */
 const scopeDetail = (task: ReportTask): string | null => {
   if (task.status === "completed") return task.completionSummary;
+  if (task.status === "rejected") return task.rejectionReason;
   if (task.status === "blocked") return [task.blockedReason, task.blockedBy ? `Waiting on ${task.blockedBy}` : null].filter((part) => part !== null).join(" · ") || null;
   return task.nextAction;
 };

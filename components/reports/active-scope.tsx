@@ -13,8 +13,8 @@ import { formatDay } from "@/lib/time";
 // The Active scope view (docs/PLAN.md, 2026-11-06 log): "what this cycle was to work on". A sentence that says what
 // the list is, six numbers, then the tasks grouped by status with the problems first and the completed work last
 // (lib/reports/scope.ts). Each row names its project and goal, since the scope spans them, and a task created since
-// the range began wears "New this cycle": the work the previous cycle added. No chart here; it prints like the
-// other views, and its CSV is table=scope.
+// the Since day wears "New this cycle": the work the previous cycle added. No chart here; it prints like the other
+// views, and its CSV is table=scope.
 
 function Tile({ label, value, note, problem = false }: { label: string; value: number; note: string; problem?: boolean }) {
   const tinted = problem && value > 0;
@@ -25,6 +25,25 @@ function Tile({ label, value, note, problem = false }: { label: string; value: n
       <div className="mt-0.5 text-[11px] text-muted-foreground">{note}</div>
     </li>
   );
+}
+
+/** One line of detail under a row: the blocker, why it was rejected, the completion summary, or the next action. */
+function Detail({ task }: { task: ReportTask }) {
+  switch (task.status) {
+    case "completed":
+      return task.completionSummary ? <p className="mt-1 text-sm text-muted-foreground">{task.completionSummary}</p> : null;
+    case "blocked":
+      return (
+        <p className="mt-1 text-sm text-status-blocked-fg">
+          {task.blockedReason ?? "Blocked"}
+          {task.blockedBy ? <span className="text-muted-foreground"> · Waiting on {task.blockedBy}</span> : null}
+        </p>
+      );
+    case "rejected":
+      return <p className="mt-1 text-sm text-muted-foreground">Rejected{task.rejectionReason ? `: ${task.rejectionReason}` : ""}</p>;
+    default:
+      return task.nextAction ? <p className="mt-1 text-sm text-muted-foreground">Next: {task.nextAction}</p> : null;
+  }
 }
 
 /** One task of the scope: status, title (and "New this cycle"), who and where, one line of detail, and when it is due or was completed. */
@@ -48,21 +67,12 @@ function ScopeRow({ task, range, today }: { task: ReportTask; range: ReportRange
           <Contributors task={task} />
           <span className="truncate">{place}</span>
         </p>
-        {done ? (
-          task.completionSummary ? <p className="mt-1 text-sm text-muted-foreground">{task.completionSummary}</p> : null
-        ) : task.status === "blocked" ? (
-          <p className="mt-1 text-sm text-status-blocked-fg">
-            {task.blockedReason ?? "Blocked"}
-            {task.blockedBy ? <span className="text-muted-foreground"> · Waiting on {task.blockedBy}</span> : null}
-          </p>
-        ) : task.nextAction ? (
-          <p className="mt-1 text-sm text-muted-foreground">Next: {task.nextAction}</p>
-        ) : null}
+        <Detail task={task} />
         {done ? <EvidenceLinks evidence={task.evidence} /> : null}
       </div>
       {done ? (
         <span className="mt-0.5 shrink-0 text-[13px] whitespace-nowrap text-muted-foreground">Completed {task.completedDay ? formatDay(task.completedDay, today) : ""}</span>
-      ) : (
+      ) : task.status === "rejected" ? null : (
         <DueLabel due={task.dueDate} today={today} status={task.status} className="mt-0.5 shrink-0" />
       )}
     </li>
@@ -71,32 +81,28 @@ function ScopeRow({ task, range, today }: { task: ReportTask; range: ReportRange
 
 export function ActiveScopeView({ active, today, project }: { active: ActiveScope; today: string; project: ReportProject }) {
   const since = formatDay(active.range.from, today);
-  const until = formatDay(active.range.to, today);
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
         <p className="max-w-3xl text-sm text-muted-foreground" data-scope-intro>
-          Everything still open today, plus what was completed from <strong className="font-medium text-foreground">{since}</strong> to{" "}
-          <strong className="font-medium text-foreground">{until}</strong>: the work this report cycle was to get through. To start from the day of the last report, choose Custom
-          above and set From to that day.
+          Every task not completed, plus everything completed on or after <strong className="font-medium text-foreground">{since}</strong>: the work this report cycle was to get
+          through. To start from the day of the last report, choose Custom above and set Since to that day.
         </p>
         <CsvLink range={active.range} table="scope" project={project} label="Active scope" />
       </div>
 
       <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" aria-label="The scope in numbers" data-scope-summary>
-        <Tile label="In scope" value={active.total} note="open, or completed in the range" />
-        <Tile label="Still open" value={active.open} note="as of today" />
-        <Tile label="Overdue" value={active.overdue} note="past their due date" problem />
+        <Tile label="In scope" value={active.total} note={`not completed, or completed since ${since}`} />
+        <Tile label="Not completed" value={active.notCompleted} note="as of today, rejected ones too" />
+        <Tile label="Overdue" value={active.overdue} note="open and past their due date" problem />
         <Tile label="Blocked" value={active.blocked} note="waiting on someone or something" problem />
-        <Tile label="Completed" value={active.completed} note={`since ${since}`} />
+        <Tile label="Completed" value={active.completed} note={`on or after ${since}`} />
         <Tile label="New this cycle" value={active.added} note={`added since ${since}`} />
       </ul>
 
       {active.groups.length === 0 ? (
         <div className="rounded-lg border bg-card">
-          <PanelEmpty>
-            Nothing is open, and nothing was completed between {since} and {until}.
-          </PanelEmpty>
+          <PanelEmpty>Nothing is left to complete, and nothing was completed on or after {since}.</PanelEmpty>
         </div>
       ) : (
         active.groups.map((group) => (

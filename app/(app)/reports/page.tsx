@@ -45,17 +45,23 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   // 2026-11-06 logs). A view the role may not open falls back to its own.
   const cuts = reportCutsFor(viewer.orgRole);
   const cut = parseReportCut(searchParams, defaultReportCut(viewer.orgRole), cuts);
+  // The Active scope is about one day (the day of the last report), not a span: the controls show a single Since.
+  const since = cut === "scope";
 
   const scopeLabel = scope ? scope.name : "All projects";
   const stakeholder = isStakeholder(viewer);
   const csv = { range, project };
   const top = (
     <>
-      <PageHeader title="Reports" description={`${org.name} · ${scopeLabel} · ${formatDay(range.from, today)} – ${formatDay(range.to, today)}`} action={<PrintButton />} />
+      <PageHeader
+        title="Reports"
+        description={`${org.name} · ${scopeLabel} · ${since ? `since ${formatDay(range.from, today)}` : `${formatDay(range.from, today)} – ${formatDay(range.to, today)}`}`}
+        action={<PrintButton />}
+      />
 
       <div className="mb-6 grid gap-4">
         <ReportCutTabs current={cut} cuts={cuts} range={range} project={project} />
-        <ReportControls range={range} today={today} cut={cut} project={project} />
+        <ReportControls range={range} today={today} cut={cut} project={project} since={since} />
       </div>
     </>
   );
@@ -69,8 +75,8 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
         <div className="grid gap-6">
           <ActiveScopeView active={active} today={today} project={project} />
           <p className="text-[13px] text-muted-foreground">
-            Generated {formatAbsolute(now, viewer.timezone)} from {org.name}&apos;s task records{scope ? `, narrowed to ${scope.name}` : ""}. Open work is as of today, whatever the
-            range; completed work falls inside it. Pick a project in the navigation to narrow the scope.
+            Generated {formatAbsolute(now, viewer.timezone)} from {org.name}&apos;s task records{scope ? `, narrowed to ${scope.name}` : ""}. Work not completed is as of today,
+            whatever the date; completed work is what was completed on or after it. Pick a project in the navigation to narrow the scope.
           </p>
         </div>
       </>

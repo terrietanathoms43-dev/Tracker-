@@ -54,6 +54,7 @@ const task: ReportTask = {
   nextAction: null,
   blockedReason: null,
   blockedBy: null,
+  rejectionReason: null,
   goalId: null,
   goalTitle: null,
   project: null,

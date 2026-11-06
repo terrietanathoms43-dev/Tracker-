@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, isNotNull, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { goals, projects, taskActivity, taskAssignees, tasks, taskUpdates } from "@/db/schema";
@@ -21,7 +21,8 @@ import { daysOf, shiftDay, timelineWindow, type ReportRange } from "./range";
 // is nobody's but its maker's) and may be about one project (`project`: an id, or "" for the whole workspace, the
 // navigation's scope); every section narrows the same way, so its numbers always agree. The one exception is the
 // activity widget on the My work view, which also draws the viewer's own local tasks (2026-11-06 log). The Active
-// scope view's list (`activeScopeTasks`) takes every open task whatever the range: open work is as of today.
+// scope view's list (`activeScopeTasks`) takes every task not completed whatever the range, and only the range's
+// first day bounds the completed ones.
 
 /** A task as a report prints it. `completedDay` is the calendar day it was completed on, in the viewer's timezone. */
 export type ReportTask = {
@@ -40,6 +41,7 @@ export type ReportTask = {
   nextAction: string | null;
   blockedReason: string | null;
   blockedBy: string | null;
+  rejectionReason: string | null;
   /** The goal it serves. */
   goalId: string | null;
   goalTitle: string | null;
@@ -191,6 +193,9 @@ function withinDays(column: AnyPgColumn | SQL, range: ReportRange, timeZone: str
   return sql`${column} >= (${range.from}::date::timestamp at time zone ${timeZone}) and ${column} < ((${range.to}::date + 1)::timestamp at time zone ${timeZone})`;
 }
 
+/** `column` is on `day` or any later instant, in `timeZone` (the same instant bound as withinDays, with no end). */
+const onOrAfterDay = (column: AnyPgColumn, day: string, timeZone: string): SQL => sql`${column} >= (${day}::date::timestamp at time zone ${timeZone})`;
+
 const dueWithin = (range: ReportRange) => sql`${tasks.dueDate} between ${range.from}::date and ${range.to}::date`;
 const overdueOn = (today: string) => sql`${tasks.dueDate} < ${today}::date`;
 
@@ -211,6 +216,7 @@ async function reportTasks(viewer: Viewer, project: ReportProject, where: SQL, o
       nextAction: tasks.nextAction,
       blockedReason: tasks.blockedReason,
       blockedBy: tasks.blockedBy,
+      rejectionReason: tasks.rejectionReason,
       goalId: tasks.goalId,
       goalTitle: goals.title,
       projectId: projects.id,
@@ -269,12 +275,13 @@ export function stalledTasks(viewer: Viewer, project: ReportProject): Promise<Re
 }
 
 /**
- * The active reporting scope (docs/PLAN.md, 2026-11-06 log): what the cycle was to work on. Every live task still
- * open today, whatever the range, plus every task completed on a day in the range (the day of the last report to
- * today, as the controls default). Soonest due first; lib/reports/scope.ts regroups the rows by status.
+ * The active reporting scope (docs/PLAN.md, 2026-11-06 log): what the cycle was to work on. Every live task whose
+ * status is not completed (rejected ones too), whatever its dates, plus every task completed on or after the
+ * range's first day (the day of the last report); the range's end plays no part. Soonest due first;
+ * lib/reports/scope.ts regroups the rows by status.
  */
 export function activeScopeTasks(viewer: Viewer, range: ReportRange, project: ReportProject): Promise<ReportTask[]> {
-  return reportTasks(viewer, project, or(isOpen, and(eq(tasks.status, "completed"), isNotNull(tasks.completedAt), withinDays(tasks.completedAt, range, viewer.timezone)))!, "due");
+  return reportTasks(viewer, project, or(ne(tasks.status, "completed"), and(isNotNull(tasks.completedAt), onOrAfterDay(tasks.completedAt, range.from, viewer.timezone)))!, "due");
 }
 
 /**

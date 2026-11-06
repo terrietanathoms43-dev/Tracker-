@@ -1,6 +1,6 @@
 // The Active scope view on Reports (docs/PLAN.md, 2026-11-06 log, the active reporting scope): "what this cycle was
-// to work on". As Morgan on a two-week range: the tab, the sentence, the six numbers against the database (every
-// live task still open, plus what was completed on a day in the range), the groups problems first and completed last
+// to work on". As Morgan with Since two weeks back: the tab, the sentence, the six numbers against the database (every
+// live task not completed, rejected ones too, plus what was completed on or after that day), the groups problems first and completed last
 // with the database's counts, "New this cycle" on the tasks created since the range began, a row naming its project
 // and goal, and the CSV with one row per task. Then the navigation's project picker narrows it. Then a member on a
 // phone and a stakeholder each get the tab beside their own view, with the whole team's scope, and a member asking
@@ -19,15 +19,16 @@ const shiftDay = (day, days) => {
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 };
-const GROUPS = ["blocked", "awaiting_approval", "in_progress", "not_started", "completed"];
+const GROUPS = ["blocked", "awaiting_approval", "in_progress", "not_started", "rejected", "completed"];
 const INTRO = "the work this report cycle was to get through";
 const CSV_HEADER = "Title,Project,Goal,Assignees,Status,Due date,Completed on,Added on,New this cycle,Detail";
 
 /**
- * What the page should show for a range (and a project): the rule of lib/reports/data.ts `activeScopeTasks` and
- * lib/reports/scope.ts written in SQL again, so the page is checked against the database rather than itself.
+ * What the page should show since a day (and for a project): the rule of lib/reports/data.ts `activeScopeTasks`
+ * and lib/reports/scope.ts written in SQL again, so the page is checked against the database rather than itself.
+ * `today` is for what counts as overdue.
  */
-async function expected(from, to, projectId = null) {
+async function expected(since, today, projectId = null) {
   const rows = await query(
     `select t.status, count(*)::int as n,
             count(*) filter (where t.created_at >= ($1::date::timestamp at time zone '${TZ}'))::int as added,
@@ -35,17 +36,16 @@ async function expected(from, to, projectId = null) {
        from tasks t
       where t.org_id = (${org}) and (t.proposal_status is null or t.proposal_status = 'approved')
         and ($3::text is null or t.project_id = $3::text)
-        and (t.status not in ('completed', 'rejected')
-             or (t.status = 'completed' and t.completed_at >= ($1::date::timestamp at time zone '${TZ}') and t.completed_at < (($2::date + 1)::timestamp at time zone '${TZ}')))
+        and (t.status <> 'completed' or t.completed_at >= ($1::date::timestamp at time zone '${TZ}'))
       group by t.status`,
-    [from, to, projectId],
+    [since, today, projectId],
   );
   const byStatus = Object.fromEntries(rows.map((row) => [row.status, row.n]));
   const sum = (key) => rows.reduce((acc, row) => acc + row[key], 0);
   const completed = byStatus.completed ?? 0;
   return {
     total: sum("n"),
-    open: sum("n") - completed,
+    notCompleted: sum("n") - completed,
     completed,
     overdue: sum("overdue"),
     blocked: byStatus.blocked ?? 0,
@@ -61,19 +61,19 @@ const activeTab = (browser) => browser.evaluate(`document.querySelector('nav[ari
 const csvHrefOf = (browser) => browser.evaluate(`document.querySelector('a[aria-label="Download Active scope as CSV"]')?.getAttribute("href") ?? null`);
 const numbersMatch = (numbers, want) =>
   numbers["In scope"] === want.total &&
-  numbers["Still open"] === want.open &&
+  numbers["Not completed"] === want.notCompleted &&
   numbers["Overdue"] === want.overdue &&
   numbers["Blocked"] === want.blocked &&
   numbers["Completed"] === want.completed &&
   numbers["New this cycle"] === want.added;
-const wanted = (want) => JSON.stringify({ total: want.total, open: want.open, overdue: want.overdue, blocked: want.blocked, completed: want.completed, added: want.added });
+const wanted = (want) => JSON.stringify({ total: want.total, notCompleted: want.notCompleted, overdue: want.overdue, blocked: want.blocked, completed: want.completed, added: want.added });
 
 try {
   const today = await todayOf();
   const from = shiftDay(today, -13);
   const address = `/reports?cut=scope&from=${from}&to=${today}`;
   const want = await expected(from, today);
-  step("the seed has open work and completions in the last two weeks", want.open > 0 && want.completed > 0, JSON.stringify({ open: want.open, completed: want.completed }));
+  step("the seed has work not completed and completions in the last two weeks", want.notCompleted > 0 && want.completed > 0, JSON.stringify({ notCompleted: want.notCompleted, completed: want.completed }));
 
   if (only("leader")) {
     const morgan = (browsers.morgan = await openBrowser({ role: "leader", width: 1280, height: 900 }));
