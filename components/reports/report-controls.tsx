@@ -15,15 +15,16 @@ import { formatDay } from "@/lib/time";
 // The report's date range: one row of spans (Week · Month · 3 months · 6 months · Year to date) plus "Custom".
 // Only Custom reveals the From / To pickers and their Apply button, so the row reads as one choice at a time; the
 // pickers take any day, future ones included, so a range can run past today to what is coming. Everything writes
-// `?from&to` to the address (keeping the current view and project) so a report can be shared as a link. Hidden
-// when printing.
+// `?from&to` to the address (keeping the current view and project) so a report can be shared as a link. The Active
+// scope view (`since`) is about one day, the day of the last report: its Custom shows a single Since picker (the
+// range's From; the end plays no part there). Hidden when printing.
 
 const PILL = "inline-flex h-8 items-center rounded-md border px-2.5 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const ON = "border-primary bg-primary text-primary-foreground";
 const OFF = "bg-background text-muted-foreground hover:bg-accent hover:text-foreground";
 
 /** Preset links (the active one filled), then Custom, which opens a From / To form that submits as a plain GET. */
-export function ReportControls({ range, today, cut, project }: { range: ReportRange; today: string; cut: ReportCut; project: ReportProject }) {
+export function ReportControls({ range, today, cut, project, since = false }: { range: ReportRange; today: string; cut: ReportCut; project: ReportProject; since?: boolean }) {
   const active = matchingPreset(range, today);
   // A range no preset describes is a custom one: the pickers show at once so the dates can be read and changed.
   const [customOpen, setCustomOpen] = useState(active === null);
@@ -47,7 +48,7 @@ export function ReportControls({ range, today, cut, project }: { range: ReportRa
           );
         })}
         <button type="button" aria-pressed={custom} onClick={() => setCustomOpen(true)} className={cn(PILL, custom ? ON : OFF)}>
-          Custom{active === null ? `: ${formatDay(range.from, today)} – ${formatDay(range.to, today)}` : ""}
+          Custom{active === null ? (since ? `: since ${formatDay(range.from, today)}` : `: ${formatDay(range.from, today)} – ${formatDay(range.to, today)}`) : ""}
         </button>
       </nav>
       {custom ? (
@@ -57,17 +58,19 @@ export function ReportControls({ range, today, cut, project }: { range: ReportRa
           {project ? <input type="hidden" name="project" value={project} /> : null}
           <div className="grid gap-1.5">
             <Label htmlFor="report-from" className="text-[13px] font-normal text-muted-foreground">
-              From
+              {since ? "Since" : "From"}
             </Label>
             <Input id="report-from" name="from" type="date" required defaultValue={range.from} className="h-8 sm:w-40" />
           </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="report-to" className="text-[13px] font-normal text-muted-foreground">
-              To
-            </Label>
-            <Input id="report-to" name="to" type="date" required defaultValue={range.to} className="h-8 sm:w-40" />
-          </div>
-          <Button type="submit" variant="outline" size="sm" className="col-span-2 sm:col-span-1">
+          {since ? null : (
+            <div className="grid gap-1.5">
+              <Label htmlFor="report-to" className="text-[13px] font-normal text-muted-foreground">
+                To
+              </Label>
+              <Input id="report-to" name="to" type="date" required defaultValue={range.to} className="h-8 sm:w-40" />
+            </div>
+          )}
+          <Button type="submit" variant="outline" size="sm" className={since ? undefined : "col-span-2 sm:col-span-1"}>
             Apply
           </Button>
         </Form>

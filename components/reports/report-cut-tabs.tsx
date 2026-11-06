@@ -1,16 +1,17 @@
 import { cn } from "cn";
 import Link from "next/link";
-import { REPORT_CUT_LABELS, REPORT_CUTS, reportHref, type ReportCut, type ReportProject } from "@/lib/reports/params";
+import { REPORT_CUT_LABELS, reportHref, type ReportCut, type ReportProject } from "@/lib/reports/params";
 import type { ReportRange } from "@/lib/reports/range";
 
-// The report's three views. The active one wears the brand colour, exactly like the active date preset beside it,
-// so a glance says which view is open in either theme. Switching keeps the range and the project.
+// The report's views, the ones this viewer may open (lib/reports/params.ts `reportCutsFor`). The active one wears
+// the brand colour, exactly like the active date preset beside it, so a glance says which view is open in either
+// theme. Switching keeps the range and the project. One view alone needs no tabs.
 
-export function ReportCutTabs({ current, range, project, canSwitch }: { current: ReportCut; range: ReportRange; project: ReportProject; canSwitch: boolean }) {
-  if (!canSwitch) return null;
+export function ReportCutTabs({ current, cuts, range, project }: { current: ReportCut; cuts: readonly ReportCut[]; range: ReportRange; project: ReportProject }) {
+  if (cuts.length < 2) return null;
   return (
     <nav aria-label="Report view" className="flex flex-wrap gap-1.5" data-print-hide>
-      {REPORT_CUTS.map((cut) => {
+      {cuts.map((cut) => {
         const on = cut === current;
         return (
           <Link

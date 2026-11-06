@@ -114,7 +114,7 @@ export type SeedTask = {
   approval?: { daysAgo: number; approver: Person };
   completed?: { daysAgo: number; summary: string; approvedBy?: Person };
   rejection?: { daysAgo: number; by: Person; reason: string };
-  /** A proposal: its state and the chain it carries (task_approvals rows). */
+  /** A proposal: its state and the chain it carries (task_approvals rows); `local` has no chain yet (2026-11-06 log). */
   proposal?: { status: ProposalStatus; steps: SeedStep[] };
 };
 
@@ -786,6 +786,38 @@ const DEMO_TASKS: SeedTask[] = [
   },
 ];
 
+const DEMO_LOCAL_TASKS: SeedTask[] = [
+  // --- local tasks (2026-11-06 log): Sam's alone until sent for sign-off; Lumen Health asks for it ---------------
+  {
+    key: "clinic-faq",
+    title: "Draft the clinic FAQ page",
+    description: "The front desk answers the same six questions by phone. A page on the intake site would cut the calls; Sam is gathering the questions before proposing it.",
+    goal: "lumen-intake",
+    assignees: ["member2"],
+    createdBy: "member2",
+    status: "not_started",
+    priority: "normal",
+    createdDaysAgo: 1,
+    dueInDays: 12,
+    updates: [],
+    proposal: { status: "local", steps: [] },
+  },
+  {
+    key: "feedback-form",
+    title: "Set up the pilot feedback form",
+    description: "One form the clinic staff fill in at the end of each week, so the pilot's problems are heard before the summary goes to Lumen.",
+    project: "lumen",
+    assignees: ["member2"],
+    createdBy: "member2",
+    status: "not_started",
+    priority: "low",
+    createdDaysAgo: 0.5,
+    dueInDays: null,
+    updates: [],
+    proposal: { status: "local", steps: [] },
+  },
+];
+
 const DEMO_NOTIFICATIONS: SeedNotification[] = [
   // Morgan: two approvals waiting, a blocker, a reply, a proposal to sign.
   { person: "leader", kind: "approval_requested", title: 'Jordan Dev asked you to approve "Invite teammates by link from onboarding"', task: "invite-links", daysAgo: 0.5, read: false },
@@ -821,7 +853,7 @@ export const DEMO: OrgSeed = {
   projects: DEMO_PROJECTS,
   goals: DEMO_GOALS,
   goalLinks: DEMO_GOAL_LINKS,
-  tasks: DEMO_TASKS,
+  tasks: [...DEMO_TASKS, ...DEMO_LOCAL_TASKS],
   notifications: DEMO_NOTIFICATIONS,
 };
 

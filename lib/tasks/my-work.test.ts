@@ -26,6 +26,7 @@ function row(partial: Partial<TaskListItem> & Partial<Omit<MyWorkRow, "item">> =
       project: null,
       goal: null,
       proposal: null,
+      needsSignOff: false,
       goalCloser: false,
       canDelete: false,
       updatedAt: `2026-10-${String(10 + n).padStart(2, "0")}T00:00:00.000Z`,
@@ -124,5 +125,19 @@ describe("groupMyWork", () => {
   it("offers what can be picked up: attention first, then continue working", () => {
     const groups = groupMyWork([row({ title: "plain" }), row({ title: "late", dueDate: "2026-10-01" }), row({ title: "blocked", status: "blocked" })], ME, TODAY);
     expect(titles(resumeOrder(groups))).toEqual(["late", "plain"]);
+  });
+});
+
+describe("local tasks (2026-11-06 log)", () => {
+  it("go to the Local group whoever they are assigned to, never to Needs attention", () => {
+    const groups = groupMyWork([row({ proposal: "local", dueDate: "2026-10-01", mine: true }), row({ proposal: "local", mine: false }), row({ status: "in_progress" })], ME, TODAY);
+    expect(groups.local).toHaveLength(2);
+    expect(groups.attention).toEqual([]);
+    expect(groups.continueWorking).toHaveLength(1);
+  });
+
+  it("stay out of Pick up where you left off", () => {
+    const groups = groupMyWork([row({ proposal: "local" }), row({ status: "in_progress" })], ME, TODAY);
+    expect(resumeOrder(groups).map((item) => item.proposal)).toEqual([null]);
   });
 });

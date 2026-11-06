@@ -2,8 +2,9 @@ import "server-only";
 import { GuardError } from "@/lib/action-result";
 import { activeGoalProgress, type GoalProgress } from "@/lib/dal/dashboard";
 import { canSeeReports, type Viewer } from "@/lib/permissions";
-import { contributionsTable, deliveredTable, openTable, toCsv } from "./csv";
+import { contributionsTable, deliveredTable, openTable, scopeTable, toCsv } from "./csv";
 import {
+  activeScopeTasks,
   blockedDurationStats,
   blockedOrOverdue,
   contributionCounts,
@@ -27,6 +28,7 @@ import {
 import type { Pace } from "./pace";
 import type { ReportProject, ReportTable } from "./params";
 import { timelineWindow, type ReportRange } from "./range";
+import { groupActiveScope, type ActiveScope } from "./scope";
 
 // Assembles the report the page shows and the CSV files the export route sends, from lib/reports/data.ts.
 // Both check the same access rule, so the export can never show more than the page.
@@ -84,8 +86,11 @@ function assertCanSeeReports(viewer: Viewer): void {
   if (!canSeeReports(viewer)) throw new GuardError("forbidden");
 }
 
-/** Everything /reports prints for a range and a project. Blocked and overdue are as of `today`, whatever the range. */
-export async function buildReport(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<Report> {
+/**
+ * Everything /reports prints for a range and a project. Blocked and overdue are as of `today`, whatever the range.
+ * `includeLocal` (the My work view) draws the viewer's own local tasks in the activity widget; nothing else counts them.
+ */
+export async function buildReport(viewer: Viewer, range: ReportRange, today: string, project: ReportProject, options: { includeLocal?: boolean } = {}): Promise<Report> {
   assertCanSeeReports(viewer);
   // Two waves rather than one: the sections fan out into twenty-odd queries, and a pool of ten against a database
   // that may be waking up should not have them all racing for a connection at once.
@@ -101,7 +106,7 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
   const [contributions, healthBoard, timeline, decisions, stalled, pace] = await Promise.all([
     contributionCounts(viewer, range, today, project),
     projectAndGoalHealth(viewer, today, project),
-    reportTimeline(viewer, range, today, project),
+    reportTimeline(viewer, range, today, project, { includeLocal: options.includeLocal === true }),
     pendingDecisions(viewer, project),
     stalledTasks(viewer, project),
     reportPace(viewer, today, project),
@@ -143,6 +148,16 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
   };
 }
 
+/**
+ * The Active scope view (docs/PLAN.md, 2026-11-06 log): every live task still open, plus what was completed on a day
+ * in the range, grouped by status (lib/reports/scope.ts). The same access rule as the rest of the report.
+ */
+export async function buildActiveScope(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<{ scope: ReportScope; active: ActiveScope }> {
+  assertCanSeeReports(viewer);
+  const [rows, chosen] = await Promise.all([activeScopeTasks(viewer, range, project), reportProject(viewer, project)]);
+  return { scope: { project, chosen }, active: groupActiveScope(rows, range, today) };
+}
+
 /** One of the report's tables as a CSV file, reading only the rows that table needs. */
 export async function buildCsv(viewer: Viewer, table: ReportTable, range: ReportRange, today: string, project: ReportProject): Promise<string> {
   assertCanSeeReports(viewer);
@@ -153,5 +168,7 @@ export async function buildCsv(viewer: Viewer, table: ReportTable, range: Report
       return toCsv(openTable(await openCommitments(viewer, range, today, project), today));
     case "contributions":
       return toCsv(contributionsTable(await contributionCounts(viewer, range, today, project)));
+    case "scope":
+      return toCsv(scopeTable(groupActiveScope(await activeScopeTasks(viewer, range, project), range, today)));
   }
 }

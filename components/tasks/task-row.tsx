@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronDown, ClipboardCheck, Flag, Repeat, XCircle } from "lucide-react";
+import { ChevronDown, ClipboardCheck, Flag, Lock, Repeat, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type MouseEvent } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
@@ -15,6 +15,7 @@ import { AssigneeStack } from "./assignee-stack";
 import { DueLabel } from "./due-label";
 import { ReasonChip } from "./reason-chip";
 import { useTaskSelection } from "./selection";
+import { SendLocalButton } from "./send-local";
 import { TaskActionSheet, TaskMenu } from "./task-menu";
 import { useLongPress } from "./use-long-press";
 
@@ -49,6 +50,7 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
   const register = selectable ? selection.register : null;
   useEffect(() => register?.(task.id), [register, task.id]);
   const rejected = task.status === "rejected";
+  const local = task.proposal === "local";
   // "Overdue" is already said by the red due label, so that chip would say it twice.
   const reason = showReason && task.reason !== "Overdue" ? task.reason : undefined;
   const detailsId = `task-${task.id}-details`;
@@ -56,7 +58,7 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
 
   return (
     <li
-      className={cn("group relative", selected && "bg-sidebar-accent/50", task.proposal === "pending" && "bg-status-awaiting-bg/40", task.proposal === "declined" && "bg-status-blocked-bg/30")}
+      className={cn("group relative", selected && "bg-sidebar-accent/50", task.proposal === "pending" && "bg-status-awaiting-bg/40", task.proposal === "declined" && "bg-status-blocked-bg/30", local && "bg-muted/40")}
       {...handlers}
       data-task-row={task.id}
       data-expanded={open || undefined}
@@ -80,6 +82,8 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
           <ClipboardCheck className="size-4 shrink-0 text-status-awaiting-fg" aria-label="Waiting for sign-off" role="img" />
         ) : task.proposal === "declined" ? (
           <XCircle className="size-4 shrink-0 text-status-blocked-fg" aria-label="Declined" role="img" />
+        ) : local ? (
+          <Lock className="size-4 shrink-0 text-muted-foreground" aria-label="Local: only you can see it" role="img" />
         ) : (
           <StatusIcon status={task.status} />
         )}
@@ -94,10 +98,15 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
             {task.title}
           </Link>
           {task.goalCloser ? <Flag className="size-3.5 shrink-0 text-primary" aria-label="Marks the goal achieved" role="img" /> : null}
-          {task.nextAction || reason || task.proposal === "pending" || task.proposal === "declined" ? (
+          {task.nextAction || reason || task.proposal === "pending" || task.proposal === "declined" || local ? (
             <span className="flex min-w-0 items-center gap-1.5">
               {reason ? <ReasonChip reason={reason} className="sm:hidden" /> : null}
-              {task.proposal === "pending" ? (
+              {local ? (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground" data-proposal-chip>
+                  <Lock className="size-3" aria-hidden />
+                  Local
+                </span>
+              ) : task.proposal === "pending" ? (
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-awaiting-bg px-1.5 py-0.5 text-[11px] font-medium text-status-awaiting-fg" data-proposal-chip>
                   <ClipboardCheck className="size-3" aria-hidden />
                   Waiting for sign-off
@@ -147,13 +156,24 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
               )}
               {task.repeats ? <span className="block text-muted-foreground">{task.repeats}</span> : null}
             </Fact>
-            <Fact label={task.proposal === "pending" || task.proposal === "declined" ? "Proposal" : "Latest progress"}>
-              {task.proposal === "pending" || task.proposal === "declined" ? PROPOSAL_STATUS_LABELS[task.proposal] : task.latestProgress ? <span className="line-clamp-3">{task.latestProgress}</span> : "No progress recorded yet."}
+            <Fact label={local ? "Local task" : task.proposal === "pending" || task.proposal === "declined" ? "Proposal" : "Latest progress"}>
+              {local
+                ? task.needsSignOff
+                  ? "Only you can see it. Sending it for sign-off puts it on the main board as waiting."
+                  : "Only you can see it. No sign-off applies here, so publishing makes it live at once."
+                : task.proposal === "pending" || task.proposal === "declined"
+                  ? PROPOSAL_STATUS_LABELS[task.proposal]
+                  : task.latestProgress
+                    ? <span className="line-clamp-3">{task.latestProgress}</span>
+                    : "No progress recorded yet."}
             </Fact>
           </dl>
-          <Link href={`/tasks/${task.id}`} prefetch={false} className="mt-3 inline-block text-[13px] font-medium text-link underline-offset-4 hover:underline">
-            Open the task
-          </Link>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Link href={`/tasks/${task.id}`} prefetch={false} className="inline-block text-[13px] font-medium text-link underline-offset-4 hover:underline">
+              Open the task
+            </Link>
+            {local && !readOnly ? <SendLocalButton taskId={task.id} needsSignOff={task.needsSignOff} variant="outline" /> : null}
+          </div>
         </div>
       ) : null}
     </li>

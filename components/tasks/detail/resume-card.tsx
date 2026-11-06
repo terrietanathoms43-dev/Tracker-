@@ -5,6 +5,7 @@ import { nameOf } from "@/lib/tasks/people";
 import type { EvidenceLink, TaskAbilities, TaskDetail, UpdateContext } from "@/lib/tasks/types";
 import { EvidenceChips } from "../evidence-chips";
 import { ProposalStrip } from "../proposal-strip";
+import { LocalStrip } from "../send-local";
 import { AddLink } from "./add-link";
 import { InlineUpdate } from "./inline-update";
 import { ApprovalActions, UnblockButton } from "./resume-actions";
@@ -15,8 +16,11 @@ function Label({ children }: { children: ReactNode }) {
   return <p className="text-[13px] font-medium text-muted-foreground">{children}</p>;
 }
 
-/** The strip at the top of the card for the states that need someone: blocked, awaiting approval, or closed. */
-function StatusStrip({ detail, abilities, timeZone, now }: { detail: TaskDetail; abilities: TaskAbilities; timeZone: string; now: Date }) {
+/** The strip at the top of the card for the states that need someone: local, a proposal, blocked, awaiting approval, or closed. */
+function StatusStrip({ detail, abilities, localChain, timeZone, now }: { detail: TaskDetail; abilities: TaskAbilities; localChain: string[]; timeZone: string; now: Date }) {
+  if (detail.proposalStatus === "local") {
+    return <LocalStrip taskId={detail.id} needsSignOff={detail.needsSignOff} chain={localChain} />;
+  }
   if (detail.proposalStatus === "pending" || detail.proposalStatus === "declined") {
     return <ProposalStrip taskId={detail.id} status={detail.proposalStatus} steps={detail.approvals} canDecide={abilities.decideProposal} canResubmit={abilities.edit} version={detail.updatedAt} />;
   }
@@ -86,6 +90,7 @@ export function ResumeCard({
   removableLinks,
   abilities,
   updateContext,
+  localChain = [],
   timeZone,
   now,
 }: {
@@ -95,14 +100,17 @@ export function ResumeCard({
   abilities: TaskAbilities;
   /** Present when the viewer may update progress: the inline form's context. */
   updateContext: UpdateContext | null;
+  /** A local task: who would sign each step if it were sent now (empty when it would be published). */
+  localChain?: string[];
   timeZone: string;
   now: Date;
 }) {
   const closed = detail.status === "completed" || detail.status === "rejected";
   const proposal = detail.proposalStatus === "pending" || detail.proposalStatus === "declined";
+  const local = detail.proposalStatus === "local";
   return (
     <section aria-label="Where this task stands" className="overflow-hidden rounded-xl border bg-card">
-      <StatusStrip detail={detail} abilities={abilities} timeZone={timeZone} now={now} />
+      <StatusStrip detail={detail} abilities={abilities} localChain={localChain} timeZone={timeZone} now={now} />
       <div className="grid gap-5 px-5 py-5 md:px-6">
         <div className="grid gap-1.5">
           <Label>Next action</Label>
@@ -110,7 +118,17 @@ export function ResumeCard({
             <p className="text-lg leading-snug font-semibold whitespace-pre-line">{detail.nextAction}</p>
           ) : (
             <p className="text-base text-muted-foreground">
-              {proposal ? "Work starts once the proposal is signed off." : closed ? "Nothing left to do." : abilities.progress ? "No next action yet. Leave one below so you know where to pick up." : "No next action recorded yet."}
+              {local
+                ? detail.needsSignOff
+                  ? "Work starts once it is sent for sign-off and signed."
+                  : "Work starts once it is published."
+                : proposal
+                  ? "Work starts once the proposal is signed off."
+                  : closed
+                    ? "Nothing left to do."
+                    : abilities.progress
+                      ? "No next action yet. Leave one below so you know where to pick up."
+                      : "No next action recorded yet."}
             </p>
           )}
         </div>
@@ -147,7 +165,7 @@ export function ResumeCard({
           {abilities.progress ? <AddLink taskId={detail.id} /> : null}
         </div>
       </div>
-      {updateContext && !proposal ? <InlineUpdate context={updateContext} fresh={detail.lastUpdate === null} /> : null}
+      {updateContext && !proposal && !local ? <InlineUpdate context={updateContext} fresh={detail.lastUpdate === null} /> : null}
     </section>
   );
 }

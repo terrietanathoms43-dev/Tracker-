@@ -3,8 +3,8 @@ import { calendarDaysBetween } from "@/lib/time";
 import type { TaskListItem } from "./types";
 
 // My Work grouping (docs/PLAN.md §5) as a pure function, so it is unit-tested without a database.
-// A task appears in exactly one group. Precedence: Needs attention (I must act now) → Waiting on others
-// (someone else must act) → Continue working → Recently finished.
+// A task appears in exactly one group. Precedence: Local (mine alone, not sent yet: 2026-11-06 log) → Needs
+// attention (I must act now) → Waiting on others (someone else must act) → Continue working → Recently finished.
 
 export type MyWorkRow = {
   item: TaskListItem;
@@ -18,6 +18,8 @@ export type MyWorkRow = {
 };
 
 export type MyWorkGroups = {
+  /** The viewer's local tasks: off the main board until they send them for sign-off or publish them. */
+  local: TaskListItem[];
   attention: TaskListItem[];
   continueWorking: TaskListItem[];
   waiting: TaskListItem[];
@@ -53,6 +55,7 @@ export function smartCompare(today: string) {
 /** Why a task needs the viewer now, or null when it doesn't. */
 export function attentionReason(row: MyWorkRow, viewerId: string, today: string): AttentionReason | null {
   const { item } = row;
+  if (item.proposal === "local") return null;
   if (item.status === "awaiting_approval" && row.approverId === viewerId) return "Your approval";
   if (!row.mine || !OPEN.has(item.status)) return null;
   // A proposal of mine that was declined is mine to change and send again; one still waiting is on its signers.
@@ -72,12 +75,14 @@ export function attentionReason(row: MyWorkRow, viewerId: string, today: string)
 /** Sorts the viewer's tasks into the four My Work groups; attention items carry their reason chip. */
 export function groupMyWork(rows: MyWorkRow[], viewerId: string, today: string): MyWorkGroups {
   const sorted = [...rows].sort(smartCompare(today));
-  const groups: MyWorkGroups = { attention: [], continueWorking: [], waiting: [], finished: [] };
+  const groups: MyWorkGroups = { local: [], attention: [], continueWorking: [], waiting: [], finished: [] };
   const finished: MyWorkRow[] = [];
   for (const row of sorted) {
     const { mine } = row;
     const reason = attentionReason(row, viewerId, today);
-    if (reason !== null) groups.attention.push({ ...row.item, reason });
+    // A local task is the viewer's whoever it is assigned to: only its maker ever sees it.
+    if (row.item.proposal === "local") groups.local.push(row.item);
+    else if (reason !== null) groups.attention.push({ ...row.item, reason });
     else if (mine && row.item.proposal === "pending") groups.waiting.push(row.item);
     else if (mine && (row.item.status === "awaiting_approval" || row.item.status === "blocked")) groups.waiting.push(row.item);
     else if (mine && (row.item.status === "in_progress" || row.item.status === "not_started")) groups.continueWorking.push(row.item);

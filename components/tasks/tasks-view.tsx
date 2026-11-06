@@ -3,6 +3,7 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { LastFilters } from "@/components/tasks/last-filters";
+import { LocalTasksSection } from "@/components/tasks/local-section";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { SelectionProvider } from "@/components/tasks/selection";
 import { TaskBoard } from "@/components/tasks/task-board";
@@ -10,7 +11,7 @@ import { TaskList } from "@/components/tasks/task-list";
 import { TaskToolbar } from "@/components/tasks/task-toolbar";
 import { ViewTabs } from "@/components/home/view-tabs";
 import { Button } from "@/components/ui/button";
-import { boardTasks, listTasks, taskFormOptions } from "@/lib/dal/tasks";
+import { boardTasks, listTasks, localTasks, taskFormOptions } from "@/lib/dal/tasks";
 import type { HomeTabConfig } from "@/lib/home-tabs";
 import { isLeader, type Viewer } from "@/lib/permissions";
 import type { ScopedProject } from "@/lib/project-scope-server";
@@ -18,16 +19,19 @@ import { BOARD_STATUSES } from "@/lib/tasks/board";
 import { filtersToParams, isFiltered, tasksHref, type TaskFilters, type TaskView } from "@/lib/tasks/filters";
 import { dayKey } from "@/lib/time";
 
-// The List and Board tabs of /home: every live task in the workspace (or the chosen project), filtered by the address.
+// The List and Board tabs of /home: the main board (every live task in the workspace or the chosen project, and the
+// proposals waiting for sign-off), filtered by the address, with the viewer's own local tasks in a Local section of
+// their own above it while there are any (docs/PLAN.md, 2026-11-06 log).
 
 /** "Find the thing": the task list or board under the /home tab row. */
 export async function TasksView({ viewer, filters, view, tabsConfig, scope }: { viewer: Viewer; filters: TaskFilters; view: TaskView; tabsConfig: HomeTabConfig; scope: ScopedProject | null }) {
   const today = dayKey(new Date(), viewer.timezone);
   const query = filtersToParams(filters);
-  const [options, page, columns] = await Promise.all([
+  const [options, page, columns, local] = await Promise.all([
     taskFormOptions(viewer),
     view === "list" ? listTasks(viewer, filters, { today }) : null,
     view === "board" ? boardTasks(viewer, filters, { today }) : null,
+    localTasks(viewer, filters, today),
   ]);
   const empty = page ? page.items.length === 0 : columns ? Object.values(columns).every((items) => items.length === 0) : true;
 
@@ -38,6 +42,11 @@ export async function TasksView({ viewer, filters, view, tabsConfig, scope }: { 
       <ViewTabs active={view} query={query.toString()} config={tabsConfig} />
       <TaskToolbar filters={filters} view={view} people={options.people} goals={options.goals} today={today} />
       <LastFilters current={query.toString()} view={view} />
+      {local.length > 0 ? (
+        <div className="mb-6">
+          <LocalTasksSection items={local} today={today} />
+        </div>
+      ) : null}
       {empty ? (
         isFiltered(filters) ? (
           <EmptyState
@@ -52,13 +61,15 @@ export async function TasksView({ viewer, filters, view, tabsConfig, scope }: { 
         ) : (
           <EmptyState
             icon={SquareCheckBig}
-            title={view === "board" ? "No tasks yet" : "No open tasks"}
+            title={local.length > 0 ? "Nothing on the main board yet" : view === "board" ? "No tasks yet" : "No open tasks"}
             description={
-              scope
-                ? `Nothing in ${scope.name} yet. Add the first task above, or pick All projects in the navigation.`
-                : view === "board"
-                  ? "Add the first one above and it will show up in its column."
-                  : "Add the first one above, or switch on Show closed to see finished work."
+              local.length > 0
+                ? "Your local tasks above are yours alone until you send them on."
+                : scope
+                  ? `Nothing in ${scope.name} yet. Add the first task above, or pick All projects in the navigation.`
+                  : view === "board"
+                    ? "Add the first one above and it will show up in its column."
+                    : "Add the first one above, or switch on Show closed to see finished work."
             }
           />
         )

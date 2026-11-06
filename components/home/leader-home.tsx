@@ -9,6 +9,7 @@ import type { FeedEntry, GoalProgress } from "@/lib/dal/dashboard";
 import type { ApprovalStagingTask } from "@/lib/dal/tasks";
 import { tasksHref } from "@/lib/tasks/filters";
 import type { TaskCounts, TaskListItem, WorkloadRow } from "@/lib/tasks/types";
+import { LocalPanel } from "./local-panel";
 import { ProposalsBanner } from "./pending-banner";
 import { ResumePanel } from "./resume-panel";
 
@@ -32,6 +33,7 @@ export function LeaderHome({
   data,
   days,
   resume,
+  local,
   goals,
   today,
   now,
@@ -40,6 +42,8 @@ export function LeaderHome({
   data: LeaderHomeData;
   days: number;
   resume: TaskListItem[];
+  /** The viewer's own local tasks, newest first. */
+  local: TaskListItem[];
   goals: GoalProgress[];
   today: string;
   now: Date;
@@ -74,6 +78,7 @@ export function LeaderHome({
           <ActivityFeed items={data.feed} now={now} timeZone={timeZone} empty="No decisions or blockers yet. Completions, blockers, approvals and request decisions show up here." />
         </Panel>
       </div>
+      <LocalPanel tasks={local} today={today} />
       <ResumePanel tasks={resume} today={today} />
     </div>
   );

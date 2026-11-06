@@ -7,7 +7,9 @@ import { db } from "@/db";
 import { taskApprovals, tasks } from "@/db/schema";
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { APPROVAL_DECISIONS } from "@/lib/constants";
+import { chainForPlacement, startChain, stepRecipients } from "@/lib/approvals/chain";
 import { canDecideStep, currentStep } from "@/lib/approvals/policy";
+import { submitLocalTask } from "@/lib/approvals/submit";
 import { lockTaskApprovals } from "@/lib/dal/approvals";
 import { recordActivity } from "@/lib/dal/activity";
 import { lockTask } from "@/lib/dal/tasks";
@@ -18,11 +20,12 @@ import { canEditTask, isOpenProposal } from "@/lib/permissions";
 import { optionalText } from "@/lib/sanitize";
 import type { ActivityDraft } from "@/lib/tasks/transitions";
 import { requireViewer } from "@/lib/viewer";
-import { chainForPlacement, startChain, stepRecipients } from "./tasks";
 
 // Proposals (docs/PLAN.md, 2026-11-03 log): a task that waits for its sign-off chain. Each step is decided by the
 // person it names (or an admin; any leader when it names nobody). The last signature makes the task live; a
-// decline sends it back to the proposer with a note, who may change it and send it again.
+// decline sends it back to the proposer with a note, who may change it and send it again. A worker's task starts
+// local where sign-off applies (2026-11-06 log): `sendLocalTask` is how it becomes a proposal (or goes live, once
+// sign-off is switched off there).
 
 const id = z.string().min(1).max(64);
 const taskHref = (taskId: string) => `/tasks/${taskId}`;
@@ -89,6 +92,28 @@ export async function decideProposal(input: z.input<typeof decideSchema>): Promi
     await dispatch(notices);
     refresh();
     return ok(outcome, data.decision === "declined" ? "Declined. The proposer has your note." : outcome.live ? "Approved. It is a live task now." : "Signed off. It waits for the next person.");
+  });
+}
+
+const sendSchema = z.object({ taskId: id });
+
+/**
+ * Sends a local task on: for sign-off where its goal or project asks for it (the chain is read now, so a setting
+ * changed since the task was made counts), or published at once where none applies any more. Its maker alone.
+ */
+export async function sendLocalTask(input: z.input<typeof sendSchema>): Promise<ActionResult<{ live: boolean }>> {
+  return runAction("proposals.send", sendSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    const outcome = await db.transaction(async (tx) => {
+      const locked = await lockTask(tx, viewer.orgId, data.taskId);
+      if (locked === null) throw new GuardError("not_found");
+      return submitLocalTask(tx, viewer, locked, now);
+    });
+    log.info("proposals.sent", { orgId: viewer.orgId, taskId: data.taskId, live: outcome.live, by: viewer.userId });
+    await dispatch(outcome.notices);
+    refresh();
+    return ok({ live: outcome.live }, outcome.live ? "Published: it is a live task now." : "Sent for sign-off. It shows as waiting until every step is signed.");
   });
 }
 

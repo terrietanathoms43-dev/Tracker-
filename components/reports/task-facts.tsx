@@ -12,7 +12,8 @@ import { formatDay } from "@/lib/time";
 
 // The report's task sections as rows of facts: who (as avatar circles, stacked when the work was shared), when,
 // what was said, and the evidence. On paper the circles give way to names, links lose their colour and evidence
-// chips print their address.
+// chips print their address. The title, the contributors and the evidence are shared with the Active scope view
+// (components/reports/active-scope.tsx), so its rows read the same.
 
 function hostOf(url: string): string {
   try {
@@ -22,7 +23,7 @@ function hostOf(url: string): string {
   }
 }
 
-function TaskTitle({ task }: { task: ReportTask }) {
+export function TaskTitle({ task }: { task: ReportTask }) {
   return (
     <Link href={`/tasks/${task.id}`} prefetch={false} className="text-sm font-medium break-words underline-offset-4 hover:underline">
       {task.title}
@@ -31,7 +32,7 @@ function TaskTitle({ task }: { task: ReportTask }) {
 }
 
 /** The contributors as stacked circles on screen, and as names on paper (where nothing can be hovered). */
-function Contributors({ task }: { task: ReportTask }) {
+export function Contributors({ task }: { task: ReportTask }) {
   return (
     <>
       <AssigneeStack assignees={task.assignees} max={4} className="print:hidden" />
@@ -40,7 +41,7 @@ function Contributors({ task }: { task: ReportTask }) {
   );
 }
 
-function EvidenceLinks({ evidence }: { evidence: ReportTask["evidence"] }) {
+export function EvidenceLinks({ evidence }: { evidence: ReportTask["evidence"] }) {
   if (evidence.length === 0) return null;
   return (
     <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Evidence">

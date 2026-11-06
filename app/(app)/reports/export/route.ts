@@ -6,7 +6,7 @@ import { parseReportProject, parseReportRange, parseReportTable } from "@/lib/re
 import { dayKey } from "@/lib/time";
 import { requireViewerContext } from "@/lib/viewer";
 
-// GET /reports/export?from&to&table=delivered|open|contributions[&project]: one of the report's tables as a CSV
+// GET /reports/export?from&to&table=delivered|open|contributions|scope[&project]: one of the report's tables as a CSV
 // download, narrowed to a project the same way the page is (the link's project, else the navigation's scope).
 
 /** A byte-order mark so spreadsheet apps read the file as UTF-8 (names, dashes) rather than a legacy code page. */
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
   const raw = Object.fromEntries(request.nextUrl.searchParams);
   const table = parseReportTable(raw);
-  if (table === null) return new NextResponse("Ask for table=delivered, table=open or table=contributions.", { status: 400 });
+  if (table === null) return new NextResponse("Ask for table=delivered, table=open, table=contributions or table=scope.", { status: 400 });
 
   const today = dayKey(new Date(), viewer.timezone);
   const range = parseReportRange(raw, today);

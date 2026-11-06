@@ -1,7 +1,8 @@
 // The Draft tab, visible proposals, the closer task, missed repeats and sign-off groups (docs/PLAN.md, 2026-11-04
 // log). Morgan jots notes that save themselves, keeps the notepad floating over another page, folds and reopens it,
-// and turns the notes into a draft; Sam's task under Lumen Health shows at once in the project, the list and My Work
-// as waiting for sign-off; Morgan's decision on a task Sam changed meanwhile is refused, then goes through; Jordan
+// and turns the notes into a draft; Sam's task under Lumen Health starts local (2026-11-06 log) and, once sent for
+// sign-off from the list's Local section, shows at once in the project, the list and My Work as waiting for
+// sign-off; Morgan's decision on a task Sam changed meanwhile is refused, then goes through; Jordan
 // can't complete a goal's "Everything completed" task while another task is open, and completing it last achieves
 // the goal; a daily task three days behind gets its missed days, stopping at its end date, and loading again doubles
 // nothing; a sign-off step names two people; a goal is deleted together with its sub-goal and the tasks stay.
@@ -51,20 +52,26 @@ try {
   step("the notes become a draft to review", await morgan.waitFor("Will create 1 goal and 2 tasks", 30_000));
   await morgan.shot("14-draft-review", { full: true });
 
-  // --- 2. a task under a sign-off project shows at once, highlighted ----------------------------------------------------
+  // --- 2. a task under a sign-off project starts local; sent for sign-off, it shows at once, highlighted ------------------
   const [lumen] = await query(`select id from projects where org_id = (${org}) and name = 'Lumen Health'`);
   const sam = (browsers.sam = await openBrowser({ role: "member2", width: 1280, height: 900 }));
   await sam.goto(`/projects/${lumen.id}`, 4000);
   await sam.waitFor("Lumen Health");
   const TITLE = `Visible proposal ${stamp}`;
   await sam.type("#quick-add-title", TITLE);
-  await sam.click("Add task", { exact: true, wait: 3000 });
-  step("the add bar proposes it", await sam.waitFor("Proposed. It goes live once it is signed off.", 10_000));
-  step("the row is on the project page straight away, highlighted", await sam.waitForNear(TITLE, "Waiting for sign-off", { timeout: 15_000 }));
+  await sam.click("Add local task", { exact: true, wait: 3000 });
+  step("the add bar saves it as a local task", await sam.waitFor("Saved as a local task", 10_000));
   const [row] = await query("select id from tasks where title = $1", [TITLE]);
   await sam.goto("/home?view=list", 4000);
   await sam.waitFor("Tasks");
-  step("it is in the task list too", await sam.waitForNear(TITLE, "Waiting for sign-off", { timeout: 15_000 }));
+  step("it is in the list's Local section", (await sam.waitForSelector("[data-local-section]", 15_000)) && (await sam.evaluate(`(document.querySelector('[data-local-section]')?.innerText ?? '').includes(${JSON.stringify(TITLE)})`)) === true);
+  await sam.clickSelector(`[data-select-task="${row.id}"]`);
+  await sam.clickSelector("[data-local-send]", { wait: 3000 });
+  step("sent for sign-off from the Local section", await sam.waitFor("1 task sent for sign-off", 10_000));
+  step("it is in the task list now, highlighted as waiting", await sam.waitForNear(TITLE, "Waiting for sign-off", { timeout: 15_000 }));
+  await sam.goto(`/projects/${lumen.id}`, 4000);
+  await sam.waitFor("Lumen Health");
+  step("and on the project page, highlighted", await sam.waitForNear(TITLE, "Waiting for sign-off", { timeout: 15_000 }));
   await sam.goto("/my-work", 4000);
   step("and in My Work under Waiting on others", await sam.waitForNear("Waiting on others", TITLE, { timeout: 15_000 }));
   await sam.shot("14-proposal-in-my-work");

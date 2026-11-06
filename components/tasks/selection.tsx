@@ -50,9 +50,10 @@ type BulkOutcome = { done: number; failed: { id: string; title: string; error: s
 
 /**
  * Wraps a page's task lists so rows can be ticked. Nothing shows until the first tick; then the bar appears with
- * the count and the actions this person may take.
+ * the count and the actions this person may take. `bar={false}` keeps the ticking and leaves the actions to the
+ * wrapper (the Local section's header has its own).
  */
-export function SelectionProvider({ enabled = true, canDelete = false, children }: { enabled?: boolean; canDelete?: boolean; children: ReactNode }) {
+export function SelectionProvider({ enabled = true, canDelete = false, bar = true, children }: { enabled?: boolean; canDelete?: boolean; bar?: boolean; children: ReactNode }) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const mounted = useRef(new Set<string>());
   const [shown, setShown] = useState(0);
@@ -86,7 +87,7 @@ export function SelectionProvider({ enabled = true, canDelete = false, children 
   return (
     <SelectionContext value={value}>
       {children}
-      {selected.size > 0 ? <SelectionBar selection={value} /> : null}
+      {bar && selected.size > 0 ? <SelectionBar selection={value} /> : null}
     </SelectionContext>
   );
 }

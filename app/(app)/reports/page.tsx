@@ -4,6 +4,7 @@ import { Clock } from "lucide-react";
 import { GoalProgressList } from "@/components/dashboard/goal-progress";
 import { Panel } from "@/components/dashboard/panel";
 import { PageHeader } from "@/components/page-header";
+import { ActiveScopeView } from "@/components/reports/active-scope";
 import { ContributionsTable } from "@/components/reports/contributions-table";
 import { DecisionsPanel } from "@/components/reports/decisions-panel";
 import { HealthBoard } from "@/components/reports/health-board";
@@ -14,17 +15,18 @@ import { CsvLink, ReportControls } from "@/components/reports/report-controls";
 import { ReportTiles } from "@/components/reports/report-tiles";
 import { ReportVerdict } from "@/components/reports/report-verdict";
 import { BlockedList, DeliveredList, OpenList, StalledList } from "@/components/reports/task-facts";
-import { canSeeReports, isAdmin, isLeader, isStakeholder } from "@/lib/permissions";
+import { canSeeReports, isStakeholder } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
 import { catchUpRecurrences } from "@/lib/dal/recurrence";
-import { buildReport } from "@/lib/reports/build";
-import { parseReportCut, parseReportRange, type ReportCut } from "@/lib/reports/params";
+import { buildActiveScope, buildReport } from "@/lib/reports/build";
+import { defaultReportCut, parseReportCut, parseReportRange, reportCutsFor } from "@/lib/reports/params";
 import { addDays, dayKey, formatAbsolute, formatDay } from "@/lib/time";
 import { requireViewerContext } from "@/lib/viewer";
 
 // /reports: a date range, the navigation's project (or all of them) and the facts (docs/PLAN.md §8, 2026-11-01 and
-// 2026-11-03 logs), in three views: Executive health (admins first: the verdict, the daily chart, what is waiting
-// to be decided, the health board), Workload (leaders first) and My work (members, and the only view they get).
+// 2026-11-03 logs), in four views: Executive health (admins first: the verdict, the daily chart, what is waiting
+// to be decided, the health board), Workload (leaders first), My work (members) and Active scope (everyone: what
+// this report cycle was to work on, 2026-11-06 log).
 
 export const metadata: Metadata = { title: "Reports" };
 
@@ -37,17 +39,52 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const [searchParams, scope] = await Promise.all([props.searchParams, scopedProject(viewer)]);
   const range = parseReportRange(searchParams, today);
   const project = scope?.id ?? "";
-  const report = await buildReport(viewer, range, today, project);
 
-  // Role cuts: a leader or admin may switch; a member only gets their own; a stakeholder gets the Executive view,
-  // the one made for them (docs/PLAN.md, 2026-11-04 log).
-  const leader = isLeader(viewer);
-  const defaultCut: ReportCut = isAdmin(viewer) ? "exec" : leader ? "leader" : "member";
-  const cut: ReportCut = leader ? parseReportCut(searchParams, defaultCut) : isStakeholder(viewer) ? "exec" : "member";
+  // Views: every role has the Active scope beside its own; otherwise a leader or admin may switch, a member only
+  // gets their own work and a stakeholder the Executive view, the one made for them (docs/PLAN.md, 2026-11-04 and
+  // 2026-11-06 logs). A view the role may not open falls back to its own.
+  const cuts = reportCutsFor(viewer.orgRole);
+  const cut = parseReportCut(searchParams, defaultReportCut(viewer.orgRole), cuts);
+  // The Active scope is about one day (the day of the last report), not a span: the controls show a single Since.
+  const since = cut === "scope";
 
   const scopeLabel = scope ? scope.name : "All projects";
   const stakeholder = isStakeholder(viewer);
   const csv = { range, project };
+  const top = (
+    <>
+      <PageHeader
+        title="Reports"
+        description={`${org.name} · ${scopeLabel} · ${since ? `since ${formatDay(range.from, today)}` : `${formatDay(range.from, today)} – ${formatDay(range.to, today)}`}`}
+        action={<PrintButton />}
+      />
+
+      <div className="mb-6 grid gap-4">
+        <ReportCutTabs current={cut} cuts={cuts} range={range} project={project} />
+        <ReportControls range={range} today={today} cut={cut} project={project} since={since} />
+      </div>
+    </>
+  );
+
+  // ACTIVE SCOPE: what this cycle was to work on; its own rows, none of the other views' sections, no chart.
+  if (cut === "scope") {
+    const { active } = await buildActiveScope(viewer, range, today, project);
+    return (
+      <>
+        {top}
+        <div className="grid gap-6">
+          <ActiveScopeView active={active} today={today} project={project} />
+          <p className="text-[13px] text-muted-foreground">
+            Generated {formatAbsolute(now, viewer.timezone)} from {org.name}&apos;s task records{scope ? `, narrowed to ${scope.name}` : ""}. Work not completed is as of today,
+            whatever the date; completed work is what was completed on or after it. Pick a project in the navigation to narrow the scope.
+          </p>
+        </div>
+      </>
+    );
+  }
+
+  // The My work view's activity widget draws the viewer's own local tasks too; the other views never do (2026-11-06 log).
+  const report = await buildReport(viewer, range, today, project, { includeLocal: cut === "member" });
 
   const goalNotes = Object.fromEntries(
     Object.entries(report.goalsDeliveredInRange).map(([goalId, n]) => [goalId, `${n} completed in this range`]),
@@ -75,12 +112,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
 
   return (
     <>
-      <PageHeader title="Reports" description={`${org.name} · ${scopeLabel} · ${formatDay(range.from, today)} – ${formatDay(range.to, today)}`} action={<PrintButton />} />
-
-      <div className="mb-6 grid gap-4">
-        <ReportCutTabs current={cut} range={range} project={project} canSwitch={leader} />
-        <ReportControls range={range} today={today} cut={cut} project={project} />
-      </div>
+      {top}
 
       <div className="grid gap-6">
         {/* MEMBER CUT: Scoped to my work */}
@@ -94,7 +126,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
               {tile("Delivered", myDelivered.length, "in selected range")}
             </div>
 
-            <RangeChart timeline={report.timeline} today={today} showMyWork title="My deliveries and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue.filter(isMine))} />
+            <RangeChart timeline={report.timeline} today={today} showMyWork title="Activity widget" description="Your activity, deliveries and what's due next, your local tasks included." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue.filter(isMine))} />
 
             <Panel title="My delivered" count={myDelivered.length}>
               <DeliveredList tasks={myDelivered} today={today} />
@@ -115,7 +147,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
           <>
             <ReportTiles summary={report.summary} project={project} />
 
-            <RangeChart timeline={report.timeline} today={today} title="Activity, completions, blockers and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
+            <RangeChart timeline={report.timeline} today={today} title="Activity widget" description="Activity, completions, blockers and what's due next on the main board." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
 
             {report.blockedDuration.currentlyBlocked > 0 ? (
               <div className="flex items-center gap-3 rounded-lg border border-status-awaiting-dot/30 bg-status-awaiting-bg p-4">
@@ -130,12 +162,12 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
             <Panel title="Blocked and overdue" count={report.blockedOverdue.length}>
               <BlockedList tasks={report.blockedOverdue} today={today} />
             </Panel>
-            <div id="stalled" className="scroll-mt-20">
+            <div id="stalled" className="min-w-0 scroll-mt-20">
               <Panel title="Stalled" count={report.stalled.length}>
                 <StalledList tasks={report.stalled} today={today} />
               </Panel>
             </div>
-            <div id="people" className="scroll-mt-20">
+            <div id="people" className="min-w-0 scroll-mt-20">
               <Panel title="People" aside={<CsvLink {...csv} table="contributions" label="People" />}>
                 <ContributionsTable rows={report.contributions} />
               </Panel>
@@ -156,16 +188,16 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
         {cut === "exec" ? (
           <>
             <ReportVerdict summary={report.summary} project={project} />
-            <RangeChart timeline={report.timeline} today={today} title="Daily activity, completions, blockers and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
+            <RangeChart timeline={report.timeline} today={today} title="Activity widget" description="Daily activity, completions, blockers and what's due next on the main board." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
             <DecisionsPanel decisions={report.decisions} now={now} today={today} timeZone={viewer.timezone} />
             <HealthBoard data={report.healthBoard} today={today} />
-            <div id="stalled" className="scroll-mt-20">
+            <div id="stalled" className="min-w-0 scroll-mt-20">
               <Panel title="Stalled" count={report.stalled.length}>
                 <StalledList tasks={report.stalled} today={today} />
               </Panel>
             </div>
             {stakeholder ? null : (
-              <div id="people" className="scroll-mt-20">
+              <div id="people" className="min-w-0 scroll-mt-20">
                 <Panel title="People" aside={<CsvLink {...csv} table="contributions" label="People" />}>
                   <ContributionsTable rows={report.contributions} />
                 </Panel>

@@ -10,7 +10,7 @@ import { countProposalsWaitingFor, listProposals } from "@/lib/dal/approvals";
 import { activeGoalProgress, teamFeed } from "@/lib/dal/dashboard";
 import { goalsPastTarget } from "@/lib/dal/goals";
 import { getSetupState } from "@/lib/dal/orgs";
-import { attentionTasks, approvalStagingTasks, myWorkTasks, taskCounts, workload } from "@/lib/dal/tasks";
+import { attentionTasks, approvalStagingTasks, localTasksFor, myWorkTasks, taskCounts, workload } from "@/lib/dal/tasks";
 import type { HomeTabConfig } from "@/lib/home-tabs";
 import type { Membership } from "@/lib/dal/orgs";
 import { canCompleteGoal, isAdmin, isLeader, isStakeholder, type Viewer } from "@/lib/permissions";
@@ -63,8 +63,9 @@ export async function HomeView({ viewer, user, org, tabsConfig, scope }: { viewe
   }
 
   const leader = isLeader(viewer);
-  const [resume, goals, lateGoals, leaderData, memberFeed, setup] = await Promise.all([
+  const [resume, local, goals, lateGoals, leaderData, memberFeed, setup] = await Promise.all([
     myWorkTasks(viewer, project),
+    localTasksFor(viewer, project),
     activeGoalProgress(viewer, GOALS_SHOWN, project),
     goalsPastTarget(viewer, today, project),
     leader ? loadLeaderData(viewer, now, today, project) : null,
@@ -89,9 +90,9 @@ export async function HomeView({ viewer, user, org, tabsConfig, scope }: { viewe
         </div>
       ) : null}
       {leaderData ? (
-        <LeaderHome data={leaderData} days={DEFAULT_PERIOD} resume={resume} goals={goals} today={today} now={now} timeZone={timeZone} />
+        <LeaderHome data={leaderData} days={DEFAULT_PERIOD} resume={resume} local={local} goals={goals} today={today} now={now} timeZone={timeZone} />
       ) : (
-        <MemberHome resume={resume} goals={goals} feed={memberFeed} today={today} now={now} timeZone={timeZone} />
+        <MemberHome resume={resume} local={local} goals={goals} feed={memberFeed} today={today} now={now} timeZone={timeZone} />
       )}
     </>
   );

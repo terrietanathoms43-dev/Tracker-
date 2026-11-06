@@ -1,0 +1,2 @@
+# Shell scripts run on the Linux VPS: keep them LF whatever the committer's autocrlf setting, or bash sees "\r".
+*.sh text eol=lf

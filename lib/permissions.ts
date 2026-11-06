@@ -39,6 +39,12 @@ export const isLive = (task: Pick<TaskScope, "proposalStatus">) => task.proposal
 /** A proposal still in the proposer's hands: waiting, or declined and editable. */
 export const isOpenProposal = (task: Pick<TaskScope, "proposalStatus">) => task.proposalStatus === "pending" || task.proposalStatus === "declined";
 
+/**
+ * A local task (2026-11-06 log): made where sign-off applies and kept off the main board, its maker's alone, until
+ * they send it for sign-off or publish it. Nobody else reads, edits or deletes it; nothing on it is work yet.
+ */
+export const isLocal = (task: Pick<TaskScope, "proposalStatus">) => task.proposalStatus === "local";
+
 // --- tasks ------------------------------------------------------------------
 
 /** Assigned to the task. */
@@ -46,9 +52,9 @@ export function isAssigned(viewer: Pick<Viewer, "userId">, task: Pick<TaskScope,
   return task.assigneeIds.includes(viewer.userId);
 }
 
-/** Everyone in the workspace reads its tasks; a stakeholder reads them to follow goals and their own proposals. */
+/** Everyone in the workspace reads its tasks (a stakeholder to follow goals and their own proposals); a local task only its maker. */
 export function canReadTask(viewer: Viewer, task: TaskScope): boolean {
-  return inOrg(viewer, task);
+  return inOrg(viewer, task) && (!isLocal(task) || task.createdBy === viewer.userId);
 }
 
 /** Anyone in the workspace may add a task; a stakeholder's is always a proposal (lib/approvals/policy.ts). */
@@ -60,6 +66,7 @@ export const canCreateTask = (viewer: Viewer) => viewer.orgId.length > 0;
  */
 export function canEditTask(viewer: Viewer, task: TaskScope): boolean {
   if (!inOrg(viewer, task)) return false;
+  if (isLocal(task)) return task.createdBy === viewer.userId;
   if (isStakeholder(viewer)) return task.createdBy === viewer.userId && isOpenProposal(task);
   return isLeader(viewer) || isAssigned(viewer, task) || task.createdBy === viewer.userId;
 }
@@ -83,10 +90,16 @@ export function canRejectTask(viewer: Viewer, task: TaskScope): boolean {
   return isWorker(viewer) && canEditTask(viewer, task) && isLive(task);
 }
 
-/** Deleting destroys the task and its history: leaders and admins; a proposer may withdraw their own open proposal. */
+/** Deleting destroys the task and its history: leaders and admins; a proposer may withdraw their own open proposal; a local task is its maker's to delete. */
 export function canDeleteTask(viewer: Viewer, task?: Pick<TaskScope, "createdBy" | "proposalStatus">): boolean {
+  if (task !== undefined && isLocal(task)) return task.createdBy === viewer.userId;
   if (isLeader(viewer)) return true;
   return task !== undefined && task.createdBy === viewer.userId && isOpenProposal(task);
+}
+
+/** Sending a local task for sign-off, or publishing it where no sign-off applies any more: its maker alone. */
+export function canSendLocalTask(viewer: Viewer, task: Pick<TaskScope, "orgId" | "createdBy" | "proposalStatus">): boolean {
+  return inOrg(viewer, task) && isLocal(task) && task.createdBy === viewer.userId;
 }
 
 // --- projects and goals ---------------------------------------------------------

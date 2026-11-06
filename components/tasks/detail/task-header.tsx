@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ArrowLeft, ClipboardCheck, Flag, Link2, NotebookPen, Repeat } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Flag, Link2, Lock, NotebookPen, Repeat } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -77,9 +77,10 @@ function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boole
 
 /** What this is and who holds it, at a glance: title, status, assignee, due date and priority. */
 export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; abilities: TaskAbilities; today: string }) {
-  // A proposal belongs on the Proposals page; a stakeholder's way around is the goals, not the task list.
+  // A proposal belongs on the Proposals page; a local task is in its maker's lists; a stakeholder's way around is the goals.
   const proposal = detail.proposalStatus === "pending" || detail.proposalStatus === "declined";
-  const back = proposal ? { href: "/proposals", label: "Proposals" } : !abilities.progress ? { href: "/goals", label: "Goals" } : { href: "/home?view=list", label: "Tasks" };
+  const local = detail.proposalStatus === "local";
+  const back = proposal ? { href: "/proposals", label: "Proposals" } : local || abilities.progress ? { href: "/home?view=list", label: "Tasks" } : { href: "/goals", label: "Goals" };
   return (
     <header className="mb-5">
       <Link href={back.href} className="inline-flex items-center gap-1.5 rounded-md text-[13px] text-muted-foreground hover:text-foreground">
@@ -111,7 +112,7 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
             </TooltipTrigger>
             <TooltipContent>Copy link</TooltipContent>
           </Tooltip>
-          {abilities.progress && !proposal ? (
+          {abilities.progress && !proposal && !local ? (
             <Button variant="outline" className="hidden sm:inline-flex" onClick={() => window.dispatchEvent(new Event(FOCUS_UPDATE_EVENT))}>
               <NotebookPen aria-hidden />
               Update progress
@@ -121,7 +122,12 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-muted-foreground">
-        {proposal ? (
+        {local ? (
+          <span className="inline-flex h-6 items-center gap-1.5 rounded-md bg-muted px-2 text-[13px] font-medium whitespace-nowrap text-muted-foreground" data-local-chip>
+            <Lock className="size-3.5" aria-hidden />
+            {PROPOSAL_STATUS_LABELS.local} · only you can see it
+          </span>
+        ) : proposal ? (
           <span className="inline-flex h-6 items-center gap-1.5 rounded-md bg-status-awaiting-bg px-2 text-[13px] font-medium whitespace-nowrap text-status-awaiting-fg">
             <ClipboardCheck className="size-3.5" aria-hidden />
             {PROPOSAL_STATUS_LABELS[detail.proposalStatus!]}
