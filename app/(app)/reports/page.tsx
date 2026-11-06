@@ -37,13 +37,14 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const [searchParams, scope] = await Promise.all([props.searchParams, scopedProject(viewer)]);
   const range = parseReportRange(searchParams, today);
   const project = scope?.id ?? "";
-  const report = await buildReport(viewer, range, today, project);
 
   // Role cuts: a leader or admin may switch; a member only gets their own; a stakeholder gets the Executive view,
   // the one made for them (docs/PLAN.md, 2026-11-04 log).
   const leader = isLeader(viewer);
   const defaultCut: ReportCut = isAdmin(viewer) ? "exec" : leader ? "leader" : "member";
   const cut: ReportCut = leader ? parseReportCut(searchParams, defaultCut) : isStakeholder(viewer) ? "exec" : "member";
+  // The My work view's activity widget draws the viewer's own local tasks too; the other views never do (2026-11-06 log).
+  const report = await buildReport(viewer, range, today, project, { includeLocal: cut === "member" });
 
   const scopeLabel = scope ? scope.name : "All projects";
   const stakeholder = isStakeholder(viewer);
@@ -94,7 +95,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
               {tile("Delivered", myDelivered.length, "in selected range")}
             </div>
 
-            <RangeChart timeline={report.timeline} today={today} showMyWork title="My deliveries and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue.filter(isMine))} />
+            <RangeChart timeline={report.timeline} today={today} showMyWork title="Activity widget" description="Your activity, deliveries and what's due next, your local tasks included." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue.filter(isMine))} />
 
             <Panel title="My delivered" count={myDelivered.length}>
               <DeliveredList tasks={myDelivered} today={today} />
@@ -115,7 +116,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
           <>
             <ReportTiles summary={report.summary} project={project} />
 
-            <RangeChart timeline={report.timeline} today={today} title="Activity, completions, blockers and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
+            <RangeChart timeline={report.timeline} today={today} title="Activity widget" description="Activity, completions, blockers and what's due next on the main board." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
 
             {report.blockedDuration.currentlyBlocked > 0 ? (
               <div className="flex items-center gap-3 rounded-lg border border-status-awaiting-dot/30 bg-status-awaiting-bg p-4">
@@ -156,7 +157,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
         {cut === "exec" ? (
           <>
             <ReportVerdict summary={report.summary} project={project} />
-            <RangeChart timeline={report.timeline} today={today} title="Daily activity, completions, blockers and what's due next" pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
+            <RangeChart timeline={report.timeline} today={today} title="Activity widget" description="Daily activity, completions, blockers and what's due next on the main board." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
             <DecisionsPanel decisions={report.decisions} now={now} today={today} timeZone={viewer.timezone} />
             <HealthBoard data={report.healthBoard} today={today} />
             <div id="stalled" className="scroll-mt-20">

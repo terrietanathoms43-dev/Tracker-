@@ -17,6 +17,7 @@ import {
   canRejectTask,
   canResolveComment,
   canSeeMembers,
+  canSendLocalTask,
   canSeeReports,
   canUpdateProgress,
   invitableRoles,
@@ -152,5 +153,36 @@ describe("canCapture", () => {
   it("lets leaders and admins turn a meeting into goals and tasks, nobody else", () => {
     for (const role of ["admin", "leader"] as const) expect(canCapture(viewer(role))).toBe(true);
     for (const role of ["member", "stakeholder"] as const) expect(canCapture(viewer(role))).toBe(false);
+  });
+});
+
+describe("local tasks (2026-11-06 log)", () => {
+  const local: TaskScope = { orgId: "org1", assigneeIds: ["u2"], createdBy: "u1", proposalStatus: "local" };
+  const maker = viewer("member", "u1");
+  const assignee = viewer("member", "u2");
+  const leader = viewer("leader", "u3");
+
+  it("is read, edited and deleted by its maker alone, even by a leader or someone assigned to it", () => {
+    expect(canReadTask(maker, local)).toBe(true);
+    expect(canReadTask(assignee, local)).toBe(false);
+    expect(canReadTask(leader, local)).toBe(false);
+    expect(canReadTask(viewer("admin", "u4"), local)).toBe(false);
+    expect(canEditTask(maker, local)).toBe(true);
+    expect(canEditTask(leader, local)).toBe(false);
+    expect(canDeleteTask(maker, local)).toBe(true);
+    expect(canDeleteTask(leader, local)).toBe(false);
+  });
+
+  it("is nobody's work yet: no progress, approval or rejection", () => {
+    expect(canUpdateProgress(maker, local)).toBe(false);
+    expect(canApproveTask(leader, local)).toBe(false);
+    expect(canRejectTask(maker, local)).toBe(false);
+  });
+
+  it("is sent on by its maker alone, and only while it is local", () => {
+    expect(canSendLocalTask(maker, local)).toBe(true);
+    expect(canSendLocalTask(leader, local)).toBe(false);
+    expect(canSendLocalTask(maker, { ...local, proposalStatus: "pending" })).toBe(false);
+    expect(canSendLocalTask(viewer("member", "u1", "org2"), local)).toBe(false);
   });
 });

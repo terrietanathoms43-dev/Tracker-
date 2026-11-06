@@ -88,19 +88,26 @@ export const TASK_ACTIVITY_KINDS = [
   "proposal_approved",
   "proposal_declined",
   "proposal_resubmitted",
+  "proposal_sent",
+  "published",
 ] as const;
 export type TaskActivityKind = (typeof TASK_ACTIVITY_KINDS)[number];
 
 // --- proposals (docs/PLAN.md, 2026-11-03 log) ------------------------------------
 
-/** A task that needs sign-off before it is live: waiting, approved (live), or declined (back to the proposer). */
-export const PROPOSAL_STATUSES = ["pending", "approved", "declined"] as const;
+/**
+ * A task that needs sign-off before it is live: waiting, approved (live), or declined (back to the proposer). `local`
+ * (2026-11-06 log) comes before all of those: a task made where sign-off applies stays its maker's alone, off the
+ * main board, until they send it for sign-off (or publish it, once sign-off is switched off there).
+ */
+export const PROPOSAL_STATUSES = ["pending", "approved", "declined", "local"] as const;
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
 
 export const PROPOSAL_STATUS_LABELS: Record<ProposalStatus, string> = {
   pending: "Waiting for sign-off",
   approved: "Approved",
   declined: "Declined",
+  local: "Local",
 };
 
 /** What one step of a sign-off chain can say. */

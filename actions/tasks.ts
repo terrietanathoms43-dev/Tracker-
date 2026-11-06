@@ -6,11 +6,11 @@ import { z } from "zod";
 import { LIMITS } from "@/lib/limits";
 import { cappedText, optionalLink, optionalText, requiredLink, requiredText } from "@/lib/sanitize";
 import { db, type Tx } from "@/db";
-import { notifications, taskApprovals, taskLinks, taskUpdates, tasks } from "@/db/schema";
+import { notifications, taskLinks, taskUpdates, tasks } from "@/db/schema";
 import { fail, GuardError, guardMessage, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { TASK_PRIORITIES, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
-import { chainFor, currentStep, type ChainStep } from "@/lib/approvals/policy";
-import { lockTaskApprovals, readPolicy } from "@/lib/dal/approvals";
+import { assignedNotice, chainForPlacement, startChain } from "@/lib/approvals/chain";
+import { submitLocalTask } from "@/lib/approvals/submit";
 import { recordActivity } from "@/lib/dal/activity";
 import { applyAssignment, snapshotAssignment, validateAssignment } from "@/lib/dal/assignments";
 import { findGoal } from "@/lib/dal/goals";
@@ -33,6 +33,7 @@ import {
   canRejectTask,
   canResolveComment,
   canUpdateProgress,
+  isWorker,
   navFor,
   type NavKey,
   type TaskScope,
@@ -51,8 +52,9 @@ import { requireViewer, requireViewerContext } from "@/lib/viewer";
 // Every change to a task, and the reads its client components need. Each mutation follows the action skeleton
 // (apex-architecture §4): zod → requireViewer → lock the row by id and workspace → permission → one transaction
 // (state + task_activity + notices collected) → dispatch after commit → refresh() → ok(data, "Toast.").
-// Assignment is a set of people (lib/dal/assignments.ts). A new task may be a proposal (lib/approvals/policy.ts);
-// a repeating task makes its next occurrence when it is completed (lib/recurrence.ts).
+// Assignment is a set of people (lib/dal/assignments.ts). A new task where sign-off applies starts local, its
+// maker's alone until they send it on (lib/approvals/chain.ts, lib/approvals/submit.ts; a stakeholder's is a
+// proposal at once); a repeating task makes its next occurrence when it is completed (lib/recurrence.ts).
 
 // --- shared checks -----------------------------------------------------------------------------------------
 
@@ -110,22 +112,6 @@ function mayMove(viewer: Viewer, scope: TaskScope, from: TaskStatus, to: TaskSta
   return canUpdateProgress(viewer, scope);
 }
 
-/** "New task for you" / "Assigned to you" for everyone newly on a task; the actor never hears about their own change. */
-function assignedNotice(viewer: Viewer, task: { id: string; title: string; nextAction: string | null }, recipients: string[], fresh: boolean): Notice[] {
-  if (recipients.length === 0) return [];
-  return [
-    {
-      orgId: viewer.orgId,
-      actorId: viewer.userId,
-      recipients,
-      kind: "assigned",
-      title: `${fresh ? "New task for you" : "Assigned to you"}: ${task.title}`,
-      body: task.nextAction ? `${fresh ? "First step" : "Next"}: ${task.nextAction}` : null,
-      href: taskHref(task.id),
-    },
-  ];
-}
-
 /** Who hears about a status change: the approver asked, the people on work decided on, the leaders of blocked work. */
 async function noticesFor(
   tx: Tx,
@@ -151,45 +137,6 @@ async function noticesFor(
     }
   }
   return out;
-}
-
-// --- proposals: the chain a new task gets -----------------------------------------------------------------------
-
-/** Who hears that a step is theirs: the person it names, or every leader and admin when it names nobody. */
-export async function stepRecipients(tx: Tx, orgId: string, step: { userIds: string[] }): Promise<string[]> {
-  return step.userIds.length > 0 ? step.userIds : leaderIds(tx, orgId);
-}
-
-/**
- * Writes a proposal's chain (steps naming the proposer already signed), marks the task pending and returns the
- * notice for whoever is up first. Null chain: the task is live and nothing is written.
- */
-export async function startChain(tx: Tx, viewer: Viewer, task: { id: string; title: string }, chain: ChainStep[], now: Date): Promise<Notice[]> {
-  await tx.insert(taskApprovals).values(
-    chain.map((step) => ({
-      taskId: task.id,
-      position: step.position,
-      userId: step.userIds[0] ?? null,
-      userIds: step.userIds,
-      decision: step.autoSigned ? ("approved" as const) : null,
-      decidedBy: step.autoSigned ? viewer.userId : null,
-      decidedAt: step.autoSigned ? now : null,
-      createdAt: now,
-    })),
-  );
-  const next = currentStep(chain.map((step) => ({ position: step.position, userIds: step.userIds, decision: step.autoSigned ? ("approved" as const) : null })));
-  if (next === null) return [];
-  const recipients = await stepRecipients(tx, viewer.orgId, next);
-  return [{ orgId: viewer.orgId, actorId: viewer.userId, recipients, kind: "proposal_waiting", title: `Proposal to sign off: ${task.title}`, body: `Step ${next.position} of ${chain.length}.`, href: taskHref(task.id) }];
-}
-
-/** The chain a task in this placement gets for this creator, read from the goal's and project's policies. */
-export async function chainForPlacement(tx: Tx, viewer: Viewer, placement: { projectId: string | null; goalId: string | null }): Promise<ChainStep[] | null> {
-  const [goalPolicy, projectPolicy] = await Promise.all([
-    readPolicy(tx, viewer.orgId, placement.goalId ? { goalId: placement.goalId } : null),
-    readPolicy(tx, viewer.orgId, placement.projectId ? { projectId: placement.projectId } : null),
-  ]);
-  return chainFor({ creatorId: viewer.userId, creatorRole: viewer.orgRole, goal: goalPolicy, project: projectPolicy });
 }
 
 // --- repeats: the next occurrence -------------------------------------------------------------------------------
@@ -259,10 +206,11 @@ const createSchema = z.object({
 
 /**
  * Creates a task. Only the title is required. A task in a goal is in that goal's project. Where the project or goal
- * requires sign-off (or the creator is a stakeholder) the task is a proposal: nobody is assigned anything until it is
- * approved. A repeat rule needs a due date to count from.
+ * requires sign-off, a worker's task starts local (2026-11-06 log): theirs alone, off the main board, until they send
+ * it for sign-off; a stakeholder's is a proposal at once. Nobody is told they are on it until it is live. A repeat
+ * rule needs a due date to count from.
  */
-export async function createTask(input: z.input<typeof createSchema>): Promise<ActionResult<{ id: string; proposal: boolean }>> {
+export async function createTask(input: z.input<typeof createSchema>): Promise<ActionResult<{ id: string; proposal: boolean; local: boolean }>> {
   return runAction("tasks.create", createSchema, input, async (data) => {
     const viewer = await requireViewer();
     if (!canCreateTask(viewer)) throw new GuardError("forbidden");
@@ -273,6 +221,9 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
       const assignment = await validateAssignment(tx, viewer.orgId, data.assigneeIds);
       const placement = await resolvePlacement(tx, viewer.orgId, data);
       const chain = await chainForPlacement(tx, viewer, placement);
+      // A worker's task under a sign-off rule starts local; a stakeholder's goes to the chain straight away.
+      const local = chain !== null && isWorker(viewer);
+      const proposal = chain !== null && !local;
       const [created] = await tx
         .insert(tasks)
         .values({
@@ -286,27 +237,30 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
           dueDate: data.dueDate || null,
           dueTime: data.dueTime || null,
           recurrence: data.recurrence,
-          proposalStatus: chain === null ? null : "pending",
+          proposalStatus: local ? "local" : proposal ? "pending" : null,
           createdAt: now,
           updatedAt: now,
         })
         .returning({ id: tasks.id });
       if (data.recurrence !== null) await tx.update(tasks).set({ seriesId: created.id }).where(eq(tasks.id, created.id));
       await applyAssignment(tx, created.id, viewer.userId, [], assignment, now);
-      const drafts: ActivityDraft[] = [{ kind: "created", after: { title: data.title, proposal: chain !== null } }];
+      const drafts: ActivityDraft[] = [{ kind: "created", after: { title: data.title, proposal, local } }];
       // Assigning work to yourself alone is not news worth a history line.
       const justMe = sameIds(assignment, [viewer.userId]);
       if (!justMe && assignment.length > 0) drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
       await recordActivity(tx, { orgId: viewer.orgId, taskId: created.id, actorId: viewer.userId }, drafts, now);
       if (chain === null) notices.push(...assignedNotice(viewer, { id: created.id, title: data.title, nextAction: data.nextAction || null }, assignment, true));
-      else notices.push(...(await startChain(tx, viewer, { id: created.id, title: data.title }, chain, now)));
+      else if (proposal) notices.push(...(await startChain(tx, viewer, { id: created.id, title: data.title }, chain, now)));
       if (data.nextAction) await tx.update(tasks).set({ nextAction: data.nextAction }).where(eq(tasks.id, created.id));
-      return { id: created.id, proposal: chain !== null };
+      return { id: created.id, proposal, local };
     });
-    log.info("tasks.created", { orgId: viewer.orgId, taskId: outcome.id, proposal: outcome.proposal, by: viewer.userId });
+    log.info("tasks.created", { orgId: viewer.orgId, taskId: outcome.id, proposal: outcome.proposal, local: outcome.local, by: viewer.userId });
     await dispatch(notices);
     refresh();
-    return ok(outcome, outcome.proposal ? "Proposed. It goes live once it is signed off." : "Task created.");
+    return ok(
+      outcome,
+      outcome.local ? "Saved as a local task: only you can see it until you send it for sign-off." : outcome.proposal ? "Proposed. It goes live once it is signed off." : "Task created.",
+    );
   });
 }
 
@@ -818,26 +772,23 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
 
 const deleteSchema = z.object({ taskId: id });
 
-/** Removes the task and everything hanging off it (assignees, updates, links, history — all cascade). A proposer may withdraw their own open proposal. */
+/** Removes the task and everything hanging off it (assignees, updates, links, history — all cascade). A proposer may withdraw their own open proposal; a maker their local task. */
 export async function deleteTask(input: z.input<typeof deleteSchema>): Promise<ActionResult> {
   return runAction("tasks.delete", deleteSchema, input, async (data) => {
     const viewer = await requireViewer();
-    const proposal = await db.transaction(async (tx) => {
+    const was = await db.transaction(async (tx) => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
       if (!canDeleteTask(viewer, locked.scope)) throw new GuardError("forbidden", "Only leaders and admins can delete tasks.");
       await tx.delete(tasks).where(and(eq(tasks.id, data.taskId), eq(tasks.orgId, viewer.orgId)));
       await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/tasks/${data.taskId}`)));
-      return locked.task.proposalStatus === "pending" || locked.task.proposalStatus === "declined";
+      return locked.task.proposalStatus;
     });
     log.info("tasks.deleted", { orgId: viewer.orgId, taskId: data.taskId, by: viewer.userId });
     refresh();
-    return ok(undefined, proposal ? "Proposal withdrawn." : "Task deleted.");
+    return ok(undefined, was === "pending" || was === "declined" ? "Proposal withdrawn." : was === "local" ? "Local task deleted." : "Task deleted.");
   });
 }
-
-/** Re-exported for the proposals action, which continues a chain this file started. */
-export { lockTaskApprovals };
 
 // --- several tasks at once (docs/PLAN.md, 2026-11-04 log) ---------------------------------------------------------
 
@@ -874,8 +825,8 @@ async function runBulk(viewer: Viewer, taskIds: string[], each: (tx: Tx, locked:
 }
 
 /** "3 tasks marked completed. 1 couldn't: “Fix the digest” (Resolve the 2 open comments…)." Nothing done is a failure. */
-function bulkResult(outcome: BulkOutcome, did: string): ActionResult<BulkOutcome> {
-  const head = outcome.done > 0 ? `${outcome.done} ${outcome.done === 1 ? "task" : "tasks"} ${did}.` : "";
+function bulkResult<T extends BulkOutcome>(outcome: T, did: string, headline?: string): ActionResult<T> {
+  const head = outcome.done > 0 ? (headline ?? `${outcome.done} ${outcome.done === 1 ? "task" : "tasks"} ${did}.`) : "";
   if (outcome.failed.length === 0) return ok(outcome, head);
   const tail = `${outcome.failed.length} couldn't: ${outcome.failed.map((each) => `“${each.title}” (${each.error})`).join("; ")}`;
   if (outcome.done === 0) return fail(`Nothing changed. ${tail}`);
@@ -971,6 +922,32 @@ export async function bulkMove(input: z.input<typeof bulkMoveSchema>): Promise<A
     await dispatch(notices);
     refresh();
     return bulkResult(outcome, data.projectId || data.goalId ? "moved" : "made standalone");
+  });
+}
+
+const bulkSendSchema = z.object({ taskIds: bulkIds });
+
+/**
+ * Sends every ticked local task on (docs/PLAN.md, 2026-11-06 log): for sign-off where its goal or project still asks
+ * for it, published at once where none applies any more. Each in its own transaction; the toast says how many went
+ * each way, and names the ones that couldn't (someone else's, or not local any more).
+ */
+export async function bulkSendLocal(input: z.input<typeof bulkSendSchema>): Promise<ActionResult<BulkOutcome & { sent: number; published: number }>> {
+  return runAction("tasks.bulk_send", bulkSendSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    let published = 0;
+    const { outcome, notices } = await runBulk(viewer, data.taskIds, async (tx, locked) => {
+      const result = await submitLocalTask(tx, viewer, locked, now);
+      if (result.live) published += 1;
+      return result.notices;
+    });
+    const sent = outcome.done - published;
+    log.info("tasks.bulk_send", { orgId: viewer.orgId, sent, published, failed: outcome.failed.length, by: viewer.userId });
+    await dispatch(notices);
+    refresh();
+    const parts = [sent > 0 ? `${sent} ${sent === 1 ? "task" : "tasks"} sent for sign-off` : null, published > 0 ? `${published} ${published === 1 ? "task" : "tasks"} published` : null].filter(Boolean);
+    return bulkResult({ ...outcome, sent, published }, "sent on", parts.length > 0 ? `${parts.join(", ")}.` : undefined);
   });
 }
 

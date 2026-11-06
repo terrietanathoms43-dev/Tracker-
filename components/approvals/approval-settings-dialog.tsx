@@ -82,7 +82,7 @@ export function ApprovalSettingsDialog({
           <DialogHeader>
             <DialogTitle>Sign-off for new tasks</DialogTitle>
             <DialogDescription>
-              When it is on, a task added to {what} shows at once but waits for each step below to be signed, in order. A step with several people is signed by any one of them; a step with nobody is any leader or admin&apos;s.
+              When it is on, a task someone adds to {what} starts local: theirs alone, off the main board, until they send it for sign-off. Then it shows at once but waits for each step below to be signed, in order. A step with several people is signed by any one of them; a step with nobody is any leader or admin&apos;s. Switch it off and their local tasks publish instead.
             </DialogDescription>
           </DialogHeader>
           <form

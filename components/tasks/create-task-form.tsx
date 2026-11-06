@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardCheck } from "lucide-react";
+import { ClipboardCheck, Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -53,6 +53,10 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
   const value = assignment ?? me(options);
   const goals = options?.goals ?? [];
   const proposes = options?.proposesOnly === true;
+  // Sign-off applies where the task is going (the goal's rule first, else the project's): it will start local.
+  const goalChoice = goalId ? goals.find((goal) => goal.id === goalId) : undefined;
+  const projectChoice = projectId ? options?.projects.find((project) => project.id === projectId) : undefined;
+  const local = !proposes && (goalChoice ? (goalChoice.signOff ?? false) : (projectChoice?.signOff ?? false));
 
   function submit() {
     startTransition(async () => {
@@ -91,6 +95,11 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
         <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg">
           <ClipboardCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
           This is a proposal: a leader or admin signs it off before it becomes a live task. You can follow it under Proposals.
+        </p>
+      ) : local ? (
+        <p className="flex items-start gap-2 rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" data-local-hint>
+          <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
+          Sign-off is on here: the task stays local, seen by you alone, until you send it for sign-off from your Local section.
         </p>
       ) : null}
       <Field id="task-title" label="Title" error={error("title")} count={{ value: title, max: LIMITS.taskTitle }}>
@@ -168,7 +177,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
           </Button>
         ) : null}
         <Button type="submit" disabled={pending || title.trim() === ""}>
-          {pending ? (proposes ? "Proposing…" : "Creating…") : proposes ? "Propose task" : "Create task"}
+          {pending ? (proposes ? "Proposing…" : "Creating…") : proposes ? "Propose task" : local ? "Create local task" : "Create task"}
         </Button>
       </div>
     </form>

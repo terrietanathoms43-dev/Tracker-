@@ -6,7 +6,7 @@ import { goals, projects, taskActivity, taskAssignees, tasks, taskUpdates } from
 import { CLOSED_STATUSES, type ProjectStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { pendingProposals, type ProposalListItem } from "@/lib/dal/approvals";
 import { listWorkers } from "@/lib/dal/orgs";
-import { approvalStagingTasks, assigneesJson, liveOnly, progressForGoals, progressForProjects, type ApprovalStagingTask } from "@/lib/dal/tasks";
+import { approvalStagingTasks, assigneesJson, liveOnly, localOnly, progressForGoals, progressForProjects, type ApprovalStagingTask } from "@/lib/dal/tasks";
 import type { Viewer } from "@/lib/permissions";
 import type { Assignees } from "@/lib/tasks/types";
 import { calendarDaysBetween, dayKey } from "@/lib/time";
@@ -17,9 +17,10 @@ import { daysOf, shiftDay, timelineWindow, type ReportRange } from "./range";
 
 // The rows behind /reports and its CSV exports. Every query is scoped to viewer.orgId in SQL and every number a
 // report prints is a count of these rows: nothing is estimated, weighted or ranked. Callers check access first
-// (lib/reports/build.ts). A report is about live tasks only (proposals still waiting are not work yet) and may be
-// about one project (`project`: an id, or "" for the whole workspace, the navigation's scope); every section
-// narrows the same way, so its numbers always agree.
+// (lib/reports/build.ts). A report is about live tasks only (proposals still waiting are not work yet; a local task
+// is nobody's but its maker's) and may be about one project (`project`: an id, or "" for the whole workspace, the
+// navigation's scope); every section narrows the same way, so its numbers always agree. The one exception is the
+// activity widget on the My work view, which also draws the viewer's own local tasks (2026-11-06 log).
 
 /** A task as a report prints it. `completedDay` is the calendar day it was completed on, in the viewer's timezone. */
 export type ReportTask = {
@@ -172,8 +173,11 @@ function projectCondition(project: ReportProject): SQL | undefined {
   return eq(tasks.projectId, project);
 }
 
-/** Whether the viewer is on the task, in SQL. */
-const mineSql = (userId: string) => sql<boolean>`exists (select 1 from task_assignees ta where ta.task_id = ${tasks}.id and ta.user_id = ${userId})`;
+/** Whether the viewer is on the task (or it is their own local task), in SQL. */
+const mineSql = (viewer: Viewer) => sql<boolean>`(exists (select 1 from task_assignees ta where ta.task_id = ${tasks}.id and ta.user_id = ${viewer.userId}) or ${localOnly(viewer)})`;
+
+/** Not a local task: the activity axis counts every task on the main board, proposals included, never local ones. */
+const notLocal = sql`${tasks.proposalStatus} is distinct from 'local'`;
 
 /**
  * `column` falls on a calendar day from `range.from` to `range.to` (both included) in `timeZone`. Written as two
@@ -392,16 +396,19 @@ function goalMarkerCondition(project: ReportProject): SQL | undefined {
  * One entry per calendar day of the chart's window (lib/reports/range.ts: the range, then two weeks past today):
  * what was completed, which blockers were raised, what was due and is still open (overdue), what falls due from
  * today on, and the goal deadlines with each goal's health, with the tasks behind each count so a bar can be split
- * into them. `activity` is every history row of every task in scope that day: the chart's y axis.
+ * into them. `activity` is every history row of every task in scope that day: the chart's y axis. With
+ * `includeLocal` (the My work view) the viewer's own local tasks count too; otherwise local tasks are left out.
  */
-export async function reportTimeline(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<TimelineDay[]> {
+export async function reportTimeline(viewer: Viewer, range: ReportRange, today: string, project: ReportProject, options: { includeLocal?: boolean } = {}): Promise<TimelineDay[]> {
   const window = timelineWindow(range, today);
   const past: ReportRange = {
     from: window.from,
     to: today < window.to ? today : window.to,
   };
   const scoped = projectCondition(project);
-  const mine = mineSql(viewer.userId);
+  const mine = mineSql(viewer);
+  const taskScope = options.includeLocal ? or(liveOnly, localOnly(viewer)) : liveOnly;
+  const activityScope = options.includeLocal ? or(notLocal, localOnly(viewer)) : notLocal;
 
   const [goalRows, completedRows, blockerRows, dueRows, activityRows] = await Promise.all([
     db
@@ -424,7 +431,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       })
       .from(tasks)
       .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, scoped, eq(tasks.status, "completed"), isNotNull(tasks.completedAt), withinDays(tasks.completedAt, past, viewer.timezone)))
+      .where(and(eq(tasks.orgId, viewer.orgId), taskScope, scoped, eq(tasks.status, "completed"), isNotNull(tasks.completedAt), withinDays(tasks.completedAt, past, viewer.timezone)))
       .orderBy(asc(tasks.completedAt)),
     db
       .select({
@@ -437,7 +444,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       .from(taskActivity)
       .innerJoin(tasks, eq(tasks.id, taskActivity.taskId))
       .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(taskActivity.orgId, viewer.orgId), liveOnly, scoped, eq(taskActivity.kind, "blocked"), withinDays(taskActivity.createdAt, past, viewer.timezone)))
+      .where(and(eq(taskActivity.orgId, viewer.orgId), taskScope, scoped, eq(taskActivity.kind, "blocked"), withinDays(taskActivity.createdAt, past, viewer.timezone)))
       .orderBy(asc(taskActivity.createdAt)),
     // Every open task due anywhere in the window: before today it is overdue, from today on it is due.
     db
@@ -450,7 +457,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       })
       .from(tasks)
       .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, scoped, isOpen, dueWithin(window)))
+      .where(and(eq(tasks.orgId, viewer.orgId), taskScope, scoped, isOpen, dueWithin(window)))
       .orderBy(asc(tasks.dueDate), asc(tasks.title)),
     // The y axis: every history row of every task in scope, by day (completed +1, comment +1, edit +1, …).
     db
@@ -460,7 +467,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       })
       .from(taskActivity)
       .innerJoin(tasks, eq(tasks.id, taskActivity.taskId))
-      .where(and(eq(taskActivity.orgId, viewer.orgId), scoped, withinDays(taskActivity.createdAt, past, viewer.timezone)))
+      .where(and(eq(taskActivity.orgId, viewer.orgId), activityScope, scoped, withinDays(taskActivity.createdAt, past, viewer.timezone)))
       .groupBy(sql`1`),
   ]);
   const goalProgress = await progressForGoals(

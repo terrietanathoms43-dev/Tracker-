@@ -3,12 +3,15 @@ import { GoalProgressList } from "@/components/dashboard/goal-progress";
 import { Panel } from "@/components/dashboard/panel";
 import type { FeedEntry, GoalProgress } from "@/lib/dal/dashboard";
 import type { TaskListItem } from "@/lib/tasks/types";
+import { LocalPanel } from "./local-panel";
 import { ResumePanel } from "./resume-panel";
 
-// A member's Home (apex-ux flow A): where they stopped, the goals the work adds up to, and what changed lately.
+// A member's Home (apex-ux flow A): their local tasks (while there are any), where they stopped, the goals the work
+// adds up to, and what changed lately.
 
 export function MemberHome({
   resume,
+  local,
   goals,
   feed,
   today,
@@ -16,6 +19,8 @@ export function MemberHome({
   timeZone,
 }: {
   resume: TaskListItem[];
+  /** The viewer's local tasks, newest first. */
+  local: TaskListItem[];
   goals: GoalProgress[];
   feed: FeedEntry[];
   today: string;
@@ -24,6 +29,7 @@ export function MemberHome({
 }) {
   return (
     <div className="grid gap-6">
+      <LocalPanel tasks={local} today={today} />
       <ResumePanel tasks={resume} today={today} />
       <Panel title="Goals" href="/goals" hrefLabel="All goals">
         <GoalProgressList goals={goals} today={today} strip empty="No active goals yet. Goals and the work under them show up here." />

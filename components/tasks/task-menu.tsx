@@ -1,10 +1,11 @@
 "use client";
 
 import { cn } from "cn";
-import { ExternalLink, FolderPlus, Goal, MoreHorizontal, NotebookPen, Trash2, UserPlus } from "lucide-react";
+import { ExternalLink, FolderPlus, Goal, MoreHorizontal, NotebookPen, Send, Trash2, Upload, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
+import { sendLocalTask } from "@/actions/proposals";
 import { deleteTask, editTask, getTaskFormOptions, setAssignees } from "@/actions/tasks";
 import { GoalPicker } from "@/components/goals/goal-picker";
 import { ProjectPicker } from "@/components/projects/project-picker";
@@ -42,6 +43,13 @@ import { useTaskActions } from "./task-actions";
 
 // The two or three things people do from a list without opening the task (apex-ux §6): Update progress,
 // Change status, and the field edits below. A "⋯" menu with a pointer, a bottom sheet after a long press on touch.
+// A proposal or a local task has no progress or status to change; a local task's first item sends it on instead.
+
+/** A task that is work: progress and status changes apply. A proposal or a local task has neither yet. */
+const isLive = (task: TaskListItem) => task.proposal === null || task.proposal === "approved";
+
+/** The one thing a local task offers: "Send for sign-off" or "Publish" (lib/tasks/types.ts needsSignOff). */
+const sendLabel = (task: TaskListItem) => (task.needsSignOff ? "Send for sign-off" : "Publish");
 
 type MenuDialog = "assign" | "goal" | "project" | "delete" | null;
 
@@ -146,7 +154,7 @@ function DeleteDialog({ task, onClose }: { task: TaskListItem; onClose: () => vo
     <Dialog open onOpenChange={(o) => (o ? undefined : onClose())}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{task.proposal === "pending" || task.proposal === "declined" ? "Withdraw proposal?" : "Delete task?"}</DialogTitle>
+          <DialogTitle>{task.proposal === "pending" || task.proposal === "declined" ? "Withdraw proposal?" : task.proposal === "local" ? "Delete local task?" : "Delete task?"}</DialogTitle>
           <DialogDescription>
             &ldquo;{task.title}&rdquo; and all of its progress updates, comments and history will be removed permanently.
           </DialogDescription>
@@ -156,7 +164,7 @@ function DeleteDialog({ task, onClose }: { task: TaskListItem; onClose: () => vo
             Cancel
           </Button>
           <Button variant="destructive" disabled={pending} onClick={() => save(() => deleteTask({ taskId: task.id }))}>
-            {task.proposal === "pending" || task.proposal === "declined" ? "Withdraw" : "Delete task"}
+            {task.proposal === "pending" || task.proposal === "declined" ? "Withdraw" : task.proposal === "local" ? "Delete local task" : "Delete task"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -197,6 +205,8 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
   const toggleAssignee = (id: string, on: boolean) => (on ? [...current, id] : current.filter((x) => x !== id));
   const attach = (field: "goalId" | "projectId", value: string) =>
     startTransition(async () => void toastResult(await editTask({ taskId: task.id, field, value })));
+  const send = () => startTransition(async () => void toastResult(await sendLocalTask({ taskId: task.id })));
+  const live = isLive(task);
 
   return (
     <>
@@ -211,20 +221,33 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
           <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onSelect={() => openUpdate(task.id)}>
-            <NotebookPen />
-            Update progress
-          </DropdownMenuItem>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="gap-2">
-              <StatusIcon status={task.status} />
-              Change status
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-48">
-              <StatusMenuItems current={task.status} onPick={(status) => change(task.status, status)} />
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-          <DropdownMenuSeparator />
+          {task.proposal === "local" ? (
+            <>
+              <DropdownMenuItem onSelect={send} data-menu-send-local>
+                {task.needsSignOff ? <Send /> : <Upload />}
+                {sendLabel(task)}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
+          {live ? (
+            <>
+              <DropdownMenuItem onSelect={() => openUpdate(task.id)}>
+                <NotebookPen />
+                Update progress
+              </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="gap-2">
+                  <StatusIcon status={task.status} />
+                  Change status
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-48">
+                  <StatusMenuItems current={task.status} onPick={(status) => change(task.status, status)} />
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="gap-2">
               <UserPlus />
@@ -293,7 +316,7 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
                 <Trash2 />
-                {task.proposal === "pending" || task.proposal === "declined" ? "Withdraw proposal" : "Delete task"}
+                {task.proposal === "pending" || task.proposal === "declined" ? "Withdraw proposal" : task.proposal === "local" ? "Delete local task" : "Delete task"}
               </DropdownMenuItem>
             </>
           ) : null}
@@ -323,6 +346,8 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
   const { openUpdate } = useTaskActions();
   const { change } = useChangeStatus(task.id);
   const { dialog, open, close } = useMenuDialog();
+  const [, startTransition] = useTransition();
+  const live = isLive(task);
   const then = (action: () => void) => () => {
     onOpenChange(false);
     action();
@@ -333,10 +358,16 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
         <SheetContent side="bottom" className="rounded-t-xl pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           <SheetHeader>
             <SheetTitle className="truncate pr-6">{task.title}</SheetTitle>
-            <SheetDescription>{TASK_STATUS_LABELS[task.status]}</SheetDescription>
+            <SheetDescription>{task.proposal === "local" ? "Local task: only you can see it" : TASK_STATUS_LABELS[task.status]}</SheetDescription>
           </SheetHeader>
           <div className="grid gap-1 px-4">
-            {readOnly ? null : (
+            {!readOnly && task.proposal === "local" ? (
+              <SheetButton onClick={then(() => startTransition(async () => void toastResult(await sendLocalTask({ taskId: task.id }))))}>
+                {task.needsSignOff ? <Send className="size-4 text-muted-foreground" /> : <Upload className="size-4 text-muted-foreground" />}
+                {sendLabel(task)}
+              </SheetButton>
+            ) : null}
+            {readOnly || !live ? null : (
               <SheetButton onClick={then(() => openUpdate(task.id))}>
                 <NotebookPen className="size-4 text-muted-foreground" />
                 Update progress
@@ -357,18 +388,22 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
                 {task.canDelete ? (
                   <SheetButton onClick={then(() => open("delete"))}>
                     <Trash2 className="size-4 text-destructive" />
-                    <span className="text-destructive">Delete task</span>
+                    <span className="text-destructive">{task.proposal === "pending" || task.proposal === "declined" ? "Withdraw proposal" : task.proposal === "local" ? "Delete local task" : "Delete task"}</span>
                   </SheetButton>
                 ) : null}
-                <p className="px-3 pt-3 pb-1 text-[13px] text-muted-foreground">Change status</p>
-                <div className="grid grid-cols-2 gap-1">
-                  {TASK_STATUSES.map((status) => (
-                    <SheetButton key={status} disabled={status === task.status} onClick={then(() => change(task.status, status))}>
-                      <StatusIcon status={status} />
-                      {TASK_STATUS_LABELS[status]}
-                    </SheetButton>
-                  ))}
-                </div>
+                {live ? (
+                  <>
+                    <p className="px-3 pt-3 pb-1 text-[13px] text-muted-foreground">Change status</p>
+                    <div className="grid grid-cols-2 gap-1">
+                      {TASK_STATUSES.map((status) => (
+                        <SheetButton key={status} disabled={status === task.status} onClick={then(() => change(task.status, status))}>
+                          <StatusIcon status={status} />
+                          {TASK_STATUS_LABELS[status]}
+                        </SheetButton>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
               </>
             )}
           </div>

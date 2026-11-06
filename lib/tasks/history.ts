@@ -80,7 +80,7 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
   const after = row.after ?? {};
   switch (row.kind) {
     case "created":
-      return { phrase: after.proposal === true ? "proposed the task" : "created the task", change: null };
+      return { phrase: after.local === true ? "created it as a local task" : after.proposal === true ? "proposed the task" : "created the task", change: null };
     case "edited":
       return editedPhrase(before, after);
     case "status_changed":
@@ -127,6 +127,10 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
       return { phrase: "declined the proposal", change: null };
     case "proposal_resubmitted":
       return { phrase: "sent the proposal for sign-off again", change: null };
+    case "proposal_sent":
+      return { phrase: "sent it for sign-off", change: null };
+    case "published":
+      return { phrase: "published it: it is a live task now", change: null };
     default:
       return { phrase: "updated it", change: null };
   }
