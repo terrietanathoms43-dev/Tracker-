@@ -12,6 +12,7 @@ import { describeAssignees } from "@/lib/tasks/assignees";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { formatTime } from "@/lib/recurrence";
 import { AssigneeStack } from "./assignee-stack";
+import { useTaskActions } from "./task-actions";
 import { DueLabel } from "./due-label";
 import { ReasonChip } from "./reason-chip";
 import { useTaskSelection } from "./selection";
@@ -43,6 +44,8 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const { handlers, swallowClick } = useLongPress(() => setSheetOpen(true));
+  const { openTransition } = useTaskActions();
+  const canOpenCompletion = !readOnly && (task.proposal === null || task.proposal === "approved") && (task.status === "not_started" || task.status === "in_progress");
   // Ticking rows (docs/PLAN.md, 2026-11-04 log): only where the page put a selection around its lists.
   const selection = useTaskSelection();
   const selectable = selection !== null && !readOnly;
@@ -84,6 +87,20 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
           <XCircle className="size-4 shrink-0 text-status-blocked-fg" aria-label="Declined" role="img" />
         ) : local ? (
           <Lock className="size-4 shrink-0 text-muted-foreground" aria-label="Local: only you can see it" role="img" />
+        ) : canOpenCompletion ? (
+          <button
+            type="button"
+            aria-label={`Complete ${task.title}`}
+            title="Open task completion"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              openTransition(task.id, "completed");
+            }}
+            className="relative grid size-4 shrink-0 place-items-center rounded-full outline-none after:absolute after:-inset-2 after:rounded-full after:content-[''] hover:opacity-70 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <StatusIcon status={task.status} />
+          </button>
         ) : (
           <StatusIcon status={task.status} />
         )}
