@@ -8,7 +8,9 @@
 # Pull (fast-forward only: a server checkout never has commits of its own), install, build, then (re)start under
 # pm2. Schema changes are applied deliberately, not on every deploy: run `npm run db:push` yourself, in this
 # directory, when a release changes db/schema.ts.
-set -euo pipefail
+# POSIX only (`set -eu`, no `pipefail`): the VPS runs this with `sh`, which is dash there, and dash refuses
+# bash-only options. There are no pipes in this script. `-e` matters: a failed build must not restart pm2.
+set -eu
 cd "$(dirname "$0")"
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
