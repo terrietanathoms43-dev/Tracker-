@@ -139,6 +139,8 @@ async function claimOrg(tx: Tx, seed: OrgSeed, createdBy: string): Promise<strin
 /** Everything inside a workspace, but not the workspace row itself. */
 async function wipeOrgContents(tx: Tx, orgId: string): Promise<void> {
   await tx.delete(notifications).where(eq(notifications.orgId, orgId));
+  // The Draft tab's notes are a person's own, but a walkthrough that typed some must not meet them on the next run.
+  await tx.delete(schema.drafts).where(eq(schema.drafts.orgId, orgId));
   await tx.delete(taskActivity).where(eq(taskActivity.orgId, orgId));
   // Tasks take their updates, links, assignments and sign-off chains with them; goals take their links and chains;
   // projects take their goals and chains (cascades).
