@@ -172,7 +172,8 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
     expect(await dal.localTasksFor(avery)).toEqual([]);
     expect(ids(await dal.searchTasks(sam, "clinic FAQ")).some((id) => demo.localIds.includes(id))).toBe(true);
     expect(ids(await dal.searchTasks(avery, "clinic FAQ")).some((id) => demo.localIds.includes(id))).toBe(false);
-    expect(ids(await dal.myWorkRows(avery)).some((id) => demo.localIds.includes(id))).toBe(false);
+    expect((await dal.myWorkRows(avery)).some((row) => demo.localIds.includes(row.item.id))).toBe(false);
+    expect((await dal.myWorkRows(sam)).filter((row) => demo.localIds.includes(row.item.id)).length).toBe(demo.localIds.length);
     expect((await dal.myWorkGroups(sam, today(sam))).local.map((item) => item.id).sort()).toEqual([...demo.localIds].sort());
     // Not work: never in the counts, the progress, or the main board of the project they sit in.
     const [row] = await rows<{ project_id: string }>("select project_id from tasks where id = $1", [demo.localIds[0]]);
