@@ -31,6 +31,8 @@ try {
     await morgan.goto("/capture", 4000);
     step("the old capture address lands on the Draft tab", await morgan.waitForPath("/home", 20_000));
     step("a leader sees the notepad and Turn into work", (await morgan.waitFor("Turn it into work", 20_000)) && (await morgan.evaluate(`document.querySelector("#draft-body") !== null`)));
+    await morgan.type("#draft-body", "");
+    await sleep(300);
     step("the button waits for notes", (await morgan.evaluate(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Turn into work")?.disabled`)) === true);
 
     // --- 1. draft --------------------------------------------------------------------------------------------------

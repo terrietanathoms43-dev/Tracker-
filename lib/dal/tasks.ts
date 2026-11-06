@@ -32,10 +32,11 @@ import { dayKey } from "@/lib/time";
 
 // Every read of tasks, for every screen: lists, the board, My Work, the task page, and the counts, progress,
 // workload and feeds that Home, Members, Projects, Goals and Reports build on. Each function takes the Viewer and
-// filters by its workspace in SQL. Lists show live work only: a proposal still waiting for sign-off (or declined)
-// is not work yet and lives on the Proposals page (lib/dal/approvals.ts). Every list can be narrowed to one project
-// (the navigation's project picker, docs/PLAN.md 2026-11-03 log). Assignment is a set of people (task_assignees):
-// every row carries it as JSON, so no list joins people.
+// filters by its workspace in SQL. The main board (`visibleWork`) is live work plus the proposals waiting for
+// sign-off; counts, progress and reports keep to `liveOnly`; a local task (2026-11-06 log) is in neither and is read
+// only by its maker (`localOnly`), in the Local sections of the List and Board tabs, My Work and Home. Every list can
+// be narrowed to one project (the navigation's project picker, docs/PLAN.md 2026-11-03 log). Assignment is a set of
+// people (task_assignees): every row carries it as JSON, so no list joins people.
 
 const CLOSED = [...CLOSED_STATUSES];
 const creatorUser = alias(users, "creator_user");
@@ -57,6 +58,20 @@ export const liveOnly = sql`(${tasks.proposalStatus} is null or ${tasks.proposal
  */
 export const visibleWork = (viewer: Viewer): SQL =>
   sql`(${liveOnly} or ${tasks.proposalStatus} = 'pending' or (${tasks.proposalStatus} = 'declined' and ${tasks.createdBy} = ${viewer.userId}))`;
+
+/** The viewer's own local tasks (2026-11-06 log): made where sign-off applies, not sent on yet, nobody else's to see. */
+export const localOnly = (viewer: Viewer): SQL => sql`(${tasks.proposalStatus} = 'local' and ${tasks.createdBy} = ${viewer.userId})`;
+
+/**
+ * Whether sending a local task on would start a sign-off chain, from where it sits now: its goal's rule first, else
+ * its project's, unless its maker skips that queue (lib/approvals/policy.ts, in SQL so every row can say "Send for
+ * sign-off" or "Publish"). Needs the projects and goals joins of selectList(). A step naming only the maker is left
+ * to the action: it signs itself and the task goes live, which the toast then says.
+ */
+export const needsSignOffSql = sql<boolean>`(case
+  when ${goals}.requires_approval then not exists (select 1 from approval_bypass b where b.goal_id = ${goals}.id and b.user_id = ${tasks}.created_by)
+  when ${projects}.requires_approval then not exists (select 1 from approval_bypass b where b.project_id = ${projects}.id and b.user_id = ${tasks}.created_by)
+  else false end)`;
 
 /** The project a list is narrowed to ("" means every project); an undefined condition is dropped by `and`. */
 export const projectCondition = (project: string): SQL | undefined => (project === "" ? undefined : eq(tasks.projectId, project));
@@ -112,6 +127,7 @@ const listColumns = {
   updatedAt: tasks.updatedAt,
   createdBy: tasks.createdBy,
   proposalStatus: tasks.proposalStatus,
+  needsSignOff: needsSignOffSql,
   goalCloser: tasks.goalCloser,
   goalId: goals.id,
   goalTitle: goals.title,
@@ -134,6 +150,7 @@ type ListRow = {
   updatedAt: Date;
   createdBy: string;
   proposalStatus: ProposalStatus | null;
+  needsSignOff: boolean;
   goalCloser: boolean;
   goalId: string | null;
   goalTitle: string | null;
@@ -158,6 +175,7 @@ export function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
     project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
     goal: row.goalId && row.goalTitle ? { id: row.goalId, title: row.goalTitle } : null,
     proposal: row.proposalStatus,
+    needsSignOff: row.needsSignOff,
     goalCloser: row.goalCloser,
     canDelete: canDeleteTask(viewer, { createdBy: row.createdBy, proposalStatus: row.proposalStatus }),
     assignees: row.assignees,
@@ -213,9 +231,9 @@ function dateFilterConditions(viewer: Viewer, filters: Pick<TaskFilters, "dateFi
   return dateRangeConditions(column, filters.from, filters.to, viewer.timezone);
 }
 
-/** The conditions every filter shares between the list and the board (status is handled by each). */
-function filterConditions(viewer: Viewer, filters: TaskFilters, today: string): SQL[] {
-  const where: SQL[] = [visibility(viewer), visibleWork(viewer)];
+/** The conditions every filter shares between the list and the board (status is handled by each); `scope` is which tasks at all (the main board unless told otherwise). */
+function filterConditions(viewer: Viewer, filters: TaskFilters, today: string, scope: SQL = visibleWork(viewer)): SQL[] {
+  const where: SQL[] = [visibility(viewer), scope];
   if (filters.q) {
     const term = `%${escapeLike(filters.q)}%`;
     where.push(or(ilike(tasks.title, term), ilike(tasks.description, term))!);
@@ -283,13 +301,39 @@ export async function boardTasks(viewer: Viewer, filters: TaskFilters, options: 
   return toBoardColumns(rows.map((row) => toListItem(row, viewer)));
 }
 
+/**
+ * The viewer's local tasks under the List and Board tabs' filters (2026-11-06 log): the same search, people,
+ * priority, project, goal, due and date conditions as the main board, in the smart order. A status filter that
+ * leaves out Not started hides them, since a local task has not started (nothing on it is work yet).
+ */
+export async function localTasks(viewer: Viewer, filters: TaskFilters, today: string, limit = 200): Promise<TaskListItem[]> {
+  if (filters.status.length > 0 && !filters.status.includes("not_started")) return [];
+  const rows = await selectList()
+    .where(and(...filterConditions(viewer, filters, today, localOnly(viewer))))
+    .orderBy(...orderBy(filters.sort, today))
+    .limit(limit);
+  return rows.map((row) => toListItem(row, viewer));
+}
+
+/** The viewer's local tasks in a project (or everywhere), newest first: Home's Local panel. */
+export async function localTasksFor(viewer: Viewer, project = "", limit = 50): Promise<TaskListItem[]> {
+  const rows = await selectList()
+    .where(and(visibility(viewer), localOnly(viewer), projectCondition(project)))
+    .orderBy(desc(tasks.createdAt), asc(tasks.id))
+    .limit(limit);
+  return rows.map((row) => toListItem(row, viewer));
+}
+
+/** What the palette may show: the main board, plus the viewer's own local tasks. */
+const paletteScope = (viewer: Viewer): SQL => or(visibleWork(viewer), localOnly(viewer))!;
+
 /** Title and description search for the command palette: open tasks first, then the most recently touched. */
 export async function searchTasks(viewer: Viewer, q: string, limit = 8): Promise<TaskListItem[]> {
   const term = q.trim().slice(0, 100);
   if (term === "") return [];
   const like = `%${escapeLike(term)}%`;
   const rows = await selectList()
-    .where(and(visibility(viewer), visibleWork(viewer), or(ilike(tasks.title, like), ilike(tasks.description, like))))
+    .where(and(visibility(viewer), paletteScope(viewer), or(ilike(tasks.title, like), ilike(tasks.description, like))))
     .orderBy(sql`(${tasks.status} in ('completed', 'rejected'))`, desc(tasks.updatedAt))
     .limit(limit);
   return rows.map((row) => toListItem(row, viewer));
@@ -298,7 +342,7 @@ export async function searchTasks(viewer: Viewer, q: string, limit = 8): Promise
 /** The tasks most recently touched in the workspace: what the palette offers before anything is typed. */
 export async function recentTasks(viewer: Viewer, limit = 6): Promise<TaskListItem[]> {
   const rows = await selectList()
-    .where(and(visibility(viewer), visibleWork(viewer)))
+    .where(and(visibility(viewer), paletteScope(viewer)))
     .orderBy(desc(tasks.updatedAt))
     .limit(limit);
   return rows.map((row) => toListItem(row, viewer));
@@ -420,8 +464,9 @@ export async function approvalStagingTasks(viewer: Viewer, project = ""): Promis
 export type MyWorkOptions = { project?: string; dates?: Pick<TaskFilters, "dateField" | "from" | "to"> };
 
 /**
- * Everything My Work groups, in one query: my open work and my recently finished work, and approvals I owe.
- * With a date range, "recently finished" is whatever completed inside it instead of the last two weeks.
+ * Everything My Work groups, in one query: my open work and my recently finished work, approvals I owe, and my
+ * local tasks (mine whoever they are assigned to: nobody else sees them). With a date range, "recently finished" is
+ * whatever completed inside it instead of the last two weeks.
  */
 export async function myWorkRows(viewer: Viewer, options: MyWorkOptions = {}): Promise<MyWorkRow[]> {
   const me = viewer.userId;
@@ -442,10 +487,10 @@ export async function myWorkRows(viewer: Viewer, options: MyWorkOptions = {}): P
     .where(
       and(
         visibility(viewer),
-        visibleWork(viewer),
+        or(visibleWork(viewer), localOnly(viewer)),
         projectCondition(options.project ?? ""),
         ...(options.dates ? dateFilterConditions(viewer, options.dates) : []),
-        or(and(assignedTo(me), or(isOpen, finished)), and(eq(tasks.approverId, me), eq(tasks.status, "awaiting_approval"))),
+        or(and(assignedTo(me), or(isOpen, finished)), and(eq(tasks.approverId, me), eq(tasks.status, "awaiting_approval")), localOnly(viewer)),
       ),
     );
   return rows.map((row) => ({
@@ -701,6 +746,7 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
       goalTitle: goals.title,
       assignees: assigneesJson,
       approvals: approvalsJson,
+      needsSignOff: needsSignOffSql,
       openComments: openCommentsSql,
       approver: sql<Person | null>`case when ${approverUser.id} is null then null else ${personJson(approverUser)} end`,
       creator: sql<Person>`${personJson(creatorUser)}`,
@@ -730,6 +776,7 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     approver: row.approver,
     creator: row.creator,
     proposalStatus: t.proposalStatus,
+    needsSignOff: row.needsSignOff,
     goalCloser: t.goalCloser,
     approvals: row.approvals.map((step) => ({ ...step, decidedAt: step.decidedAt ? new Date(step.decidedAt).toISOString() : null })),
     createdAt: t.createdAt.toISOString(),
@@ -824,23 +871,29 @@ export async function taskPeople(viewer: Viewer): Promise<PersonOption[]> {
 /** A sub-goal is offered as "Parent › Sub-goal", so two goals with similar names stay apart in a short list. */
 export const goalOptionLabel = (title: string, parentTitle: string | null): string => (parentTitle ? `${parentTitle} › ${title}` : title);
 
-/** The projects and goals new work can join: the active ones, by name (goals grouped by project, sub-goals after their parent). */
+/**
+ * The projects and goals new work can join: the active ones, by name (goals grouped by project, sub-goals after
+ * their parent). Each says whether a task this viewer adds there starts local (`signOff`: the goal's rule first,
+ * else the project's, unless the viewer skips that queue), so the forms can say so before the save.
+ */
 export async function activePlanning(viewer: Viewer): Promise<Pick<TaskFormOptions, "projects" | "goals">> {
+  const projectSignOff = sql<boolean>`(${projects}.requires_approval and not exists (select 1 from approval_bypass b where b.project_id = ${projects}.id and b.user_id = ${viewer.userId}))`;
+  const goalSignOff = sql<boolean>`(case when ${goals}.requires_approval then not exists (select 1 from approval_bypass b where b.goal_id = ${goals}.id and b.user_id = ${viewer.userId}) else ${projectSignOff} end)`;
   const [projectRows, goalRows] = await Promise.all([
     db
-      .select({ id: projects.id, name: projects.name })
+      .select({ id: projects.id, name: projects.name, signOff: projectSignOff })
       .from(projects)
       .where(and(eq(projects.orgId, viewer.orgId), eq(projects.status, "active")))
       .orderBy(asc(projects.name)),
     db
-      .select({ id: goals.id, title: goals.title, projectId: goals.projectId, parentTitle: parentGoal.title, projectName: projects.name })
+      .select({ id: goals.id, title: goals.title, projectId: goals.projectId, parentTitle: parentGoal.title, projectName: projects.name, signOff: goalSignOff })
       .from(goals)
       .innerJoin(projects, eq(projects.id, goals.projectId))
       .leftJoin(parentGoal, eq(parentGoal.id, goals.parentGoalId))
       .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active")))
       .orderBy(asc(projects.name), asc(sql`coalesce(${parentGoal.title}, ${goals.title})`), sql`${goals.parentGoalId} is not null`, asc(goals.title)),
   ]);
-  const goalOptions: GoalOption[] = goalRows.map((row) => ({ id: row.id, title: goalOptionLabel(row.title, row.parentTitle), projectId: row.projectId }));
+  const goalOptions: GoalOption[] = goalRows.map((row) => ({ id: row.id, title: goalOptionLabel(row.title, row.parentTitle), projectId: row.projectId, signOff: row.signOff }));
   return { projects: projectRows, goals: goalOptions };
 }
 

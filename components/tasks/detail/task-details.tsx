@@ -153,7 +153,7 @@ export function TaskDetails({
               <ApprovalChain steps={detail.approvals} currentId={detail.approvals.find((step) => step.decision === null)?.id ?? null} />
             </Row>
           ) : null}
-          <Row label={detail.proposalStatus ? "Proposed" : "Created"}>
+          <Row label={detail.proposalStatus && detail.proposalStatus !== "local" ? "Proposed" : "Created"}>
             <span className="text-muted-foreground">
               by <span className="text-foreground">{nameOf(detail.creator)}</span> · <RelativeTime date={new Date(detail.createdAt)} timeZone={timeZone} now={now} />
             </span>

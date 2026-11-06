@@ -249,6 +249,10 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
   // says when there are none); without one, every goal, and picking a goal puts the task in its project.
   const showGoal = options === null || options.goals.length > 0 || goalId !== "";
   const proposes = options?.proposesOnly === true;
+  // Sign-off applies where the task is going (the goal's rule first, else the project's): it will start local.
+  const goalChoice = goalId ? options?.goals.find((goal) => goal.id === goalId) : undefined;
+  const projectChoice = projectId ? options?.projects.find((project) => project.id === projectId) : undefined;
+  const local = !proposes && (goalChoice ? (goalChoice.signOff ?? false) : (projectChoice?.signOff ?? false));
 
   return (
     <form
@@ -473,6 +477,8 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
             </>
           ) : proposes ? (
             <span>A proposal: a leader or admin signs it off before it becomes a live task. Follow it under Proposals.</span>
+          ) : local ? (
+            <span data-local-hint>Sign-off is on here: the task stays local, seen by you alone, until you send it for sign-off from your Local section.</span>
           ) : (
             <>
               <span>Shortcuts in the title:</span>
@@ -507,7 +513,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
           </Button>
           <Button type="submit" disabled={pending || parsed.title === ""} className="ml-auto sm:ml-0">
             <Plus aria-hidden />
-            {pending ? (proposes ? "Proposing…" : "Adding…") : proposes ? "Propose task" : "Add task"}
+            {pending ? (proposes ? "Proposing…" : "Adding…") : proposes ? "Propose task" : local ? "Add local task" : "Add task"}
           </Button>
         </div>
       </div>

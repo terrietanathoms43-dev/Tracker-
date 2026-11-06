@@ -139,6 +139,8 @@ async function claimOrg(tx: Tx, seed: OrgSeed, createdBy: string): Promise<strin
 /** Everything inside a workspace, but not the workspace row itself. */
 async function wipeOrgContents(tx: Tx, orgId: string): Promise<void> {
   await tx.delete(notifications).where(eq(notifications.orgId, orgId));
+  // The Draft tab's notes are a person's own, but a walkthrough that typed some must not meet them on the next run.
+  await tx.delete(schema.drafts).where(eq(schema.drafts.orgId, orgId));
   await tx.delete(taskActivity).where(eq(taskActivity.orgId, orgId));
   // Tasks take their updates, links, assignments and sign-off chains with them; goals take their links and chains;
   // projects take their goals and chains (cascades).
@@ -216,10 +218,11 @@ function assertTaskConsistent(spec: SeedTask, seed: OrgSeed): void {
   if (spec.goal !== undefined && !seed.goals.some((goal) => goal.key === spec.goal)) throw new Error(`Seed task "${spec.title}" names an unknown goal "${spec.goal}"`);
   if (spec.project !== undefined && !seed.projects.some((project) => project.key === spec.project)) throw new Error(`Seed task "${spec.title}" names an unknown project "${spec.project}"`);
   if (spec.recurrence !== undefined && spec.dueInDays === null) throw new Error(`Seed task "${spec.title}" repeats but has no due date`);
-  // A proposal still waiting (or declined) is not work yet: it has no progress and was never started.
+  // A proposal still waiting (or declined), or a local task, is not work yet: it has no progress and was never started.
   if (spec.proposal !== undefined && spec.proposal.status !== "approved" && (spec.status !== "not_started" || spec.updates.length > 0)) {
     throw new Error(`Seed task "${spec.title}" is a ${spec.proposal.status} proposal but has started`);
   }
+  if (spec.proposal?.status === "local" && spec.proposal.steps.length > 0) throw new Error(`Seed task "${spec.title}" is local but carries a chain`);
 }
 
 /** A key lookup that fails loudly on a typo in seed-data.ts instead of writing a null. */
@@ -269,7 +272,7 @@ function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: Tas
   const log = (kind: TaskActivityKind, actorId: string, when: Date, extra: Partial<ActivityRow> = {}) =>
     activity.push({ orgId, taskId, actorId, kind, createdAt: when, ...extra });
 
-  log("created", creator, createdAt, spec.proposal ? { after: { title: spec.title, proposal: true } } : { after: { title: spec.title } });
+  log("created", creator, createdAt, spec.proposal?.status === "local" ? { after: { title: spec.title, local: true } } : spec.proposal ? { after: { title: spec.title, proposal: true } } : { after: { title: spec.title } });
 
   // The sign-off chain, each step as it stands, with the history lines the decisions left.
   const approvals: ApprovalRow[] = (spec.proposal?.steps ?? []).map((step, index) => ({
@@ -550,7 +553,7 @@ async function seedOrg(tx: Tx, seed: OrgSeed, ids: Ids, now: number): Promise<Se
     );
   }
 
-  return { orgId, name: seed.org.name, tasks: seed.tasks.length, proposals: seed.tasks.filter((task) => task.proposal !== undefined).length };
+  return { orgId, name: seed.org.name, tasks: seed.tasks.length, proposals: seed.tasks.filter((task) => task.proposal !== undefined && task.proposal.status !== "local").length };
 }
 
 // --- commands -------------------------------------------------------------------------------------
@@ -682,7 +685,8 @@ function startsWith(seed: OrgSeed, person: Person): string {
     count(open.filter((task) => task.dueInDays !== null && task.dueInDays < 0).length, "overdue"),
     count(open.filter((task) => task.status === "blocked").length, "blocked"),
     count(seed.tasks.filter((task) => task.approval?.approver === person).length, "awaiting their approval"),
-    count(seed.tasks.filter((task) => task.proposal !== undefined && task.createdBy === person).length, "proposal", "proposals", " of their own"),
+    count(seed.tasks.filter((task) => task.proposal !== undefined && task.proposal.status !== "local" && task.createdBy === person).length, "proposal", "proposals", " of their own"),
+    count(seed.tasks.filter((task) => task.proposal?.status === "local" && task.createdBy === person).length, "local task", "local tasks", " only they can see"),
     count(pending.filter(myStep).length, "proposal", "proposals", " to sign off"),
     count(seed.notifications.filter((notice) => notice.person === person && !notice.read).length, "unread notification", "unread notifications"),
     ...seed.goals.filter((goal) => goal.owner === person).map((goal) => `owns ${goal.parent ? "sub-goal" : "goal"} "${goal.title}"`),
@@ -704,7 +708,8 @@ function contents(seed: OrgSeed): string[] {
       .map(([label, n]) => `${n} ${label.toLowerCase()}`)
       .join(", ");
   const live = seed.tasks.filter((task) => task.proposal === undefined || task.proposal.status === "approved");
-  const proposals = seed.tasks.filter((task) => task.proposal !== undefined);
+  const proposals = seed.tasks.filter((task) => task.proposal !== undefined && task.proposal.status !== "local");
+  const local = seed.tasks.filter((task) => task.proposal?.status === "local");
   const open = live.filter((task) => !CLOSED_STATUSES.includes(task.status));
   const comments = seed.tasks.flatMap((task) => task.comments ?? []);
   const openComments = comments.filter((comment) => comment.resolvedBy === undefined).length;
@@ -730,6 +735,7 @@ function contents(seed: OrgSeed): string[] {
       proposals.map((task) => task.proposal!.status),
       PROPOSAL_STATUS_LABELS,
     )}.`,
+    ...(local.length > 0 ? [`- ${local.length} local task${local.length === 1 ? "" : "s"} (seen only by ${[...new Set(local.map((task) => name(task.createdBy)))].join(", ")}; not sent for sign-off yet).`] : []),
     seed.notifications.length > 0
       ? `- ${seed.notifications.length} notifications (${seed.notifications.filter((notice) => !notice.read).length} unread) for ${[...new Set(seed.notifications.map((notice) => name(notice.person)))].join(", ")}.`
       : "- No notifications.",

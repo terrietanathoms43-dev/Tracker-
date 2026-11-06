@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { tasks } from "@/db/schema";
-import { assigneesJson, openCommentsSql } from "@/lib/dal/tasks";
+import { assigneesJson, needsSignOffSql, openCommentsSql, selectList } from "@/lib/dal/tasks";
 
 // A correlated subquery must name the outer table. Drizzle renders `${tasks.id}` as a bare "id" in a select from one
 // table (no join), and inside the subquery that bare "id" is the subquery's own column, so the count came back 0 and
@@ -12,5 +12,12 @@ describe("correlated SQL fragments", () => {
     expect(sql).toContain('ta.task_id = "tasks".id');
     expect(sql).toContain('u.task_id = "tasks".id');
     expect(sql).not.toMatch(/= "id"\b/);
+  });
+
+  it("the sign-off fragment names the joined goal and project and the task's own maker", () => {
+    const { sql } = selectList().toSQL();
+    expect(sql).toContain('b.goal_id = "goals".id and b.user_id = "tasks".created_by');
+    expect(sql).toContain('b.project_id = "projects".id and b.user_id = "tasks".created_by');
+    expect(needsSignOffSql).toBeDefined();
   });
 });

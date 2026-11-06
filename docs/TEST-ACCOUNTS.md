@@ -28,7 +28,7 @@ Also seeded: `casey@trackwise.test` (Casey Other), a member of Other Co who is n
 | `admin` | 3 proposals to sign off · 1 unread notification · owns goal "Cut incident response time in half" |
 | `leader` | 2 open tasks · 2 awaiting their approval · 2 proposals to sign off · 5 unread notifications · owns goal "Ship the self-serve onboarding" · owns goal "Every incident gets a review" · owns goal "Patient intake form ships" · owns project "Onboarding flow" · owns project "Lumen Health" |
 | `member` | 11 open tasks · 2 overdue · 2 blocked · 2 unread notifications · owns goal "Public status page live" · owns project "Incident tooling" |
-| `member2` | 10 open tasks · 1 overdue · 1 blocked · 3 proposals of their own · owns sub-goal "Invitations work without a support call" · owns goal "Weekly ops duties" · owns goal "Retire the legacy billing jobs" · owns project "Billing jobs migration" |
+| `member2` | 10 open tasks · 1 overdue · 1 blocked · 3 proposals of their own · 2 local tasks only they can see · owns sub-goal "Invitations work without a support call" · owns goal "Weekly ops duties" · owns goal "Retire the legacy billing jobs" · owns project "Billing jobs migration" |
 | `stakeholder` | 2 proposals of their own |
 | `other` | 1 open task · 1 proposal to sign off · owns goal "Answer every support ticket within a day" · owns project "Help center refresh" |
 
@@ -51,6 +51,7 @@ Also seeded: `casey@trackwise.test` (Casey Other), a member of Other Co who is n
 - Goal chain: "Public status page live" → "Cut incident response time in half"; "Cut incident response time in half" → "Every incident gets a review".
 - 32 live tasks: 10 in progress, 7 completed, 8 not started, 3 blocked, 2 awaiting approval, 2 rejected. 3 overdue, 2 unassigned, 2 with two people on them, 1 repeating; 6 comments (4 still open) and 12 evidence links.
 - 5 proposals: 3 waiting for sign-off, 1 declined, 1 approved.
+- 2 local tasks (seen only by Sam Dev; not sent for sign-off yet).
 - 13 notifications (8 unread) for Morgan Lead, Avery Admin, Jordan Dev, Sam Dev, Taylor Ops.
 - Dates are relative to the moment of seeding, so re-seed (or `npm run test:tidy`) to keep the dashboards current.
 

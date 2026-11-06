@@ -84,8 +84,11 @@ function assertCanSeeReports(viewer: Viewer): void {
   if (!canSeeReports(viewer)) throw new GuardError("forbidden");
 }
 
-/** Everything /reports prints for a range and a project. Blocked and overdue are as of `today`, whatever the range. */
-export async function buildReport(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<Report> {
+/**
+ * Everything /reports prints for a range and a project. Blocked and overdue are as of `today`, whatever the range.
+ * `includeLocal` (the My work view) draws the viewer's own local tasks in the activity widget; nothing else counts them.
+ */
+export async function buildReport(viewer: Viewer, range: ReportRange, today: string, project: ReportProject, options: { includeLocal?: boolean } = {}): Promise<Report> {
   assertCanSeeReports(viewer);
   // Two waves rather than one: the sections fan out into twenty-odd queries, and a pool of ten against a database
   // that may be waking up should not have them all racing for a connection at once.
@@ -101,7 +104,7 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
   const [contributions, healthBoard, timeline, decisions, stalled, pace] = await Promise.all([
     contributionCounts(viewer, range, today, project),
     projectAndGoalHealth(viewer, today, project),
-    reportTimeline(viewer, range, today, project),
+    reportTimeline(viewer, range, today, project, { includeLocal: options.includeLocal === true }),
     pendingDecisions(viewer, project),
     stalledTasks(viewer, project),
     reportPace(viewer, today, project),

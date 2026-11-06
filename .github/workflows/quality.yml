@@ -1,9 +1,9 @@
 name: Trackwise quality checks
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
 permissions:
   contents: read
 jobs:
@@ -27,3 +27,29 @@ jobs:
       - run: npm run lint
       - run: npm run test:unit
       - run: npm run build
+
+  # A push to main or staging that passes the checks above is deployed by running deploy.sh on the VPS over SSH
+  # (docs/RUNBOOK.md): main in the production checkout, staging in the staging checkout. The job runs in the
+  # GitHub environment named after the branch (`production` or `staging`), so VPS_APP_DIR, the checkout's
+  # directory, is that environment's secret; VPS_HOST, VPS_USER, VPS_SSH_KEY and VPS_HOST_KEY are repository
+  # secrets the two share unless an environment overrides one. A pull request only runs the checks. Schema
+  # changes stay a deliberate step on the server.
+  deploy:
+    name: Deploy ${{ github.ref_name }}
+    needs: checks
+    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'staging')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    concurrency:
+      group: deploy-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - name: Install the deploy key and trust the server
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.VPS_HOST_KEY }}" >> ~/.ssh/known_hosts
+      - name: Pull, build and restart under pm2
+        run: ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "cd '${{ secrets.VPS_APP_DIR }}' && ./deploy.sh"

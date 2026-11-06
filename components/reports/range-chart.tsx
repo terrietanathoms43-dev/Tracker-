@@ -153,6 +153,7 @@ export function RangeChart({
   today,
   showMyWork = false,
   title,
+  description,
   pace = null,
   overdueEarlier = 0,
 }: {
@@ -161,6 +162,8 @@ export function RangeChart({
   /** The My work view: only the viewer's own tasks are drawn and counted. */
   showMyWork?: boolean;
   title: string;
+  /** One sentence under the title: what this view's widget draws. */
+  description?: string;
   /** The scope's pace towards its target date, drawn as a thermometer above the days. */
   pace?: Pace | null;
   /** Open tasks overdue since before the chart's first day: they have no column, so they are said in words. */
@@ -298,6 +301,7 @@ export function RangeChart({
           <h2 id="range-chart-title" className="text-base font-semibold">
             {title}
           </h2>
+          {description ? <p className="text-[13px] text-muted-foreground">{description}</p> : null}
           <p className="text-[12px] text-muted-foreground">
             {overdueNote ? <span className="font-semibold text-status-blocked-fg">{overdueNote} · </span> : null}
             {summary} · to {TIMELINE_LOOKAHEAD_DAYS} days ahead

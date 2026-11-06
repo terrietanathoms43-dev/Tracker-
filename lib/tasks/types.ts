@@ -28,11 +28,13 @@ export type TaskListItem = {
   assignees: Assignees;
   project: { id: string; name: string } | null;
   goal: { id: string; title: string } | null;
-  /** Null for a live task; a proposal's state otherwise. */
+  /** Null for a live task; a proposal's state otherwise ("local": the maker's alone, not sent yet). */
   proposal: ProposalStatus | null;
+  /** A local task: whether sending it on starts a sign-off chain (true) or publishes it at once (false). */
+  needsSignOff: boolean;
   /** The goal's "Everything completed" task: completing it marks the goal achieved (2026-11-04 log). */
   goalCloser: boolean;
-  /** Whether the row's menu offers Delete (leaders, or the proposer of an open proposal). */
+  /** Whether the row's menu offers Delete (leaders, the proposer of an open proposal, the maker of a local task). */
   canDelete: boolean;
   updatedAt: string;
   /** Attention lists only: why it is there ("Overdue", "Your approval", …). */
@@ -45,14 +47,19 @@ export type TaskPage = { items: TaskListItem[]; nextCursor: string | null };
 /** A worker in a picker, with the role that decides default approvers. */
 export type PersonOption = Person & { role: OrgRole };
 
-/** A goal in a picker: a sub-goal's label carries its parent ("Ship onboarding › Invite flow"); every goal names its project. */
-export type GoalOption = { id: string; title: string; projectId: string };
+/**
+ * A goal in a picker: a sub-goal's label carries its parent ("Ship onboarding › Invite flow"); every goal names its
+ * project. `signOff` (the task forms' options): a task the viewer adds here starts local, because the goal (or else
+ * its project) asks for sign-off and the viewer doesn't skip the queue.
+ */
+export type GoalOption = { id: string; title: string; projectId: string; signOff?: boolean };
 
 /** What the New task form needs: who you are, who can own work, and what it can belong to. */
 export type TaskFormOptions = {
   viewerId: string;
   people: Person[];
-  projects: { id: string; name: string }[];
+  /** `signOff`: a task the viewer adds to the project starts local (its sign-off is on and they don't skip the queue). */
+  projects: { id: string; name: string; signOff: boolean }[];
   /** The ids of the projects this person pinned, in their order: the pickers show them first. */
   pinnedProjects: string[];
   goals: GoalOption[];
@@ -106,7 +113,9 @@ export type TaskDetail = {
   approver: Person | null;
   creator: Person;
   proposalStatus: ProposalStatus | null;
-  /** The sign-off chain, in order (empty for a task that was live from the start). */
+  /** A local task: whether sending it on starts a sign-off chain, or publishes it at once because none applies. */
+  needsSignOff: boolean;
+  /** The sign-off chain, in order (empty for a task that was live from the start, or not sent yet). */
   approvals: ApprovalStepView[];
   /** The goal's "Everything completed" task. */
   goalCloser: boolean;

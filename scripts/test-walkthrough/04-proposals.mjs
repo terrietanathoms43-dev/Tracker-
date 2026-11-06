@@ -1,8 +1,8 @@
 // A proposal's whole life (docs/PLAN.md, 2026-11-03 log): Taylor (a stakeholder) proposes a task → it is not in
 // the task list → Morgan declines it with a note → Taylor sees the note and sends it again → Morgan approves → it
 // is a live task in the list, with the history and the notifications in the database. Then the sign-off chain of
-// Lumen Health: Sam proposes a task there → Morgan signs step 1 → Avery signs step 2 → live; Jordan adds one and
-// skips the queue. Riley (Other Co) sees none of it.
+// Lumen Health: Sam adds a task there (it starts local: 2026-11-06 log) and sends it for sign-off → Morgan signs
+// step 1 → Avery signs step 2 → live; Jordan adds one and skips the queue. Riley (Other Co) sees none of it.
 //
 // Usage: node scripts/test-walkthrough/04-proposals.mjs [--base=http://localhost:3021]
 import { closePool, finish, openBrowser, query, step, stoppedOn, tidy } from "./lib.mjs";
@@ -90,9 +90,14 @@ try {
   await sam.goto(`/projects/${lumen.id}`, 4000);
   step("the project page shows that new tasks need sign-off", (await sam.waitFor("Lumen Health")) && (await sam.has("Sign-off")));
   await sam.type("#quick-add-title", LUMEN_TITLE);
-  await sam.click("Add task", { exact: true, wait: 2500 });
-  step("a member's task in an approve-only project becomes a proposal", await sam.waitFor("Proposed. It goes live once it is signed off."));
-  const [lumenTask] = await query("select id from tasks where title = $1", [LUMEN_TITLE]);
+  await sam.click("Add local task", { exact: true, wait: 2500 });
+  step("a member's task in an approve-only project starts local, theirs alone", await sam.waitFor("Saved as a local task"));
+  const [lumenTask] = await query("select id, proposal_status from tasks where title = $1", [LUMEN_TITLE]);
+  step("it is local in the database", lumenTask?.proposal_status === "local", JSON.stringify(lumenTask));
+  await sam.goto(`/tasks/${lumenTask.id}`, 4000);
+  await sam.waitFor("Local task");
+  await sam.click("Send for sign-off", { exact: true, wait: 2500 });
+  step("sending it from its page makes it a proposal", await sam.waitFor("Sent for sign-off."));
   const lumenChain = await query("select a.position, u.name, a.decision from task_approvals a join users u on u.id = a.user_id where a.task_id = $1 order by a.position", [lumenTask.id]);
   step("its chain is Morgan then Avery", lumenChain.map((row) => row.name).join(",") === "Morgan Lead,Avery Admin", JSON.stringify(lumenChain));
   await morgan.goto("/proposals", 4000);

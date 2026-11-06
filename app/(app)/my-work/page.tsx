@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { LocalTasksSection } from "@/components/tasks/local-section";
 import { MyWorkDates } from "@/components/tasks/my-work-dates";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { SelectionProvider } from "@/components/tasks/selection";
@@ -17,7 +18,8 @@ import { dayKey } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
 
 // /my-work: the viewer's own work in four groups, narrowed to the navigation's project and, when asked, to a range
-// of dates (made, completed or updated between two days: docs/PLAN.md, 2026-11-03 log).
+// of dates (made, completed or updated between two days: docs/PLAN.md, 2026-11-03 log). The viewer's local tasks
+// come first in a Local section of their own, with its own actions, while there are any (2026-11-06 log).
 
 export const metadata: Metadata = { title: "My Work" };
 
@@ -34,7 +36,7 @@ export default async function MyWorkPage(props: PageProps<"/my-work">) {
   const dates = parseFilters(raw);
   const project = scope?.id ?? "";
   const groups = await myWorkGroups(viewer, today, { project, dates });
-  const nothing = groups.attention.length + groups.continueWorking.length + groups.waiting.length + groups.finished.length === 0;
+  const nothing = groups.local.length + groups.attention.length + groups.continueWorking.length + groups.waiting.length + groups.finished.length === 0;
   const range = describeDateRange(dates, today);
   const mine = { assignee: "me" as const };
 
@@ -49,6 +51,8 @@ export default async function MyWorkPage(props: PageProps<"/my-work">) {
           description={range ? `No task assigned to you was ${range.toLowerCase()}. Clear the dates to see everything.` : "Tasks assigned to you show up here, grouped by what needs doing next."}
         />
       ) : (
+        <div className="grid gap-8">
+        <LocalTasksSection items={groups.local.slice(0, CAP)} total={groups.local.length} today={today} seeAllHref={tasksHref({})} description="Only you can see these; they aren't on the main board. Send them for sign-off when they're ready, or publish them where no sign-off applies." />
         <SelectionProvider canDelete={isLeader(viewer)}>
         <div className="grid gap-8">
           <TaskSection
@@ -84,6 +88,7 @@ export default async function MyWorkPage(props: PageProps<"/my-work">) {
           />
         </div>
         </SelectionProvider>
+        </div>
       )}
     </>
   );
