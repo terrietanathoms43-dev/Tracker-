@@ -2,6 +2,7 @@ import { TASK_STATUS_LABELS } from "@/lib/constants";
 import { nameOf } from "@/lib/tasks/people";
 import { formatDue } from "@/lib/time";
 import type { ContributionRow, ReportTask } from "./data";
+import { addedInCycle, type ActiveScope } from "./scope";
 
 // The report's tables as CSV (RFC 4180): comma-separated, CRLF line ends, a field quoted when it holds a quote,
 // a comma or a line break, and quotes inside doubled. Pure, so the quoting rules are unit-tested.
@@ -28,7 +29,7 @@ export function toCsv(rows: CsvCell[][]): string {
   return rows.map((row) => row.map(csvCell).join(",") + "\r\n").join("");
 }
 
-// --- the three tables ---------------------------------------------------------------------------------------------
+// --- the four tables ----------------------------------------------------------------------------------------------
 
 /** "Jordan Dev; Sam Dev"; "Unassigned" when nobody. The file keeps names where the page shows avatars. */
 const peopleOf = (task: ReportTask) => (task.assignees.length === 0 ? "Unassigned" : task.assignees.map((person) => nameOf(person)).join("; "));
@@ -58,5 +59,33 @@ export function contributionsTable(rows: ContributionRow[]): CsvCell[][] {
   return [
     ["Person", "Email", "Overdue", "Blocked", "Open", "Completed", "Change vs prior"],
     ...rows.map((row) => [nameOf(row.person, ""), row.person.email, row.overdue, row.blocked, row.open, row.completed, row.deltaCompleted ?? 0]),
+  ];
+}
+
+/** What a scope row says in one column: the blocker (and who unblocks it), the next action, or the completion summary. */
+const scopeDetail = (task: ReportTask): string | null => {
+  if (task.status === "completed") return task.completionSummary;
+  if (task.status === "blocked") return [task.blockedReason, task.blockedBy ? `Waiting on ${task.blockedBy}` : null].filter((part) => part !== null).join(" · ") || null;
+  return task.nextAction;
+};
+
+/** The active scope in the view's order (lib/reports/scope.ts): one row per task, its place, its dates, and one Detail column. */
+export function scopeTable(scope: ActiveScope): CsvCell[][] {
+  return [
+    ["Title", "Project", "Goal", "Assignees", "Status", "Due date", "Completed on", "Added on", "New this cycle", "Detail"],
+    ...scope.groups.flatMap((group) =>
+      group.tasks.map((task) => [
+        task.title,
+        task.project?.name ?? "",
+        task.goalTitle ?? "",
+        peopleOf(task),
+        TASK_STATUS_LABELS[task.status],
+        task.dueDate,
+        task.completedDay,
+        task.createdDay,
+        addedInCycle(task, scope.range) ? "yes" : "no",
+        scopeDetail(task),
+      ]),
+    ),
   ];
 }

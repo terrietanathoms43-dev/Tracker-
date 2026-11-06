@@ -20,7 +20,8 @@ import { daysOf, shiftDay, timelineWindow, type ReportRange } from "./range";
 // (lib/reports/build.ts). A report is about live tasks only (proposals still waiting are not work yet; a local task
 // is nobody's but its maker's) and may be about one project (`project`: an id, or "" for the whole workspace, the
 // navigation's scope); every section narrows the same way, so its numbers always agree. The one exception is the
-// activity widget on the My work view, which also draws the viewer's own local tasks (2026-11-06 log).
+// activity widget on the My work view, which also draws the viewer's own local tasks (2026-11-06 log). The Active
+// scope view's list (`activeScopeTasks`) takes every open task whatever the range: open work is as of today.
 
 /** A task as a report prints it. `completedDay` is the calendar day it was completed on, in the viewer's timezone. */
 export type ReportTask = {
@@ -31,6 +32,8 @@ export type ReportTask = {
   assignees: Assignees;
   dueDate: string | null;
   completedDay: string | null;
+  /** The calendar day it was created on, in the viewer's timezone: the Active scope view marks what a cycle added. */
+  createdDay: string;
   /** When anything last changed on it (an ISO instant): a stalled task is one where that was a week or more ago. */
   updatedAt: string;
   completionSummary: string | null;
@@ -39,6 +42,7 @@ export type ReportTask = {
   blockedBy: string | null;
   /** The goal it serves. */
   goalId: string | null;
+  goalTitle: string | null;
   project: { id: string; name: string } | null;
   evidence: { url: string; label: string | null }[];
 };
@@ -201,12 +205,14 @@ async function reportTasks(viewer: Viewer, project: ReportProject, where: SQL, o
       priority: tasks.priority,
       dueDate: tasks.dueDate,
       completedAt: tasks.completedAt,
+      createdAt: tasks.createdAt,
       updatedAt: tasks.updatedAt,
       completionSummary: tasks.completionSummary,
       nextAction: tasks.nextAction,
       blockedReason: tasks.blockedReason,
       blockedBy: tasks.blockedBy,
       goalId: tasks.goalId,
+      goalTitle: goals.title,
       projectId: projects.id,
       projectName: projects.name,
       people: assigneesJson,
@@ -214,12 +220,14 @@ async function reportTasks(viewer: Viewer, project: ReportProject, where: SQL, o
     })
     .from(tasks)
     .leftJoin(projects, and(eq(projects.id, tasks.projectId), eq(projects.orgId, viewer.orgId)))
+    .leftJoin(goals, and(eq(goals.id, tasks.goalId), eq(goals.orgId, viewer.orgId)))
     .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, projectCondition(project), where))
     .orderBy(...orderBy)
     .limit(1000);
-  return rows.map(({ people, completedAt, updatedAt, projectId, projectName, ...row }) => ({
+  return rows.map(({ people, completedAt, createdAt, updatedAt, projectId, projectName, ...row }) => ({
     ...row,
     completedDay: completedAt ? dayKey(completedAt, viewer.timezone) : null,
+    createdDay: dayKey(createdAt, viewer.timezone),
     updatedAt: updatedAt.toISOString(),
     project: projectId && projectName ? { id: projectId, name: projectName } : null,
     assignees: people,
@@ -258,6 +266,15 @@ export function blockedOrOverdue(viewer: Viewer, today: string, project: ReportP
 /** Stalled: in progress, but nothing has changed on it for STALLED_AFTER_DAYS days. The quietest first. */
 export function stalledTasks(viewer: Viewer, project: ReportProject): Promise<ReportTask[]> {
   return reportTasks(viewer, project, and(eq(tasks.status, "in_progress"), sql`${tasks.updatedAt} < now() - make_interval(days => ${STALLED_AFTER_DAYS}::int)`)!, "quiet");
+}
+
+/**
+ * The active reporting scope (docs/PLAN.md, 2026-11-06 log): what the cycle was to work on. Every live task still
+ * open today, whatever the range, plus every task completed on a day in the range (the day of the last report to
+ * today, as the controls default). Soonest due first; lib/reports/scope.ts regroups the rows by status.
+ */
+export function activeScopeTasks(viewer: Viewer, range: ReportRange, project: ReportProject): Promise<ReportTask[]> {
+  return reportTasks(viewer, project, or(isOpen, and(eq(tasks.status, "completed"), isNotNull(tasks.completedAt), withinDays(tasks.completedAt, range, viewer.timezone)))!, "due");
 }
 
 /**

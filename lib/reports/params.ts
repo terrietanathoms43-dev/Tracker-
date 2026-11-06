@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { OrgRole } from "@/lib/constants";
 import { lastDays, type ReportRange } from "./range";
 
 // The report's state lives in the URL (`/reports?from&to&cut&project`, `/reports/export?from&to&table&project`).
@@ -6,18 +7,49 @@ import { lastDays, type ReportRange } from "./range";
 
 export const DEFAULT_RANGE_DAYS = 30;
 
-export const REPORT_TABLES = ["delivered", "open", "contributions"] as const;
+export const REPORT_TABLES = ["delivered", "open", "contributions", "scope"] as const;
 export type ReportTable = (typeof REPORT_TABLES)[number];
 
-/** The three views of the report: what admins, leaders and members each open on first. */
-export const REPORT_CUTS = ["exec", "leader", "member"] as const;
+/** The four views of the report: what admins, leaders and members each open on first, and the active reporting scope. */
+export const REPORT_CUTS = ["exec", "leader", "member", "scope"] as const;
 export type ReportCut = (typeof REPORT_CUTS)[number];
 
 export const REPORT_CUT_LABELS: Record<ReportCut, string> = {
   exec: "Executive health",
   leader: "Workload",
   member: "My work",
+  scope: "Active scope",
 };
+
+/**
+ * The views a role may open, in tab order (docs/PLAN.md, 2026-11-04 and 2026-11-06 logs): admins and leaders switch
+ * between all four; a member gets their own work and the active scope; a stakeholder the Executive view and the
+ * active scope. The scope is the report meeting's shared baseline, so everyone who sees Reports has it.
+ */
+export function reportCutsFor(role: OrgRole): ReportCut[] {
+  switch (role) {
+    case "admin":
+    case "leader":
+      return ["exec", "leader", "member", "scope"];
+    case "member":
+      return ["member", "scope"];
+    case "stakeholder":
+      return ["exec", "scope"];
+  }
+}
+
+/** The view a role lands on: admins and stakeholders the Executive view, leaders Workload, members My work. */
+export function defaultReportCut(role: OrgRole): ReportCut {
+  switch (role) {
+    case "admin":
+    case "stakeholder":
+      return "exec";
+    case "leader":
+      return "leader";
+    case "member":
+      return "member";
+  }
+}
 
 /**
  * Which project the report is about: "" is the whole workspace, "none" is work in no project, anything else a
@@ -55,7 +87,7 @@ export function parseReportProject(raw: Raw): ReportProject {
 
 const tableSchema = z.enum(REPORT_TABLES);
 
-/** Which CSV the export route was asked for, or null when it isn't one of the three. */
+/** Which CSV the export route was asked for, or null when it isn't one of the four. */
 export function parseReportTable(raw: Raw): ReportTable | null {
   const parsed = tableSchema.safeParse(one(raw, "table"));
   return parsed.success ? parsed.data : null;
@@ -63,10 +95,10 @@ export function parseReportTable(raw: Raw): ReportTable | null {
 
 const cutSchema = z.enum(REPORT_CUTS);
 
-/** The view in the address, or `fallback` (the role's own) when it isn't one of the three. */
-export function parseReportCut(raw: Raw, fallback: ReportCut): ReportCut {
+/** The view in the address when it is one the viewer may open (`allowed`), else `fallback` (the role's own). */
+export function parseReportCut(raw: Raw, fallback: ReportCut, allowed: readonly ReportCut[] = REPORT_CUTS): ReportCut {
   const parsed = cutSchema.safeParse(one(raw, "cut"));
-  return parsed.success ? parsed.data : fallback;
+  return parsed.success && allowed.includes(parsed.data) ? parsed.data : fallback;
 }
 
 /**

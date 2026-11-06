@@ -157,7 +157,7 @@ try {
     const jordan = (browsers.jordan = await openBrowser({ role: "member", width: 390, height: 844, dark: true }));
     await jordan.goto("/reports", 4000);
     await jordan.settle(20_000);
-    step("a member gets the My work chart", await jordan.waitFor("My deliveries and what's due next"));
+    step("a member gets the My work chart", await jordan.waitFor("Your activity, deliveries and what's due next"));
     const mine = await count(
       `select count(*)::int as n from tasks t join task_assignees a on a.task_id = t.id join users u on u.id = a.user_id
          where t.org_id = (${org}) and u.email = 'jordan@trackwise.test' and t.status = 'completed' and t.completed_at >= ($1::date - 29)::timestamp at time zone 'America/Jamaica'`,
