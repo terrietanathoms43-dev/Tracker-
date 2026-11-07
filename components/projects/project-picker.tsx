@@ -11,8 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import type { ProjectStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { noRecents, readRecents, RECENT_PROJECTS_KEY, rememberRecent, subscribeRecents } from "@/components/pickers/recents";
-import { stepThrough, useWheelStep } from "@/components/pickers/use-wheel-step";
-import { WheelHint } from "@/components/pickers/wheel-hint";
+
 
 // The one project picker (docs/PLAN.md, 2026-11-04 log): the navigation's scope, the add bar, the New task and
 // goal dialogs and the task page all open the same searchable list. Pinned projects come first, in the order the
@@ -214,13 +213,6 @@ export function ProjectPicker({
     onPinsChange?.(next);
   }
 
-  // The mouse wheel over the closed trigger walks the list in the order it shows. It leaves the recents alone, so
-  // the order doesn't shift under the pointer while scrolling.
-  const wheelOrder = [...(noneLabel !== undefined ? [""] : []), ...[...pinnedItems, ...recentItems, ...activeRest, ...closedRest].map((option) => option.id)];
-  const triggerRef = useWheelStep<HTMLButtonElement>((direction) => {
-    const next = stepThrough(wheelOrder, value, direction);
-    if (next !== null) onChange(next);
-  }, !disabled && !open && options !== null);
 
   const text = chosen ? chosen.name : value !== "" && options === null ? "Loading…" : (noneLabel ?? placeholder);
   const muted = chosen === null && noneLabel === undefined;
@@ -244,8 +236,7 @@ export function ProjectPicker({
         if (!next) setQuery("");
       }}
     >
-      <WheelHint disabled={disabled || open || options === null}>
-        <PopoverTrigger ref={triggerRef} id={id} aria-label={trigger === "icon" ? `${label}: ${chosen ? chosen.name : (noneLabel ?? "none")}` : label} aria-invalid={invalid ? true : undefined} disabled={disabled} data-value={value} {...triggerProps} className={cn(triggerClass, className)}>
+      <PopoverTrigger id={id} aria-label={trigger === "icon" ? `${label}: ${chosen ? chosen.name : (noneLabel ?? "none")}` : label} aria-invalid={invalid ? true : undefined} disabled={disabled} data-value={value} {...triggerProps} className={cn(triggerClass, className)}>
         {trigger === "icon" ? (
           <FolderKanban className="size-5" aria-hidden />
         ) : (
@@ -256,7 +247,6 @@ export function ProjectPicker({
           </>
         )}
       </PopoverTrigger>
-      </WheelHint>
       <PopoverContent align="start" className="w-(--radix-popover-trigger-width) min-w-80 max-w-[calc(100vw-1.5rem)] p-0" data-project-picker>
         <Command shouldFilter={false} loop>
           <CommandInput value={query} onValueChange={setQuery} placeholder="Search projects…" maxLength={LIMITS.search} />
