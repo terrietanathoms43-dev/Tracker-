@@ -38,6 +38,7 @@ export const TASK_STATUSES = [
   "deferred",
   "rejected",
   "cancelled",
+  "merged",
   "completed",
 ] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -50,14 +51,18 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   deferred: "Deferred",
   rejected: "Rejected",
   cancelled: "Cancelled",
+  merged: "Merged",
   completed: "Completed",
 };
 
 /** The closed statuses: hidden from lists unless "Show closed" is on, never overdue, never on the board but Completed. */
-export const CLOSED_STATUSES: readonly TaskStatus[] = ["completed", "rejected", "deferred", "cancelled"];
+export const CLOSED_STATUSES: readonly TaskStatus[] = ["completed", "rejected", "deferred", "cancelled", "merged"];
 
-/** Closed without being completed: each asks for a reason (kept in `tasks.rejection_reason`) and can be reopened. */
-export const CLOSED_WITHOUT_COMPLETION: readonly TaskStatus[] = ["rejected", "deferred", "cancelled"];
+/**
+ * Closed without being completed: each asks for a reason (kept in `tasks.rejection_reason`) and can be reopened.
+ * Merged (sub-tasks, 2026-11-08 log) is only possible on a task attached to a parent: a duplicate folded into it.
+ */
+export const CLOSED_WITHOUT_COMPLETION: readonly TaskStatus[] = ["rejected", "deferred", "cancelled", "merged"];
 
 export const isClosedStatus = (status: TaskStatus): boolean => CLOSED_STATUSES.includes(status);
 
@@ -90,6 +95,7 @@ export const TASK_ACTIVITY_KINDS = [
   "rejected",
   "deferred",
   "cancelled",
+  "merged",
   "completed",
   "reopened",
   "progress_updated",
@@ -104,6 +110,8 @@ export const TASK_ACTIVITY_KINDS = [
   "proposal_resubmitted",
   "proposal_sent",
   "published",
+  "attached",
+  "detached",
 ] as const;
 export type TaskActivityKind = (typeof TASK_ACTIVITY_KINDS)[number];
 

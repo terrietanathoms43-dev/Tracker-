@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { Ban, CheckCircle2, Circle, CircleDot, CirclePause, Clock, OctagonAlert, XCircle, type LucideIcon } from "lucide-react";
+import { Ban, CheckCircle2, Circle, CircleDot, CirclePause, Clock, GitMerge, OctagonAlert, XCircle, type LucideIcon } from "lucide-react";
 import { TASK_STATUS_LABELS, type TaskStatus } from "@/lib/constants";
 
 // One table maps each status to its icon and tokens (Apex UI §4, §6); every status rendering reads it.
@@ -11,6 +11,7 @@ const STYLES: Record<TaskStatus, { icon: LucideIcon; badge: string; dot: string 
   deferred: { icon: CirclePause, badge: "bg-status-deferred-bg text-status-deferred-fg", dot: "text-status-deferred-dot" },
   rejected: { icon: XCircle, badge: "bg-status-rejected-bg text-status-rejected-fg", dot: "text-status-rejected-dot" },
   cancelled: { icon: Ban, badge: "bg-status-cancelled-bg text-status-cancelled-fg", dot: "text-status-cancelled-dot" },
+  merged: { icon: GitMerge, badge: "bg-status-merged-bg text-status-merged-fg", dot: "text-status-merged-dot" },
   completed: { icon: CheckCircle2, badge: "bg-status-completed-bg text-status-completed-fg", dot: "text-status-completed-dot" },
 };
 

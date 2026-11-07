@@ -9,7 +9,7 @@ import type { ReportRange } from "./range";
 // grouping and the counts are unit-tested; lib/reports/data.ts (`activeScopeTasks`) fetches the rows.
 
 /** The groups in the order the view lists them: stuck, waiting on someone, moving, not started, parked, dropped, cancelled, then done. */
-export const SCOPE_GROUPS = ["blocked", "awaiting_approval", "in_progress", "not_started", "deferred", "rejected", "cancelled", "completed"] as const satisfies readonly TaskStatus[];
+export const SCOPE_GROUPS = ["blocked", "awaiting_approval", "in_progress", "not_started", "deferred", "rejected", "cancelled", "merged", "completed"] as const satisfies readonly TaskStatus[];
 export type ScopeGroupStatus = (typeof SCOPE_GROUPS)[number];
 
 export type ScopeGroup = {

@@ -376,6 +376,8 @@ export const tasks = pgTable(
     projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
     /** When set, project_id is that goal's project (actions keep the two in step). */
     goalId: text("goal_id").references(() => goals.id, { onDelete: "set null" }),
+    /** Sub-tasks (2026-11-08 log): the task this one is attached to, one level deep; a child lives where its parent lives. */
+    parentTaskId: text("parent_task_id").references((): AnyPgColumn => tasks.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     description: text("description"),
     createdBy: text("created_by")
@@ -418,6 +420,7 @@ export const tasks = pgTable(
     index("tasks_org_due_idx").on(t.orgId, t.dueDate),
     index("tasks_org_proposal_idx").on(t.orgId, t.proposalStatus),
     index("tasks_series_idx").on(t.seriesId),
+    index("tasks_parent_idx").on(t.parentTaskId),
   ],
 );
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronDown, ClipboardCheck, Lock, Repeat, XCircle } from "lucide-react";
+import { ChevronDown, ClipboardCheck, CornerDownRight, GitMerge, Lock, Repeat, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
@@ -9,6 +9,7 @@ import { StatusIcon } from "@/components/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
 import { describeAssignees } from "@/lib/tasks/assignees";
+import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { formatTime } from "@/lib/recurrence";
 import { AssigneeStack } from "./assignee-stack";
@@ -41,12 +42,15 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
  * hover "⋯" menu on desktop and a long-press sheet on touch. `readOnly` drops the actions (a stakeholder reading).
  * A screen that has more to say about a row (the Active scope report, 2026-11-07 log) adds a `badge` beside the
  * title, a `note` line under it, something `trailing` after the due date, and `attributes` on the row itself.
+ * A sub-task drawn under its parent (2026-11-08 log) is `nested`: indented with a corner mark; one drawn away from
+ * its parent carries a "Part of" link instead, and a parent a count of its sub-tasks.
  */
 export function TaskRow({
   task,
   today,
   showReason = true,
   readOnly = false,
+  nested = false,
   badge,
   note,
   trailing,
@@ -56,6 +60,7 @@ export function TaskRow({
   today: string;
   showReason?: boolean;
   readOnly?: boolean;
+  nested?: boolean;
   badge?: ReactNode;
   note?: ReactNode;
   trailing?: ReactNode;
@@ -72,12 +77,12 @@ export function TaskRow({
   const selected = selectable && selection.selected.has(task.id);
   const register = selectable ? selection.register : null;
   useEffect(() => register?.(task.id), [register, task.id]);
-  const rejected = task.status === "rejected";
   const local = task.proposal === "local";
   // "Overdue" is already said by the red due label, so that chip would say it twice.
   const reason = showReason && task.reason !== "Overdue" ? task.reason : undefined;
   const detailsId = `task-${task.id}-details`;
   const where = [task.project?.name, task.goal?.title].filter(Boolean).join(" › ");
+  const closedWithoutCompleting = task.status === "rejected" || task.status === "cancelled" || task.status === "merged";
 
   return (
     <li
@@ -87,10 +92,12 @@ export function TaskRow({
       data-expanded={open || undefined}
       data-selected={selected || undefined}
       data-proposal={task.proposal ?? undefined}
+      data-nested={nested || undefined}
+      data-parent={task.parent?.id}
       {...attributes}
     >
       <div
-        className={cn("flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-accent/60 sm:px-4", open && "bg-accent/40")}
+        className={cn("flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-accent/60 sm:px-4", open && "bg-accent/40", nested && "bg-muted/20 pl-8 sm:pl-11")}
         onClick={(event) => {
           if (interactive(event)) return;
           swallowClick(event);
@@ -102,6 +109,7 @@ export function TaskRow({
             <Checkbox checked={selected} onCheckedChange={() => selection.toggle(task.id)} aria-label={`Select ${task.title}`} data-select-task={task.id} />
           </span>
         ) : null}
+        {nested ? <CornerDownRight className="-ml-1 size-3.5 shrink-0 text-muted-foreground" aria-label="Sub-task of the task above" role="img" /> : null}
         {task.proposal === "pending" ? (
           <ClipboardCheck className="size-4 shrink-0 text-status-awaiting-fg" aria-label="Waiting for sign-off" role="img" />
         ) : task.proposal === "declined" ? (
@@ -131,10 +139,22 @@ export function TaskRow({
             prefetch={false}
             data-task-link
             onClick={swallowClick}
-            className={cn("truncate text-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring md:max-w-[55%] md:shrink-0", rejected && "text-muted-foreground line-through")}
+            className={cn("truncate text-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring md:max-w-[55%] md:shrink-0", closedWithoutCompleting && "text-muted-foreground line-through")}
           >
             {task.title}
           </Link>
+          {task.subTasks > 0 ? (
+            <Link href={`/tasks/${task.id}#sub-tasks`} prefetch={false} onClick={swallowClick} className="inline-flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground" data-sub-tasks-chip>
+              <GitMerge className="size-3" aria-hidden />
+              {describeSubTasks(task.subTasks)}
+            </Link>
+          ) : null}
+          {task.parent !== null && !nested ? (
+            <Link href={`/tasks/${task.parent.id}`} prefetch={false} onClick={swallowClick} className="inline-flex h-5 min-w-0 max-w-[40%] shrink items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground" data-part-of-chip title={`Part of ${task.parent.title}`}>
+              <CornerDownRight className="size-3 shrink-0" aria-hidden />
+              <span className="truncate">Part of {task.parent.title}</span>
+            </Link>
+          ) : null}
           {badge}
           {task.nextAction || reason || task.proposal === "pending" || task.proposal === "declined" || local ? (
             <span className="flex min-w-0 items-center gap-1.5">
@@ -188,7 +208,17 @@ export function TaskRow({
           {task.description ? <p className="max-w-prose text-sm leading-relaxed whitespace-pre-line">{task.description}</p> : <p className="text-sm text-muted-foreground">No description.</p>}
           <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Fact label="Assigned to">{describeAssignees(task.assignees)}</Fact>
-            <Fact label="Where">{where || "Standalone task"}</Fact>
+            <Fact label="Where">
+              {task.parent !== null ? (
+                <span className="block">
+                  Part of{" "}
+                  <Link href={`/tasks/${task.parent.id}`} prefetch={false} className="text-link underline-offset-4 hover:underline">
+                    {task.parent.title}
+                  </Link>
+                </span>
+              ) : null}
+              {where || (task.parent === null ? "Standalone task" : null)}
+            </Fact>
             <Fact label="Due">
               {task.dueDate ? (
                 <>

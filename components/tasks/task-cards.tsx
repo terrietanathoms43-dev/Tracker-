@@ -1,11 +1,12 @@
 "use client";
 
 import { cn } from "cn";
-import { ClipboardCheck } from "lucide-react";
+import { ClipboardCheck, CornerDownRight, GitMerge } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { KanbanItem, KanbanItemHandle } from "@/components/kanban";
 import { PriorityGlyph } from "@/components/priority-glyph";
+import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { AssigneeStack } from "./assignee-stack";
 import { DueLabel } from "./due-label";
@@ -57,6 +58,18 @@ export function TaskCard({
                   </span>
                ) : null}
 
+               {task.parent !== null ? (
+                  <p className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground" data-part-of-chip>
+                     <CornerDownRight className="size-3 shrink-0" aria-hidden />
+                     <span className="truncate">Part of {task.parent.title}</span>
+                  </p>
+               ) : null}
+               {task.subTasks > 0 ? (
+                  <p className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground" data-sub-tasks-chip>
+                     <GitMerge className="size-3 shrink-0" aria-hidden />
+                     {describeSubTasks(task.subTasks)}
+                  </p>
+               ) : null}
                {task.nextAction ? <p className="mt-1 line-clamp-1 text-[13px] text-muted-foreground">{task.nextAction}</p> : null}
                <div className="mt-2.5 flex items-center gap-2">
                   <DueLabel due={task.dueDate} today={today} status={task.status} />

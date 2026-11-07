@@ -11,6 +11,8 @@ export type TaskState = {
   blockedReason: string | null;
   /** Comments nobody has resolved yet. While there are any, the task cannot be completed (2026-10-30 log). */
   openComments: number;
+  /** The task it is attached to (sub-tasks, 2026-11-08 log): only such a task can be merged. */
+  parentTaskId: string | null;
 };
 
 export type TransitionInput = {
@@ -66,15 +68,19 @@ export const SUMMARY_REQUIRED = "Say what was done: a completion summary is requ
 export const APPROVAL_NOTE_REQUIRED = "Add a sign-off note: what you checked, or why it passes.";
 
 /** The question a closed-without-completion status asks. */
-export const REASON_PROMPTS: Record<"blocked" | "rejected" | "deferred" | "cancelled", string> = {
+export const REASON_PROMPTS: Record<"blocked" | "rejected" | "deferred" | "cancelled" | "merged", string> = {
   blocked: "Say what is blocking it.",
   rejected: "Give a reason for rejecting it.",
   deferred: "Say why it is deferred, and until when if you know.",
   cancelled: "Give a reason for cancelling it.",
+  merged: "Say which task it was merged into.",
 };
 
-/** Whether a status asks for a reason (blocked, and the three ways of closing a task without completing it). */
-export const asksReason = (status: TaskStatus): status is "blocked" | "rejected" | "deferred" | "cancelled" => status === "blocked" || CLOSED_WITHOUT_COMPLETION.includes(status);
+/** What a task that is not a sub-task hears when Merged is asked for. */
+export const MERGE_NEEDS_PARENT = "Only a sub-task can be merged: attach it to the task it duplicates first.";
+
+/** Whether a status asks for a reason (blocked, and the ways of closing a task without completing it; a merge names its parent). */
+export const asksReason = (status: TaskStatus): status is "blocked" | "rejected" | "deferred" | "cancelled" | "merged" => status === "blocked" || CLOSED_WITHOUT_COMPLETION.includes(status);
 
 /**
  * Plans a move from the task's status to `to`. Leaving a state undoes what it set (blocked clears the reason,
@@ -88,6 +94,7 @@ export function planTransition(task: TaskState, to: TaskStatus, input: Transitio
   if (from === to && to !== "awaiting_approval") return { ok: true, patch: {}, activities: [] };
   if (to === "completed" && task.openComments > 0) return { ok: false, error: openCommentsMessage(task.openComments) };
 
+  if (to === "merged" && task.parentTaskId === null) return { ok: false, error: MERGE_NEEDS_PARENT };
   const reason = clean(input.reason);
   if (asksReason(to) && reason === null) return { ok: false, error: REASON_PROMPTS[to] };
   if (to === "awaiting_approval" && !input.approverId) return { ok: false, error: "Choose who approves it." };
@@ -137,6 +144,7 @@ export function planTransition(task: TaskState, to: TaskStatus, input: Transitio
     case "rejected":
     case "deferred":
     case "cancelled":
+    case "merged":
       patch.rejectionReason = reason;
       activities.push({ kind: to, before: { status: from }, after: { status: to }, note: reason });
       break;

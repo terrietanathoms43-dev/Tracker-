@@ -46,7 +46,7 @@ describe("groupActiveScope", () => {
     );
     expect(scope.groups.map((group) => group.status)).toEqual(["blocked", "in_progress", "not_started", "deferred", "rejected", "cancelled", "completed"]);
     expect(scope.groups.map((group) => group.label)).toEqual(["Blocked", "In progress", "Not started", "Deferred", "Rejected", "Cancelled", "Completed"]);
-    expect(SCOPE_GROUPS).toHaveLength(8);
+    expect(SCOPE_GROUPS).toHaveLength(9);
   });
 
   it("sorts open work soonest due first (undated last) and closed work newest first, titles breaking ties", () => {

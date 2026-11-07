@@ -103,6 +103,15 @@ const unassigned = sql`not exists (select 1 from task_assignees ta where ta.task
 /** Comments nobody has resolved: while there are any, the task can't be completed (lib/tasks/transitions.ts). */
 export const openCommentsSql = sql<number>`(select count(*)::int from task_updates u where u.task_id = ${tasks}.id and u.kind = 'comment' and u.resolved_at is null)`;
 
+/** The title of the task this one is attached to (sub-tasks, 2026-11-08 log), null for a top-level task. */
+export const parentTitleSql = sql<string | null>`(select p.title from tasks p where p.id = ${tasks}.parent_task_id)`;
+
+/** How many live tasks are attached to this one. */
+export const subTasksSql = sql<number>`(select count(*)::int from tasks c where c.parent_task_id = ${tasks}.id and (c.proposal_status is null or c.proposal_status = 'approved'))`;
+
+/** Open live tasks attached to this one: a parent cannot be completed while there are any. */
+export const openSubTasksSql = sql<number>`(select count(*)::int from tasks c where c.parent_task_id = ${tasks}.id and (c.proposal_status is null or c.proposal_status = 'approved') and c.status not in (${closedList}))`;
+
 /** A proposal's chain with the people in it, in order (lib/dal/approvals.ts reads the same shape). */
 export const approvalsJson = sql<ApprovalStepView[]>`coalesce((
   select json_agg(json_build_object(
@@ -134,6 +143,9 @@ const listColumns = {
   goalTitle: goals.title,
   projectId: projects.id,
   projectName: projects.name,
+  parentTaskId: tasks.parentTaskId,
+  parentTitle: parentTitleSql,
+  subTasks: subTasksSql,
   assignees: assigneesJson,
 };
 
@@ -156,6 +168,9 @@ type ListRow = {
   goalTitle: string | null;
   projectId: string | null;
   projectName: string | null;
+  parentTaskId: string | null;
+  parentTitle: string | null;
+  subTasks: number;
   assignees: Person[];
 };
 
@@ -174,6 +189,8 @@ export function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
     updatedAt: row.updatedAt.toISOString(),
     project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
     goal: row.goalId && row.goalTitle ? { id: row.goalId, title: row.goalTitle } : null,
+    parent: row.parentTaskId && row.parentTitle !== null ? { id: row.parentTaskId, title: row.parentTitle } : null,
+    subTasks: row.subTasks,
     proposal: row.proposalStatus,
     needsSignOff: row.needsSignOff,
     canDelete: canDeleteTask(viewer, { createdBy: row.createdBy, proposalStatus: row.proposalStatus }),
@@ -754,6 +771,8 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
       approvals: approvalsJson,
       needsSignOff: needsSignOffSql,
       openComments: openCommentsSql,
+      parentTitle: parentTitleSql,
+      subTasks: subTasksSql,
       approver: sql<Person | null>`case when ${approverUser.id} is null then null else ${personJson(approverUser)} end`,
       creator: sql<Person>`${personJson(creatorUser)}`,
       lastUpdate: sql<{ author: Person; at: string } | null>`(select json_build_object('at', u.created_at, 'author', json_build_object('id', au.id, 'name', au.name, 'email', au.email, 'image', au.image)) from task_updates u join users au on au.id = u.author_id where u.task_id = ${tasks}.id and u.kind = 'progress' order by u.created_at desc limit 1)`,
@@ -778,6 +797,8 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     seriesId: t.seriesId,
     project: t.projectId && row.projectName ? { id: t.projectId, name: row.projectName } : null,
     goal: t.goalId && row.goalTitle ? { id: t.goalId, title: row.goalTitle } : null,
+    parent: t.parentTaskId && row.parentTitle !== null ? { id: t.parentTaskId, title: row.parentTitle } : null,
+    subTasks: row.subTasks,
     assignees: row.assignees,
     approver: row.approver,
     creator: row.creator,
@@ -815,6 +836,9 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
       blockedBy: tasks.blockedBy,
       recurrence: tasks.recurrence,
       dueDate: tasks.dueDate,
+      parentTaskId: tasks.parentTaskId,
+      parentTitle: parentTitleSql,
+      openSubTasks: openSubTasksSql,
       assignees: assigneesJson,
       openComments: openCommentsSql,
     })
@@ -824,6 +848,7 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
   const { assignees, ...basics } = row;
   return {
     ...basics,
+    parent: row.parentTaskId && row.parentTitle !== null ? { id: row.parentTaskId, title: row.parentTitle } : null,
     assigneeIds: assignees.map((person) => person.id),
     scope: scopeOf({ orgId: viewer.orgId, createdBy: row.createdBy, approverId: row.approverId, proposalStatus: row.proposalStatus }, assignees),
   };
@@ -854,6 +879,30 @@ export async function lockTask(tx: Tx, orgId: string, id: string) {
   const t = { ...row.task, openComments: row.openComments };
   const assignment = await assignmentOf(tx, t.id);
   return { task: t, assignment, scope: scopeOf(t, assignment) };
+}
+
+/** The live tasks attached to one task (sub-tasks, 2026-11-08 log), in the smart order, for its page. */
+export async function tasksForParent(viewer: Viewer, parentId: string): Promise<TaskListItem[]> {
+  const today = todayFor(viewer);
+  const rows = await selectList()
+    .where(and(visibility(viewer), visibleWork(viewer), eq(tasks.parentTaskId, parentId)))
+    .orderBy(...groupedOrder(today));
+  return rows.map((row) => toListItem(row, viewer));
+}
+
+/** Open live tasks attached to a task, inside a transaction: a parent cannot be completed while there are any. */
+export async function openSubTasks(tx: Tx, orgId: string, parentId: string): Promise<number> {
+  const [row] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(tasks)
+    .where(and(eq(tasks.orgId, orgId), eq(tasks.parentTaskId, parentId), liveOnly, isOpen));
+  return row?.n ?? 0;
+}
+
+/** The ids of every task attached to a task, inside a transaction: they move with it and are counted against it. */
+export async function subTaskIds(tx: Tx, orgId: string, parentId: string): Promise<string[]> {
+  const rows = await tx.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.orgId, orgId), eq(tasks.parentTaskId, parentId)));
+  return rows.map((row) => row.id);
 }
 
 /** Whether another occurrence of a repeating series is still open (so finishing one never makes two next ones). */

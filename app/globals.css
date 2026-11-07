@@ -70,6 +70,9 @@
    --status-cancelled-bg: oklch(0.95 0.008 260);
    --status-cancelled-fg: oklch(0.45 0.02 260);
    --status-cancelled-dot: oklch(0.6 0.02 260);
+   --status-merged-bg: oklch(0.95 0.008 260);
+   --status-merged-fg: oklch(0.45 0.02 260);
+   --status-merged-dot: oklch(0.6 0.02 260);
    --status-completed-bg: oklch(0.955 0.04 150);
    --status-completed-fg: oklch(0.45 0.12 150);
    --status-completed-dot: oklch(0.6 0.15 150);
@@ -131,6 +134,9 @@
    --status-cancelled-bg: oklch(0.26 0.01 260);
    --status-cancelled-fg: oklch(0.75 0.02 260);
    --status-cancelled-dot: oklch(0.58 0.02 260);
+   --status-merged-bg: oklch(0.26 0.01 260);
+   --status-merged-fg: oklch(0.75 0.02 260);
+   --status-merged-dot: oklch(0.58 0.02 260);
    --status-completed-bg: oklch(0.28 0.05 150);
    --status-completed-fg: oklch(0.82 0.11 150);
    --status-completed-dot: oklch(0.7 0.15 150);
@@ -199,6 +205,9 @@
    --color-status-cancelled-bg: var(--status-cancelled-bg);
    --color-status-cancelled-fg: var(--status-cancelled-fg);
    --color-status-cancelled-dot: var(--status-cancelled-dot);
+   --color-status-merged-bg: var(--status-merged-bg);
+   --color-status-merged-fg: var(--status-merged-fg);
+   --color-status-merged-dot: var(--status-merged-dot);
    --color-status-completed-bg: var(--status-completed-bg);
    --color-status-completed-fg: var(--status-completed-fg);
    --color-status-completed-dot: var(--status-completed-dot);
