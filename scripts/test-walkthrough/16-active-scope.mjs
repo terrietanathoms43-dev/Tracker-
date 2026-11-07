@@ -19,24 +19,31 @@ const shiftDay = (day, days) => {
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 };
-const GROUPS = ["blocked", "awaiting_approval", "in_progress", "not_started", "rejected", "completed"];
+const GROUPS = ["blocked", "awaiting_approval", "in_progress", "not_started", "deferred", "rejected", "cancelled", "completed"];
 const INTRO = "the work this report cycle was to get through";
-const CSV_HEADER = "Title,Project,Goal,Assignees,Status,Due date,Completed on,Added on,New this cycle,Detail";
+const CSV_HEADER = "Title,Project,Goal,Assignees,Status,Due date,Closed on,Added on,New this cycle,Detail";
+/** The closed statuses, and the ones closed without completing (lib/constants.ts). */
+const CLOSED = "('completed', 'rejected', 'deferred', 'cancelled')";
+const CLOSED_WITHOUT_COMPLETION = "('rejected', 'deferred', 'cancelled')";
 
 /**
  * What the page should show since a day (and for a project): the rule of lib/reports/data.ts `activeScopeTasks`
- * and lib/reports/scope.ts written in SQL again, so the page is checked against the database rather than itself.
- * `today` is for what counts as overdue.
+ * and lib/reports/scope.ts written in SQL again, so the page is checked against the database rather than itself:
+ * every open task, plus every task closed (completed_at, or the history row that rejected, deferred or cancelled
+ * it) on or after the Since day. `today` is for what counts as overdue.
  */
 async function expected(since, today, projectId = null) {
   const rows = await query(
     `select t.status, count(*)::int as n,
             count(*) filter (where t.created_at >= ($1::date::timestamp at time zone '${TZ}'))::int as added,
-            count(*) filter (where t.status not in ('completed', 'rejected') and t.due_date < $2::date)::int as overdue
+            count(*) filter (where t.status not in ${CLOSED} and t.due_date < $2::date)::int as overdue
        from tasks t
       where t.org_id = (${org}) and (t.proposal_status is null or t.proposal_status = 'approved')
         and ($3::text is null or t.project_id = $3::text)
-        and (t.status <> 'completed' or t.completed_at >= ($1::date::timestamp at time zone '${TZ}'))
+        and (t.status not in ${CLOSED}
+             or (case when t.status = 'completed' then t.completed_at
+                      else (select max(a.created_at) from task_activity a where a.task_id = t.id and a.kind in ${CLOSED_WITHOUT_COMPLETION}) end)
+                >= ($1::date::timestamp at time zone '${TZ}'))
       group by t.status`,
     [since, today, projectId],
   );
@@ -89,7 +96,7 @@ try {
     step("New this cycle marks exactly the tasks created since the range began", chips === want.added, `${chips} for ${want.added}`);
     const [placed] = await query(
       `select t.title, p.name as project, g.title as goal from tasks t join projects p on p.id = t.project_id join goals g on g.id = t.goal_id
-        where t.org_id = (${org}) and (t.proposal_status is null or t.proposal_status = 'approved') and t.status not in ('completed', 'rejected') order by t.title limit 1`,
+        where t.org_id = (${org}) and (t.proposal_status is null or t.proposal_status = 'approved') and t.status not in ${CLOSED} order by t.title limit 1`,
     );
     step("a row names its project and goal", placed !== undefined && (await morgan.hasNear(placed.title, `${placed.project} · ${placed.goal}`)), JSON.stringify(placed));
     const completedRows = await morgan.evaluate(`[...document.querySelectorAll('[data-scope-group="completed"] [data-scope-task]')].map((li) => li.textContent)`);

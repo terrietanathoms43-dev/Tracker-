@@ -400,6 +400,7 @@ export const tasks = pgTable(
     blockedReason: text("blocked_reason"),
     /** Who or what could unblock it (free text). */
     blockedBy: text("blocked_by"),
+    /** Why it was closed without being completed: rejected, deferred or cancelled (2026-11-07 log). */
     rejectionReason: text("rejection_reason"),
     /** Denormalised from the newest progress update so lists never join history. */
     latestProgress: text("latest_progress"),

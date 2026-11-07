@@ -1,9 +1,9 @@
 import "server-only";
-import { and, asc, desc, eq, isNotNull, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { goals, projects, taskActivity, taskAssignees, tasks, taskUpdates } from "@/db/schema";
-import { CLOSED_STATUSES, type ProjectStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { CLOSED_STATUSES, CLOSED_WITHOUT_COMPLETION, type ProjectStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { pendingProposals, type ProposalListItem } from "@/lib/dal/approvals";
 import { listWorkers } from "@/lib/dal/orgs";
 import { approvalStagingTasks, assigneesJson, liveOnly, localOnly, progressForGoals, progressForProjects, type ApprovalStagingTask } from "@/lib/dal/tasks";
@@ -33,6 +33,8 @@ export type ReportTask = {
   assignees: Assignees;
   dueDate: string | null;
   completedDay: string | null;
+  /** The day it was closed, in the viewer's timezone: completed, or rejected / deferred / cancelled (from the history row that closed it). */
+  closedDay: string | null;
   /** The calendar day it was created on, in the viewer's timezone: the Active scope view marks what a cycle added. */
   createdDay: string;
   /** When anything last changed on it (an ISO instant): a stalled task is one where that was a week or more ago. */
@@ -172,6 +174,18 @@ export type ReportProjectOption = {
 
 const CLOSED = [...CLOSED_STATUSES];
 const isOpen = notInArray(tasks.status, CLOSED);
+/** Counts for the pace: everything but what was closed without being completed (rejected, deferred, cancelled). */
+const countsTowardsPace = notInArray(tasks.status, [...CLOSED_WITHOUT_COMPLETION]);
+/** `'rejected', 'deferred', 'cancelled'` for raw fragments. */
+const closedWithoutCompletionList = sql.raw(CLOSED_WITHOUT_COMPLETION.map((status) => `'${status}'`).join(", "));
+/**
+ * When a task was closed: completed_at for a completed task; for one closed without completing, the time of the
+ * history row that closed it (its latest, so a task closed, reopened and closed again counts from the last time).
+ */
+const closedAtSql = sql<Date | null>`(case
+  when ${tasks.status} = 'completed' then ${tasks.completedAt}
+  when ${tasks.status} in (${closedWithoutCompletionList}) then (select max(a.created_at) from task_activity a where a.task_id = ${tasks}.id and a.kind in (${closedWithoutCompletionList}))
+  else null end)`;
 
 /** The tasks the report is about: everything, or one project's (an undefined condition is dropped by `and`). */
 function projectCondition(project: ReportProject): SQL | undefined {
@@ -194,7 +208,7 @@ function withinDays(column: AnyPgColumn | SQL, range: ReportRange, timeZone: str
 }
 
 /** `column` is on `day` or any later instant, in `timeZone` (the same instant bound as withinDays, with no end). */
-const onOrAfterDay = (column: AnyPgColumn, day: string, timeZone: string): SQL => sql`${column} >= (${day}::date::timestamp at time zone ${timeZone})`;
+const onOrAfterDay = (column: AnyPgColumn | SQL, day: string, timeZone: string): SQL => sql`${column} >= (${day}::date::timestamp at time zone ${timeZone})`;
 
 const dueWithin = (range: ReportRange) => sql`${tasks.dueDate} between ${range.from}::date and ${range.to}::date`;
 const overdueOn = (today: string) => sql`${tasks.dueDate} < ${today}::date`;
@@ -210,6 +224,7 @@ async function reportTasks(viewer: Viewer, project: ReportProject, where: SQL, o
       priority: tasks.priority,
       dueDate: tasks.dueDate,
       completedAt: tasks.completedAt,
+      closedAt: closedAtSql,
       createdAt: tasks.createdAt,
       updatedAt: tasks.updatedAt,
       completionSummary: tasks.completionSummary,
@@ -230,9 +245,10 @@ async function reportTasks(viewer: Viewer, project: ReportProject, where: SQL, o
     .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, projectCondition(project), where))
     .orderBy(...orderBy)
     .limit(1000);
-  return rows.map(({ people, completedAt, createdAt, updatedAt, projectId, projectName, ...row }) => ({
+  return rows.map(({ people, completedAt, closedAt, createdAt, updatedAt, projectId, projectName, ...row }) => ({
     ...row,
     completedDay: completedAt ? dayKey(completedAt, viewer.timezone) : null,
+    closedDay: closedAt ? dayKey(new Date(closedAt), viewer.timezone) : null,
     createdDay: dayKey(createdAt, viewer.timezone),
     updatedAt: updatedAt.toISOString(),
     project: projectId && projectName ? { id: projectId, name: projectName } : null,
@@ -275,13 +291,13 @@ export function stalledTasks(viewer: Viewer, project: ReportProject): Promise<Re
 }
 
 /**
- * The active reporting scope (docs/PLAN.md, 2026-11-06 log): what the cycle was to work on. Every live task whose
- * status is not completed (rejected ones too), whatever its dates, plus every task completed on or after the
- * range's first day (the day of the last report); the range's end plays no part. Soonest due first;
- * lib/reports/scope.ts regroups the rows by status.
+ * The active reporting scope (docs/PLAN.md, 2026-11-06 and 2026-11-07 logs): what the cycle was to work on. Every
+ * live task still open, whatever its dates, plus every task closed on or after the range's first day (the day of
+ * the last report): completed, or rejected, deferred or cancelled then; the range's end plays no part. Soonest due
+ * first; lib/reports/scope.ts regroups the rows by status.
  */
 export function activeScopeTasks(viewer: Viewer, range: ReportRange, project: ReportProject): Promise<ReportTask[]> {
-  return reportTasks(viewer, project, or(ne(tasks.status, "completed"), and(isNotNull(tasks.completedAt), onOrAfterDay(tasks.completedAt, range.from, viewer.timezone)))!, "due");
+  return reportTasks(viewer, project, or(isOpen, and(isNotNull(closedAtSql), onOrAfterDay(closedAtSql, range.from, viewer.timezone)))!, "due");
 }
 
 /**
@@ -295,7 +311,7 @@ export async function reportPace(viewer: Viewer, today: string, project: ReportP
   const [[counts], [chosen], [goal]] = await Promise.all([
     db
       .select({
-        total: sql<number>`count(*) filter (where ${tasks.status} <> 'rejected')::int`,
+        total: sql<number>`count(*) filter (where ${countsTowardsPace})::int`,
         done: sql<number>`count(*) filter (where ${tasks.status} = 'completed')::int`,
         first: sql<Date | null>`min(${tasks.createdAt})`,
       })

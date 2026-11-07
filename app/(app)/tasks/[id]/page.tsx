@@ -98,7 +98,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           timeZone={viewer.timezone}
           now={now}
         />
-        <TaskHistory taskId={detail.id} initial={history} canComment={abilities.progress} openComments={detail.openComments} />
+        <TaskHistory task={{ id: detail.id, title: detail.title, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} initial={history} canComment={abilities.progress} openComments={detail.openComments} />
       </div>
     </div>
   );

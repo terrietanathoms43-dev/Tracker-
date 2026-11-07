@@ -34,6 +34,7 @@ const PREFERENCE: Record<NotificationKind, keyof Preferences> = {
   proposal_waiting: "emailProposal",
   proposal_decided: "emailProposal",
   commented: "emailComment",
+  comment_resolved: "emailComment",
 };
 
 /** Writes the in-app rows now and sends the emails after the response, each according to the recipient's preferences. */

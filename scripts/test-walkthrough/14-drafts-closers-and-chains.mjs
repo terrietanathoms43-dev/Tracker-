@@ -15,14 +15,23 @@ const org = "select id from organizations where slug = 'trackwise-demo'";
 const stamp = Date.now().toString(36);
 const NOTES = `Meeting: Draft check ${stamp}\nProject: Incident tooling\nGoal: Nobody is paged twice ${stamp}\nAction item: Jordan will publish the on-call handbook by Friday\nAction item: Sam to rotate the paging webhook secret by 2026-11-14 (urgent)`;
 
-/** Completes a task from its page's status menu. */
-async function complete(browser, id) {
+/** Completes a task from the status menu on its page, with the summary every completion needs (2026-11-07 log). */
+async function complete(browser, id, summary = "Done.") {
   await browser.goto(`/tasks/${id}`, 4000);
   await browser.waitFor("Next action");
   await browser.click("Change status", { wait: 800 });
   await browser.click("Completed", { exact: true, within: "[role=menu]", wait: 1500 });
   await browser.waitFor("Mark as completed", 5000);
+  await browser.type("#transition-summary", summary);
   await browser.click("Mark as completed", { exact: true, within: "[role=dialog]", wait: 2500 });
+}
+
+/** Reopens a completed task from the status menu on its page (In progress needs no dialog). */
+async function reopen(browser, id) {
+  await browser.goto(`/tasks/${id}`, 4000);
+  await browser.waitFor("Next action");
+  await browser.click("Change status", { wait: 800 });
+  await browser.click("In progress", { exact: true, within: "[role=menu]", wait: 2500 });
 }
 
 try {
@@ -91,23 +100,26 @@ try {
   await morgan.click("Approve", { near: `${TITLE} edited`, exact: true, wait: 2500 });
   step("after the refresh the decision goes through", await morgan.waitFor("Signed off. It waits for the next person.", 10_000));
 
-  // --- 4. the closer: refused early, achieves the goal last ------------------------------------------------------------------
+  // --- 4. goals and tasks are one thing: the last task achieves the goal, reopening one reopens it ---------------------------
   const [review] = await query(`select id from goals where org_id = (${org}) and title = 'Every incident gets a review'`);
-  const under = await query("select id, title, goal_closer from tasks where goal_id = $1 and status <> 'completed' order by goal_closer", [review.id]);
-  step("the goal has its Everything completed task and one other", under.some((task) => task.goal_closer) && under.length === 2, JSON.stringify(under.map((task) => task.title)));
-  const closer = under.find((task) => task.goal_closer);
-  const other = under.find((task) => !task.goal_closer);
+  const under = await query("select id, title from tasks where goal_id = $1 and status not in ('completed', 'rejected', 'deferred', 'cancelled') and (proposal_status is null or proposal_status = 'approved') order by created_at", [review.id]);
+  step("the goal has one open task left", under.length === 1, JSON.stringify(under.map((task) => task.title)));
+  const last = under[0];
   const jordan = (browsers.jordan = await openBrowser({ role: "member", width: 1280, height: 900 }));
-  await jordan.goto(`/tasks/${closer.id}`, 4000);
-  step("the closer's page says what it is", await jordan.waitFor("Marks the goal achieved", 15_000));
-  await complete(jordan, closer.id);
-  step("completing it with another task open is refused with the count", await jordan.waitFor("Finish the other 1 task", 10_000));
-  await complete(jordan, other.id);
-  await jordan.waitFor("Marked completed", 10_000);
-  await complete(jordan, closer.id);
-  step("completing it last says the goal is achieved", await jordan.waitFor("is achieved", 10_000));
-  const [achieved] = await query("select status from goals where id = $1", [review.id]);
-  step("the goal is completed in the database", achieved?.status === "completed", JSON.stringify(achieved));
+  await morgan.goto(`/goals/${review.id}`, 4000);
+  await morgan.waitFor("Every incident gets a review");
+  await morgan.click("Mark completed", { exact: true, wait: 2500 });
+  step("marking the goal completed with a task still open is refused with the count", await morgan.waitFor("Finish the 1 open task", 10_000));
+  await complete(jordan, last.id, "Review template agreed and published.");
+  step("completing the last task says the goal is achieved", await jordan.waitFor("is achieved", 10_000));
+  const [achieved] = await query("select status, completed_at from goals where id = $1", [review.id]);
+  step("the goal is completed in the database", achieved?.status === "completed" && achieved?.completed_at !== null, JSON.stringify(achieved));
+  await reopen(jordan, last.id);
+  step("reopening a task under an achieved goal makes the goal active again", await jordan.waitFor("is active again", 10_000));
+  const [reactivated] = await query("select status, completed_at from goals where id = $1", [review.id]);
+  step("the goal is active again in the database", reactivated?.status === "active" && reactivated?.completed_at === null, JSON.stringify(reactivated));
+  await complete(jordan, last.id, "Review template agreed and published.");
+  await jordan.waitFor("is achieved", 10_000);
 
   // --- 5. missed repeats are caught up, within the rule's end -----------------------------------------------------------------
   const [tapes] = await query(`select id, series_id from tasks where org_id = (${org}) and title = 'Change the backup tapes' order by due_date desc limit 1`);

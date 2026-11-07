@@ -113,7 +113,10 @@ try {
 
   await morgan.goto(taskPath, 4000);
   await morgan.waitFor("Approve");
-  await morgan.click("Approve", { exact: true, wait: 2500 });
+  await morgan.click("Approve", { exact: true, wait: 1500 });
+  step("Approve asks for a sign-off note", await morgan.waitFor("Sign-off note", 5000));
+  await morgan.type("#approve-note", "Rollback step checked on staging; approved.");
+  await morgan.click("Approve", { exact: true, within: "[role=dialog]", wait: 2500 });
   step("approving shows the toast", await morgan.waitFor("Approved."));
   const [approved] = await query("select status, completed_at from tasks where id = $1", [created.id]);
   step("the task is completed with a completion time", approved?.status === "completed" && approved?.completed_at !== null, JSON.stringify(approved));

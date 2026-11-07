@@ -39,6 +39,8 @@ import { dayKey } from "@/lib/time";
 // people (task_assignees): every row carries it as JSON, so no list joins people.
 
 const CLOSED = [...CLOSED_STATUSES];
+/** `'completed', 'rejected', …` for raw SQL fragments that cannot take a parameter list. */
+const closedList = sql.raw(CLOSED.map((status) => `'${status}'`).join(", "));
 const creatorUser = alias(users, "creator_user");
 const approverUser = alias(users, "approver_user");
 const parentGoal = alias(goals, "parent_goal");
@@ -128,7 +130,6 @@ const listColumns = {
   createdBy: tasks.createdBy,
   proposalStatus: tasks.proposalStatus,
   needsSignOff: needsSignOffSql,
-  goalCloser: tasks.goalCloser,
   goalId: goals.id,
   goalTitle: goals.title,
   projectId: projects.id,
@@ -151,7 +152,6 @@ type ListRow = {
   createdBy: string;
   proposalStatus: ProposalStatus | null;
   needsSignOff: boolean;
-  goalCloser: boolean;
   goalId: string | null;
   goalTitle: string | null;
   projectId: string | null;
@@ -176,7 +176,6 @@ export function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
     goal: row.goalId && row.goalTitle ? { id: row.goalId, title: row.goalTitle } : null,
     proposal: row.proposalStatus,
     needsSignOff: row.needsSignOff,
-    goalCloser: row.goalCloser,
     canDelete: canDeleteTask(viewer, { createdBy: row.createdBy, proposalStatus: row.proposalStatus }),
     assignees: row.assignees,
   };
@@ -187,11 +186,18 @@ export function selectList() {
   return db.select(listColumns).from(tasks).leftJoin(projects, eq(projects.id, tasks.projectId)).leftJoin(goals, eq(goals.id, tasks.goalId));
 }
 
+/** The list rows for a set of ids in the viewer's workspace, by id: for a screen that already knows which tasks it shows (the Active scope report). */
+export async function listItemsByIds(viewer: Viewer, ids: string[]): Promise<Map<string, TaskListItem>> {
+  if (ids.length === 0) return new Map();
+  const rows = await selectList().where(and(visibility(viewer), inArray(tasks.id, ids)));
+  return new Map(rows.map((row) => [row.id, toListItem(row, viewer)]));
+}
+
 // Sort keys are written against a table alias so the keyset cursor can compare the same expressions on the
 // cursor's own row ("tasks" for the list, "cur" for the cursor). Every key sorts ascending; id breaks ties.
 function sortKeys(sort: TaskSort, table: "tasks" | "cur", today: string): SQL[] {
   const col = (name: string) => sql.raw(`"${table}"."${name}"`);
-  const open = sql`${col("status")} not in ('completed', 'rejected')`;
+  const open = sql`${col("status")} not in (${closedList})`;
   const overdue = sql`(case when ${col("due_date")} < ${today}::date and ${open} then 0 else 1 end)`;
   const due = sql`coalesce(${col("due_date")}, '9999-12-31'::date)`;
   const priority = sql`(case ${col("priority")} when 'urgent' then 0 when 'high' then 1 when 'normal' then 2 else 3 end)`;
@@ -334,7 +340,7 @@ export async function searchTasks(viewer: Viewer, q: string, limit = 8): Promise
   const like = `%${escapeLike(term)}%`;
   const rows = await selectList()
     .where(and(visibility(viewer), paletteScope(viewer), or(ilike(tasks.title, like), ilike(tasks.description, like))))
-    .orderBy(sql`(${tasks.status} in ('completed', 'rejected'))`, desc(tasks.updatedAt))
+    .orderBy(sql`(${tasks.status} in (${closedList}))`, desc(tasks.updatedAt))
     .limit(limit);
   return rows.map((row) => toListItem(row, viewer));
 }
@@ -518,7 +524,7 @@ export async function myWorkTasks(viewer: Viewer, project = ""): Promise<TaskLis
 
 // --- projects, goals, counts, workload ---------------------------------------------------------------------
 
-const groupedOrder = (today: string) => [sql`(${tasks.status} in ('completed', 'rejected'))`, ...orderBy("smart", today)];
+const groupedOrder = (today: string) => [sql`(${tasks.status} in (${closedList}))`, ...orderBy("smart", today)];
 
 /** Every live task in a project (open first, in the smart order), for the project page to group by status. */
 export async function tasksForProject(viewer: Viewer, projectId: string): Promise<TaskListItem[]> {
@@ -568,7 +574,7 @@ function tallyProgress(rows: ProgressRow[], keys: string[], today: string): Map<
     tally.total += 1;
     if (row.status === "completed") tally.completed += 1;
     if (row.status === "blocked") tally.blocked += 1;
-    if (row.status !== "completed" && row.dueDate !== null && row.dueDate < today) tally.overdue += 1;
+    if (!CLOSED_STATUSES.includes(row.status) && row.dueDate !== null && row.dueDate < today) tally.overdue += 1;
   }
   return out;
 }
@@ -777,7 +783,6 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     creator: row.creator,
     proposalStatus: t.proposalStatus,
     needsSignOff: row.needsSignOff,
-    goalCloser: t.goalCloser,
     approvals: row.approvals.map((step) => ({ ...step, decidedAt: step.decidedAt ? new Date(step.decidedAt).toISOString() : null })),
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),

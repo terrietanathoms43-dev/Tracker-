@@ -49,10 +49,10 @@ export async function listHistory(viewer: Viewer, taskId: string, cursor: string
   return { items, nextCursor: rows.length > HISTORY_PAGE ? items[items.length - 1].id : null };
 }
 
-/** One comment of a task, locked for the rest of the transaction (null when it isn't a comment of that task). */
+/** One comment of a task, locked for the rest of the transaction (null when it is not a comment of that task). */
 export async function lockComment(tx: Tx, taskId: string, commentId: string) {
   const [row] = await tx
-    .select({ id: taskUpdates.id, resolvedAt: taskUpdates.resolvedAt })
+    .select({ id: taskUpdates.id, resolvedAt: taskUpdates.resolvedAt, authorId: taskUpdates.authorId, body: taskUpdates.body })
     .from(taskUpdates)
     .where(and(eq(taskUpdates.id, commentId), eq(taskUpdates.taskId, taskId), eq(taskUpdates.kind, "comment")))
     .for("update");

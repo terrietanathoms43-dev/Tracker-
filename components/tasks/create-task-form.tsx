@@ -43,7 +43,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
   const [dueTime, setDueTime] = useState("");
   const [recurrence, setRecurrence] = useState<Recurrence | null>(null);
   const [nextAction, setNextAction] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(defaults.description ?? "");
   const [errors, setErrors] = useState<Errors>({});
   const [pending, startTransition] = useTransition();
 

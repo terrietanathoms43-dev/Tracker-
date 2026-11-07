@@ -10,16 +10,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
 import { openCommentsMessage } from "@/lib/tasks/transitions";
 import type { UpdateContext } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 
-// Update progress: the form behind the product's signature action. One Status control, with the same six
-// statuses every list, board and report uses (docs/PLAN.md, 2026-11-03 log): picking Blocked asks what blocks it,
-// Awaiting approval asks who approves, Completed offers a summary, Rejected asks why.
+// Update progress: the form behind the product's signature action. One Status control, with the same statuses
+// every list, board and report uses (docs/PLAN.md, 2026-11-03 log): picking Blocked asks what blocks it,
+// Awaiting approval asks who approves, Completed needs its summary (2026-11-07 log), Rejected, Deferred and
+// Cancelled each ask why.
 
 type Choice = "" | TaskStatus;
 
@@ -66,12 +67,16 @@ export function UpdateProgressForm({
         : `Keep with ${current.map((person) => nameOf(person)).join(", ")}`;
   const effective: TaskStatus = status === "" ? task.status : status;
   const completing = effective === "completed" && task.status !== "completed";
-  const closing = completing || (effective === "rejected" && task.status !== "rejected");
+  /** Closing without completing: rejected, deferred or cancelled, each with its reason. */
+  const closingWithReason = CLOSED_WITHOUT_COMPLETION.includes(effective) && task.status !== effective;
+  const closing = completing || closingWithReason;
   // The same rule the server applies (lib/tasks/transitions.ts), shown before the save instead of after it.
   const heldByComments = completing && task.openComments > 0;
-  // The statuses this person may move the task to: completing a task that waits for approval is approving it.
+  const summaryMissing = completing && !heldByComments && summary.trim() === "";
+  // The statuses this person may move the task to: completing a task that waits for approval is approving it;
+  // rejecting and cancelling are edit rights.
   const choices = TASK_STATUSES.filter((each) => {
-    if (each === "rejected") return abilities.reject;
+    if (each === "rejected" || each === "cancelled") return abilities.reject;
     if (each === "completed" && task.status === "awaiting_approval") return abilities.approve;
     return true;
   });
@@ -85,7 +90,7 @@ export function UpdateProgressForm({
         progress,
         nextAction,
         status,
-        reason: blockedFields || effective === "rejected" ? reason : "",
+        reason: blockedFields || closingWithReason ? reason : "",
         blockedBy: blockedFields ? blockedBy : "",
         evidenceUrl: showEvidence ? evidenceUrl.trim() : "",
         evidenceLabel: showEvidence ? evidenceLabel : "",
@@ -240,11 +245,11 @@ export function UpdateProgressForm({
         </div>
       ) : null}
 
-      {effective === "rejected" && task.status !== "rejected" ? (
+      {closingWithReason ? (
         <div className="grid gap-1.5">
           <Textarea
-            aria-label="Why is it rejected?"
-            placeholder="Why is it rejected? Kept in the task's history."
+            aria-label={`Why is it ${TASK_STATUS_LABELS[effective].toLowerCase()}?`}
+            placeholder={`Why is it ${TASK_STATUS_LABELS[effective].toLowerCase()}? Kept in the task's history.`}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             rows={2}
@@ -288,21 +293,23 @@ export function UpdateProgressForm({
         <div className="grid gap-1">
           <Textarea
             aria-label="Completion summary"
-            placeholder="Completion summary (optional): what changed, and why it matters"
+            placeholder="Completion summary (required): what was done, and why it matters"
             value={summary}
             onChange={(event) => setSummary(event.target.value)}
             rows={2}
             maxLength={LIMITS.completionSummary}
+            aria-invalid={errors.summary ? true : undefined}
           />
           <div className="flex items-center justify-between gap-3">
-            {task.repeats ? (
-              <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-                <Repeat className="size-3.5" aria-hidden />
-                Repeats {task.repeats.toLowerCase()}: completing makes the next one.
-              </span>
-            ) : (
-              <span />
-            )}
+            {error("summary") ??
+              (task.repeats ? (
+                <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+                  <Repeat className="size-3.5" aria-hidden />
+                  Repeats {task.repeats.toLowerCase()}: completing makes the next one.
+                </span>
+              ) : (
+                <span className="text-[13px] text-muted-foreground">The sign-off words on the task: what was done.</span>
+              ))}
             <CharacterCounter value={summary} max={LIMITS.completionSummary} />
           </div>
         </div>
@@ -343,7 +350,7 @@ export function UpdateProgressForm({
         )}
         <div className="flex items-center gap-3">
           <span className="hidden text-[13px] text-muted-foreground sm:inline">Ctrl+Enter to save</span>
-          <Button type="submit" disabled={pending || progress.trim() === "" || heldByComments}>
+          <Button type="submit" disabled={pending || progress.trim() === "" || heldByComments || summaryMissing}>
             {pending ? "Saving…" : "Save update"}
           </Button>
         </div>

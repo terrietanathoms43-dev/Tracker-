@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, isNotNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, notInArray, sql } from "drizzle-orm";
 import { cache } from "react";
 import { db, type Tx } from "@/db";
 import { goals, tasks } from "@/db/schema";
@@ -31,7 +31,6 @@ type SourceTask = {
   dueTime: string | null;
   recurrence: Recurrence | null;
   seriesId: string | null;
-  goalCloser: boolean;
 };
 
 /** The first due day of a series: the schedule's anchor, so "every 2 weeks" keeps its rhythm whoever finishes late. */
@@ -70,7 +69,6 @@ export async function createTaskOccurrence(tx: Tx, actorId: string, source: Sour
       dueTime: source.dueTime,
       recurrence: rule,
       seriesId: source.seriesId ?? source.id,
-      goalCloser: source.goalCloser,
       createdAt: now,
       updatedAt: now,
     })
@@ -124,9 +122,9 @@ export async function createGoalOccurrence(tx: Tx, actorId: string, goal: Source
     })
     .returning({ id: goals.id });
   const copies = await tx
-    .select({ id: tasks.id, title: tasks.title, description: tasks.description, priority: tasks.priority, dueDate: tasks.dueDate, dueTime: tasks.dueTime, createdBy: tasks.createdBy, goalCloser: tasks.goalCloser })
+    .select({ id: tasks.id, title: tasks.title, description: tasks.description, priority: tasks.priority, dueDate: tasks.dueDate, dueTime: tasks.dueTime, createdBy: tasks.createdBy })
     .from(tasks)
-    .where(and(eq(tasks.orgId, goal.orgId), eq(tasks.goalId, goal.id), liveOnly, ne(tasks.status, "rejected")));
+    .where(and(eq(tasks.orgId, goal.orgId), eq(tasks.goalId, goal.id), liveOnly, notInArray(tasks.status, ["rejected", "cancelled"])));
   for (const source of copies) {
     const [task] = await tx
       .insert(tasks)
@@ -138,9 +136,8 @@ export async function createGoalOccurrence(tx: Tx, actorId: string, goal: Source
         description: source.description,
         createdBy: actorId,
         priority: source.priority,
-        dueDate: source.dueDate ? dayKey(new Date(Date.parse(`${source.dueDate}T00:00:00Z`) + shift * 86_400_000), "UTC") : source.goalCloser ? targetDate : null,
+        dueDate: source.dueDate ? dayKey(new Date(Date.parse(`${source.dueDate}T00:00:00Z`) + shift * 86_400_000), "UTC") : null,
         dueTime: source.dueTime,
-        goalCloser: source.goalCloser,
         createdAt: now,
         updatedAt: now,
       })
@@ -167,7 +164,6 @@ async function catchUpTasks(tx: Tx, viewer: Viewer, today: string): Promise<numb
       dueTime: tasks.dueTime,
       recurrence: tasks.recurrence,
       seriesId: tasks.seriesId,
-      goalCloser: tasks.goalCloser,
     })
     .from(tasks)
     .where(and(eq(tasks.orgId, viewer.orgId), isNotNull(tasks.seriesId), isNotNull(tasks.recurrence), isNotNull(tasks.dueDate), liveOnly))

@@ -24,11 +24,11 @@ export function useChangeStatus(taskId: string) {
   return { change, pending };
 }
 
-/** The six statuses as dropdown items (inside a DropdownMenuContent or a sub-menu), the current one ticked. */
+/** The statuses as dropdown items (inside a DropdownMenuContent or a sub-menu), the current one ticked. Rejecting and cancelling need edit rights. */
 export function StatusMenuItems({ current, onPick, allowReject = true }: { current: TaskStatus; onPick: (status: TaskStatus) => void; allowReject?: boolean }) {
   return (
     <>
-      {TASK_STATUSES.filter((status) => allowReject || status !== "rejected" || status === current).map((status) => (
+      {TASK_STATUSES.filter((status) => allowReject || (status !== "rejected" && status !== "cancelled") || status === current).map((status) => (
         <DropdownMenuItem key={status} onSelect={() => onPick(status)} className="gap-2">
           <StatusIcon status={status} />
           {TASK_STATUS_LABELS[status]}

@@ -1,18 +1,58 @@
 "use client";
 
 import { cn } from "cn";
-import { ArrowRight, CheckCircle2, RotateCcw } from "lucide-react";
+import { ArrowRight, CheckCircle2, ListPlus, RotateCcw } from "lucide-react";
 import { Fragment, useState, useTransition } from "react";
 import { loadHistory, setCommentResolved } from "@/actions/tasks";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
+import { LIMITS } from "@/lib/limits";
 import { nameOf } from "@/lib/tasks/people";
 import type { HistoryItem, HistoryPage } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
+import { useTaskActions } from "../task-actions";
 import { CommentForm } from "./comment-form";
 
 // Comments and history on the task page, newest first, 20 at a time. A comment is open until someone resolves
-// it, and a task with an open comment can't be completed (docs/PLAN.md, 2026-10-30 log).
+// it, and a task with an open comment can't be completed (docs/PLAN.md, 2026-10-30 log). "Make a task" on a
+// comment (2026-11-07 log) opens the New task form with the comment as the task: its first line as the title,
+// the whole of it quoted in the description with a link back here, in this task's project and goal. The comment
+// stays open for someone to resolve by hand.
+
+/** Where the comments live, for the task the button makes. */
+export type HistoryTask = { id: string; title: string; projectId: string | null; goalId: string | null };
+
+/** The title a comment becomes: its first line, cut to the title cap. */
+function titleFrom(body: string): string {
+  const line = body.split(/\r?\n/).map((part) => part.trim()).find((part) => part !== "") ?? "";
+  return line.length > LIMITS.taskTitle ? `${line.slice(0, LIMITS.taskTitle - 1)}…` : line;
+}
+
+/** "Make a task" on one comment: the New task dialog, prefilled from the comment. */
+function MakeTaskButton({ task, item }: { task: HistoryTask; item: HistoryItem }) {
+  const { openCreate } = useTaskActions();
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      className="h-7 shrink-0 text-[13px] text-muted-foreground"
+      aria-label={`Make a task from the comment by ${nameOf(item.actor)}`}
+      data-make-task
+      onClick={() =>
+        openCreate({
+          title: titleFrom(item.body ?? ""),
+          description: `From a comment by ${nameOf(item.actor)} on “${task.title}” (/tasks/${task.id}):\n\n${item.body ?? ""}`,
+          projectId: task.projectId ?? "",
+          goalId: task.goalId ?? "",
+        })
+      }
+    >
+      <ListPlus aria-hidden />
+      Make a task
+    </Button>
+  );
+}
 
 /** Resolve / Reopen on one comment, for people who may work on the task. */
 function ResolveButton({ taskId, item }: { taskId: string; item: HistoryItem }) {
@@ -34,7 +74,8 @@ function ResolveButton({ taskId, item }: { taskId: string; item: HistoryItem }) 
   );
 }
 
-function Entry({ taskId, item, canResolve }: { taskId: string; item: HistoryItem; canResolve: boolean }) {
+function Entry({ task, item, canResolve }: { task: HistoryTask; item: HistoryItem; canResolve: boolean }) {
+  const taskId = task.id;
   const comment = item.type === "comment";
   const resolved = comment && item.resolved !== null;
   return (
@@ -82,7 +123,12 @@ function Entry({ taskId, item, canResolve }: { taskId: string; item: HistoryItem
               ) : (
                 <span className="font-medium text-status-awaiting-fg">Open comment</span>
               )}
-              {canResolve ? <ResolveButton taskId={taskId} item={item} /> : null}
+              {canResolve ? (
+                <span className="flex items-center gap-1">
+                  <MakeTaskButton task={task} item={item} />
+                  <ResolveButton taskId={taskId} item={item} />
+                </span>
+              ) : null}
             </div>
           </div>
         ) : item.note ? (
@@ -98,7 +144,8 @@ function Entry({ taskId, item, canResolve }: { taskId: string; item: HistoryItem
  * work on the task get the "Add a comment" box above it and Resolve on each comment; the heading counts what
  * is still open.
  */
-export function TaskHistory({ taskId, initial, canComment, openComments }: { taskId: string; initial: HistoryPage; canComment: boolean; openComments: number }) {
+export function TaskHistory({ task, initial, canComment, openComments }: { task: HistoryTask; initial: HistoryPage; canComment: boolean; openComments: number }) {
+  const taskId = task.id;
   // Earlier pages are keyed to the first page the server sent: after an action refreshes the page, `initial`
   // is a new object, so the list starts over from the fresh first page instead of keeping stale entries.
   const [extra, setExtra] = useState<{ key: HistoryPage; pages: HistoryPage[] } | null>(null);
@@ -135,7 +182,7 @@ export function TaskHistory({ taskId, initial, canComment, openComments }: { tas
                   <p className="text-[13px] font-medium text-muted-foreground">{item.dayLabel}</p>
                 </li>
               ) : null}
-              <Entry taskId={taskId} item={item} canResolve={canComment} />
+              <Entry task={task} item={item} canResolve={canComment} />
             </Fragment>
           ))}
         </ol>

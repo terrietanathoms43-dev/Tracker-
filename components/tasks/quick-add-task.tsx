@@ -113,6 +113,15 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
   const [due, setDue] = useState("");
   const [projectId, setProjectId] = useState(defaults.projectId ?? "");
   const [goalId, setGoalId] = useState(defaults.goalId ?? "");
+  // The page's project follows the navigation's project picker (2026-11-07 log): when the scope changes under the
+  // bar, the bar moves with it instead of keeping the project it first rendered with. Done the way the picker does
+  // it (a "previous prop" in state, no effect), so the change is in the same render.
+  const [prevDefaults, setPrevDefaults] = useState({ projectId: defaults.projectId ?? "", goalId: defaults.goalId ?? "" });
+  if ((defaults.projectId ?? "") !== prevDefaults.projectId || (defaults.goalId ?? "") !== prevDefaults.goalId) {
+    setPrevDefaults({ projectId: defaults.projectId ?? "", goalId: defaults.goalId ?? "" });
+    setProjectId(defaults.projectId ?? "");
+    setGoalId(defaults.goalId ?? "");
+  }
   /** People chosen in the picker; null until it is touched, when the task is yours (or whoever the title mentions). */
   const [picked, setPicked] = useState<string[] | null>(defaults.assigneeIds ?? null);
   /** The options row: open by default, folded away when this browser last chose so (kept in localStorage). */

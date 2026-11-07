@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3015",
+    "dev:against": "node scripts/dev-against.mjs",
     "build": "next build",
     "start": "next start --port 3015",
     "lint": "eslint",
@@ -13,7 +14,7 @@
     "db:backup": "tsx scripts/db-backup.ts",
     "db:copy": "tsx scripts/db-copy.ts",
     "db:migrate-hierarchy": "tsx scripts/migrate-hierarchy.ts",
-    "db:backfill-closers": "tsx scripts/backfill-goal-closers.ts",
+    "db:remove-closers": "tsx scripts/remove-goal-closers.ts",
     "test:seed": "tsx scripts/test-accounts.ts seed",
     "test:status": "tsx scripts/test-accounts.ts status",
     "test:tidy": "tsx scripts/test-accounts.ts tidy",

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ArrowLeft, ClipboardCheck, Flag, Link2, Lock, NotebookPen, Repeat } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Link2, Lock, NotebookPen, Repeat } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -135,12 +135,7 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
         ) : (
           <StatusBadge status={detail.status} />
         )}
-        {detail.goalCloser ? (
-          <span className="inline-flex h-6 items-center gap-1 rounded-md bg-primary/10 px-2 text-[12px] font-medium text-primary" title="Complete this last: it marks the goal achieved" data-goal-closer>
-            <Flag className="size-3" aria-hidden />
-            Marks the goal achieved
-          </span>
-        ) : null}
+
         {detail.assignees.length > 0 ? (
           <AssigneeStack assignees={detail.assignees} names />
         ) : (

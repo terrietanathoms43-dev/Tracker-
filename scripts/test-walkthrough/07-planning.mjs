@@ -64,7 +64,7 @@ try {
 
   // --- 2. a task from the goal page ------------------------------------------------------------------------------------
   await lead.goto(goalPath, 3500);
-  step("the goal page shows its title, its project and its Everything completed task", (await lead.waitFor(GOAL)) && (await lead.has(PROJECT)) && (await lead.has("Everything completed")) && (await lead.has("of 1 task completed")));
+  step("the goal page shows its title and its project, with no task of its own yet", (await lead.waitFor(GOAL)) && (await lead.has(PROJECT)) && !(await lead.has("Everything completed")));
   step("the goal page has the add bar", await hasBar(lead));
   await sleep(1500);
   step("the project and the goal are preselected", (await value(lead, "#quick-add-project")) === projectRow.id && (await value(lead, "#quick-add-goal")) === goalRow.id);
@@ -73,9 +73,9 @@ try {
   step("creating a task shows the toast", await lead.waitFor("Task created."));
   const [taskRow] = await query("select project_id, goal_id from tasks where title = $1", [TASK]);
   step("the task is in the goal and in the goal's project", taskRow?.goal_id === goalRow.id && taskRow?.project_id === projectRow.id, JSON.stringify(taskRow));
-  step("the goal lists the task and counts it with the closer", (await lead.waitFor(TASK)) && (await lead.waitFor("of 2 tasks completed")));
+  step("the goal lists the task and counts it", (await lead.waitFor(TASK)) && (await lead.waitFor("of 1 task completed")));
   await lead.goto(projectPath, 3500);
-  step("the project counts the task too", (await lead.waitFor("of 2 tasks completed")) && (await lead.has(TASK)));
+  step("the project counts the task too", (await lead.waitFor("of 1 task completed")) && (await lead.has(TASK)));
 
   // --- 3. connections and the branch view ---------------------------------------------------------------------------------
   const [other] = await query(`select id, title from goals where org_id = (${org}) and status = 'active' and parent_goal_id is null and title = 'Cut incident response time in half'`);
@@ -113,8 +113,19 @@ try {
   step("a paused goal offers no add bar", await barGone(lead));
   await lead.click("Reactivate", { exact: true });
   step("reactivating works", await lead.waitFor("Goal is active again."));
-  await lead.click("Mark completed", { exact: true });
-  step("completing works", await lead.waitFor("Goal completed."));
+  await lead.click("Mark completed", { exact: true, wait: 2500 });
+  step("marking it completed with its task still open is refused", await lead.waitFor("Finish the 1 open task"));
+  const [taskId] = await query("select id from tasks where title = $1", [TASK]);
+  await lead.goto(`/tasks/${taskId.id}`, 4000);
+  await lead.waitFor("Next action");
+  await lead.click("Change status", { wait: 800 });
+  await lead.click("Completed", { exact: true, within: "[role=menu]", wait: 1500 });
+  await lead.waitFor("Mark as completed", 5000);
+  await lead.type("#transition-summary", "Every walkthrough step passed.");
+  await lead.click("Mark as completed", { exact: true, within: "[role=dialog]", wait: 2500 });
+  step("completing its last task achieves the goal", await lead.waitFor("is achieved", 10_000));
+  const [achievedGoal] = await query("select status from goals where id = $1", [goalRow.id]);
+  step("the goal is completed in the database", achievedGoal?.status === "completed", JSON.stringify(achievedGoal));
   await lead.goto("/goals", 3000);
   step("a completed goal is hidden by default", !(await lead.has(`${GOAL} edited`)));
   await lead.goto("/goals?all=1", 3000);
@@ -129,7 +140,8 @@ try {
   step("completing a project works", await lead.waitFor("Project marked completed."));
   step("a completed project offers no add bar", await barGone(lead));
   await lead.click("Archive", { exact: true });
-  step("archiving shows the banner and keeps the task", (await lead.waitFor("This project is archived.")) && (await lead.has(TASK)));
+  const [kept] = await query("select project_id from tasks where title = $1", [TASK]);
+  step("archiving shows the banner and keeps the task", (await lead.waitFor("This project is archived.")) && kept?.project_id === projectRow.id, JSON.stringify(kept));
   await lead.shot("07-project-archived");
   await lead.goto("/home?view=projects", 3000);
   const listsProject = () => lead.evaluate(`[...document.querySelectorAll("main a")].some((a) => a.textContent.trim() === ${JSON.stringify(PROJECT)})`);
