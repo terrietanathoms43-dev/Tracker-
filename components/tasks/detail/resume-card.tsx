@@ -1,6 +1,8 @@
-import { CheckCircle2, Clock, MessageSquareWarning, OctagonAlert, XCircle } from "lucide-react";
+import { CheckCircle2, Clock, MessageSquareWarning, OctagonAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { RelativeTime } from "@/components/relative-time";
+import { StatusIcon } from "@/components/status-badge";
+import { CLOSED_WITHOUT_COMPLETION, isClosedStatus, TASK_STATUS_LABELS } from "@/lib/constants";
 import { nameOf } from "@/lib/tasks/people";
 import type { EvidenceLink, TaskAbilities, TaskDetail, UpdateContext } from "@/lib/tasks/types";
 import { EvidenceChips } from "../evidence-chips";
@@ -65,12 +67,12 @@ function StatusStrip({ detail, abilities, localChain, timeZone, now }: { detail:
       </div>
     );
   }
-  if (detail.status === "rejected") {
+  if (CLOSED_WITHOUT_COMPLETION.includes(detail.status)) {
     return (
       <div className="flex items-start gap-3 border-b bg-status-rejected-bg px-5 py-3 text-base text-status-rejected-fg md:px-6">
-        <XCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <StatusIcon status={detail.status} className="mt-0.5 text-current" />
         <p>
-          <span className="font-medium">Rejected</span>
+          <span className="font-medium">{TASK_STATUS_LABELS[detail.status]}</span>
           {detail.rejectionReason ? ` · ${detail.rejectionReason}` : ""}
         </p>
       </div>
@@ -105,7 +107,7 @@ export function ResumeCard({
   timeZone: string;
   now: Date;
 }) {
-  const closed = detail.status === "completed" || detail.status === "rejected";
+  const closed = isClosedStatus(detail.status);
   const proposal = detail.proposalStatus === "pending" || detail.proposalStatus === "declined";
   const local = detail.proposalStatus === "local";
   return (

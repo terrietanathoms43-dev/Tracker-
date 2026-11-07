@@ -22,12 +22,21 @@ export const TRANSITION_TITLES: Partial<Record<TaskStatus, string>> = {
    awaiting_approval: "Send for approval",
    completed: "Mark as completed",
    rejected: "Reject this task",
+   deferred: "Defer this task",
+   cancelled: "Cancel this task",
+};
+
+/** The question each closed-without-completion status asks, and its hint. */
+const CLOSE_PROMPTS: Record<"rejected" | "deferred" | "cancelled", { label: string; hint: string }> = {
+   rejected: { label: "Why is it rejected?", hint: "Kept in the task's history." },
+   deferred: { label: "Why is it deferred?", hint: "Until when, if you know. Kept in the task's history; the task can be reopened later." },
+   cancelled: { label: "Why is it cancelled?", hint: "Kept in the task's history. A cancelled task stays for the record; delete it to remove it." },
 };
 
 /**
- * Exactly the fields a status asks for (apex-ux flow D): a reason, an approver, or an optional summary and evidence.
- * Completing a task with open comments is refused by the server (lib/tasks/transitions.ts); the dialog says so
- * instead of offering a Save that fails.
+ * Exactly the fields a status asks for (apex-ux flow D): a reason, an approver, or the completion summary (required,
+ * 2026-11-07 log) and optional evidence. Completing a task with open comments is refused by the server
+ * (lib/tasks/transitions.ts); the dialog says so instead of offering a Save that fails.
  */
 export function TransitionForm({ context, status, onDone }: { context: UpdateContext; status: TaskStatus; onDone: () => void }) {
    const { task, people } = context;
@@ -40,8 +49,9 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
    const [errors, setErrors] = useState<Record<string, string[] | undefined>>({});
    const [pending, startTransition] = useTransition();
    const heldByComments = status === "completed" && task.openComments > 0;
+   const closing = status === "rejected" || status === "deferred" || status === "cancelled";
    const ready =
-      status === "blocked" || status === "rejected" ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : !heldByComments;
+      status === "blocked" || closing ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? !heldByComments && summary.trim() !== "" : true;
 
    return (
       <form
@@ -94,8 +104,8 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                </Field>
             </>
          ) : null}
-         {status === "rejected" ? (
-            <Field id="transition-reason" label="Why is it rejected?" hint="Kept in the task's history." error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
+         {closing ? (
+            <Field id="transition-reason" label={CLOSE_PROMPTS[status].label} hint={CLOSE_PROMPTS[status].hint} error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
                <Textarea
                   id="transition-reason"
                   value={reason}
@@ -129,7 +139,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
          ) : null}
          {status === "completed" && !heldByComments ? (
             <>
-               <Field id="transition-summary" label="Completion summary" hint="Optional: what changed, and why it matters." count={{ value: summary, max: LIMITS.completionSummary }}>
+               <Field id="transition-summary" label="Completion summary" hint="Required: what was done, and why it matters. These are the sign-off words on the task." error={errors.summary?.[0]} count={{ value: summary, max: LIMITS.completionSummary }}>
                   <Textarea
                      id="transition-summary"
                      value={summary}

@@ -12,7 +12,7 @@ import { GOAL_STATUSES, type GoalStatus } from "@/lib/constants";
 import { saveApprovalSettings } from "@/lib/dal/approvals";
 import { recordActivity } from "@/lib/dal/activity";
 import { findGoal, goalsById, linkEdgesForCycleCheck, lockGoal, ownerError, subGoalDeadlines } from "@/lib/dal/goals";
-import { createGoalCloser } from "@/lib/dal/goal-closers";
+import { assertNoOpenTasks } from "@/lib/dal/goal-achievement";
 import { findProject } from "@/lib/dal/projects";
 import { createGoalOccurrence, type NextGoal } from "@/lib/dal/recurrence";
 import { parentDeadlineProblem, subGoalDeadlineProblem } from "@/lib/goals/deadlines";
@@ -136,8 +136,6 @@ export async function createGoal(input: z.input<typeof createSchema>): Promise<A
         .values({ orgId: viewer.orgId, projectId: placed.projectId, ownerId, createdBy: viewer.userId, ...goalValues(data) })
         .returning({ id: goals.id });
       if (data.recurrence !== null) await tx.update(goals).set({ seriesId: row.id }).where(eq(goals.id, row.id));
-      // Every goal gets its "Everything completed" task (lib/dal/goal-closers.ts).
-      await createGoalCloser(tx, { orgId: viewer.orgId, goalId: row.id, projectId: placed.projectId, ownerId, targetDate: data.targetDate || null, createdBy: viewer.userId }, new Date());
       return ok({ id: row.id, projectId: placed.projectId });
     });
     if (!result.ok) return result;
@@ -234,6 +232,8 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
         throw new GuardError("forbidden", completing ? "Only admins, leaders and stakeholders can mark a goal completed." : "Only leaders and admins can pause a goal.");
       }
       if (goal.status === data.status) return { from: goal.status, next: null };
+      // A goal is achieved when its tasks are done (lib/dal/goal-achievement.ts): the button is a shortcut, not a way round that.
+      if (data.status === "completed") await assertNoOpenTasks(tx, viewer.orgId, goal);
       await tx
         .update(goals)
         .set({
@@ -274,7 +274,7 @@ export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<A
     const detach = async (tx: Tx, goal: { id: string; title: string }) => {
       const detached = await tx
         .update(tasks)
-        .set({ goalId: null, goalCloser: false, updatedAt: now })
+        .set({ goalId: null, updatedAt: now })
         .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id)))
         .returning({ id: tasks.id });
       for (const task of detached) {

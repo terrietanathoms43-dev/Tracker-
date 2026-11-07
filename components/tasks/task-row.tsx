@@ -1,9 +1,9 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronDown, ClipboardCheck, Flag, Lock, Repeat, XCircle } from "lucide-react";
+import { ChevronDown, ClipboardCheck, Lock, Repeat, XCircle } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
 import { StatusIcon } from "@/components/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -39,8 +39,28 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 /**
  * One dense row (apex-ui list row): status · title · next action · reason · due · priority · assignees, with a
  * hover "⋯" menu on desktop and a long-press sheet on touch. `readOnly` drops the actions (a stakeholder reading).
+ * A screen that has more to say about a row (the Active scope report, 2026-11-07 log) adds a `badge` beside the
+ * title, a `note` line under it, something `trailing` after the due date, and `attributes` on the row itself.
  */
-export function TaskRow({ task, today, showReason = true, readOnly = false }: { task: TaskListItem; today: string; showReason?: boolean; readOnly?: boolean }) {
+export function TaskRow({
+  task,
+  today,
+  showReason = true,
+  readOnly = false,
+  badge,
+  note,
+  trailing,
+  attributes,
+}: {
+  task: TaskListItem;
+  today: string;
+  showReason?: boolean;
+  readOnly?: boolean;
+  badge?: ReactNode;
+  note?: ReactNode;
+  trailing?: ReactNode;
+  attributes?: Record<string, string>;
+}) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const { handlers, swallowClick } = useLongPress(() => setSheetOpen(true));
@@ -67,6 +87,7 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
       data-expanded={open || undefined}
       data-selected={selected || undefined}
       data-proposal={task.proposal ?? undefined}
+      {...attributes}
     >
       <div
         className={cn("flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-accent/60 sm:px-4", open && "bg-accent/40")}
@@ -114,7 +135,7 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
           >
             {task.title}
           </Link>
-          {task.goalCloser ? <Flag className="size-3.5 shrink-0 text-primary" aria-label="Marks the goal achieved" role="img" /> : null}
+          {badge}
           {task.nextAction || reason || task.proposal === "pending" || task.proposal === "declined" || local ? (
             <span className="flex min-w-0 items-center gap-1.5">
               {reason ? <ReasonChip reason={reason} className="sm:hidden" /> : null}
@@ -141,6 +162,7 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
         {reason ? <ReasonChip reason={reason} className="relative hidden sm:inline-flex" /> : null}
         {task.repeats ? <Repeat className="hidden size-3.5 shrink-0 text-muted-foreground sm:block" aria-label={task.repeats} role="img" /> : null}
         <DueLabel due={task.dueDate} today={today} status={task.status} className="relative shrink-0" />
+        {trailing}
         <PriorityGlyph priority={task.priority} className="relative" />
         <AssigneeStack assignees={task.assignees} className="relative" />
         {readOnly ? null : <TaskMenu task={task} className="hidden opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 md:grid" />}
@@ -156,6 +178,11 @@ export function TaskRow({ task, today, showReason = true, readOnly = false }: { 
         </button>
         <TaskActionSheet task={task} open={sheetOpen} onOpenChange={setSheetOpen} readOnly={readOnly} />
       </div>
+      {note ? (
+        <div className="-mt-1.5 px-3 pb-2 pl-10 text-[13px] text-muted-foreground sm:px-4 sm:pl-11" data-task-note>
+          {note}
+        </div>
+      ) : null}
       {open ? (
         <div id={detailsId} className="border-t bg-muted/30 px-4 py-3 sm:px-5 sm:pl-12" data-task-details>
           {task.description ? <p className="max-w-prose text-sm leading-relaxed whitespace-pre-line">{task.description}</p> : <p className="text-sm text-muted-foreground">No description.</p>}

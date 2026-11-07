@@ -30,6 +30,7 @@ try {
   await jordan.select('select[id^="status-"]', "completed");
   await sleep(400);
   step("picking Completed says the next one will be made", await jordan.waitFor("completing makes the next one"));
+  await jordan.type('textarea[aria-label="Completion summary"]', "Tapes swapped and logged.");
   await jordan.click("Save update", { exact: true, wait: 3000 });
   step("the toast names the next due day", await jordan.waitFor("The next one is due"));
   const series = await query("select id, status, due_date::text as due, due_time, recurrence from tasks where series_id = $1 order by created_at", [tapes.series_id]);
@@ -46,22 +47,35 @@ try {
   step("the finished one can be reopened", await jordan.waitFor("Status changed."));
   await jordan.click("Change status", { wait: 800 });
   await jordan.click("Completed", { exact: true, wait: 1500 });
+  await jordan.type("#transition-summary", "Done again.");
   await jordan.click("Mark as completed", { within: "[role=dialog]", exact: true, wait: 3000 });
   const again = await query("select count(*)::int as n from tasks where series_id = $1", [tapes.series_id]);
   step("completing it again adds no third occurrence while the next is open", again[0]?.n === 2, JSON.stringify(again));
 
-  // --- 4. a repeating goal: a member can't complete it, a leader can, and the next week appears -------------------
+  // --- 4. a repeating goal: a member cannot mark it completed, finishing its last task achieves it, and the next week appears
   const [ops] = await query(`select id, target_date::text as target, series_id from goals where org_id = (${org}) and title = 'Weekly ops duties'`);
   step("the seed has the weekly ops goal", Boolean(ops?.id));
-  const [before] = await query("select count(*)::int as n from tasks where goal_id = $1 and (proposal_status is null or proposal_status = 'approved') and status <> 'rejected'", [ops.id]);
+  const [before] = await query("select count(*)::int as n from tasks where goal_id = $1 and (proposal_status is null or proposal_status = 'approved') and status not in ('rejected', 'cancelled')", [ops.id]);
   await jordan.goto(`/goals/${ops.id}`, 4000);
   step("the goal page says it repeats", (await jordan.waitFor("Weekly ops duties")) && (await jordan.has("Every week")));
   step("a member has no Mark completed button", !(await jordan.evaluate(`[...document.querySelectorAll("main button")].some((b) => b.offsetParent !== null && b.textContent.trim() === "Mark completed")`)));
 
   const morgan = (browsers.morgan = await openBrowser({ role: "leader", width: 1280, height: 900 }));
   await morgan.goto(`/goals/${ops.id}`, 4000);
-  await morgan.click("Mark completed", { exact: true, wait: 3000 });
-  step("the toast says the next one is due and how many tasks were copied", await morgan.waitFor("The next one is due"));
+  await morgan.click("Mark completed", { exact: true, wait: 2500 });
+  step("a leader marking it completed with tasks open is refused with the count", await morgan.waitFor("open tasks under", 10_000));
+  const open = await query("select id, title from tasks where goal_id = $1 and (proposal_status is null or proposal_status = 'approved') and status not in ('completed', 'rejected', 'deferred', 'cancelled') order by created_at", [ops.id]);
+  step("the goal has open tasks to finish", open.length >= 1, JSON.stringify(open.map((task) => task.title)));
+  for (const task of open) {
+    await jordan.goto(`/tasks/${task.id}`, 4000);
+    await jordan.waitFor("Next action");
+    await jordan.click("Change status", { wait: 800 });
+    await jordan.click("Completed", { exact: true, within: "[role=menu]", wait: 1500 });
+    await jordan.waitFor("Mark as completed", 5000);
+    await jordan.type("#transition-summary", `${task.title}: done for the week.`);
+    await jordan.click("Mark as completed", { exact: true, within: "[role=dialog]", wait: 3000 });
+  }
+  step("finishing the last task says the goal is achieved and the next one is due, with its tasks copied", (await jordan.waitFor("is achieved", 10_000)) && (await jordan.has("The next one is due")));
   const goals = await query("select id, status, target_date::text as target from goals where series_id = $1 order by created_at", [ops.series_id]);
   step("the series has the completed goal and a new active one a week on", goals.length === 2 && goals[0].status === "completed" && goals[1].status === "active" && goals[1].target > ops.target, JSON.stringify(goals));
   const [copied] = await query("select count(*)::int as n from tasks where goal_id = $1", [goals[1].id]);

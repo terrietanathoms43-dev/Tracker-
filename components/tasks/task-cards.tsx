@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ClipboardCheck, Flag } from "lucide-react";
+import { ClipboardCheck } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { KanbanItem, KanbanItemHandle } from "@/components/kanban";
@@ -56,12 +56,7 @@ export function TaskCard({
                      {task.proposal === "pending" ? "Waiting for sign-off" : "Declined"}
                   </span>
                ) : null}
-               {task.goalCloser ? (
-                  <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-primary">
-                     <Flag className="size-3" aria-hidden />
-                     Marks the goal achieved
-                  </span>
-               ) : null}
+
                {task.nextAction ? <p className="mt-1 line-clamp-1 text-[13px] text-muted-foreground">{task.nextAction}</p> : null}
                <div className="mt-2.5 flex items-center gap-2">
                   <DueLabel due={task.dueDate} today={today} status={task.status} />

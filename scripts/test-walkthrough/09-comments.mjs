@@ -74,6 +74,7 @@ try {
   await jordan.select(`#status-${task.id}`, "completed");
   await sleep(500);
   step("with nothing open, Completed is offered without a warning", !(await jordan.has("before completing this task")));
+  await jordan.type('textarea[aria-label="Completion summary"]', "Policy live; the test page reached the secondary.");
   await jordan.click("Save update", { exact: true, wait: 3000 });
   step("saving completes the task", await jordan.waitFor("Update saved."));
   const [done] = await query("select status, completed_at from tasks where id = $1", [task.id]);

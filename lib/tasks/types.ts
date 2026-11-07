@@ -32,8 +32,6 @@ export type TaskListItem = {
   proposal: ProposalStatus | null;
   /** A local task: whether sending it on starts a sign-off chain (true) or publishes it at once (false). */
   needsSignOff: boolean;
-  /** The goal's "Everything completed" task: completing it marks the goal achieved (2026-11-04 log). */
-  goalCloser: boolean;
   /** Whether the row's menu offers Delete (leaders, the proposer of an open proposal, the maker of a local task). */
   canDelete: boolean;
   updatedAt: string;
@@ -77,6 +75,8 @@ export type CreateDefaults = {
   projectId?: string;
   goalId?: string;
   title?: string;
+  /** "Make a task" from a comment (2026-11-07 log) hands over the comment, quoted, with a link back. */
+  description?: string;
   priority?: TaskPriority;
   dueDate?: string;
   assigneeIds?: string[];
@@ -117,8 +117,6 @@ export type TaskDetail = {
   needsSignOff: boolean;
   /** The sign-off chain, in order (empty for a task that was live from the start, or not sent yet). */
   approvals: ApprovalStepView[];
-  /** The goal's "Everything completed" task. */
-  goalCloser: boolean;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;

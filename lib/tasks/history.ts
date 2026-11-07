@@ -107,6 +107,10 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
       return { phrase: "sent it back", change: null };
     case "rejected":
       return { phrase: "rejected it", change: null };
+    case "deferred":
+      return { phrase: "deferred it", change: null };
+    case "cancelled":
+      return { phrase: "cancelled it", change: null };
     case "completed":
       return { phrase: "completed it", change: null };
     case "reopened":

@@ -28,6 +28,8 @@ import {
 import type { Pace } from "./pace";
 import type { ReportProject, ReportTable } from "./params";
 import { timelineWindow, type ReportRange } from "./range";
+import { listItemsByIds } from "@/lib/dal/tasks";
+import type { TaskListItem } from "@/lib/tasks/types";
 import { groupActiveScope, type ActiveScope } from "./scope";
 
 // Assembles the report the page shows and the CSV files the export route sends, from lib/reports/data.ts.
@@ -149,13 +151,18 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
 }
 
 /**
- * The Active scope view (docs/PLAN.md, 2026-11-06 log): every live task still open, plus what was completed on a day
- * in the range, grouped by status (lib/reports/scope.ts). The same access rule as the rest of the report.
+ * The Active scope view (docs/PLAN.md, 2026-11-06 and 2026-11-07 logs): every live task still open, plus what was
+ * closed on or after the Since day, grouped by status (lib/reports/scope.ts), with the standard list row for each
+ * (`items`), so the view draws the same rows as every other list. The same access rule as the rest of the report.
  */
-export async function buildActiveScope(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<{ scope: ReportScope; active: ActiveScope }> {
+export async function buildActiveScope(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<{ scope: ReportScope; active: ActiveScope; items: Map<string, TaskListItem> }> {
   assertCanSeeReports(viewer);
   const [rows, chosen] = await Promise.all([activeScopeTasks(viewer, range, project), reportProject(viewer, project)]);
-  return { scope: { project, chosen }, active: groupActiveScope(rows, range, today) };
+  const items = await listItemsByIds(
+    viewer,
+    rows.map((row) => row.id),
+  );
+  return { scope: { project, chosen }, active: groupActiveScope(rows, range, today), items };
 }
 
 /** One of the report's tables as a CSV file, reading only the rows that table needs. */

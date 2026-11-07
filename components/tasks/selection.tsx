@@ -17,7 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-result";
-import { TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { nameOf } from "@/lib/tasks/people";
 import { AssigneePicker } from "./assignee-picker";
@@ -92,7 +92,7 @@ export function SelectionProvider({ enabled = true, canDelete = false, bar = tru
   );
 }
 
-const INPUT_STATUSES = new Set<TaskStatus>(["blocked", "awaiting_approval", "completed", "rejected"]);
+const INPUT_STATUSES = new Set<TaskStatus>(["blocked", "awaiting_approval", "completed", "rejected", "deferred", "cancelled"]);
 
 /** The bar: count, Select all, the actions, Clear. Fixed above the phone's tabs, floating at the foot on a desktop. */
 function SelectionBar({ selection }: { selection: Selection }) {
@@ -231,8 +231,9 @@ function BulkStatusDialog({ status, count, pending, onClose, onApply }: { status
   const [blockedBy, setBlockedBy] = useState("");
   const [approverId, setApproverId] = useState("");
   const [summary, setSummary] = useState("");
-  const needsReason = status === "blocked" || status === "rejected";
-  const ready = needsReason ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : true;
+  const needsReason = status === "blocked" || CLOSED_WITHOUT_COMPLETION.includes(status);
+  const ready = needsReason ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? summary.trim() !== "" : true;
+  const verb = TASK_STATUS_LABELS[status].toLowerCase();
   return (
     <Shell
       title={`${TASK_STATUS_LABELS[status]}: ${plural(count)}`}
@@ -243,7 +244,7 @@ function BulkStatusDialog({ status, count, pending, onClose, onApply }: { status
             ? "Each task is marked blocked with the same reason."
             : status === "awaiting_approval"
               ? "Each task is sent to the same approver. A task that person is assigned to is left as it is and named."
-              : "Each task is rejected with the same reason."
+              : `Each task is ${verb} with the same reason. One you may not ${status === "deferred" ? "defer" : status === "cancelled" ? "cancel" : "reject"} is left as it is and named.`
       }
       onClose={onClose}
       onApply={() => onApply({ reason, blockedBy, approverId, summary })}
@@ -252,7 +253,7 @@ function BulkStatusDialog({ status, count, pending, onClose, onApply }: { status
       applyLabel={`${TASK_STATUS_LABELS[status]} ${count === 1 ? "it" : "all"}`}
     >
       {needsReason ? (
-        <Field id="bulk-reason" label={status === "blocked" ? "What is blocking them?" : "Why reject them?"} count={{ value: reason, max: LIMITS.blockedReason }}>
+        <Field id="bulk-reason" label={status === "blocked" ? "What is blocking them?" : status === "deferred" ? "Why defer them?" : status === "cancelled" ? "Why cancel them?" : "Why reject them?"} count={{ value: reason, max: LIMITS.blockedReason }}>
           <Textarea id="bulk-reason" value={reason} onChange={(event) => setReason(event.target.value)} rows={2} maxLength={LIMITS.blockedReason} autoFocus />
         </Field>
       ) : null}
@@ -274,7 +275,7 @@ function BulkStatusDialog({ status, count, pending, onClose, onApply }: { status
         </Field>
       ) : null}
       {status === "completed" ? (
-        <Field id="bulk-summary" label="Completion summary" hint="Optional: what changed, and why it matters." count={{ value: summary, max: LIMITS.completionSummary }}>
+        <Field id="bulk-summary" label="Completion summary" hint="Required: what was done, and why it matters." count={{ value: summary, max: LIMITS.completionSummary }}>
           <Textarea id="bulk-summary" value={summary} onChange={(event) => setSummary(event.target.value)} rows={2} maxLength={LIMITS.completionSummary} autoFocus />
         </Field>
       ) : null}
