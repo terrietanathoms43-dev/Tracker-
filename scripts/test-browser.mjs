@@ -1,11 +1,14 @@
 // Sign in as a test persona in headless Chrome and look at a screen (test mode — see lib/test-mode.ts).
-// Needs `npm run dev` running (port 3020) and `npm run test:seed` done once.
+// Needs `npm run dev` running (port 3015) and `npm run test:seed` done once.
 //
-// Usage: node scripts/test-browser.mjs <persona|public> [path] [--width=390] [--height=844] [--dark] [--wait=3500] [--out=name] [--full] [--base=http://localhost:3015]
-//   personas: admin, lead, member, member2, stakeholder (Trackwise Demo) · other (Other Co admin) · public (nobody)
+// Usage: node scripts/test-browser.mjs <persona|public|email> [path] [--width=390] [--height=844] [--dark] [--wait=3500] [--out=name] [--full] [--base=http://localhost:3015] [--db=prod] [--org=slug]
+//   personas: admin, leader, member, member2, stakeholder (Trackwise Demo) · other (Other Co admin) · public (nobody)
+//   an email: a real account listed in AGENT_LOGIN_ACCOUNTS in .env.local (scripts/agent-session.mjs writes the session into
+//     the --db database, "local" by default, and --org picks the workspace by slug), against whatever server --base names
 //   --dark emulates prefers-color-scheme: dark (the app follows the system theme by default)
 //   e.g. node scripts/test-browser.mjs leader /home --width=1280 --height=900
 //        node scripts/test-browser.mjs admin /settings/organization --dark
+//        node scripts/test-browser.mjs you@example.com /my-work --db=prod --org=apex --base=http://localhost:3021
 // Prints any horizontal overflow and console errors, and saves a screenshot to .test-shots/ (git-ignored). Read the PNG to look at it.
 //
 // It can also be imported to script a flow across several signed-in browsers (scripts/test-walkthrough/ has several):
@@ -118,7 +121,7 @@ const PAGE_HELPERS = `
 `;
 
 // dark: emulate prefers-color-scheme: dark (next-themes follows the system theme when nothing is chosen)
-export async function openBrowser({ role = "public", width = 390, height = 844, dark = false, baseUrl = DEFAULT_BASE_URL } = {}) {
+export async function openBrowser({ role = "public", width = 390, height = 844, dark = false, baseUrl = DEFAULT_BASE_URL, db = "local", org = null } = {}) {
   const isMobile = width < 900;
   const port = 9400 + Math.floor(Math.random() * 500);
   const profile = path.join(os.tmpdir(), `trackwise-test-profile-${port}`);
@@ -214,10 +217,21 @@ export async function openBrowser({ role = "public", width = 390, height = 844, 
     send,
 
     // The first visit signs the persona in through /api/test-login and lands on the path; later visits are plain navigations.
+    // A real account (an email as the role) is signed in by scripts/agent-session.mjs instead: a session row in the --db
+    // database and the two cookies set straight in the browser, so no route and no test mode are needed.
     async goto(pagePath = "/", wait = 3500) {
       let url = `${baseUrl}${pagePath}`;
       if (role !== "public" && browser.signedIn !== true) {
-        url = `${baseUrl}/api/test-login?as=${role}&secret=${encodeURIComponent(testSecret())}&to=${encodeURIComponent(pagePath)}`;
+        if (role.includes("@")) {
+          const { createAgentSession, SESSION_COOKIE, ORG_COOKIE } = await import("./agent-session.mjs");
+          const session = await createAgentSession({ email: role, db, org });
+          const expires = Math.floor(session.expiresAt.getTime() / 1000);
+          await send("Network.setCookie", { name: SESSION_COOKIE, value: encodeURIComponent(session.cookie), url: baseUrl, httpOnly: true, sameSite: "Lax", expires });
+          await send("Network.setCookie", { name: ORG_COOKIE, value: session.orgId, url: baseUrl, httpOnly: true, sameSite: "Lax", expires });
+          browser.session = { userId: session.userId, userName: session.userName, orgId: session.orgId, orgSlug: session.orgSlug, role: session.role, database: session.database };
+        } else {
+          url = `${baseUrl}/api/test-login?as=${role}&secret=${encodeURIComponent(testSecret())}&to=${encodeURIComponent(pagePath)}`;
+        }
         browser.signedIn = true;
       }
       await send("Page.navigate", { url });
@@ -527,11 +541,15 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     height: Number(flag("height", 844)),
     dark,
     baseUrl: flag("base", DEFAULT_BASE_URL),
+    db: flag("db", "local"),
+    org: flag("org", null),
   });
   try {
     const landed = await browser.goto(pagePath, Number(flag("wait", 3500)));
     const size = `${flag("width", 390)}x${flag("height", 844)}`;
-    const name = flag("out", `${role}${pagePath.replace(/[^a-z0-9]+/gi, "-")}`.replace(/-$/, "") + `-${size}${dark ? "-dark" : ""}`);
+    const who = role.includes("@") ? role.split("@")[0].replace(/[^a-z0-9]+/gi, "-") : role;
+    const name = flag("out", `${who}${pagePath.replace(/[^a-z0-9]+/gi, "-")}`.replace(/-$/, "") + `-${size}${dark ? "-dark" : ""}`);
+    if (browser.session) console.log(`signed in: ${browser.session.userName} in ${browser.session.orgSlug} (${browser.session.role}) · ${browser.session.database}`);
     console.log(`landed on: ${landed}`);
     console.log(`overflow:  ${JSON.stringify(await browser.overflow())}`);
     console.log(`errors:    ${JSON.stringify(browser.problems)}`);
