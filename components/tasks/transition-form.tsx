@@ -24,6 +24,7 @@ export const TRANSITION_TITLES: Partial<Record<TaskStatus, string>> = {
    rejected: "Reject this task",
    deferred: "Defer this task",
    cancelled: "Cancel this task",
+   merged: "Merge into its parent",
 };
 
 /** The question each closed-without-completion status asks, and its hint. */
@@ -49,9 +50,12 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
    const [errors, setErrors] = useState<Record<string, string[] | undefined>>({});
    const [pending, startTransition] = useTransition();
    const heldByComments = status === "completed" && task.openComments > 0;
+   // Sub-tasks (2026-11-08 log): a parent waits for its open sub-tasks; a merge only works on a sub-task and needs no words.
+   const heldBySubTasks = status === "completed" && task.openSubTasks > 0;
+   const merging = status === "merged";
    const closing = status === "rejected" || status === "deferred" || status === "cancelled";
    const ready =
-      status === "blocked" || closing ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? !heldByComments && summary.trim() !== "" : true;
+      status === "blocked" || closing ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? !heldByComments && !heldBySubTasks && summary.trim() !== "" : merging ? task.parent !== null : true;
 
    return (
       <form
@@ -137,7 +141,26 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                <span>{openCommentsMessage(task.openComments)} They are under Comments and history on the task page.</span>
             </p>
          ) : null}
-         {status === "completed" && !heldByComments ? (
+         {heldBySubTasks && !heldByComments ? (
+            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+               <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
+               <span>
+                  Finish the {task.openSubTasks} open {task.openSubTasks === 1 ? "sub-task" : "sub-tasks"} first, or merge them: this task waits for them.
+               </span>
+            </p>
+         ) : null}
+         {merging ? (
+            <p className="text-sm text-muted-foreground" data-merge-note>
+               {task.parent ? (
+                  <>
+                     This task is folded into <span className="font-medium text-foreground">{task.parent.title}</span>: it closes as Merged, stays listed under it with its comments and history, and can be reopened or detached later.
+                  </>
+               ) : (
+                  "Only a sub-task can be merged: attach it to the task it duplicates first."
+               )}
+            </p>
+         ) : null}
+         {status === "completed" && !heldByComments && !heldBySubTasks ? (
             <>
                <Field id="transition-summary" label="Completion summary" hint="Required: what was done, and why it matters. These are the sign-off words on the task." error={errors.summary?.[0]} count={{ value: summary, max: LIMITS.completionSummary }}>
                   <Textarea

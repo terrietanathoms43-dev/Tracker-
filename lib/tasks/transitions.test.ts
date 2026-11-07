@@ -1,9 +1,9 @@
 // The status rules of docs/PLAN.md §5, checked without a database.
 import { describe, expect, it } from "vitest";
-import { APPROVAL_NOTE_REQUIRED, needsInput, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type TaskState } from "./transitions";
+import { APPROVAL_NOTE_REQUIRED, MERGE_NEEDS_PARENT, needsInput, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type TaskState } from "./transitions";
 
 const now = new Date("2026-10-15T12:00:00Z");
-const task = (overrides: Partial<TaskState> = {}): TaskState => ({ status: "in_progress", startedAt: new Date("2026-10-01"), approverId: null, blockedReason: null, openComments: 0, ...overrides });
+const task = (overrides: Partial<TaskState> = {}): TaskState => ({ status: "in_progress", startedAt: new Date("2026-10-01"), approverId: null, blockedReason: null, openComments: 0, parentTaskId: null, ...overrides });
 const kinds = (plan: ReturnType<typeof planTransition>) => (plan.ok ? plan.activities.map((a) => a.kind) : plan.error);
 
 describe("status transitions (PLAN §5)", () => {
@@ -105,5 +105,15 @@ describe("status transitions (PLAN §5)", () => {
     expect(kinds(reopened)).toEqual(["reopened"]);
     // Closing a rejected task another way swaps the reason without a reopen.
     expect(kinds(planTransition(task({ status: "rejected" }), "cancelled", { reason: "Gone" }, now))).toEqual(["cancelled"]);
+  });
+
+  it("only a sub-task can be merged, and merging closes it with its parent as the reason", () => {
+    expect(planTransition(task(), "merged", { reason: "Merged into X" }, now)).toEqual({ ok: false, error: MERGE_NEEDS_PARENT });
+    const child = task({ parentTaskId: "parent" });
+    expect(planTransition(child, "merged", {}, now)).toEqual({ ok: false, error: REASON_PROMPTS.merged });
+    const merged = planTransition(child, "merged", { reason: "Merged into “Ship the status page”" }, now);
+    expect(merged).toMatchObject({ ok: true, patch: { status: "merged", rejectionReason: "Merged into “Ship the status page”" }, activities: [{ kind: "merged" }] });
+    expect(kinds(planTransition(task({ status: "merged", parentTaskId: "parent" }), "not_started", {}, now))).toEqual(["reopened"]);
+    expect(needsInput("merged")).toBe(true);
   });
 });

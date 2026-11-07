@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { loadMoreTasks } from "@/actions/tasks";
 import { Button } from "@/components/ui/button";
+import { nestSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskListItem, TaskPage } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { TaskRow } from "./task-row";
@@ -36,8 +37,8 @@ export function TaskList({
   return (
     <>
       <ul className="divide-y">
-        {items.map((task) => (
-          <TaskRow key={task.id} task={task} today={today} showReason={showReason} readOnly={readOnly} />
+        {nestSubTasks(items).map(({ task, nested }) => (
+          <TaskRow key={task.id} task={task} today={today} showReason={showReason} readOnly={readOnly} nested={nested} />
         ))}
       </ul>
       {cursor && query ? (

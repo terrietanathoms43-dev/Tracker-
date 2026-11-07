@@ -72,8 +72,8 @@ function StatusStrip({ detail, abilities, localChain, timeZone, now }: { detail:
       <div className="flex items-start gap-3 border-b bg-status-rejected-bg px-5 py-3 text-base text-status-rejected-fg md:px-6">
         <StatusIcon status={detail.status} className="mt-0.5 text-current" />
         <p>
-          <span className="font-medium">{TASK_STATUS_LABELS[detail.status]}</span>
-          {detail.rejectionReason ? ` · ${detail.rejectionReason}` : ""}
+          <span className="font-medium">{detail.status === "merged" ? (detail.rejectionReason ?? TASK_STATUS_LABELS.merged) : TASK_STATUS_LABELS[detail.status]}</span>
+          {detail.status !== "merged" && detail.rejectionReason ? ` · ${detail.rejectionReason}` : ""}
         </p>
       </div>
     );

@@ -19,12 +19,12 @@ const shiftDay = (day, days) => {
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 };
-const GROUPS = ["blocked", "awaiting_approval", "in_progress", "not_started", "deferred", "rejected", "cancelled", "completed"];
+const GROUPS = ["blocked", "awaiting_approval", "in_progress", "not_started", "deferred", "rejected", "cancelled", "merged", "completed"];
 const INTRO = "the work this report cycle was to get through";
 const CSV_HEADER = "Title,Project,Goal,Assignees,Status,Due date,Closed on,Added on,New this cycle,Detail";
 /** The closed statuses, and the ones closed without completing (lib/constants.ts). */
-const CLOSED = "('completed', 'rejected', 'deferred', 'cancelled')";
-const CLOSED_WITHOUT_COMPLETION = "('rejected', 'deferred', 'cancelled')";
+const CLOSED = "('completed', 'rejected', 'deferred', 'cancelled', 'merged')";
+const CLOSED_WITHOUT_COMPLETION = "('rejected', 'deferred', 'cancelled', 'merged')";
 
 /**
  * What the page should show since a day (and for a project): the rule of lib/reports/data.ts `activeScopeTasks`

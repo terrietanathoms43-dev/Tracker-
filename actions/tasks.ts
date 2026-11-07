@@ -20,7 +20,7 @@ import { findMembership, leaderIds } from "@/lib/dal/orgs";
 import { findProject } from "@/lib/dal/projects";
 import { applyGoalRules, describeGoalOutcome, reopenGoalForNewWork, type GoalOutcome } from "@/lib/dal/goal-achievement";
 import { seriesAnchor, seriesHasLaterOccurrence } from "@/lib/dal/recurrence";
-import { getTaskBasics, listTasks, lockTask, recentTasks, searchTasks, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
+import { getTaskBasics, listTasks, lockTask, openSubTasks, recentTasks, searchTasks, subTaskIds, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
 import { captureProviderFor } from "@/lib/capture/availability";
 import { log } from "@/lib/log";
 import { dispatch, type Notice } from "@/lib/notify";
@@ -46,7 +46,7 @@ import { describeRecurrence, nextAfterFinishing, normalizeRecurrence, sameRecurr
 import { defaultApproverFor } from "@/lib/tasks/approver";
 import { sameIds } from "@/lib/tasks/assignees";
 import { parseFilters } from "@/lib/tasks/filters";
-import { asksReason, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
+import { asksReason, MERGE_NEEDS_PARENT, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
 import type { HistoryPage, TaskFormOptions, TaskListItem, TaskPage, UpdateContext } from "@/lib/tasks/types";
 import { dayKey, formatDay } from "@/lib/time";
 import { requireViewer, requireViewerContext } from "@/lib/viewer";
@@ -190,6 +190,110 @@ async function spawnNextOccurrence(tx: Tx, viewer: Viewer, task: LockedTask, ass
 
 const withNextDue = (message: string, due: string | null, today: string) => (due ? `${message} The next one is due ${formatDay(due, today)}.` : message);
 
+// --- sub-tasks (docs/PLAN.md, 2026-11-08 log) ---------------------------------------------------------------------
+
+const subTasksMessage = (open: number) => `Finish the ${open} open ${open === 1 ? "sub-task" : "sub-tasks"} first, or merge them: this task waits for them.`;
+const CHILD_CANNOT_MOVE = "A sub-task lives where its parent lives: move the parent, or detach it first.";
+
+/**
+ * What a status change must respect because of sub-tasks: a parent waits for its open sub-tasks before it can be
+ * completed, and a merge names the parent as its reason. Returns the reason to plan with.
+ */
+async function subTaskRules(tx: Tx, orgId: string, task: { id: string; status: TaskStatus; parentTaskId: string | null }, to: TaskStatus, reason: string): Promise<{ ok: true; reason: string; parentTitle: string | null } | { ok: false; error: string }> {
+  if (to === "completed" && task.status !== "completed") {
+    const open = await openSubTasks(tx, orgId, task.id);
+    if (open > 0) return { ok: false, error: subTasksMessage(open) };
+  }
+  if (to === "merged") {
+    if (task.parentTaskId === null) return { ok: false, error: MERGE_NEEDS_PARENT };
+    const [parent] = await tx.select({ title: tasks.title }).from(tasks).where(eq(tasks.id, task.parentTaskId));
+    const parentTitle = parent?.title ?? null;
+    return { ok: true, reason: `Merged into “${parentTitle ?? "its parent"}”`, parentTitle };
+  }
+  return { ok: true, reason, parentTitle: null };
+}
+
+/** The history line of a merge names the parent, so the task page can say "merged it into X". */
+function stampMerge(activities: ActivityDraft[], task: { parentTaskId: string | null }, parentTitle: string | null): ActivityDraft[] {
+  return activities.map((activity) => (activity.kind === "merged" ? { ...activity, after: { ...activity.after, parentId: task.parentTaskId, parentTitle } } : activity));
+}
+
+/** Moves every task attached to `parentId` to the parent's new project and goal, with a history line each. */
+async function moveSubTasksWith(tx: Tx, viewer: Viewer, parentId: string, placement: { projectId: string | null; goalId: string | null }, now: Date): Promise<number> {
+  const ids = await subTaskIds(tx, viewer.orgId, parentId);
+  for (const childId of ids) {
+    await tx.update(tasks).set({ projectId: placement.projectId, goalId: placement.goalId, updatedAt: now }).where(eq(tasks.id, childId));
+    await recordActivity(tx, { orgId: viewer.orgId, taskId: childId, actorId: viewer.userId }, [{ kind: "edited", after: { projectId: placement.projectId, goalId: placement.goalId }, note: "Moved with the task it is attached to." }], now);
+  }
+  return ids.length;
+}
+
+/**
+ * Attaches `task` under `parent` inside the caller's transaction: one level only, both live, both editable by the
+ * viewer. The child takes the parent's project and goal (a sub-task lives where its parent lives). Returns the
+ * history line to record on the child.
+ */
+async function attachUnder(tx: Tx, viewer: Viewer, child: Locked, parent: Locked, now: Date): Promise<void> {
+  if (child.task.id === parent.task.id) throw new GuardError("forbidden", "A task cannot be attached to itself.");
+  if (!canEditTask(viewer, child.scope) || !canEditTask(viewer, parent.scope)) throw new GuardError("forbidden", "You need to be able to edit both tasks to attach one to the other.");
+  if (!isLive(child.task) || !isLive(parent.task)) throw new GuardError("forbidden", "Only live tasks can be attached: send a local task or a proposal on first.");
+  if (parent.task.parentTaskId !== null) throw new GuardError("forbidden", "That task is a sub-task itself: attach to its parent instead (one level only).");
+  if ((await subTaskIds(tx, viewer.orgId, child.task.id)).length > 0) throw new GuardError("forbidden", "That task has sub-tasks of its own: detach them first (one level only).");
+  if (child.task.parentTaskId === parent.task.id) return;
+  await tx.update(tasks).set({ parentTaskId: parent.task.id, projectId: parent.task.projectId, goalId: parent.task.goalId, updatedAt: now }).where(eq(tasks.id, child.task.id));
+  await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, parent.task.id));
+  await recordActivity(tx, { orgId: viewer.orgId, taskId: child.task.id, actorId: viewer.userId }, [{ kind: "attached", before: { parentId: child.task.parentTaskId }, after: { parentId: parent.task.id, parentTitle: parent.task.title } }], now);
+}
+
+const attachSchema = z.object({ taskId: id, parentId: id });
+
+/** Attaches a task under another (the row menu, the task page): it becomes a sub-task, listed under its parent. */
+export async function attachTask(input: z.input<typeof attachSchema>): Promise<ActionResult> {
+  return runAction("tasks.attach", attachSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    const title = await db.transaction(async (tx) => {
+      const [child, parent] = await Promise.all([lockTask(tx, viewer.orgId, data.taskId), lockTask(tx, viewer.orgId, data.parentId)]);
+      if (child === null || parent === null) throw new GuardError("not_found");
+      await attachUnder(tx, viewer, child, parent, now);
+      return parent.task.title;
+    });
+    log.info("tasks.attached", { orgId: viewer.orgId, taskId: data.taskId, parentId: data.parentId, by: viewer.userId });
+    refresh();
+    return ok(undefined, `Attached under “${title}”.`);
+  });
+}
+
+const detachSchema = z.object({ taskId: id });
+
+/** Detaches a sub-task: it keeps its place and becomes a task of its own; a merged one is open again. */
+export async function detachTask(input: z.input<typeof detachSchema>): Promise<ActionResult> {
+  return runAction("tasks.detach", detachSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    const reopened = await db.transaction(async (tx) => {
+      const locked = await lockTask(tx, viewer.orgId, data.taskId);
+      if (locked === null) throw new GuardError("not_found");
+      const { task, scope } = locked;
+      if (!canEditTask(viewer, scope)) throw new GuardError("forbidden");
+      if (task.parentTaskId === null) throw new GuardError("conflict", "This task is not attached to another.");
+      const [parent] = await tx.select({ title: tasks.title }).from(tasks).where(eq(tasks.id, task.parentTaskId));
+      const reopen = task.status === "merged";
+      await tx
+        .update(tasks)
+        .set({ parentTaskId: null, ...(reopen ? { status: "not_started", rejectionReason: null } : {}), updatedAt: now })
+        .where(eq(tasks.id, task.id));
+      const drafts: ActivityDraft[] = [{ kind: "detached", before: { parentId: task.parentTaskId, parentTitle: parent?.title ?? null }, after: { parentId: null } }];
+      if (reopen) drafts.push({ kind: "reopened", before: { status: "merged" }, after: { status: "not_started" }, note: "Detached, so it is a task of its own again." });
+      await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
+      return reopen;
+    });
+    log.info("tasks.detached", { orgId: viewer.orgId, taskId: data.taskId, reopened, by: viewer.userId });
+    refresh();
+    return ok(undefined, reopened ? "Detached and open again." : "Detached.");
+  });
+}
+
 // --- create ---------------------------------------------------------------------------------------------------
 
 const createSchema = z.object({
@@ -197,6 +301,8 @@ const createSchema = z.object({
   assigneeIds: idList,
   projectId: z.string().max(64).default(""),
   goalId: z.string().max(64).default(""),
+  /** A sub-task (2026-11-08 log): made attached to this task, in its project and goal, live like its parent. */
+  parentId: z.string().max(64).default(""),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
   dueDate: day,
   dueTime: clock,
@@ -220,8 +326,16 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
     const notices: Notice[] = [];
     const outcome = await db.transaction(async (tx) => {
       const assignment = await validateAssignment(tx, viewer.orgId, data.assigneeIds);
-      const placement = await resolvePlacement(tx, viewer.orgId, data);
-      const chain = await chainForPlacement(tx, viewer, placement);
+      // A sub-task is made where its parent is, live like its parent (the parent already passed sign-off there).
+      const parent = data.parentId ? await lockTask(tx, viewer.orgId, data.parentId) : null;
+      if (data.parentId && parent === null) throw new GuardError("not_found", "That parent task does not exist, or you cannot see it.");
+      if (parent !== null) {
+        if (!canEditTask(viewer, parent.scope)) throw new GuardError("forbidden", "You need to be able to edit a task to add sub-tasks to it.");
+        if (!isLive(parent.task)) throw new GuardError("forbidden", "Only a live task can have sub-tasks: send it on first.");
+        if (parent.task.parentTaskId !== null) throw new GuardError("forbidden", "That task is a sub-task itself: add to its parent instead (one level only).");
+      }
+      const placement = parent !== null ? { projectId: parent.task.projectId, goalId: parent.task.goalId } : await resolvePlacement(tx, viewer.orgId, data);
+      const chain = parent !== null ? null : await chainForPlacement(tx, viewer, placement);
       // A worker's task under a sign-off rule starts local; a stakeholder's goes to the chain straight away.
       const local = chain !== null && isWorker(viewer);
       const proposal = chain !== null && !local;
@@ -231,6 +345,7 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
           orgId: viewer.orgId,
           projectId: placement.projectId,
           goalId: placement.goalId,
+          parentTaskId: parent?.task.id ?? null,
           title: data.title,
           description: data.description || null,
           createdBy: viewer.userId,
@@ -248,6 +363,10 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
       const reopened = placement.goalId !== null && !local ? await reopenGoalForNewWork(tx, viewer, placement.goalId, now) : null;
       await applyAssignment(tx, created.id, viewer.userId, [], assignment, now);
       const drafts: ActivityDraft[] = [{ kind: "created", after: { title: data.title, proposal, local } }];
+      if (parent !== null) {
+        drafts.push({ kind: "attached", after: { parentId: parent.task.id, parentTitle: parent.task.title } });
+        await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, parent.task.id));
+      }
       // Assigning work to yourself alone is not news worth a history line.
       const justMe = sameIds(assignment, [viewer.userId]);
       if (!justMe && assignment.length > 0) drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
@@ -355,6 +474,7 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
       } else if (data.field === "goalId") {
         const value = data.value === "" ? null : data.value;
         if ((task.goalId ?? null) === value) return false;
+        if (task.parentTaskId !== null) throw new GuardError("forbidden", CHILD_CANNOT_MOVE);
         const placement = await resolvePlacement(tx, viewer.orgId, { projectId: task.projectId ?? "", goalId: value ?? "" });
         const goal = value === null ? null : await findGoal(tx, viewer.orgId, value);
         patch = { goalId: placement.goalId, projectId: value === null ? task.projectId : placement.projectId };
@@ -363,6 +483,7 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
       } else if (data.field === "projectId") {
         const value = data.value === "" ? null : data.value;
         if ((task.projectId ?? null) === value) return false;
+        if (task.parentTaskId !== null) throw new GuardError("forbidden", CHILD_CANNOT_MOVE);
         // Names are kept in the audit row so the history still reads right after a rename.
         const project = value === null ? null : await findProject(tx, viewer.orgId, value);
         if (value !== null && !project) throw new GuardError("not_found", "That project doesn't exist, or you can't see it.");
@@ -390,6 +511,8 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
         .where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [draft], now);
       if (moved === null) return { reopened: null, regate: null, makerName: null };
+      // Sub-tasks live where their parent lives: they move with it.
+      await moveSubTasksWith(tx, viewer, task.id, moved, now);
       // Where it went decides two things (2026-11-07 log): an achieved goal there is active again, and sign-off there
       // makes it its maker's local task (or a proposal) again instead of letting it skip the queue.
       const reopened = moved.goalId !== null && moved.goalId !== task.goalId && isLive(task) ? await reopenGoalForNewWork(tx, viewer, moved.goalId, now) : null;
@@ -449,10 +572,13 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
         if (assignment.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
       }
-      const transition: TransitionInput = { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary, note: data.note };
+      const rules = await subTaskRules(tx, viewer.orgId, task, data.status, data.reason);
+      if (!rules.ok) return { error: rules.error };
+      const transition: TransitionInput = { reason: rules.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary, note: data.note };
       const plan = planTransition(task, data.status, transition, now, via);
       if (!plan.ok) return { error: plan.error };
       if (plan.activities.length === 0) return null;
+      plan.activities = stampMerge(plan.activities, task, rules.parentTitle);
       // Completing the last open task under a goal achieves it; reopening one under an achieved goal reopens it (lib/dal/goal-achievement.ts).
       const goal = await applyGoalRules(tx, viewer, task, data.status, now);
       const evidence = data.status === "completed" ? await insertLink(tx, task.id, viewer.userId, data.evidenceUrl, data.evidenceLabel, now) : [];
@@ -537,11 +663,13 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
           await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
           if (after.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
         }
-        const plan = planTransition(task, target, { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
+        const rules = await subTaskRules(tx, viewer.orgId, task, target, data.reason);
+        if (!rules.ok) return { error: rules.error };
+        const plan = planTransition(task, target, { reason: rules.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
         if (!plan.ok) return { error: plan.error };
         goal = await applyGoalRules(tx, viewer, task, target, now);
         patch = plan.patch;
-        drafts.push(...plan.activities);
+        drafts.push(...stampMerge(plan.activities, task, rules.parentTitle));
       } else if (task.status === "blocked" && data.status === "blocked" && (data.reason !== task.blockedReason || (data.blockedBy || null) !== task.blockedBy)) {
         // Still blocked, with the reason brought up to date.
         patch = { blockedReason: data.reason, blockedBy: data.blockedBy || null };
@@ -789,6 +917,8 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
         blockedBy: task.blockedBy,
         openComments: task.openComments,
         repeats: task.recurrence ? describeRecurrence(task.recurrence, task.dueDate) : null,
+        parent: task.parent,
+        openSubTasks: task.openSubTasks,
       },
       people,
       defaultApprover: defaultApproverFor(people, task.approverId, task.assigneeIds),
@@ -889,12 +1019,14 @@ export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>):
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
         if (assignment.includes(data.approverId)) throw new GuardError("forbidden", "the approver is assigned to it");
       }
-      const plan = planTransition(task, data.status, { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
+      const rules = await subTaskRules(tx, viewer.orgId, task, data.status, data.reason);
+      if (!rules.ok) throw new GuardError("conflict", rules.error);
+      const plan = planTransition(task, data.status, { reason: rules.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
       if (!plan.ok) throw new GuardError("conflict", plan.error);
       if (plan.activities.length === 0) return [];
       await applyGoalRules(tx, viewer, task, data.status, now);
       await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
-      await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, plan.activities, now);
+      await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, stampMerge(plan.activities, task, rules.parentTitle), now);
       const sent = await noticesFor(tx, viewer, task, assignment, plan.activities, data.approverId || task.approverId, null);
       if (data.status === "completed") await spawnNextOccurrence(tx, viewer, task, assignment, now);
       return sent;
@@ -943,6 +1075,7 @@ export async function bulkMove(input: z.input<typeof bulkMoveSchema>): Promise<A
       if (!canEditTask(viewer, scope)) throw new GuardError("forbidden", "you can't edit it");
       const placement = await resolvePlacement(tx, viewer.orgId, data);
       if ((task.projectId ?? null) === placement.projectId && (task.goalId ?? null) === placement.goalId) return [];
+      if (task.parentTaskId !== null) throw new GuardError("forbidden", "it is a sub-task: move its parent");
       const project = placement.projectId ? await findProject(tx, viewer.orgId, placement.projectId) : null;
       const goal = placement.goalId ? await findGoal(tx, viewer.orgId, placement.goalId) : null;
       await tx.update(tasks).set({ projectId: placement.projectId, goalId: placement.goalId, updatedAt: now }).where(eq(tasks.id, task.id));
@@ -952,6 +1085,7 @@ export async function bulkMove(input: z.input<typeof bulkMoveSchema>): Promise<A
         [{ kind: "edited", before: { projectId: task.projectId, goalId: task.goalId }, after: { projectId: placement.projectId, projectName: project?.name ?? null, goalId: placement.goalId, goalTitle: goal?.title ?? null } }],
         now,
       );
+      await moveSubTasksWith(tx, viewer, task.id, placement, now);
       // The same two rules as a single move (editTask): an achieved goal there is active again; sign-off there re-gates it.
       if (placement.goalId !== null && placement.goalId !== task.goalId && isLive(task)) await reopenGoalForNewWork(tx, viewer, placement.goalId, now);
       const regate = await regateMovedTask(tx, viewer, task, placement, now);
@@ -964,6 +1098,29 @@ export async function bulkMove(input: z.input<typeof bulkMoveSchema>): Promise<A
     const result = bulkResult(outcome, data.projectId || data.goalId ? "moved" : "made standalone");
     if (!result.ok || localAgain === 0) return result;
     return ok(result.data, `${result.message ?? ""} Sign-off applies there, so ${localAgain === 1 ? "one of them is" : `${localAgain} of them are`} local again until sent for sign-off.`.trim());
+  });
+}
+
+const bulkAttachSchema = z.object({ taskIds: bulkIds, parentId: id });
+
+/** Groups the ticked tasks under one task (the selection bar): each becomes its sub-task; the parent itself, if ticked, is skipped. */
+export async function bulkAttach(input: z.input<typeof bulkAttachSchema>): Promise<ActionResult<BulkOutcome>> {
+  return runAction("tasks.bulk_attach", bulkAttachSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    const { outcome } = await runBulk(
+      viewer,
+      data.taskIds.filter((taskId) => taskId !== data.parentId),
+      async (tx, child) => {
+        const parent = await lockTask(tx, viewer.orgId, data.parentId);
+        if (parent === null) throw new GuardError("not_found", "the parent task was not found");
+        await attachUnder(tx, viewer, child, parent, now);
+        return [];
+      },
+    );
+    log.info("tasks.bulk_attach", { orgId: viewer.orgId, parentId: data.parentId, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
+    refresh();
+    return bulkResult(outcome, "attached");
   });
 }
 

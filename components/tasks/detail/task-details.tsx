@@ -62,6 +62,8 @@ export function TaskDetails({
 }) {
   const edit = abilities.edit;
   const live = detail.proposalStatus === null || detail.proposalStatus === "approved";
+  // A sub-task lives where its parent lives (2026-11-08 log): its project and goal are read here, changed on the parent.
+  const canPlace = edit && detail.parent === null;
   // The task's own goal stays offered even when it is no longer active (the picker needs it to show the name).
   const goalChoices = withCurrent(goals, detail.goal ? { ...detail.goal, projectId: detail.project?.id ?? "" } : null);
   return (
@@ -72,7 +74,7 @@ export function TaskDetails({
       <div className="grid gap-3 px-5 py-4 md:px-6">
         <DescriptionEditor key={detail.description ?? ""} taskId={detail.id} description={detail.description} editable={edit} />
         <dl className="divide-y border-t">
-          {live ? <Row label="Current status">{abilities.progress ? <StatusEditor taskId={detail.id} status={detail.status} allowReject={abilities.reject} /> : <StatusBadge status={detail.status} />}</Row> : null}
+          {live ? <Row label="Current status">{abilities.progress ? <StatusEditor taskId={detail.id} status={detail.status} allowReject={abilities.reject} hasParent={detail.parent !== null} /> : <StatusBadge status={detail.status} />}</Row> : null}
           <Row label="Assigned to">
             {edit ? (
               <AssigneesEditor key={JSON.stringify(detail.assignees)} taskId={detail.id} assignees={detail.assignees} people={people} viewerId={viewerId} />
@@ -121,28 +123,29 @@ export function TaskDetails({
           </Row>
           <Row label="Project">
             <div className="flex flex-wrap items-center gap-2">
-              {edit ? (
+              {canPlace ? (
                 <ProjectEditor taskId={detail.id} value={detail.project?.id ?? ""} options={withCurrent(projects, detail.project)} pinned={pinnedProjects} />
               ) : detail.project ? null : (
                 <span className="text-muted-foreground">Standalone task</span>
               )}
               {detail.project ? (
-                <Link href={`/projects/${detail.project.id}`} className={edit ? `text-[13px] ${link}` : link}>
-                  {edit ? "Open" : detail.project.name}
+                <Link href={`/projects/${detail.project.id}`} className={canPlace ? `text-[13px] ${link}` : link}>
+                  {canPlace ? "Open" : detail.project.name}
                 </Link>
               ) : null}
+              {detail.parent !== null ? <span className="text-[13px] text-muted-foreground">Follows its parent task</span> : null}
             </div>
           </Row>
           <Row label="Goal">
             <div className="flex flex-wrap items-center gap-2">
-              {edit ? (
+              {canPlace ? (
                 <GoalEditor taskId={detail.id} value={detail.goal?.id ?? ""} goals={goalChoices} projects={withCurrent(projects, detail.project)} projectId={detail.project?.id ?? ""} />
               ) : detail.goal ? null : (
                 <span className="text-muted-foreground">No goal</span>
               )}
               {detail.goal ? (
-                <Link href={`/goals/${detail.goal.id}`} className={edit ? `text-[13px] ${link}` : link}>
-                  {edit ? "Open" : detail.goal.title}
+                <Link href={`/goals/${detail.goal.id}`} className={canPlace ? `text-[13px] ${link}` : link}>
+                  {canPlace ? "Open" : detail.goal.title}
                 </Link>
               ) : null}
             </div>

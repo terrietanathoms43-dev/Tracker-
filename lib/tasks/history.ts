@@ -111,6 +111,12 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
       return { phrase: "deferred it", change: null };
     case "cancelled":
       return { phrase: "cancelled it", change: null };
+    case "merged":
+      return { phrase: text(after.parentTitle) ? `merged it into ${text(after.parentTitle)}` : "merged it into its parent", change: null };
+    case "attached":
+      return { phrase: text(after.parentTitle) ? `attached it to ${text(after.parentTitle)}` : "attached it to a task", change: null };
+    case "detached":
+      return { phrase: text(before.parentTitle) ? `detached it from ${text(before.parentTitle)}` : "detached it from its parent", change: null };
     case "completed":
       return { phrase: "completed it", change: null };
     case "reopened":

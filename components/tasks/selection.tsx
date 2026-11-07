@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckSquare, FolderInput, ListChecks, Trash2, UserPlus, X } from "lucide-react";
+import { CheckSquare, FolderInput, GitMerge, ListChecks, Trash2, UserPlus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createContext, use, useCallback, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { ProjectPicker } from "@/components/projects/project-picker";
 import { Segmented } from "@/components/segmented";
 import { StatusIcon } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { AttachTaskDialog } from "./attach-task-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -98,7 +99,7 @@ const INPUT_STATUSES = new Set<TaskStatus>(["blocked", "awaiting_approval", "com
 function SelectionBar({ selection }: { selection: Selection }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [dialog, setDialog] = useState<{ kind: "status"; status: TaskStatus } | { kind: "assign" } | { kind: "move" } | { kind: "delete" } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "status"; status: TaskStatus } | { kind: "assign" } | { kind: "move" } | { kind: "group" } | { kind: "delete" } | null>(null);
   const ids = [...selection.selected];
   const count = ids.length;
 
@@ -169,6 +170,10 @@ function SelectionBar({ selection }: { selection: Selection }) {
           <FolderInput aria-hidden />
           Move
         </Button>
+        <Button variant="outline" size="sm" disabled={pending} onClick={() => setDialog({ kind: "group" })} data-bulk-group>
+          <GitMerge aria-hidden />
+          Group under…
+        </Button>
         {selection.canDelete ? (
           <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" disabled={pending} onClick={() => setDialog({ kind: "delete" })} data-bulk-delete>
             <Trash2 aria-hidden />
@@ -182,6 +187,16 @@ function SelectionBar({ selection }: { selection: Selection }) {
       {dialog?.kind === "status" ? <BulkStatusDialog status={dialog.status} count={count} pending={pending} onClose={() => setDialog(null)} onApply={(fields) => run(() => bulkChangeStatus({ taskIds: ids, status: dialog.status, ...fields }))} /> : null}
       {dialog?.kind === "assign" ? <BulkAssignDialog count={count} pending={pending} onClose={() => setDialog(null)} onApply={(fields) => run(() => bulkAssign({ taskIds: ids, ...fields }))} /> : null}
       {dialog?.kind === "move" ? <BulkMoveDialog count={count} pending={pending} onClose={() => setDialog(null)} onApply={(fields) => run(() => bulkMove({ taskIds: ids, ...fields }))} /> : null}
+      {dialog?.kind === "group" ? (
+        <AttachTaskDialog
+          taskIds={ids}
+          onClose={() => setDialog(null)}
+          onDone={() => {
+            selection.clear();
+            router.refresh();
+          }}
+        />
+      ) : null}
       {dialog?.kind === "delete" ? <BulkDeleteDialog count={count} pending={pending} onClose={() => setDialog(null)} onApply={() => run(() => bulkDelete({ taskIds: ids }))} /> : null}
     </>
   );

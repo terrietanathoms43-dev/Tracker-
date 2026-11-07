@@ -67,17 +67,20 @@ export function UpdateProgressForm({
         : `Keep with ${current.map((person) => nameOf(person)).join(", ")}`;
   const effective: TaskStatus = status === "" ? task.status : status;
   const completing = effective === "completed" && task.status !== "completed";
-  /** Closing without completing: rejected, deferred or cancelled, each with its reason. */
-  const closingWithReason = CLOSED_WITHOUT_COMPLETION.includes(effective) && task.status !== effective;
-  const closing = completing || closingWithReason;
-  // The same rule the server applies (lib/tasks/transitions.ts), shown before the save instead of after it.
+  const merging = effective === "merged" && task.status !== "merged";
+  /** Closing without completing: rejected, deferred or cancelled, each with its reason (a merge names its parent by itself). */
+  const closingWithReason = CLOSED_WITHOUT_COMPLETION.includes(effective) && effective !== "merged" && task.status !== effective;
+  const closing = completing || closingWithReason || merging;
+  // The same rules the server applies (lib/tasks/transitions.ts, sub-tasks), shown before the save instead of after it.
   const heldByComments = completing && task.openComments > 0;
-  const summaryMissing = completing && !heldByComments && summary.trim() === "";
+  const heldBySubTasks = completing && task.openSubTasks > 0;
+  const summaryMissing = completing && !heldByComments && !heldBySubTasks && summary.trim() === "";
   // The statuses this person may move the task to: completing a task that waits for approval is approving it;
-  // rejecting and cancelling are edit rights.
+  // rejecting and cancelling are edit rights; only a sub-task can be merged.
   const choices = TASK_STATUSES.filter((each) => {
     if (each === "rejected" || each === "cancelled") return abilities.reject;
     if (each === "completed" && task.status === "awaiting_approval") return abilities.approve;
+    if (each === "merged") return task.parent !== null;
     return true;
   });
   // A blocked task that stays blocked may still get its reason brought up to date.
@@ -289,7 +292,20 @@ export function UpdateProgressForm({
           <span>{openCommentsMessage(task.openComments)} Resolve them under Comments and history, or keep the task open for now.</span>
         </p>
       ) : null}
-      {completing && !heldByComments ? (
+      {heldBySubTasks && !heldByComments ? (
+        <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+          <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            Finish the {task.openSubTasks} open {task.openSubTasks === 1 ? "sub-task" : "sub-tasks"} first, or merge them: this task waits for them.
+          </span>
+        </p>
+      ) : null}
+      {merging && task.parent ? (
+        <p className="text-[13px] text-muted-foreground" data-merge-note>
+          Folded into <span className="font-medium text-foreground">{task.parent.title}</span>: it closes as Merged and stays listed under it.
+        </p>
+      ) : null}
+      {completing && !heldByComments && !heldBySubTasks ? (
         <div className="grid gap-1">
           <Textarea
             aria-label="Completion summary"
@@ -350,7 +366,7 @@ export function UpdateProgressForm({
         )}
         <div className="flex items-center gap-3">
           <span className="hidden text-[13px] text-muted-foreground sm:inline">Ctrl+Enter to save</span>
-          <Button type="submit" disabled={pending || progress.trim() === "" || heldByComments || summaryMissing}>
+          <Button type="submit" disabled={pending || progress.trim() === "" || heldByComments || heldBySubTasks || summaryMissing}>
             {pending ? "Saving…" : "Save update"}
           </Button>
         </div>

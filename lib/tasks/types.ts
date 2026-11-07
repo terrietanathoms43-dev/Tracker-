@@ -28,6 +28,10 @@ export type TaskListItem = {
   assignees: Assignees;
   project: { id: string; name: string } | null;
   goal: { id: string; title: string } | null;
+  /** The task this one is attached to (sub-tasks, 2026-11-08 log): drawn under it in lists, or as a "Part of" link. */
+  parent: { id: string; title: string } | null;
+  /** How many tasks are attached to this one. */
+  subTasks: number;
   /** Null for a live task; a proposal's state otherwise ("local": the maker's alone, not sent yet). */
   proposal: ProposalStatus | null;
   /** A local task: whether sending it on starts a sign-off chain (true) or publishes it at once (false). */
@@ -77,6 +81,8 @@ export type CreateDefaults = {
   title?: string;
   /** "Make a task" from a comment (2026-11-07 log) hands over the comment, quoted, with a link back. */
   description?: string;
+  /** A sub-task: made attached to this task, in its project and goal (2026-11-08 log). */
+  parentId?: string;
   priority?: TaskPriority;
   dueDate?: string;
   assigneeIds?: string[];
@@ -109,6 +115,10 @@ export type TaskDetail = {
   seriesId: string | null;
   project: { id: string; name: string } | null;
   goal: { id: string; title: string } | null;
+  /** The task this one is attached to (sub-tasks, 2026-11-08 log). */
+  parent: { id: string; title: string } | null;
+  /** How many tasks are attached to this one; the page lists them. */
+  subTasks: number;
   assignees: Assignees;
   approver: Person | null;
   creator: Person;
@@ -150,6 +160,10 @@ export type UpdateContext = {
     openComments: number;
     /** A repeating task: completing it makes the next occurrence. */
     repeats: string | null;
+    /** The task it is attached to: only then may it be marked Merged. */
+    parent: { id: string; title: string } | null;
+    /** Open tasks attached to it: it cannot be completed while there are any. */
+    openSubTasks: number;
   };
   people: PersonOption[];
   defaultApprover: string | null;
