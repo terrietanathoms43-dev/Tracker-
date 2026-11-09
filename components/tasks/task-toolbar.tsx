@@ -3,7 +3,7 @@
 import { cn } from "cn";
 import { CalendarRange, Search, SlidersHorizontal, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { NativeSelect } from "@/components/native-select";
 import { StatusIcon } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -130,23 +130,35 @@ export function TaskToolbar({ filters, view, people, goals, today }: { filters: 
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [q, setQ] = useState(filters.q);
-  // When the URL's search changes from outside the box (Clear filters, the back button), the box follows it
-  // instead of pushing its stale text back into the URL.
-  const [applied, setApplied] = useState(filters.q);
-  if (filters.q !== applied) {
-    setApplied(filters.q);
-    setQ(filters.q);
-  }
   const [open, setOpen] = useState(false);
   const apply = (patch: Partial<TaskFilters>) => startTransition(() => router.replace(tasksHref({ ...filters, ...patch }, view), { scroll: false }));
+
+  // The last search the box pushed to the URL itself — null when nothing is in flight. Its echo changes
+  // nothing in the box; a search that isn't our echo (Clear filters, the back button, a shared link) is an
+  // outside change and replaces the text.
+  const pushed = useRef<string | null>(null);
 
   // Debounced search: the list follows the typing without a request per keystroke.
   useEffect(() => {
     if (q.trim() === filters.q) return;
-    const timer = window.setTimeout(() => apply({ q: q.trim() }), 300);
+    const timer = window.setTimeout(() => {
+      pushed.current = q.trim();
+      apply({ q: q.trim() });
+    }, 300);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
+
+  // The URL's search changed: if it's our own push echoing back, leave the box (and whatever has been
+  // typed since) alone; otherwise the box follows the URL.
+  useEffect(() => {
+    if (filters.q === pushed.current) {
+      pushed.current = null;
+      return;
+    }
+    pushed.current = null;
+    setQ(filters.q);
+  }, [filters.q]);
 
   const statuses: readonly TaskStatus[] = view === "board" ? BOARD_STATUSES : TASK_STATUSES;
   // Without a status filter the chips show what the list really shows: open work, plus closed work when
