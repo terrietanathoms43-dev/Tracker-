@@ -110,7 +110,7 @@ For a severe bug that's broken the live app:
 
 | Environment | What it is | Database |
 | --- | --- | --- |
-| Local | `npm run dev` on your machine | your own Postgres database |
+| Local | `npm run dev` on your machine | your own Postgres database — a Neon branch off staging |
 | Preview | a live deployment built automatically for each pull request | shares the staging Postgres database |
 | Staging (test) | the deployment of `staging` — QA tests and the owner signs off here before release | the staging Postgres database |
 | Production | the deployment of `main` — the real site | the production Postgres database |
@@ -130,14 +130,19 @@ Email is sent by a small mail service the app calls over HTTPS (`MAIL_SERVICE_UR
 The schema lives in `db/schema.ts` and is applied with `npm run db:push`. Each environment has
 its own Postgres database, so a change travels the same path as the code:
 
-- **Staging:** previews and the staging deployment share the staging database, so a PR that
-  changes the schema needs `db:push` on it before its preview or verification works — apply it
-  once the PR is ready for review. Additive changes don't disturb anything else on staging.
-- **Production:** schema changes stay **additive only** (new tables and columns, nothing
-  removed or renamed). Because they're additive, `db:push` is run against production
-  immediately before the release PR merges — the release owner's job, noted on the release PR.
-  A breaking change is a rare, planned event with its own steps (backup → migrate → push),
+- **Local:** everyone develops against their own database — a Neon branch off the staging
+  database. Breaking and experimental schema changes live there and never reach a shared
+  database.
+- **Shared databases (staging and production):** `db:push` is run **manually, immediately
+  before the merge** — deliberate and auditable, not automatic. On staging the merger runs it;
+  on production the release owner runs it before the release PR merges, noted on the PR. If a
+  PR's preview needs the new schema to render at all, push earlier.
+- **Additive only** on shared databases: new tables, columns and indexes, nothing removed,
+  renamed or retyped. A breaking change is a rare, planned event (backup → migrate → push),
   agreed with the team first.
+- **Merge latest `staging` before pushing to a shared database.** `db:push` diffs your
+  `schema.ts` against the live database — if a teammate pushed first, it will offer to *drop*
+  their work. If it proposes deleting anything you didn't write, abort and merge.
 - If a build fails, fix the code — never reshape the database to make it pass.
 
 ## Setup (one-time, repo admin)
