@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
 import { RelativeTime } from "@/components/relative-time";
+import { AiConfigCard } from "@/components/settings/admin-ai-config";
+import { PermissionsCard } from "@/components/settings/admin-permissions";
+import { TabOrderCard } from "@/components/settings/admin-tab-order";
 import { DeleteWorkspace } from "@/components/settings/delete-workspace";
 import { InvitationsSection } from "@/components/settings/invitations-section";
 import { MembersSection } from "@/components/settings/members-section";
 import { WorkspaceForm, WorkspaceSummary } from "@/components/settings/workspace-form";
 import { listPendingInvitations } from "@/lib/dal/invitations";
+import { getOrgConfig } from "@/lib/dal/org-config";
 import { listMembers } from "@/lib/dal/orgs";
 import { invitableRoles, isAdmin } from "@/lib/permissions";
 import { formatShortDate, timeZoneOptions } from "@/lib/time";
@@ -20,7 +24,7 @@ export default async function WorkspaceSettingsPage() {
   const { viewer, org } = await requireViewerContext();
   const admin = isAdmin(viewer);
   const roles = invitableRoles(viewer);
-  const [members, invitations] = await Promise.all([listMembers(viewer), roles.length > 0 ? listPendingInvitations(viewer) : Promise.resolve([])]);
+  const [members, invitations, config] = await Promise.all([listMembers(viewer), roles.length > 0 ? listPendingInvitations(viewer) : Promise.resolve([]), admin ? getOrgConfig(viewer.orgId) : Promise.resolve(null)]);
   const now = new Date();
   const facts = [`${members.length} ${members.length === 1 ? "member" : "members"}`, org.timezone.replaceAll("_", " ")].join(" · ");
 
@@ -59,6 +63,14 @@ export default async function WorkspaceSettingsPage() {
             canManage: admin || invite.invitedBy === viewer.userId,
           }))}
         />
+      ) : null}
+
+      {admin && config ? (
+        <>
+          <AiConfigCard provider={config.aiProvider ?? ""} tail={config.aiApiKeyTail} />
+          <TabOrderCard orders={config.homeTabOrder ?? {}} />
+          <PermissionsCard overrides={config.permissionOverrides} />
+        </>
       ) : null}
 
       {admin ? <DeleteWorkspace orgName={org.name} /> : null}

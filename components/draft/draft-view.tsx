@@ -1,6 +1,6 @@
 import { ViewTabs } from "@/components/home/view-tabs";
 import { PageHeader } from "@/components/page-header";
-import { captureProviderFor } from "@/lib/capture/availability";
+import { captureEngineFor } from "@/lib/capture/availability";
 import { captureContext } from "@/lib/dal/capture";
 import { readDraft } from "@/lib/dal/drafts";
 import type { HomeTabConfig } from "@/lib/home-tabs";
@@ -14,13 +14,13 @@ import { DraftEditor } from "./draft-editor";
 
 export async function DraftView({ viewer, user, tabsConfig, scope }: { viewer: Viewer; user: SessionUser; tabsConfig: HomeTabConfig; scope: ScopedProject | null }) {
   const convert = canCapture(viewer);
-  const provider = convert ? captureProviderFor(user.email) : null;
-  const [draft, context] = await Promise.all([readDraft(viewer), convert && provider ? captureContext(viewer, scope?.status === "active" ? scope.id : "") : null]);
+  const engine = convert ? await captureEngineFor(user.email, viewer.orgId) : null;
+  const [draft, context] = await Promise.all([readDraft(viewer), convert && engine ? captureContext(viewer, scope?.status === "active" ? scope.id : "") : null]);
   return (
     <>
       <PageHeader title="Draft" description="Jot anything. It saves itself. When it's ready, turn it into projects, goals and tasks." />
       <ViewTabs active="draft" config={tabsConfig} />
-      <DraftEditor initial={draft} context={context} provider={provider} canConvert={convert} />
+      <DraftEditor initial={draft} context={context} provider={engine?.provider ?? null} canConvert={convert} />
     </>
   );
 }

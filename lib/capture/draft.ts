@@ -82,7 +82,7 @@ export type CaptureContext = {
 export type CaptureOutcome = { projectId: string | null; goalIds: string[]; taskIds: string[] };
 
 /** Which engine read the transcript: the model, or the plain parser test personas get (lib/capture/fake.ts). */
-export type CaptureProvider = "anthropic" | "fake";
+export type CaptureProvider = "anthropic" | "openai" | "fake";
 
 /** A fresh task row for the review screen's "Add a task". */
 export function blankTask(index: number): DraftTask {

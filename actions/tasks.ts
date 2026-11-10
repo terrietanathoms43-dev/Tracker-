@@ -21,7 +21,7 @@ import { findProject } from "@/lib/dal/projects";
 import { applyGoalRules, describeGoalOutcome, goalAchievedNotice, reopenGoalForNewWork, type GoalOutcome } from "@/lib/dal/goal-achievement";
 import { seriesAnchor, seriesHasLaterOccurrence } from "@/lib/dal/recurrence";
 import { getTaskBasics, listTasks, lockTask, openSubTasks, recentTasks, searchTasks, subTaskIds, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
-import { captureProviderFor } from "@/lib/capture/availability";
+import { captureEngineFor } from "@/lib/capture/availability";
 import { log } from "@/lib/log";
 import { dispatch, type Notice } from "@/lib/notify";
 import {
@@ -895,14 +895,14 @@ export async function paletteSearch(input: z.input<typeof searchSchema>): Promis
   });
 }
 
-/** Whether this person gets "From a meeting": the role allows it and the server has an engine for them. */
-const offersCapture = (viewer: Viewer, email: string | null) => canCapture(viewer) && captureProviderFor(email) !== null;
+/** Whether this person gets "From a meeting": the role allows it and the workspace has an engine for them. */
+const offersCapture = async (viewer: Viewer, email: string | null) => canCapture(viewer) && (await captureEngineFor(email, viewer.orgId)) !== null;
 
 /** What the palette may offer this viewer: their navigation, whether they can create tasks, and capture. */
 export async function getPaletteContext(): Promise<ActionResult<{ nav: NavKey[]; canCreate: boolean; canCapture: boolean; worker: boolean }>> {
   return runAction("tasks.palette_context", z.object({}), {}, async () => {
     const { viewer, user } = await requireViewerContext();
-    return ok({ nav: navFor(viewer), canCreate: canCreateTask(viewer), canCapture: offersCapture(viewer, user.email), worker: viewer.orgRole !== "stakeholder" });
+    return ok({ nav: navFor(viewer), canCreate: canCreateTask(viewer), canCapture: await offersCapture(viewer, user.email), worker: viewer.orgRole !== "stakeholder" });
   });
 }
 
@@ -911,7 +911,7 @@ export async function getTaskFormOptions(): Promise<ActionResult<TaskFormOptions
   return runAction("tasks.form_options", z.object({}), {}, async () => {
     const { viewer, user } = await requireViewerContext();
     if (!canCreateTask(viewer)) throw new GuardError("forbidden");
-    return ok({ ...(await taskFormOptions(viewer)), canCapture: offersCapture(viewer, user.email) });
+    return ok({ ...(await taskFormOptions(viewer)), canCapture: await offersCapture(viewer, user.email) });
   });
 }
 

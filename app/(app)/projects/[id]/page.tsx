@@ -13,13 +13,13 @@ import { PlanningTasks } from "@/components/projects/task-groups";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { SelectionProvider } from "@/components/tasks/selection";
 import { Button } from "@/components/ui/button";
-import { captureProviderFor } from "@/lib/capture/availability";
+import { captureEngineFor } from "@/lib/capture/availability";
 import { approvalSettings } from "@/lib/dal/approvals";
 import { listGoals, ownerOptions } from "@/lib/dal/goals";
 import { getProject } from "@/lib/dal/projects";
 import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { tasksForProject } from "@/lib/dal/tasks";
-import { canCapture, canCreateTask, canManagePlanning, isLeader, isStakeholder } from "@/lib/permissions";
+import { canCapture, canCreatePlanning, canCreateTask, canManagePlanning, isLeader, isStakeholder } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
 import { requireViewerContext } from "@/lib/viewer";
 
@@ -37,13 +37,14 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
   const { viewer, user } = await requireViewerContext();
   await catchUpRecurrences(viewer);
   const manage = canManagePlanning(viewer);
-  const capture = canCapture(viewer) && captureProviderFor(user.email) !== null;
+  const create = canCreatePlanning(viewer);
+  const capture = canCapture(viewer) && (await captureEngineFor(user.email, viewer.orgId)) !== null;
   // One round trip; nothing renders unless getProject finds it in this workspace for a viewer who may read it.
   const [project, goals, tasks, people] = await Promise.all([
     getProject(viewer, id),
     listGoals(viewer, { includeCompleted: true, project: id, topLevelOnly: true }),
     tasksForProject(viewer, id),
-    manage ? ownerOptions(viewer) : [],
+    manage || create ? ownerOptions(viewer) : [],
   ]);
   if (project === null) notFound();
   const settings = manage ? await approvalSettings(viewer, { projectId: project.id }) : null;
@@ -51,7 +52,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
   const active = project.status === "active";
   const openGoals = goals.filter((goal) => goal.status !== "completed");
   const doneGoals = goals.filter((goal) => goal.status === "completed");
-  const newGoal = manage && active ? <GoalDialog people={people} projects={[{ id: project.id, name: project.name }]} defaultProjectId={project.id} viewerId={viewer.userId} today={today} variant="outline" size="sm" /> : null;
+  const newGoal = create && active ? <GoalDialog people={people} projects={[{ id: project.id, name: project.name }]} defaultProjectId={project.id} viewerId={viewer.userId} today={today} variant="outline" size="sm" /> : null;
 
   return (
     <div className="mx-auto max-w-3xl">

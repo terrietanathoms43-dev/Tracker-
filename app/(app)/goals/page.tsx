@@ -11,7 +11,7 @@ import { goalLinksIn, listGoals, ownerOptions, parentGoalOptions } from "@/lib/d
 import { pinnedProjectIds, projectOptions } from "@/lib/dal/projects";
 import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { openTasksForGoals } from "@/lib/dal/tasks";
-import { canLinkGoals, canManagePlanning, isStakeholder } from "@/lib/permissions";
+import { canCreatePlanning, canLinkGoals, canManagePlanning, isStakeholder } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
 import { dayKey } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
@@ -34,22 +34,23 @@ export default async function GoalsPage(props: PageProps<"/goals">) {
   const showAll = raw.all === "1";
   const view = raw.view === "branches" ? "branches" : "list";
   const manage = canManagePlanning(viewer);
+  const create = canCreatePlanning(viewer);
   const project = scope?.id ?? "";
   // A workspace has a handful of goals: read them all once, so the toggle knows whether anything completed exists.
   const [goals, links, people, projects, parents, pinned] = await Promise.all([
     listGoals(viewer, { includeCompleted: true, project }),
     goalLinksIn(viewer, project),
-    manage ? ownerOptions(viewer) : [],
-    manage ? projectOptions(viewer) : [],
-    manage ? parentGoalOptions(viewer) : [],
-    manage ? pinnedProjectIds(viewer) : [],
+    create ? ownerOptions(viewer) : [],
+    create ? projectOptions(viewer) : [],
+    create ? parentGoalOptions(viewer) : [],
+    create ? pinnedProjectIds(viewer) : [],
   ]);
   const today = dayKey(new Date(), viewer.timezone);
   const completedCount = goals.filter((goal) => goal.status === "completed").length;
   const shown = showAll ? goals : goals.filter((goal) => goal.status !== "completed");
   const tasks = view === "list" ? await openTasksForGoals(viewer, shown.map((goal) => goal.id)) : new Map();
   const newGoal = (variant: "default" | "outline") =>
-    manage ? <GoalDialog people={people} projects={projects.map(({ id, name }) => ({ id, name }))} parents={parents} pinnedProjectIds={pinned} defaultProjectId={scope?.status === "active" ? scope.id : ""} viewerId={viewer.userId} today={today} variant={variant} /> : null;
+    create ? <GoalDialog people={people} projects={projects.map(({ id, name }) => ({ id, name }))} parents={parents} pinnedProjectIds={pinned} defaultProjectId={scope?.status === "active" ? scope.id : ""} viewerId={viewer.userId} today={today} variant={variant} /> : null;
 
   return (
     <>
@@ -62,7 +63,7 @@ export default async function GoalsPage(props: PageProps<"/goals">) {
         <EmptyState
           icon={Target}
           title={scope ? `No goals in ${scope.name} yet` : "No goals yet"}
-          description={manage ? "Add the first one so tasks have something to roll up into. A goal lives in a project; the dialog can make the project too." : "When a leader adds one, you'll see here how far along it is."}
+          description={create ? "Add the first one so tasks have something to roll up into. A goal lives in a project; the dialog can make the project too." : "When a leader adds one, you'll see here how far along it is."}
           action={newGoal("outline")}
         />
       ) : shown.length === 0 ? (

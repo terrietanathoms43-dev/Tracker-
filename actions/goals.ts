@@ -20,7 +20,7 @@ import { parentDeadlineProblem, subGoalDeadlineProblem } from "@/lib/goals/deadl
 import { wouldCycle } from "@/lib/goals/graph";
 import { log } from "@/lib/log";
 import { dispatch } from "@/lib/notify";
-import { canCompleteGoal, canDeleteGoal, canLinkGoals, canManageApprovals, canManagePlanning } from "@/lib/permissions";
+import { canCompleteGoal, canCreatePlanning, canDeleteGoal, canLinkGoals, canManageApprovals, canManagePlanning } from "@/lib/permissions";
 import { nextAfterFinishing, normalizeRecurrence, type Recurrence } from "@/lib/recurrence";
 import { dayKey, formatDay } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
@@ -124,7 +124,7 @@ const createSchema = z.object(goalFields);
 export async function createGoal(input: z.input<typeof createSchema>): Promise<ActionResult<{ id: string; projectId: string }>> {
   return runAction("goals.create", createSchema, input, async (data) => {
     const viewer = await requireViewer();
-    if (!canManagePlanning(viewer)) throw new GuardError("forbidden");
+    if (!canCreatePlanning(viewer)) throw new GuardError("forbidden");
     const today = dayKey(new Date(), viewer.timezone);
     const ownerId = data.ownerId || viewer.userId;
     const problem = await ownerError(db, viewer.orgId, ownerId);
