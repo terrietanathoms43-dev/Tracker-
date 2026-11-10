@@ -1,4 +1,4 @@
-import { TASK_STATUS_LABELS } from "@/lib/constants";
+import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS } from "@/lib/constants";
 import { nameOf } from "@/lib/tasks/people";
 import { formatDue } from "@/lib/time";
 import type { ContributionRow, ReportTask } from "./data";
@@ -62,10 +62,10 @@ export function contributionsTable(rows: ContributionRow[]): CsvCell[][] {
   ];
 }
 
-/** What a scope row says in one column: the blocker (and who unblocks it), why it was rejected, the completion summary, or the next action. */
+/** What a scope row says in one column: the blocker (and who unblocks it), why it was closed without completing, the completion summary, or the next action. */
 const scopeDetail = (task: ReportTask): string | null => {
   if (task.status === "completed") return task.completionSummary;
-  if (task.status === "rejected") return task.rejectionReason;
+  if (CLOSED_WITHOUT_COMPLETION.includes(task.status)) return task.rejectionReason;
   if (task.status === "blocked") return [task.blockedReason, task.blockedBy ? `Waiting on ${task.blockedBy}` : null].filter((part) => part !== null).join(" · ") || null;
   return task.nextAction;
 };
@@ -73,7 +73,7 @@ const scopeDetail = (task: ReportTask): string | null => {
 /** The active scope in the view's order (lib/reports/scope.ts): one row per task, its place, its dates, and one Detail column. */
 export function scopeTable(scope: ActiveScope): CsvCell[][] {
   return [
-    ["Title", "Project", "Goal", "Assignees", "Status", "Due date", "Completed on", "Added on", "New this cycle", "Detail"],
+    ["Title", "Project", "Goal", "Assignees", "Status", "Due date", "Closed on", "Added on", "New this cycle", "Detail"],
     ...scope.groups.flatMap((group) =>
       group.tasks.map((task) => [
         task.title,
@@ -82,7 +82,7 @@ export function scopeTable(scope: ActiveScope): CsvCell[][] {
         peopleOf(task),
         TASK_STATUS_LABELS[task.status],
         task.dueDate,
-        task.completedDay,
+        task.closedDay,
         task.createdDay,
         addedInCycle(task, scope.range) ? "yes" : "no",
         scopeDetail(task),

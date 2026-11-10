@@ -68,15 +68,15 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
 
   // ACTIVE SCOPE: what this cycle was to work on; its own rows, none of the other views' sections, no chart.
   if (cut === "scope") {
-    const { active } = await buildActiveScope(viewer, range, today, project);
+    const { active, items } = await buildActiveScope(viewer, range, today, project);
     return (
       <>
         {top}
         <div className="grid gap-6">
-          <ActiveScopeView active={active} today={today} project={project} />
+          <ActiveScopeView active={active} items={items} today={today} project={project} readOnly={stakeholder} />
           <p className="text-[13px] text-muted-foreground">
-            Generated {formatAbsolute(now, viewer.timezone)} from {org.name}&apos;s task records{scope ? `, narrowed to ${scope.name}` : ""}. Work not completed is as of today,
-            whatever the date; completed work is what was completed on or after it. Pick a project in the navigation to narrow the scope.
+            Generated {formatAbsolute(now, viewer.timezone)} from {org.name}&apos;s task records{scope ? `, narrowed to ${scope.name}` : ""}. Open work is as of today, whatever
+            the date; closed work is what was completed, rejected, deferred or cancelled on or after the Since day. Pick a project in the navigation to narrow the scope.
           </p>
         </div>
       </>

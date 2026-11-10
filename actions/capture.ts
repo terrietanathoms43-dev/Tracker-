@@ -6,12 +6,12 @@ import { z } from "zod";
 import { db, type Tx } from "@/db";
 import { goals, projects, tasks } from "@/db/schema";
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
-import { captureProviderFor } from "@/lib/capture/availability";
+import { captureEngineFor } from "@/lib/capture/availability";
 import { captureDraftSchema, describeCounts, draftCounts, type CaptureDraft, type CaptureOutcome } from "@/lib/capture/draft";
 import { CaptureError, proposeWork } from "@/lib/capture/provider";
 import { recordActivity } from "@/lib/dal/activity";
-import { createGoalCloser } from "@/lib/dal/goal-closers";
 import { applyAssignment, snapshotAssignment, validateAssignment } from "@/lib/dal/assignments";
+import { createGoalCloser } from "@/lib/dal/goal-closers";
 import { captureContext } from "@/lib/dal/capture";
 import { subGoalDeadlineProblem } from "@/lib/goals/deadlines";
 import { LIMITS } from "@/lib/limits";
@@ -45,13 +45,13 @@ export async function draftFromTranscript(input: z.input<typeof draftSchema>): P
   return runAction("capture.draft", draftSchema, input, async (data) => {
     const { viewer, user } = await requireViewerContext();
     if (!canCapture(viewer)) throw new GuardError("forbidden", "Only leaders and admins can turn a meeting into tasks.");
-    const provider = captureProviderFor(user.email);
-    if (provider === null) return fail("Capture from a meeting isn't switched on for this server yet.");
+    const engine = await captureEngineFor(user.email, viewer.orgId);
+    if (engine === null) return fail("Capture from a meeting isn't switched on for this server yet.");
     if (rateLimitHit(`capture:${viewer.userId}`, DRAFTS_PER_WINDOW, DRAFT_WINDOW_MS)) return fail("That's a lot of drafts in a few minutes. Give it a short while and try again.");
     const context = await captureContext(viewer, data.projectId);
     try {
-      const draft = await proposeWork(provider, context, data.transcript);
-      log.info("capture.draft", { orgId: viewer.orgId, by: viewer.userId, provider, goals: draft.goals.length, tasks: draft.tasks.length });
+      const draft = await proposeWork(engine, context, data.transcript);
+      log.info("capture.draft", { orgId: viewer.orgId, by: viewer.userId, provider: engine.provider, goals: draft.goals.length, tasks: draft.tasks.length });
       return ok(draft);
     } catch (error) {
       if (error instanceof CaptureError) return fail(error.message);
@@ -157,7 +157,8 @@ export async function applyCapture(input: z.input<typeof captureDraftSchema>): P
             updatedAt: now,
           })
           .returning({ id: goals.id });
-        await createGoalCloser(tx, { orgId: viewer.orgId, goalId: created.id, projectId: goalProject, ownerId: viewer.userId, targetDate: goal.targetDate || null, createdBy: viewer.userId }, now);
+        // Like every goal, it is made with its "Everything completed" task (lib/dal/goal-closers.ts).
+        await createGoalCloser(tx, { id: created.id, orgId: viewer.orgId, projectId: goalProject, ownerId: viewer.userId, targetDate: goal.targetDate || null }, viewer.userId, now);
         goalIdByKey.set(goal.key, created.id);
         goalProjectById.set(created.id, goalProject);
         createdGoalIds.push(created.id);

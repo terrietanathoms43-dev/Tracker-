@@ -6,10 +6,11 @@ import { z } from "zod";
 import { LIMITS } from "@/lib/limits";
 import { cappedText, optionalLink, optionalText, requiredLink, requiredText } from "@/lib/sanitize";
 import { db, type Tx } from "@/db";
-import { notifications, taskLinks, taskUpdates, tasks } from "@/db/schema";
+import { notifications, taskLinks, taskUpdates, tasks, users } from "@/db/schema";
 import { fail, GuardError, guardMessage, ok, runAction, type ActionResult } from "@/lib/action-result";
-import { TASK_PRIORITIES, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { CLOSED_WITHOUT_COMPLETION, isClosedStatus, TASK_PRIORITIES, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
 import { assignedNotice, chainForPlacement, startChain } from "@/lib/approvals/chain";
+import { describeRegate, regateMovedTask } from "@/lib/approvals/move";
 import { submitLocalTask } from "@/lib/approvals/submit";
 import { recordActivity } from "@/lib/dal/activity";
 import { applyAssignment, snapshotAssignment, validateAssignment } from "@/lib/dal/assignments";
@@ -17,10 +18,10 @@ import { findGoal } from "@/lib/dal/goals";
 import { listHistory, lockComment } from "@/lib/dal/history";
 import { findMembership, leaderIds } from "@/lib/dal/orgs";
 import { findProject } from "@/lib/dal/projects";
-import { applyGoalCloser, describeCloser, type CloserOutcome } from "@/lib/dal/goal-closers";
+import { applyGoalRules, describeGoalOutcome, goalAchievedNotice, reopenGoalForNewWork, type GoalOutcome } from "@/lib/dal/goal-achievement";
 import { seriesAnchor, seriesHasLaterOccurrence } from "@/lib/dal/recurrence";
-import { getTaskBasics, listTasks, lockTask, recentTasks, searchTasks, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
-import { captureProviderFor } from "@/lib/capture/availability";
+import { getTaskBasics, listTasks, lockTask, openSubTasks, recentTasks, searchTasks, subTaskIds, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
+import { captureEngineFor } from "@/lib/capture/availability";
 import { log } from "@/lib/log";
 import { dispatch, type Notice } from "@/lib/notify";
 import {
@@ -33,6 +34,7 @@ import {
   canRejectTask,
   canResolveComment,
   canUpdateProgress,
+  isLive,
   isWorker,
   navFor,
   type NavKey,
@@ -43,8 +45,9 @@ import { projectScopeFor } from "@/lib/project-scope-server";
 import { describeRecurrence, nextAfterFinishing, normalizeRecurrence, sameRecurrence, type Recurrence } from "@/lib/recurrence";
 import { defaultApproverFor } from "@/lib/tasks/approver";
 import { sameIds } from "@/lib/tasks/assignees";
+import { closerDeleteMessage, closerLabel, closerRepeatMessage, closerStaysMessage } from "@/lib/tasks/closer";
 import { parseFilters } from "@/lib/tasks/filters";
-import { planTransition, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
+import { asksReason, MERGE_NEEDS_PARENT, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
 import type { HistoryPage, TaskFormOptions, TaskListItem, TaskPage, UpdateContext } from "@/lib/tasks/types";
 import { dayKey, formatDay } from "@/lib/time";
 import { requireViewer, requireViewerContext } from "@/lib/viewer";
@@ -54,7 +57,9 @@ import { requireViewer, requireViewerContext } from "@/lib/viewer";
 // (state + task_activity + notices collected) → dispatch after commit → refresh() → ok(data, "Toast.").
 // Assignment is a set of people (lib/dal/assignments.ts). A new task where sign-off applies starts local, its
 // maker's alone until they send it on (lib/approvals/chain.ts, lib/approvals/submit.ts; a stakeholder's is a
-// proposal at once); a repeating task makes its next occurrence when it is completed (lib/recurrence.ts).
+// proposal at once); a repeating task makes its next occurrence when it is completed (lib/recurrence.ts). A goal's
+// "Everything completed" task (its closer, lib/dal/goal-closers.ts) is a task like any other here, except that it
+// stays with its goal: it is not moved, attached under another task, repeated or deleted on its own.
 
 // --- shared checks -----------------------------------------------------------------------------------------
 
@@ -67,6 +72,9 @@ const clock = z.union([z.literal(""), z.string().regex(/^([01]\d|2[0-3]):[0-5]\d
 const recurrenceInput = z.unknown().transform((value) => normalizeRecurrence(value)).default(null);
 
 const taskHref = (taskId: string) => `/tasks/${taskId}`;
+
+/** The task as a notice names it: a goal's closer carries its goal ("Everything completed · Ship onboarding"), so no notice says the bare title. */
+const noticeTask = <T extends { title: string; goalCloser: boolean; goalTitle: string | null }>(task: T): T => (task.goalCloser ? { ...task, title: closerLabel(task.title, task.goalTitle) } : task);
 
 /** Approvers and handover targets are workers of this workspace (never a stakeholder, never an outsider). */
 async function requireWorker(tx: Tx, orgId: string, userId: string, message: string): Promise<void> {
@@ -105,10 +113,10 @@ async function insertLink(tx: Tx, taskId: string, userId: string, url: string, l
   return [{ kind: "link_added", after: { url, label: clean } }];
 }
 
-/** Who may move a task: finishing an approval is the approver's, rejecting needs edit rights, the rest is progress. */
+/** Who may move a task: finishing an approval is the approver's, rejecting and cancelling need edit rights, the rest is progress. */
 function mayMove(viewer: Viewer, scope: TaskScope, from: TaskStatus, to: TaskStatus, via: TransitionVia): boolean {
   if (via !== "status" || (from === "awaiting_approval" && to === "completed")) return canApproveTask(viewer, scope);
-  if (to === "rejected") return canRejectTask(viewer, scope);
+  if (to === "rejected" || to === "cancelled") return canRejectTask(viewer, scope);
   return canUpdateProgress(viewer, scope);
 }
 
@@ -150,7 +158,8 @@ type LockedTask = NonNullable<Awaited<ReturnType<typeof lockTask>>>["task"];
  */
 async function spawnNextOccurrence(tx: Tx, viewer: Viewer, task: LockedTask, assignment: string[], now: Date): Promise<string | null> {
   const rule: Recurrence | null = task.recurrence ?? null;
-  if (rule === null) return null;
+  // A goal's closer is done once per goal: the goal is what repeats.
+  if (rule === null || task.goalCloser) return null;
   const seriesId = task.seriesId ?? task.id;
   // Only the latest occurrence makes the next one: a missed series is caught up by lib/dal/recurrence.ts instead.
   if (await seriesHasLaterOccurrence(tx, viewer.orgId, seriesId, task.dueDate)) return null;
@@ -172,7 +181,6 @@ async function spawnNextOccurrence(tx: Tx, viewer: Viewer, task: LockedTask, ass
       dueTime: task.dueTime,
       recurrence: rule,
       seriesId,
-      goalCloser: task.goalCloser,
       createdAt: now,
       updatedAt: now,
     })
@@ -189,6 +197,112 @@ async function spawnNextOccurrence(tx: Tx, viewer: Viewer, task: LockedTask, ass
 
 const withNextDue = (message: string, due: string | null, today: string) => (due ? `${message} The next one is due ${formatDay(due, today)}.` : message);
 
+// --- sub-tasks (docs/PLAN.md, 2026-11-08 log) ---------------------------------------------------------------------
+
+const subTasksMessage = (open: number) => `Finish the ${open} open ${open === 1 ? "sub-task" : "sub-tasks"} first, or merge them: this task waits for them.`;
+const CHILD_CANNOT_MOVE = "A sub-task lives where its parent lives: move the parent, or detach it first.";
+
+/**
+ * What a status change must respect because of sub-tasks: a parent waits for its open sub-tasks before it can be
+ * completed, and a merge names the parent as its reason. Returns the reason to plan with.
+ */
+async function subTaskRules(tx: Tx, orgId: string, task: { id: string; status: TaskStatus; parentTaskId: string | null }, to: TaskStatus, reason: string): Promise<{ ok: true; reason: string; parentTitle: string | null } | { ok: false; error: string }> {
+  if (to === "completed" && task.status !== "completed") {
+    const open = await openSubTasks(tx, orgId, task.id);
+    if (open > 0) return { ok: false, error: subTasksMessage(open) };
+  }
+  if (to === "merged") {
+    if (task.parentTaskId === null) return { ok: false, error: MERGE_NEEDS_PARENT };
+    const [parent] = await tx.select({ title: tasks.title }).from(tasks).where(eq(tasks.id, task.parentTaskId));
+    const parentTitle = parent?.title ?? null;
+    return { ok: true, reason: `Merged into “${parentTitle ?? "its parent"}”`, parentTitle };
+  }
+  return { ok: true, reason, parentTitle: null };
+}
+
+/** The history line of a merge names the parent, so the task page can say "merged it into X". */
+function stampMerge(activities: ActivityDraft[], task: { parentTaskId: string | null }, parentTitle: string | null): ActivityDraft[] {
+  return activities.map((activity) => (activity.kind === "merged" ? { ...activity, after: { ...activity.after, parentId: task.parentTaskId, parentTitle } } : activity));
+}
+
+/** Moves every task attached to `parentId` to the parent's new project and goal, with a history line each. */
+async function moveSubTasksWith(tx: Tx, viewer: Viewer, parentId: string, placement: { projectId: string | null; goalId: string | null }, now: Date): Promise<number> {
+  const ids = await subTaskIds(tx, viewer.orgId, parentId);
+  for (const childId of ids) {
+    await tx.update(tasks).set({ projectId: placement.projectId, goalId: placement.goalId, updatedAt: now }).where(eq(tasks.id, childId));
+    await recordActivity(tx, { orgId: viewer.orgId, taskId: childId, actorId: viewer.userId }, [{ kind: "edited", after: { projectId: placement.projectId, goalId: placement.goalId }, note: "Moved with the task it is attached to." }], now);
+  }
+  return ids.length;
+}
+
+/**
+ * Attaches `task` under `parent` inside the caller's transaction: one level only, both live, both editable by the
+ * viewer. The child takes the parent's project and goal (a sub-task lives where its parent lives), which is why a
+ * goal's closer is never a child, and why an open child makes an achieved goal it lands under active again.
+ */
+async function attachUnder(tx: Tx, viewer: Viewer, child: Locked, parent: Locked, now: Date): Promise<void> {
+  if (child.task.id === parent.task.id) throw new GuardError("forbidden", "A task cannot be attached to itself.");
+  if (child.task.goalCloser) throw new GuardError("forbidden", closerStaysMessage(child.task.goalTitle));
+  if (!canEditTask(viewer, child.scope) || !canEditTask(viewer, parent.scope)) throw new GuardError("forbidden", "You need to be able to edit both tasks to attach one to the other.");
+  if (!isLive(child.task) || !isLive(parent.task)) throw new GuardError("forbidden", "Only live tasks can be attached: send a local task or a proposal on first.");
+  if (parent.task.parentTaskId !== null) throw new GuardError("forbidden", "That task is a sub-task itself: attach to its parent instead (one level only).");
+  if ((await subTaskIds(tx, viewer.orgId, child.task.id)).length > 0) throw new GuardError("forbidden", "That task has sub-tasks of its own: detach them first (one level only).");
+  if (child.task.parentTaskId === parent.task.id) return;
+  await tx.update(tasks).set({ parentTaskId: parent.task.id, projectId: parent.task.projectId, goalId: parent.task.goalId, updatedAt: now }).where(eq(tasks.id, child.task.id));
+  await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, parent.task.id));
+  await recordActivity(tx, { orgId: viewer.orgId, taskId: child.task.id, actorId: viewer.userId }, [{ kind: "attached", before: { parentId: child.task.parentTaskId }, after: { parentId: parent.task.id, parentTitle: parent.task.title } }], now);
+  if (parent.task.goalId !== null && parent.task.goalId !== child.task.goalId && !isClosedStatus(child.task.status)) await reopenGoalForNewWork(tx, viewer, parent.task.goalId, now);
+}
+
+const attachSchema = z.object({ taskId: id, parentId: id });
+
+/** Attaches a task under another (the row menu, the task page): it becomes a sub-task, listed under its parent. */
+export async function attachTask(input: z.input<typeof attachSchema>): Promise<ActionResult> {
+  return runAction("tasks.attach", attachSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    const title = await db.transaction(async (tx) => {
+      const [child, parent] = await Promise.all([lockTask(tx, viewer.orgId, data.taskId), lockTask(tx, viewer.orgId, data.parentId)]);
+      if (child === null || parent === null) throw new GuardError("not_found");
+      await attachUnder(tx, viewer, child, parent, now);
+      return parent.task.title;
+    });
+    log.info("tasks.attached", { orgId: viewer.orgId, taskId: data.taskId, parentId: data.parentId, by: viewer.userId });
+    refresh();
+    return ok(undefined, `Attached under “${title}”.`);
+  });
+}
+
+const detachSchema = z.object({ taskId: id });
+
+/** Detaches a sub-task: it keeps its place and becomes a task of its own; a merged one is open again. */
+export async function detachTask(input: z.input<typeof detachSchema>): Promise<ActionResult> {
+  return runAction("tasks.detach", detachSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    const reopened = await db.transaction(async (tx) => {
+      const locked = await lockTask(tx, viewer.orgId, data.taskId);
+      if (locked === null) throw new GuardError("not_found");
+      const { task, scope } = locked;
+      if (!canEditTask(viewer, scope)) throw new GuardError("forbidden");
+      if (task.parentTaskId === null) throw new GuardError("conflict", "This task is not attached to another.");
+      const [parent] = await tx.select({ title: tasks.title }).from(tasks).where(eq(tasks.id, task.parentTaskId));
+      const reopen = task.status === "merged";
+      await tx
+        .update(tasks)
+        .set({ parentTaskId: null, ...(reopen ? { status: "not_started", rejectionReason: null } : {}), updatedAt: now })
+        .where(eq(tasks.id, task.id));
+      const drafts: ActivityDraft[] = [{ kind: "detached", before: { parentId: task.parentTaskId, parentTitle: parent?.title ?? null }, after: { parentId: null } }];
+      if (reopen) drafts.push({ kind: "reopened", before: { status: "merged" }, after: { status: "not_started" }, note: "Detached, so it is a task of its own again." });
+      await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
+      return reopen;
+    });
+    log.info("tasks.detached", { orgId: viewer.orgId, taskId: data.taskId, reopened, by: viewer.userId });
+    refresh();
+    return ok(undefined, reopened ? "Detached and open again." : "Detached.");
+  });
+}
+
 // --- create ---------------------------------------------------------------------------------------------------
 
 const createSchema = z.object({
@@ -196,6 +310,8 @@ const createSchema = z.object({
   assigneeIds: idList,
   projectId: z.string().max(64).default(""),
   goalId: z.string().max(64).default(""),
+  /** A sub-task (2026-11-08 log): made attached to this task, in its project and goal, live like its parent. */
+  parentId: z.string().max(64).default(""),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
   dueDate: day,
   dueTime: clock,
@@ -219,8 +335,16 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
     const notices: Notice[] = [];
     const outcome = await db.transaction(async (tx) => {
       const assignment = await validateAssignment(tx, viewer.orgId, data.assigneeIds);
-      const placement = await resolvePlacement(tx, viewer.orgId, data);
-      const chain = await chainForPlacement(tx, viewer, placement);
+      // A sub-task is made where its parent is, live like its parent (the parent already passed sign-off there).
+      const parent = data.parentId ? await lockTask(tx, viewer.orgId, data.parentId) : null;
+      if (data.parentId && parent === null) throw new GuardError("not_found", "That parent task does not exist, or you cannot see it.");
+      if (parent !== null) {
+        if (!canEditTask(viewer, parent.scope)) throw new GuardError("forbidden", "You need to be able to edit a task to add sub-tasks to it.");
+        if (!isLive(parent.task)) throw new GuardError("forbidden", "Only a live task can have sub-tasks: send it on first.");
+        if (parent.task.parentTaskId !== null) throw new GuardError("forbidden", "That task is a sub-task itself: add to its parent instead (one level only).");
+      }
+      const placement = parent !== null ? { projectId: parent.task.projectId, goalId: parent.task.goalId } : await resolvePlacement(tx, viewer.orgId, data);
+      const chain = parent !== null ? null : await chainForPlacement(tx, viewer, placement);
       // A worker's task under a sign-off rule starts local; a stakeholder's goes to the chain straight away.
       const local = chain !== null && isWorker(viewer);
       const proposal = chain !== null && !local;
@@ -230,6 +354,7 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
           orgId: viewer.orgId,
           projectId: placement.projectId,
           goalId: placement.goalId,
+          parentTaskId: parent?.task.id ?? null,
           title: data.title,
           description: data.description || null,
           createdBy: viewer.userId,
@@ -243,8 +368,14 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
         })
         .returning({ id: tasks.id });
       if (data.recurrence !== null) await tx.update(tasks).set({ seriesId: created.id }).where(eq(tasks.id, created.id));
+      // New work under an achieved goal makes it active again (lib/dal/goal-achievement.ts); local work waits until it is live.
+      const reopened = placement.goalId !== null && !local ? await reopenGoalForNewWork(tx, viewer, placement.goalId, now) : null;
       await applyAssignment(tx, created.id, viewer.userId, [], assignment, now);
       const drafts: ActivityDraft[] = [{ kind: "created", after: { title: data.title, proposal, local } }];
+      if (parent !== null) {
+        drafts.push({ kind: "attached", after: { parentId: parent.task.id, parentTitle: parent.task.title } });
+        await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, parent.task.id));
+      }
       // Assigning work to yourself alone is not news worth a history line.
       const justMe = sameIds(assignment, [viewer.userId]);
       if (!justMe && assignment.length > 0) drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
@@ -252,14 +383,16 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
       if (chain === null) notices.push(...assignedNotice(viewer, { id: created.id, title: data.title, nextAction: data.nextAction || null }, assignment, true));
       else if (proposal) notices.push(...(await startChain(tx, viewer, { id: created.id, title: data.title }, chain, now)));
       if (data.nextAction) await tx.update(tasks).set({ nextAction: data.nextAction }).where(eq(tasks.id, created.id));
-      return { id: created.id, proposal, local };
+      return { id: created.id, proposal, local, reopened };
     });
     log.info("tasks.created", { orgId: viewer.orgId, taskId: outcome.id, proposal: outcome.proposal, local: outcome.local, by: viewer.userId });
     await dispatch(notices);
     refresh();
+    const { reopened, ...created } = outcome;
     return ok(
-      outcome,
-      outcome.local ? "Saved as a local task: only you can see it until you send it for sign-off." : outcome.proposal ? "Proposed. It goes live once it is signed off." : "Task created.",
+      created,
+      (outcome.local ? "Saved as a local task: only you can see it until you send it for sign-off." : outcome.proposal ? "Proposed. It goes live once it is signed off." : "Task created.") +
+        (reopened ? ` “${reopened.title}” is active again.` : ""),
     );
   });
 }
@@ -286,7 +419,7 @@ export async function setAssignees(input: z.input<typeof assignSchema>): Promise
       const [beforeNames, afterNames] = await Promise.all([snapshotAssignment(tx, before), snapshotAssignment(tx, after)]);
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [{ kind: "assigned", before: beforeNames, after: afterNames }], now);
       // People on a proposal hear once it is approved, not before.
-      if (task.proposalStatus === null || task.proposalStatus === "approved") notices.push(...assignedNotice(viewer, task, after.filter((userId) => !before.includes(userId)), false));
+      if (task.proposalStatus === null || task.proposalStatus === "approved") notices.push(...assignedNotice(viewer, noticeTask(task), after.filter((userId) => !before.includes(userId)), false));
       return true;
     });
     if (!changed) return ok(undefined);
@@ -329,6 +462,7 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
   return runAction("tasks.edit", editSchema, input, async (data) => {
     const viewer = await requireViewer();
     const now = new Date();
+    const notices: Notice[] = [];
     const changed = await db.transaction(async (tx) => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
@@ -338,29 +472,38 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
       const short = (v: unknown) => (typeof v === "string" && v.length > 500 ? `${v.slice(0, 500)}…` : v);
       let draft: ActivityDraft;
       let patch: Partial<typeof task> = {};
+      /** Set when the task changes project or goal: where it went, for the goal and sign-off rules below. */
+      let moved: { projectId: string | null; goalId: string | null } | null = null;
       if (data.field === "recurrence") {
         const before = task.recurrence ?? null;
         if (sameRecurrence(before, data.value)) return false;
+        if (data.value !== null && task.goalCloser) throw new GuardError("forbidden", closerRepeatMessage(task.goalTitle));
         if (data.value !== null && task.dueDate === null) throw new GuardError("forbidden", "Set a due date first: a repeating task counts from its first due day.");
         patch = { recurrence: data.value, seriesId: data.value === null ? task.seriesId : (task.seriesId ?? task.id) };
         draft = { kind: "edited", before: { recurrence: before ? describeRecurrence(before, task.dueDate) : null }, after: { recurrence: data.value ? describeRecurrence(data.value, task.dueDate) : null } };
       } else if (data.field === "goalId") {
         const value = data.value === "" ? null : data.value;
         if ((task.goalId ?? null) === value) return false;
+        if (task.goalCloser) throw new GuardError("forbidden", closerStaysMessage(task.goalTitle));
+        if (task.parentTaskId !== null) throw new GuardError("forbidden", CHILD_CANNOT_MOVE);
         const placement = await resolvePlacement(tx, viewer.orgId, { projectId: task.projectId ?? "", goalId: value ?? "" });
         const goal = value === null ? null : await findGoal(tx, viewer.orgId, value);
-        patch = { goalId: placement.goalId, projectId: value === null ? task.projectId : placement.projectId, goalCloser: false };
+        patch = { goalId: placement.goalId, projectId: value === null ? task.projectId : placement.projectId };
+        moved = { projectId: patch.projectId ?? null, goalId: patch.goalId ?? null };
         draft = { kind: "edited", before: { goalId: task.goalId }, after: { goalId: value, goalTitle: goal?.title ?? null } };
       } else if (data.field === "projectId") {
         const value = data.value === "" ? null : data.value;
         if ((task.projectId ?? null) === value) return false;
+        if (task.goalCloser) throw new GuardError("forbidden", closerStaysMessage(task.goalTitle));
+        if (task.parentTaskId !== null) throw new GuardError("forbidden", CHILD_CANNOT_MOVE);
         // Names are kept in the audit row so the history still reads right after a rename.
         const project = value === null ? null : await findProject(tx, viewer.orgId, value);
         if (value !== null && !project) throw new GuardError("not_found", "That project doesn't exist, or you can't see it.");
         if (project?.status === "archived") throw new GuardError("forbidden", "That project is archived. Pick another one.");
         const goal = task.goalId ? await findGoal(tx, viewer.orgId, task.goalId) : null;
         const keepGoal = goal !== null && goal.projectId === value;
-        patch = { projectId: value, goalId: keepGoal ? task.goalId : null, goalCloser: keepGoal ? task.goalCloser : false };
+        patch = { projectId: value, goalId: keepGoal ? task.goalId : null };
+        moved = { projectId: value, goalId: keepGoal ? task.goalId : null };
         draft = { kind: "edited", before: { projectId: task.projectId }, after: { projectId: value, projectName: project?.name ?? null } };
       } else {
         const value = data.value === "" ? null : data.value;
@@ -379,12 +522,22 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
         .set({ ...patch, updatedAt: now })
         .where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [draft], now);
-      return true;
+      if (moved === null) return { reopened: null, regate: null, makerName: null };
+      // Sub-tasks live where their parent lives: they move with it.
+      await moveSubTasksWith(tx, viewer, task.id, moved, now);
+      // Where it went decides two things (2026-11-07 log): an achieved goal there is active again, and sign-off there
+      // makes it its maker's local task (or a proposal) again instead of letting it skip the queue.
+      const reopened = moved.goalId !== null && moved.goalId !== task.goalId && isLive(task) ? await reopenGoalForNewWork(tx, viewer, moved.goalId, now) : null;
+      const regate = await regateMovedTask(tx, viewer, task, moved, now);
+      if (regate !== null) notices.push(...regate.notices);
+      const [maker] = regate !== null && regate.makerId !== viewer.userId ? await tx.select({ name: users.name }).from(users).where(eq(users.id, regate.makerId)) : [];
+      return { reopened, regate, makerName: maker?.name ?? null };
     });
-    if (!changed) return ok(undefined);
-    log.info("tasks.edited", { orgId: viewer.orgId, taskId: data.taskId, field: data.field, by: viewer.userId });
+    if (changed === false) return ok(undefined);
+    log.info("tasks.edited", { orgId: viewer.orgId, taskId: data.taskId, field: data.field, local: changed.regate?.became ?? null, by: viewer.userId });
+    await dispatch(notices);
     refresh();
-    return ok(undefined, EDIT_TOASTS[data.field]);
+    return ok(undefined, `${EDIT_TOASTS[data.field]}${changed.reopened ? ` “${changed.reopened.title}” is active again.` : ""}${describeRegate(changed.regate, viewer, changed.makerName)}`);
   });
 }
 
@@ -408,6 +561,8 @@ const STATUS_TOASTS: Partial<Record<TaskStatus, string>> = {
   blocked: "Marked blocked.",
   awaiting_approval: "Sent for approval.",
   rejected: "Task rejected.",
+  deferred: "Task deferred.",
+  cancelled: "Task cancelled.",
 };
 
 const APPROVER_IS_ASSIGNEE = "Choose someone other than the people assigned to approve it.";
@@ -418,7 +573,7 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
     const viewer = await requireViewer();
     const now = new Date();
     const notices: Notice[] = [];
-    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null; closer: CloserOutcome | null } | null> => {
+    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null; goal: GoalOutcome | null } | null> => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
       const { task, assignment, scope } = locked;
@@ -429,18 +584,23 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
         if (assignment.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
       }
-      const transition: TransitionInput = { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary, note: data.note };
+      const rules = await subTaskRules(tx, viewer.orgId, task, data.status, data.reason);
+      if (!rules.ok) return { error: rules.error };
+      const transition: TransitionInput = { reason: rules.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary, note: data.note };
       const plan = planTransition(task, data.status, transition, now, via);
       if (!plan.ok) return { error: plan.error };
       if (plan.activities.length === 0) return null;
-      // The goal's "Everything completed" task: refused while other tasks are open; achieves the goal when done last.
-      const closer = await applyGoalCloser(tx, viewer, task, data.status, now);
+      plan.activities = stampMerge(plan.activities, task, rules.parentTitle);
+      // The goal's closer waits for the other tasks and achieves the goal when completed; reopening a task under an
+      // achieved goal reopens it (lib/dal/goal-achievement.ts).
+      const goal = await applyGoalRules(tx, viewer, task, data.status, now);
+      if (goal?.achieved) notices.push(...goalAchievedNotice(viewer, goal.goal, goal.notify));
       const evidence = data.status === "completed" ? await insertLink(tx, task.id, viewer.userId, data.evidenceUrl, data.evidenceLabel, now) : [];
       await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [...plan.activities, ...evidence], now);
-      notices.push(...(await noticesFor(tx, viewer, task, assignment, plan.activities, data.approverId || task.approverId, data.note || null)));
+      notices.push(...(await noticesFor(tx, viewer, noticeTask(task), assignment, plan.activities, data.approverId || task.approverId, data.note || null)));
       const nextDue = data.status === "completed" ? await spawnNextOccurrence(tx, viewer, task, assignment, now) : null;
-      return { nextDue, closer };
+      return { nextDue, goal };
     });
     if (outcome !== null && "error" in outcome) return fail(outcome.error);
     log.info("tasks.status_changed", { orgId: viewer.orgId, taskId: data.taskId, to: data.status, via: data.via, by: viewer.userId });
@@ -448,7 +608,7 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
     refresh();
     const today = dayKey(now, viewer.timezone);
     const nextDue = outcome?.nextDue ?? null;
-    const achieved = describeCloser(outcome?.closer ?? null, today, formatDay);
+    const achieved = describeGoalOutcome(outcome?.goal ?? null, today, formatDay);
     if (data.via === "approve") return ok(undefined, withNextDue("Approved.", nextDue, today) + achieved);
     if (data.via === "send_back") return ok(undefined, "Sent back.");
     return ok(undefined, withNextDue(STATUS_TOASTS[data.status] ?? "Status changed.", nextDue, today) + achieved);
@@ -473,11 +633,12 @@ const progressSchema = z
     summary: optionalText(LIMITS.completionSummary),
   })
   .superRefine((value, ctx) => {
-    const closing = value.status === "completed" || value.status === "rejected";
+    const status = value.status === "" ? null : value.status;
+    const closing = status === "completed" || (status !== null && CLOSED_WITHOUT_COMPLETION.includes(status));
     if (!closing && value.nextAction === "") ctx.addIssue({ code: "custom", path: ["nextAction"], message: "Say what happens next." });
-    if (value.status === "blocked" && value.reason === "") ctx.addIssue({ code: "custom", path: ["reason"], message: "Say what is blocking it." });
-    if (value.status === "rejected" && value.reason === "") ctx.addIssue({ code: "custom", path: ["reason"], message: "Give a reason for rejecting it." });
-    if (value.status === "awaiting_approval" && value.approverId === "") ctx.addIssue({ code: "custom", path: ["approverId"], message: "Choose who approves it." });
+    if (status !== null && asksReason(status) && value.reason === "") ctx.addIssue({ code: "custom", path: ["reason"], message: REASON_PROMPTS[status] });
+    if (status === "awaiting_approval" && value.approverId === "") ctx.addIssue({ code: "custom", path: ["approverId"], message: "Choose who approves it." });
+    if (status === "completed" && value.summary === "") ctx.addIssue({ code: "custom", path: ["summary"], message: SUMMARY_REQUIRED });
   });
 
 /**
@@ -491,7 +652,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
     const viewer = await requireViewer();
     const now = new Date();
     const notices: Notice[] = [];
-    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null; closer: CloserOutcome | null }> => {
+    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null; goal: GoalOutcome | null }> => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
       const { task, assignment, scope } = locked;
@@ -506,21 +667,24 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
 
       const drafts: ActivityDraft[] = [{ kind: "progress_updated", after: { progress: data.progress.slice(0, 500), nextAction: data.nextAction || null } }];
       let patch: Record<string, unknown> = {};
-      let closer: CloserOutcome | null = null;
+      let goal: GoalOutcome | null = null;
       if (target !== null) {
         const via: TransitionVia = task.status === "awaiting_approval" && target === "completed" ? "approve" : "status";
         if (!mayMove(viewer, scope, task.status, target, via)) {
-          throw new GuardError("forbidden", target === "rejected" ? "Only people who may edit this task can reject it." : "Only the approver can complete a task that is waiting for approval.");
+          throw new GuardError("forbidden", target === "rejected" || target === "cancelled" ? `Only people who may edit this task can ${target === "rejected" ? "reject" : "cancel"} it.` : "Only the approver can complete a task that is waiting for approval.");
         }
         if (target === "awaiting_approval") {
           await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
           if (after.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
         }
-        const plan = planTransition(task, target, { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
+        const rules = await subTaskRules(tx, viewer.orgId, task, target, data.reason);
+        if (!rules.ok) return { error: rules.error };
+        const plan = planTransition(task, target, { reason: rules.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
         if (!plan.ok) return { error: plan.error };
-        closer = await applyGoalCloser(tx, viewer, task, target, now);
+        goal = await applyGoalRules(tx, viewer, task, target, now);
+        if (goal?.achieved) notices.push(...goalAchievedNotice(viewer, goal.goal, goal.notify));
         patch = plan.patch;
-        drafts.push(...plan.activities);
+        drafts.push(...stampMerge(plan.activities, task, rules.parentTitle));
       } else if (task.status === "blocked" && data.status === "blocked" && (data.reason !== task.blockedReason || (data.blockedBy || null) !== task.blockedBy)) {
         // Still blocked, with the reason brought up to date.
         patch = { blockedReason: data.reason, blockedBy: data.blockedBy || null };
@@ -536,12 +700,12 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
           actorId: viewer.userId,
           recipients: [data.handOverTo],
           kind: "handover",
-          title: `Handed over to you: ${task.title}`,
+          title: `Handed over to you: ${noticeTask(task).title}`,
           body: data.nextAction ? `Next: ${data.nextAction}` : data.progress.slice(0, 200),
           href: taskHref(task.id),
         });
       }
-      notices.push(...(await noticesFor(tx, viewer, task, after, drafts, data.approverId || task.approverId, null)));
+      notices.push(...(await noticesFor(tx, viewer, noticeTask(task), after, drafts, data.approverId || task.approverId, null)));
       drafts.push(...(await insertLink(tx, task.id, viewer.userId, data.evidenceUrl, data.evidenceLabel, now)));
 
       await tx.insert(taskUpdates).values({
@@ -559,14 +723,14 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         .where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
       const nextDue = target === "completed" ? await spawnNextOccurrence(tx, viewer, task, after, now) : null;
-      return { nextDue, closer };
+      return { nextDue, goal };
     });
     if ("error" in outcome) return fail(outcome.error);
     log.info("tasks.progress_updated", { orgId: viewer.orgId, taskId: data.taskId, by: viewer.userId, status: data.status || null });
     await dispatch(notices);
     refresh();
     const today = dayKey(now, viewer.timezone);
-    return ok(undefined, withNextDue("Update saved.", outcome.nextDue, today) + describeCloser(outcome.closer, today, formatDay));
+    return ok(undefined, withNextDue("Update saved.", outcome.nextDue, today) + describeGoalOutcome(outcome.goal, today, formatDay));
   });
 }
 
@@ -588,7 +752,7 @@ export async function addComment(input: z.input<typeof commentSchema>): Promise<
       await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [{ kind: "commented", after: { excerpt: data.body.slice(0, 200) } }], now);
       const recipients = [...new Set([...assignment, task.createdBy])].filter((userId) => userId !== viewer.userId);
-      const out: Notice = { orgId: viewer.orgId, actorId: viewer.userId, recipients, kind: "commented", title: `New comment on ${task.title}`, body: data.body.slice(0, 200), href: taskHref(task.id) };
+      const out: Notice = { orgId: viewer.orgId, actorId: viewer.userId, recipients, kind: "commented", title: `New comment on ${noticeTask(task).title}`, body: data.body.slice(0, 200), href: taskHref(task.id) };
       return out;
     });
     log.info("tasks.commented", { orgId: viewer.orgId, taskId: data.taskId, by: viewer.userId });
@@ -609,6 +773,7 @@ export async function setCommentResolved(input: z.input<typeof resolveSchema>): 
   return runAction("tasks.comment_resolve", resolveSchema, input, async (data) => {
     const viewer = await requireViewer();
     const now = new Date();
+    const notices: Notice[] = [];
     const changed = await db.transaction(async (tx) => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
@@ -622,10 +787,23 @@ export async function setCommentResolved(input: z.input<typeof resolveSchema>): 
         .where(eq(taskUpdates.id, comment.id));
       await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, locked.task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: locked.task.id, actorId: viewer.userId }, [{ kind: data.resolved ? "comment_resolved" : "comment_reopened", after: { commentId: comment.id } }], now);
+      // The person who asked hears that their comment was dealt with (2026-11-07 log), unless they resolved it themselves.
+      if (data.resolved && comment.authorId !== viewer.userId) {
+        notices.push({
+          orgId: viewer.orgId,
+          actorId: viewer.userId,
+          recipients: [comment.authorId],
+          kind: "comment_resolved",
+          title: `Your comment on ${noticeTask(locked.task).title} was resolved`,
+          body: comment.body.slice(0, 200),
+          href: taskHref(locked.task.id),
+        });
+      }
       return true;
     });
     if (!changed) return ok(undefined);
     log.info("tasks.comment_resolved", { orgId: viewer.orgId, taskId: data.taskId, commentId: data.commentId, resolved: data.resolved, by: viewer.userId });
+    await dispatch(notices);
     refresh();
     return ok(undefined, data.resolved ? "Comment resolved." : "Comment reopened.");
   });
@@ -717,14 +895,14 @@ export async function paletteSearch(input: z.input<typeof searchSchema>): Promis
   });
 }
 
-/** Whether this person gets "From a meeting": the role allows it and the server has an engine for them. */
-const offersCapture = (viewer: Viewer, email: string | null) => canCapture(viewer) && captureProviderFor(email) !== null;
+/** Whether this person gets "From a meeting": the role allows it and the workspace has an engine for them. */
+const offersCapture = async (viewer: Viewer, email: string | null) => canCapture(viewer) && (await captureEngineFor(email, viewer.orgId)) !== null;
 
 /** What the palette may offer this viewer: their navigation, whether they can create tasks, and capture. */
 export async function getPaletteContext(): Promise<ActionResult<{ nav: NavKey[]; canCreate: boolean; canCapture: boolean; worker: boolean }>> {
   return runAction("tasks.palette_context", z.object({}), {}, async () => {
     const { viewer, user } = await requireViewerContext();
-    return ok({ nav: navFor(viewer), canCreate: canCreateTask(viewer), canCapture: offersCapture(viewer, user.email), worker: viewer.orgRole !== "stakeholder" });
+    return ok({ nav: navFor(viewer), canCreate: canCreateTask(viewer), canCapture: await offersCapture(viewer, user.email), worker: viewer.orgRole !== "stakeholder" });
   });
 }
 
@@ -733,7 +911,7 @@ export async function getTaskFormOptions(): Promise<ActionResult<TaskFormOptions
   return runAction("tasks.form_options", z.object({}), {}, async () => {
     const { viewer, user } = await requireViewerContext();
     if (!canCreateTask(viewer)) throw new GuardError("forbidden");
-    return ok({ ...(await taskFormOptions(viewer)), canCapture: offersCapture(viewer, user.email) });
+    return ok({ ...(await taskFormOptions(viewer)), canCapture: await offersCapture(viewer, user.email) });
   });
 }
 
@@ -746,7 +924,8 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
     return ok({
       task: {
         id: task.id,
-        title: task.title,
+        // The dialogs name a goal's closer by its goal, as the lists do.
+        title: task.closer ? closerLabel(task.title, task.closer.goalTitle) : task.title,
         status: task.status,
         assigneeIds: task.assigneeIds,
         nextAction: task.nextAction,
@@ -754,6 +933,9 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
         blockedBy: task.blockedBy,
         openComments: task.openComments,
         repeats: task.recurrence ? describeRecurrence(task.recurrence, task.dueDate) : null,
+        parent: task.parent,
+        openSubTasks: task.openSubTasks,
+        closer: task.closer,
       },
       people,
       defaultApprover: defaultApproverFor(people, task.approverId, task.assigneeIds),
@@ -780,6 +962,7 @@ export async function deleteTask(input: z.input<typeof deleteSchema>): Promise<A
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
       if (!canDeleteTask(viewer, locked.scope)) throw new GuardError("forbidden", "Only leaders and admins can delete tasks.");
+      if (locked.task.goalCloser) throw new GuardError("forbidden", closerDeleteMessage(locked.task.goalTitle));
       await tx.delete(tasks).where(and(eq(tasks.id, data.taskId), eq(tasks.orgId, viewer.orgId)));
       await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/tasks/${data.taskId}`)));
       return locked.task.proposalStatus;
@@ -854,15 +1037,17 @@ export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>):
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
         if (assignment.includes(data.approverId)) throw new GuardError("forbidden", "the approver is assigned to it");
       }
-      const plan = planTransition(task, data.status, { reason: data.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
+      const rules = await subTaskRules(tx, viewer.orgId, task, data.status, data.reason);
+      if (!rules.ok) throw new GuardError("conflict", rules.error);
+      const plan = planTransition(task, data.status, { reason: rules.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
       if (!plan.ok) throw new GuardError("conflict", plan.error);
       if (plan.activities.length === 0) return [];
-      await applyGoalCloser(tx, viewer, task, data.status, now);
+      const goal = await applyGoalRules(tx, viewer, task, data.status, now);
       await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
-      await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, plan.activities, now);
-      const sent = await noticesFor(tx, viewer, task, assignment, plan.activities, data.approverId || task.approverId, null);
+      await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, stampMerge(plan.activities, task, rules.parentTitle), now);
+      const sent = await noticesFor(tx, viewer, noticeTask(task), assignment, plan.activities, data.approverId || task.approverId, null);
       if (data.status === "completed") await spawnNextOccurrence(tx, viewer, task, assignment, now);
-      return sent;
+      return goal?.achieved ? [...sent, ...goalAchievedNotice(viewer, goal.goal, goal.notify)] : sent;
     });
     log.info("tasks.bulk_status", { orgId: viewer.orgId, to: data.status, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
     await dispatch(notices);
@@ -887,7 +1072,7 @@ export async function bulkAssign(input: z.input<typeof bulkAssignSchema>): Promi
       await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, task.id));
       const [beforeNames, afterNames] = await Promise.all([snapshotAssignment(tx, before), snapshotAssignment(tx, after)]);
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [{ kind: "assigned", before: beforeNames, after: afterNames }], now);
-      return task.proposalStatus === null || task.proposalStatus === "approved" ? assignedNotice(viewer, task, after.filter((userId) => !before.includes(userId)), false) : [];
+      return task.proposalStatus === null || task.proposalStatus === "approved" ? assignedNotice(viewer, noticeTask(task), after.filter((userId) => !before.includes(userId)), false) : [];
     });
     log.info("tasks.bulk_assign", { orgId: viewer.orgId, mode: data.mode, people: data.assigneeIds.length, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
     await dispatch(notices);
@@ -903,25 +1088,58 @@ export async function bulkMove(input: z.input<typeof bulkMoveSchema>): Promise<A
   return runAction("tasks.bulk_move", bulkMoveSchema, input, async (data) => {
     const viewer = await requireViewer();
     const now = new Date();
+    let localAgain = 0;
     const { outcome, notices } = await runBulk(viewer, data.taskIds, async (tx, { task, scope }) => {
       if (!canEditTask(viewer, scope)) throw new GuardError("forbidden", "you can't edit it");
       const placement = await resolvePlacement(tx, viewer.orgId, data);
       if ((task.projectId ?? null) === placement.projectId && (task.goalId ?? null) === placement.goalId) return [];
+      if (task.goalCloser) throw new GuardError("forbidden", "it marks its goal achieved and stays with it");
+      if (task.parentTaskId !== null) throw new GuardError("forbidden", "it is a sub-task: move its parent");
       const project = placement.projectId ? await findProject(tx, viewer.orgId, placement.projectId) : null;
       const goal = placement.goalId ? await findGoal(tx, viewer.orgId, placement.goalId) : null;
-      await tx.update(tasks).set({ projectId: placement.projectId, goalId: placement.goalId, goalCloser: task.goalCloser && placement.goalId === task.goalId, updatedAt: now }).where(eq(tasks.id, task.id));
+      await tx.update(tasks).set({ projectId: placement.projectId, goalId: placement.goalId, updatedAt: now }).where(eq(tasks.id, task.id));
       await recordActivity(
         tx,
         { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId },
         [{ kind: "edited", before: { projectId: task.projectId, goalId: task.goalId }, after: { projectId: placement.projectId, projectName: project?.name ?? null, goalId: placement.goalId, goalTitle: goal?.title ?? null } }],
         now,
       );
-      return [];
+      await moveSubTasksWith(tx, viewer, task.id, placement, now);
+      // The same two rules as a single move (editTask): an achieved goal there is active again; sign-off there re-gates it.
+      if (placement.goalId !== null && placement.goalId !== task.goalId && isLive(task)) await reopenGoalForNewWork(tx, viewer, placement.goalId, now);
+      const regate = await regateMovedTask(tx, viewer, task, placement, now);
+      if (regate?.became === "local") localAgain += 1;
+      return regate?.notices ?? [];
     });
-    log.info("tasks.bulk_move", { orgId: viewer.orgId, projectId: data.projectId || null, goalId: data.goalId || null, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
+    log.info("tasks.bulk_move", { orgId: viewer.orgId, projectId: data.projectId || null, goalId: data.goalId || null, done: outcome.done, failed: outcome.failed.length, localAgain, by: viewer.userId });
     await dispatch(notices);
     refresh();
-    return bulkResult(outcome, data.projectId || data.goalId ? "moved" : "made standalone");
+    const result = bulkResult(outcome, data.projectId || data.goalId ? "moved" : "made standalone");
+    if (!result.ok || localAgain === 0) return result;
+    return ok(result.data, `${result.message ?? ""} Sign-off applies there, so ${localAgain === 1 ? "one of them is" : `${localAgain} of them are`} local again until sent for sign-off.`.trim());
+  });
+}
+
+const bulkAttachSchema = z.object({ taskIds: bulkIds, parentId: id });
+
+/** Groups the ticked tasks under one task (the selection bar): each becomes its sub-task; the parent itself, if ticked, is skipped. */
+export async function bulkAttach(input: z.input<typeof bulkAttachSchema>): Promise<ActionResult<BulkOutcome>> {
+  return runAction("tasks.bulk_attach", bulkAttachSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    const { outcome } = await runBulk(
+      viewer,
+      data.taskIds.filter((taskId) => taskId !== data.parentId),
+      async (tx, child) => {
+        const parent = await lockTask(tx, viewer.orgId, data.parentId);
+        if (parent === null) throw new GuardError("not_found", "the parent task was not found");
+        await attachUnder(tx, viewer, child, parent, now);
+        return [];
+      },
+    );
+    log.info("tasks.bulk_attach", { orgId: viewer.orgId, parentId: data.parentId, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
+    refresh();
+    return bulkResult(outcome, "attached");
   });
 }
 
@@ -959,6 +1177,7 @@ export async function bulkDelete(input: z.input<typeof bulkDeleteSchema>): Promi
     const viewer = await requireViewer();
     const { outcome } = await runBulk(viewer, data.taskIds, async (tx, { task, scope }) => {
       if (!canDeleteTask(viewer, scope)) throw new GuardError("forbidden", "only leaders and admins delete tasks");
+      if (task.goalCloser) throw new GuardError("forbidden", "it marks its goal achieved and goes when the goal is deleted");
       await tx.delete(tasks).where(and(eq(tasks.id, task.id), eq(tasks.orgId, viewer.orgId)));
       await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/tasks/${task.id}`)));
       return [];

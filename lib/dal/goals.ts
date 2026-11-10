@@ -247,6 +247,7 @@ export async function lockGoal(tx: Tx, orgId: string, id: string) {
       successCriteria: goals.successCriteria,
       status: goals.status,
       ownerId: goals.ownerId,
+      createdBy: goals.createdBy,
       projectId: goals.projectId,
       parentGoalId: goals.parentGoalId,
       targetDate: goals.targetDate,

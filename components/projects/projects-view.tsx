@@ -8,7 +8,7 @@ import { ProjectDialog } from "@/components/projects/project-dialog";
 import { ownerOptions } from "@/lib/dal/goals";
 import { listProjects } from "@/lib/dal/projects";
 import type { HomeTabConfig } from "@/lib/home-tabs";
-import { canManagePlanning, type Viewer } from "@/lib/permissions";
+import { canCreatePlanning, type Viewer } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
 
 // The Projects tab of /home: the workspace's projects with their goals and progress. Never narrowed by the project
@@ -19,13 +19,13 @@ import { dayKey } from "@/lib/time";
  * Leaders and admins get New project; everyone else reads.
  */
 export async function ProjectsView({ viewer, showAll, tabsConfig }: { viewer: Viewer; showAll: boolean; tabsConfig: HomeTabConfig }) {
-  const manage = canManagePlanning(viewer);
+  const create = canCreatePlanning(viewer);
   // A workspace has a handful of projects: read them all once, so the toggle knows whether anything closed exists.
-  const [projects, people] = await Promise.all([listProjects(viewer, { includeClosed: true }), manage ? ownerOptions(viewer) : []]);
+  const [projects, people] = await Promise.all([listProjects(viewer, { includeClosed: true }), create ? ownerOptions(viewer) : []]);
   const today = dayKey(new Date(), viewer.timezone);
   const closedCount = projects.filter((project) => project.status !== "active").length;
   const shown = showAll ? projects : projects.filter((project) => project.status === "active");
-  const newProject = (variant: "default" | "outline") => (manage ? <ProjectDialog people={people} viewerId={viewer.userId} variant={variant} /> : null);
+  const newProject = (variant: "default" | "outline") => (create ? <ProjectDialog people={people} viewerId={viewer.userId} variant={variant} /> : null);
 
   return (
     <>
@@ -40,7 +40,7 @@ export async function ProjectsView({ viewer, showAll, tabsConfig }: { viewer: Vi
         <EmptyState
           icon={FolderKanban}
           title="No projects yet"
-          description={manage ? "A project holds goals and the tasks that move them. Create the first one, then add goals inside it." : "When a leader creates one, it shows up here with its progress."}
+          description={create ? "A project holds goals and the tasks that move them. Create the first one, then add goals inside it." : "When a leader creates one, it shows up here with its progress."}
           action={newProject("outline")}
         />
       ) : shown.length === 0 ? (

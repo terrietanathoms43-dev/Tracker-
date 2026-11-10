@@ -48,6 +48,7 @@ const task: ReportTask = {
   assignees: [{ id: "u1", name: "Jordan Dev", email: "jordan@trackwise.test", image: null }],
   dueDate: "2026-10-10",
   completedDay: "2026-10-12",
+  closedDay: "2026-10-12",
   createdDay: "2026-10-01",
   updatedAt: "2026-10-30T12:00:00.000Z",
   completionSummary: "Done.\nNotes in the doc.",
@@ -86,6 +87,7 @@ describe("tables", () => {
       title: "Call the clinic",
       status: "blocked",
       completedDay: null,
+      closedDay: null,
       completionSummary: null,
       blockedReason: "No answer",
       blockedBy: "Front desk",
@@ -96,7 +98,7 @@ describe("tables", () => {
     };
     const scope = groupActiveScope([task, stuck], { from: "2026-10-24", to: "2026-11-06" }, "2026-11-06");
     expect(toCsv(scopeTable(scope)).split("\r\n").slice(0, 3)).toEqual([
-      "Title,Project,Goal,Assignees,Status,Due date,Completed on,Added on,New this cycle,Detail",
+      "Title,Project,Goal,Assignees,Status,Due date,Closed on,Added on,New this cycle,Detail",
       "Call the clinic,Lumen Health,Intake live,Jordan Dev,Blocked,2026-10-10,,2026-10-30,yes,No answer · Waiting on Front desk",
       '"Ship ""v2"", finally",,,Jordan Dev,Completed,2026-10-10,2026-10-12,2026-10-01,no,"Done.\nNotes in the doc."',
     ]);

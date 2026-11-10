@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ResumeCard } from "@/components/tasks/detail/resume-card";
+import { SubTasksSection } from "@/components/tasks/detail/sub-tasks-section";
 import { TaskDetails } from "@/components/tasks/detail/task-details";
 import { TaskHeader } from "@/components/tasks/detail/task-header";
 import { TaskHistory } from "@/components/tasks/detail/task-history";
@@ -10,10 +11,11 @@ import { chainForPlacement } from "@/lib/approvals/chain";
 import { canDecideProposal, describeStepPeople } from "@/lib/approvals/policy";
 import { listHistory } from "@/lib/dal/history";
 import { pinnedProjectIds } from "@/lib/dal/projects";
-import { activePlanning, getTask, listLinks, taskPeople } from "@/lib/dal/tasks";
+import { activePlanning, getTask, listLinks, taskPeople, tasksForParent } from "@/lib/dal/tasks";
 import { canApproveTask, canEditTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
 import { describeRecurrence } from "@/lib/recurrence";
 import { defaultApproverFor } from "@/lib/tasks/approver";
+import { closerLabel } from "@/lib/tasks/closer";
 import { nameOf } from "@/lib/tasks/people";
 import type { TaskAbilities, UpdateContext } from "@/lib/tasks/types";
 import { dayKey } from "@/lib/time";
@@ -44,6 +46,9 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   ]);
   if (found === null || !canReadTask(viewer, found.scope)) notFound();
   const { detail, scope } = found;
+  // Sub-tasks (2026-11-08 log): a live, top-level task lists the tasks attached to it; a sub-task has no section of its own.
+  const live = detail.proposalStatus === null || detail.proposalStatus === "approved";
+  const subTasks = live && detail.parent === null ? await tasksForParent(viewer, id) : null;
   const abilities: TaskAbilities = {
     edit: canEditTask(viewer, scope),
     progress: canUpdateProgress(viewer, scope),
@@ -65,7 +70,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
     ? {
         task: {
           id: detail.id,
-          title: detail.title,
+          title: detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title,
           status: detail.status,
           assigneeIds: scope.assigneeIds,
           nextAction: detail.nextAction,
@@ -73,6 +78,9 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           blockedBy: detail.blockedBy,
           openComments: detail.openComments,
           repeats: detail.recurrence ? describeRecurrence(detail.recurrence, detail.dueDate) : null,
+          parent: detail.parent,
+          openSubTasks: subTasks === null ? 0 : subTasks.filter((item) => !["completed", "rejected", "deferred", "cancelled", "merged"].includes(item.status)).length,
+          closer: detail.goalCloser ? { goalTitle: detail.goal?.title ?? null, openOthers: detail.closerWaitsFor } : null,
         },
         people,
         defaultApprover: defaultApproverFor(people, detail.approver?.id ?? null, scope.assigneeIds),
@@ -82,10 +90,13 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <CurrentTask id={detail.id} title={detail.title} actionable={abilities.progress} />
+      <CurrentTask id={detail.id} title={detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title} actionable={abilities.progress} />
       <TaskHeader detail={detail} abilities={abilities} today={today} />
       <div className="grid gap-5">
         <ResumeCard detail={detail} links={links} removableLinks={removableLinks} abilities={abilities} updateContext={updateContext} localChain={localChain} timeZone={viewer.timezone} now={now} />
+        {subTasks !== null ? (
+          <SubTasksSection task={{ id: detail.id, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} items={subTasks} today={today} canEdit={abilities.edit} readOnly={!abilities.progress} />
+        ) : null}
         <TaskDetails
           detail={detail}
           abilities={abilities}
@@ -98,7 +109,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           timeZone={viewer.timezone}
           now={now}
         />
-        <TaskHistory taskId={detail.id} initial={history} canComment={abilities.progress} openComments={detail.openComments} />
+        <TaskHistory task={{ id: detail.id, title: detail.title, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} initial={history} canComment={abilities.progress} openComments={detail.openComments} />
       </div>
     </div>
   );

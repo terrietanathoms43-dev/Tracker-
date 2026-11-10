@@ -25,7 +25,8 @@ export type Notice = {
   href: string;
 };
 
-const PREFERENCE: Record<NotificationKind, keyof Preferences> = {
+/** The email preference each kind follows; a kind without one is told in the app only. */
+const PREFERENCE: Record<NotificationKind, keyof Preferences | null> = {
   assigned: "emailAssignment",
   handover: "emailHandover",
   approval_requested: "emailApproval",
@@ -34,6 +35,8 @@ const PREFERENCE: Record<NotificationKind, keyof Preferences> = {
   proposal_waiting: "emailProposal",
   proposal_decided: "emailProposal",
   commented: "emailComment",
+  comment_resolved: "emailComment",
+  goal_achieved: null,
 };
 
 /** Writes the in-app rows now and sends the emails after the response, each according to the recipient's preferences. */
@@ -60,7 +63,8 @@ export async function dispatch(notices: Notice[]): Promise<void> {
         const recipient = recipients.find((each) => each.id === row.userId);
         if (!recipient?.email) continue;
         const preferences = await getPreferences(row.userId);
-        if (!preferences[PREFERENCE[row.kind as NotificationKind]]) continue;
+        const preference = PREFERENCE[row.kind as NotificationKind];
+        if (preference === null || !preferences[preference]) continue;
         await sendMail(notificationEmail({ to: recipient.email, title: row.title, body: row.body, url: `${appOrigin()}${row.href}` }));
       }
     } catch (error) {

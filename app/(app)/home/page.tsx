@@ -48,7 +48,7 @@ export default async function HomePage(props: PageProps<"/home">) {
   const { viewer, org } = context;
   await catchUpRecurrences(viewer);
   const role = viewer.orgRole;
-  const [config, scope] = await Promise.all([readHomeTabConfig(role), scopedProject(viewer)]);
+  const [config, scope] = await Promise.all([readHomeTabConfig(role, viewer.orgId), scopedProject(viewer)]);
   const requested = parseTabParam(typeof raw.view === "string" ? raw.view : "");
   const allowed = tabsForRole(role);
   const active = requested !== null && allowed.includes(requested) && !(isStakeholder(viewer) && requested !== "home") ? requested : landingTab(config);

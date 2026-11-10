@@ -32,7 +32,10 @@ try {
   await morgan.shot("13-picker-scoped");
 
   // --- 2. the add bar's goal picker follows the project and never disappears -----------------------------------------
-  step("the add bar's project is the navigation's", (await pickedValue(morgan, "#quick-add-project")) === "" || true);
+  const [incident] = await query(`select id from projects where org_id = (${org}) and name = 'Incident tooling'`);
+  const barProject = await pickedValue(morgan, "#quick-add-project");
+  step("the add bar's project follows the navigation's picker (2026-11-07 log)", barProject === incident?.id, JSON.stringify({ bar: barProject, incident: incident?.id }));
+  await pickChoice(morgan, "#quick-add-project", "No project", { search: "" });
   await morgan.clickSelector("#quick-add-goal");
   step("the goal picker opens", await morgan.waitForSelector("[data-goal-picker]", 6000));
   const goalRows = await morgan.evaluate(`[...document.querySelectorAll('[data-goal-item]')].filter((e) => e.getAttribute('data-goal-item') !== '').map((e) => e.textContent.trim())`);
@@ -74,6 +77,8 @@ try {
   await sleep(500);
   await morgan.clickSelector('[data-bulk-status-choice="completed"]');
   step("Completed asks for one summary for all", await morgan.waitFor("Completion summary", 5000));
+  await morgan.type("#bulk-summary", "Closed out in the batch review.");
+  await sleep(300);
   await morgan.clickSelector("[data-bulk-apply]");
   step("one completes and the one with open comments is named", (await morgan.waitFor("1 task marked completed", 10_000)) && (await morgan.has("open comment")));
   const [held] = await query("select status from tasks where id = $1", [withComments.id]);

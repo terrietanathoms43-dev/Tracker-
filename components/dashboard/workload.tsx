@@ -4,6 +4,7 @@ import Link from "next/link";
 import { StatusIcon } from "@/components/status-badge";
 import { DueLabel } from "@/components/tasks/due-label";
 import { UserAvatar } from "@/components/user-avatar";
+import { taskLabel } from "@/lib/tasks/closer";
 import { tasksHref } from "@/lib/tasks/filters";
 import { nameOf } from "@/lib/tasks/people";
 import type { Person, WorkloadRow } from "@/lib/tasks/types";
@@ -72,7 +73,7 @@ export function Workload({ rows, today }: { rows: WorkloadRow[]; today: string }
                   <li key={task.id}>
                     <Link href={`/tasks/${task.id}`} prefetch={false} className="flex items-center gap-2.5 py-1.5 pr-4 pl-13 transition-colors hover:bg-accent/60">
                       <StatusIcon status={task.status} className="size-3.5" />
-                      <span className="min-w-0 flex-1 truncate text-[13px]">{task.title}</span>
+                      <span className="min-w-0 flex-1 truncate text-[13px]">{taskLabel(task)}</span>
                       <DueLabel due={task.dueDate} today={today} status={task.status} className="shrink-0" />
                     </Link>
                   </li>

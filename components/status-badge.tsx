@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { CheckCircle2, Circle, CircleDot, Clock, OctagonAlert, XCircle, type LucideIcon } from "lucide-react";
+import { Ban, CheckCircle2, Circle, CircleDot, CirclePause, Clock, GitMerge, OctagonAlert, XCircle, type LucideIcon } from "lucide-react";
 import { TASK_STATUS_LABELS, type TaskStatus } from "@/lib/constants";
 
 // One table maps each status to its icon and tokens (Apex UI §4, §6); every status rendering reads it.
@@ -8,7 +8,10 @@ const STYLES: Record<TaskStatus, { icon: LucideIcon; badge: string; dot: string 
   in_progress: { icon: CircleDot, badge: "bg-status-in-progress-bg text-status-in-progress-fg", dot: "text-status-in-progress-dot" },
   awaiting_approval: { icon: Clock, badge: "bg-status-awaiting-bg text-status-awaiting-fg", dot: "text-status-awaiting-dot" },
   blocked: { icon: OctagonAlert, badge: "bg-status-blocked-bg text-status-blocked-fg", dot: "text-status-blocked-dot" },
+  deferred: { icon: CirclePause, badge: "bg-status-deferred-bg text-status-deferred-fg", dot: "text-status-deferred-dot" },
   rejected: { icon: XCircle, badge: "bg-status-rejected-bg text-status-rejected-fg", dot: "text-status-rejected-dot" },
+  cancelled: { icon: Ban, badge: "bg-status-cancelled-bg text-status-cancelled-fg", dot: "text-status-cancelled-dot" },
+  merged: { icon: GitMerge, badge: "bg-status-merged-bg text-status-merged-fg", dot: "text-status-merged-dot" },
   completed: { icon: CheckCircle2, badge: "bg-status-completed-bg text-status-completed-fg", dot: "text-status-completed-dot" },
 };
 

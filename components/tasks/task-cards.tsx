@@ -1,13 +1,15 @@
 "use client";
 
 import { cn } from "cn";
-import { ClipboardCheck, Flag } from "lucide-react";
+import { ClipboardCheck, CornerDownRight, GitMerge } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { KanbanItem, KanbanItemHandle } from "@/components/kanban";
 import { PriorityGlyph } from "@/components/priority-glyph";
+import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { AssigneeStack } from "./assignee-stack";
+import { CloserChip } from "./closer-chip";
 import { DueLabel } from "./due-label";
 import { TaskActionSheet, TaskMenu } from "./task-menu";
 import { useLongPress } from "./use-long-press";
@@ -56,11 +58,18 @@ export function TaskCard({
                      {task.proposal === "pending" ? "Waiting for sign-off" : "Declined"}
                   </span>
                ) : null}
-               {task.goalCloser ? (
-                  <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-primary">
-                     <Flag className="size-3" aria-hidden />
-                     Marks the goal achieved
-                  </span>
+               {task.goalCloser && task.goal ? <CloserChip goal={task.goal} variant="card" className="mt-1" /> : null}
+               {task.parent !== null ? (
+                  <p className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground" data-part-of-chip>
+                     <CornerDownRight className="size-3 shrink-0" aria-hidden />
+                     <span className="truncate">Part of {task.parent.title}</span>
+                  </p>
+               ) : null}
+               {task.subTasks > 0 ? (
+                  <p className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground" data-sub-tasks-chip>
+                     <GitMerge className="size-3 shrink-0" aria-hidden />
+                     {describeSubTasks(task.subTasks)}
+                  </p>
                ) : null}
                {task.nextAction ? <p className="mt-1 line-clamp-1 text-[13px] text-muted-foreground">{task.nextAction}</p> : null}
                <div className="mt-2.5 flex items-center gap-2">

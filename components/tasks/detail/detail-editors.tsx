@@ -90,7 +90,7 @@ export function DescriptionEditor({ taskId, description, editable }: { taskId: s
 }
 
 /** The status badge as a menu: one click for quick statuses, the small dialog for the ones that need input. */
-export function StatusEditor({ taskId, status, allowReject }: { taskId: string; status: TaskStatus; allowReject: boolean }) {
+export function StatusEditor({ taskId, status, allowReject, hasParent = false }: { taskId: string; status: TaskStatus; allowReject: boolean; hasParent?: boolean }) {
   const { change, pending } = useChangeStatus(taskId);
   return (
     <DropdownMenu>
@@ -101,7 +101,7 @@ export function StatusEditor({ taskId, status, allowReject }: { taskId: string; 
         </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-52">
-        <StatusMenuItems current={status} allowReject={allowReject} onPick={(to) => change(status, to)} />
+        <StatusMenuItems current={status} allowReject={allowReject} hasParent={hasParent} onPick={(to) => change(status, to)} />
       </DropdownMenuContent>
     </DropdownMenu>
   );

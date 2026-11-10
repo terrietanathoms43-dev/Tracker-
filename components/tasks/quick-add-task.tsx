@@ -113,6 +113,15 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
   const [due, setDue] = useState("");
   const [projectId, setProjectId] = useState(defaults.projectId ?? "");
   const [goalId, setGoalId] = useState(defaults.goalId ?? "");
+  // The page's project follows the navigation's project picker (2026-11-07 log): when the scope changes under the
+  // bar, the bar moves with it instead of keeping the project it first rendered with. Done the way the picker does
+  // it (a "previous prop" in state, no effect), so the change is in the same render.
+  const [prevDefaults, setPrevDefaults] = useState({ projectId: defaults.projectId ?? "", goalId: defaults.goalId ?? "" });
+  if ((defaults.projectId ?? "") !== prevDefaults.projectId || (defaults.goalId ?? "") !== prevDefaults.goalId) {
+    setPrevDefaults({ projectId: defaults.projectId ?? "", goalId: defaults.goalId ?? "" });
+    setProjectId(defaults.projectId ?? "");
+    setGoalId(defaults.goalId ?? "");
+  }
   /** People chosen in the picker; null until it is touched, when the task is yours (or whoever the title mentions). */
   const [picked, setPicked] = useState<string[] | null>(defaults.assigneeIds ?? null);
   /** The options row: open by default, folded away when this browser last chose so (kept in localStorage). */
@@ -204,6 +213,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
         assigneeIds: assigneesOf(read, ready),
         projectId,
         goalId,
+        parentId: defaults.parentId ?? "",
         priority: read.priority ?? priority,
         dueDate: read.due === "today" ? today : read.due === "tomorrow" ? tomorrow : due,
       });
@@ -244,15 +254,17 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
     names.length > 0 ? names.join(", ") : null,
   ].filter((part): part is string => part !== null);
 
-  const showProject = options === null || options.projects.length > 0 || projectId !== "";
+  // A sub-task (2026-11-08 log) is made where its parent is: no project or goal to pick, and it is live like its parent.
+  const subTask = Boolean(defaults.parentId);
+  const showProject = !subTask && (options === null || options.projects.length > 0 || projectId !== "");
   // The goal picker stays once the workspace has goals: with a project chosen it offers that project's goals (and
   // says when there are none); without one, every goal, and picking a goal puts the task in its project.
-  const showGoal = options === null || options.goals.length > 0 || goalId !== "";
+  const showGoal = !subTask && (options === null || options.goals.length > 0 || goalId !== "");
   const proposes = options?.proposesOnly === true;
   // Sign-off applies where the task is going (the goal's rule first, else the project's): it will start local.
   const goalChoice = goalId ? options?.goals.find((goal) => goal.id === goalId) : undefined;
   const projectChoice = projectId ? options?.projects.find((project) => project.id === projectId) : undefined;
-  const local = !proposes && (goalChoice ? (goalChoice.signOff ?? false) : (projectChoice?.signOff ?? false));
+  const local = !proposes && !subTask && (goalChoice ? (goalChoice.signOff ?? false) : (projectChoice?.signOff ?? false));
 
   return (
     <form

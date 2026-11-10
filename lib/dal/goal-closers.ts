@@ -1,120 +1,121 @@
 import "server-only";
-import { and, eq, ne, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { Tx } from "@/db";
-import { goals, tasks } from "@/db/schema";
+import { notifications, tasks } from "@/db/schema";
 import { GuardError } from "@/lib/action-result";
-import { CLOSED_STATUSES, type TaskStatus } from "@/lib/constants";
+import { isClosedStatus } from "@/lib/constants";
 import { recordActivity } from "@/lib/dal/activity";
 import { applyAssignment } from "@/lib/dal/assignments";
 import { findMembership } from "@/lib/dal/orgs";
-import { createGoalOccurrence, type NextGoal } from "@/lib/dal/recurrence";
-import { liveOnly } from "@/lib/dal/tasks";
-import type { Viewer } from "@/lib/permissions";
-import { nextAfterFinishing } from "@/lib/recurrence";
-import { dayKey } from "@/lib/time";
+import { openCommentsSql } from "@/lib/dal/tasks";
+import { CLOSER_DESCRIPTION, CLOSER_TITLE } from "@/lib/tasks/closer";
+import { planTransition } from "@/lib/tasks/transitions";
 
-// "Everything completed" (docs/PLAN.md, 2026-11-04 log): every goal gets one task that stands for the goal being
-// achieved. It can only be completed once every other task under the goal (sub-goals included) is done, and
-// completing it marks the goal achieved, in the same transaction; reopening it reopens the goal. So finishing a
-// goal feels like finishing its last task, and the goal's own Mark completed button is only the manager's shortcut.
+// The goal's "Everything completed" task as a row (docs/PLAN.md, 2026-11-04 and 2026-11-09 logs): every goal is made
+// with one (`tasks.goal_closer`), assigned to the goal's owner. It is the goal's last step: lib/dal/goal-achievement.ts
+// refuses to complete it while other tasks under the goal are open and marks the goal achieved when it is completed.
+// This module only writes the row and keeps it in step with its goal: open while the goal is active, completed with
+// a goal marked completed by hand, gone with a deleted goal.
 
-export const CLOSER_TITLE = "Everything completed";
-export const CLOSER_DESCRIPTION = "Complete this last, once every other task under the goal is done: it marks the goal achieved.";
+/** What a closer needs to know about its goal. */
+export type CloserGoal = { id: string; orgId: string; projectId: string; ownerId: string | null; targetDate: string | null; title: string };
 
-/** Writes a goal's "Everything completed" task, assigned to the goal's owner when they work here. */
+/** Writes a goal's "Everything completed" task, due on the goal's target, assigned to its owner when they work here. */
 export async function createGoalCloser(
   tx: Tx,
-  input: { orgId: string; goalId: string; projectId: string; ownerId: string | null; targetDate: string | null; createdBy: string },
+  goal: Omit<CloserGoal, "title">,
+  actorId: string,
   now: Date,
+  note = "Made with the goal: completing it marks the goal achieved.",
 ): Promise<string> {
   const [created] = await tx
     .insert(tasks)
     .values({
-      orgId: input.orgId,
-      projectId: input.projectId,
-      goalId: input.goalId,
+      orgId: goal.orgId,
+      projectId: goal.projectId,
+      goalId: goal.id,
       title: CLOSER_TITLE,
       description: CLOSER_DESCRIPTION,
-      createdBy: input.createdBy,
-      dueDate: input.targetDate,
+      createdBy: actorId,
+      dueDate: goal.targetDate,
       goalCloser: true,
       createdAt: now,
       updatedAt: now,
     })
     .returning({ id: tasks.id });
-  const owner = input.ownerId ? await findMembership(tx, input.orgId, input.ownerId) : null;
-  const assignment = owner !== null && owner.role !== "stakeholder" ? [input.ownerId!] : [];
-  await applyAssignment(tx, created.id, input.createdBy, [], assignment, now);
-  await recordActivity(tx, { orgId: input.orgId, taskId: created.id, actorId: input.createdBy }, [{ kind: "created", after: { title: CLOSER_TITLE, goalCloser: true }, note: "Made with the goal: completing it marks the goal achieved." }], now);
+  const owner = goal.ownerId ? await findMembership(tx, goal.orgId, goal.ownerId) : null;
+  const assignment = goal.ownerId !== null && owner !== null && owner.role !== "stakeholder" ? [goal.ownerId] : [];
+  await applyAssignment(tx, created.id, actorId, [], assignment, now);
+  await recordActivity(tx, { orgId: goal.orgId, taskId: created.id, actorId }, [{ kind: "created", after: { title: CLOSER_TITLE, goalCloser: true }, note }], now);
   return created.id;
 }
 
-/** Open live tasks under a goal and its sub-goals, `exceptId` aside: what stands between the closer and the goal. */
-export async function openTasksUnderGoal(tx: Tx, orgId: string, goalId: string, exceptId: string): Promise<number> {
-  const [row] = await tx
-    .select({ n: sql<number>`count(*)::int` })
+/** The goal's closer rows, locked: one, unless old data left none (or a copy left two). */
+function closersOf(tx: Tx, orgId: string, goalId: string) {
+  return tx
+    .select({
+      id: tasks.id,
+      title: tasks.title,
+      status: tasks.status,
+      startedAt: tasks.startedAt,
+      approverId: tasks.approverId,
+      blockedReason: tasks.blockedReason,
+      parentTaskId: tasks.parentTaskId,
+      openComments: openCommentsSql,
+    })
     .from(tasks)
-    .where(
-      and(
-        eq(tasks.orgId, orgId),
-        liveOnly,
-        notInArray(tasks.status, [...CLOSED_STATUSES]),
-        ne(tasks.id, exceptId),
-        sql`${tasks.goalId} in (select g.id from goals g where g.id = ${goalId} or g.parent_goal_id = ${goalId})`,
-      ),
-    );
-  return row?.n ?? 0;
+    .where(and(eq(tasks.orgId, orgId), eq(tasks.goalId, goalId), eq(tasks.goalCloser, true)))
+    .orderBy(asc(tasks.createdAt))
+    .for("update", { of: tasks });
 }
-
-export type CloserOutcome = { goal: { id: string; title: string }; achieved: boolean; next: NextGoal | null };
 
 /**
- * What a status change of a closer task does to its goal. Completing it with other tasks still open is refused
- * with the count; completing it last marks the goal achieved (and makes the next occurrence of a repeating goal);
- * reopening it makes the goal active again. Null for any other task.
+ * A goal that is active again has its last step open again: its completed closer goes back to Not started, with a
+ * history line saying why, and a goal that has none (its closer was removed on 2026-11-07, before they came back)
+ * gets one now. `exceptTaskId` is the task whose own status change reopened the goal: the caller writes that row.
  */
-export async function applyGoalCloser(tx: Tx, viewer: Viewer, task: { id: string; goalId: string | null; goalCloser: boolean; status: TaskStatus }, to: TaskStatus, now: Date): Promise<CloserOutcome | null> {
-  if (!task.goalCloser || task.goalId === null) return null;
-  const completing = to === "completed" && task.status !== "completed";
-  const reopening = task.status === "completed" && to !== "completed";
-  if (!completing && !reopening) return null;
-  const [goal] = await tx
-    .select({
-      id: goals.id,
-      orgId: goals.orgId,
-      projectId: goals.projectId,
-      parentGoalId: goals.parentGoalId,
-      title: goals.title,
-      description: goals.description,
-      successCriteria: goals.successCriteria,
-      ownerId: goals.ownerId,
-      targetDate: goals.targetDate,
-      recurrence: goals.recurrence,
-      seriesId: goals.seriesId,
-      requiresApproval: goals.requiresApproval,
-      status: goals.status,
-    })
-    .from(goals)
-    .where(and(eq(goals.id, task.goalId), eq(goals.orgId, viewer.orgId)))
-    .for("update");
-  if (!goal) return null;
-  if (completing) {
-    const open = await openTasksUnderGoal(tx, viewer.orgId, goal.id, task.id);
-    if (open > 0) throw new GuardError("conflict", `Finish the other ${open} ${open === 1 ? "task" : "tasks"} under “${goal.title}” first: this one marks the goal achieved.`);
-    if (goal.status === "completed") return { goal: { id: goal.id, title: goal.title }, achieved: false, next: null };
-    await tx.update(goals).set({ status: "completed", completedAt: now, completedBy: viewer.userId, updatedAt: now }).where(eq(goals.id, goal.id));
-    const today = dayKey(now, viewer.timezone);
-    const targetDate = goal.recurrence ? nextAfterFinishing(goal.recurrence, goal.targetDate, goal.targetDate, today) : null;
-    const next = targetDate ? await createGoalOccurrence(tx, viewer.userId, { ...goal, recurrence: goal.recurrence ?? null }, targetDate, now) : null;
-    return { goal: { id: goal.id, title: goal.title }, achieved: true, next };
+export async function reopenGoalCloser(tx: Tx, actorId: string, goal: CloserGoal, now: Date, exceptTaskId: string | null = null): Promise<void> {
+  const closers = await closersOf(tx, goal.orgId, goal.id);
+  if (closers.length === 0) {
+    await createGoalCloser(tx, goal, actorId, now, `Made when “${goal.title}” became active again: completing it marks the goal achieved.`);
+    return;
   }
-  if (goal.status === "completed") await tx.update(goals).set({ status: "active", completedAt: null, completedBy: null, updatedAt: now }).where(eq(goals.id, goal.id));
-  return { goal: { id: goal.id, title: goal.title }, achieved: false, next: null };
+  for (const closer of closers) {
+    if (closer.id === exceptTaskId || closer.status !== "completed") continue;
+    const plan = planTransition(closer, "not_started", {}, now);
+    if (!plan.ok) continue;
+    await tx
+      .update(tasks)
+      .set({ ...plan.patch, updatedAt: now })
+      .where(eq(tasks.id, closer.id));
+    const note = `Open again with its goal: “${goal.title}” is active again.`;
+    await recordActivity(tx, { orgId: goal.orgId, taskId: closer.id, actorId }, plan.activities.map((activity) => (activity.kind === "reopened" ? { ...activity, note } : activity)), now);
+  }
 }
 
-/** "“Ship onboarding” is achieved." plus the next occurrence, to add to a toast. */
-export function describeCloser(outcome: CloserOutcome | null, today: string, formatDay: (day: string, today: string) => string): string {
-  if (outcome === null || !outcome.achieved) return "";
-  const next = outcome.next ? ` The next one is due ${formatDay(outcome.next.targetDate, today)}${outcome.next.tasks > 0 ? ` with ${outcome.next.tasks} ${outcome.next.tasks === 1 ? "task" : "tasks"} copied over` : ""}.` : "";
-  return ` “${outcome.goal.title}” is achieved.${next}`;
+/**
+ * The goal page's Mark completed completes the goal's open closer with it, so the goal and its last step never
+ * disagree. Whatever would stop the closer being completed by hand (an open comment) stops this too.
+ */
+export async function completeGoalCloser(tx: Tx, actorId: string, goal: CloserGoal, now: Date): Promise<void> {
+  for (const closer of await closersOf(tx, goal.orgId, goal.id)) {
+    if (isClosedStatus(closer.status)) continue;
+    const plan = planTransition(closer, "completed", { summary: `Completed with its goal: “${goal.title}” was marked completed.` }, now);
+    if (!plan.ok) throw new GuardError("conflict", `“${closer.title}” is completed with the goal. ${plan.error}`);
+    await tx
+      .update(tasks)
+      .set({ ...plan.patch, updatedAt: now })
+      .where(eq(tasks.id, closer.id));
+    await recordActivity(tx, { orgId: goal.orgId, taskId: closer.id, actorId }, plan.activities, now);
+  }
+}
+
+/** A deleted goal takes its closer with it: the task means nothing without the goal. Returns how many went. */
+export async function deleteGoalClosers(tx: Tx, orgId: string, goalId: string): Promise<number> {
+  const gone = await tx
+    .delete(tasks)
+    .where(and(eq(tasks.orgId, orgId), eq(tasks.goalId, goalId), eq(tasks.goalCloser, true)))
+    .returning({ id: tasks.id });
+  for (const row of gone) await tx.delete(notifications).where(and(eq(notifications.orgId, orgId), eq(notifications.href, `/tasks/${row.id}`)));
+  return gone.length;
 }

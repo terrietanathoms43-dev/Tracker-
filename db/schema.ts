@@ -181,6 +181,28 @@ export const organizationMembers = pgTable(
   (t) => [primaryKey({ columns: [t.orgId, t.userId] }), index("organization_members_user_idx").on(t.userId)],
 );
 
+/**
+ * Workspace-level configuration set from Settings by admins (the admin panel). One row per workspace,
+ * created lazily: no row means every setting is at its default. `ai_api_key` is AES-256-GCM ciphertext
+ * (lib/secrets.ts) and is never sent to the client; `ai_api_key_tail` keeps only its last characters for
+ * the "configured" indicator.
+ */
+export const orgConfig = pgTable("org_config", {
+  orgId: text("org_id")
+    .primaryKey()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  /** The workspace default /home tab order per role (role → HomeTab[]); a person's cookie may still reorder theirs. */
+  homeTabOrder: jsonb("home_tab_order").$type<Record<string, string[]>>(),
+  /** The AI engine for capture: "anthropic" | "openai"; null falls back to the deployment's env vars. */
+  aiProvider: text("ai_provider"),
+  aiApiKey: text("ai_api_key"),
+  aiApiKeyTail: text("ai_api_key_tail"),
+  /** Admin-set permission switches: toggle key → boolean (lib/permissions.ts PERMISSION_TOGGLES). */
+  permissionOverrides: jsonb("permission_overrides").$type<Record<string, boolean>>(),
+  updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: updatedAt(),
+});
+
 export const invitations = pgTable(
   "invitations",
   {
@@ -376,6 +398,8 @@ export const tasks = pgTable(
     projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
     /** When set, project_id is that goal's project (actions keep the two in step). */
     goalId: text("goal_id").references(() => goals.id, { onDelete: "set null" }),
+    /** Sub-tasks (2026-11-08 log): the task this one is attached to, one level deep; a child lives where its parent lives. */
+    parentTaskId: text("parent_task_id").references((): AnyPgColumn => tasks.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     description: text("description"),
     createdBy: text("created_by")
@@ -400,6 +424,7 @@ export const tasks = pgTable(
     blockedReason: text("blocked_reason"),
     /** Who or what could unblock it (free text). */
     blockedBy: text("blocked_by"),
+    /** Why it was closed without being completed: rejected, deferred or cancelled (2026-11-07 log). */
     rejectionReason: text("rejection_reason"),
     /** Denormalised from the newest progress update so lists never join history. */
     latestProgress: text("latest_progress"),
@@ -417,6 +442,7 @@ export const tasks = pgTable(
     index("tasks_org_due_idx").on(t.orgId, t.dueDate),
     index("tasks_org_proposal_idx").on(t.orgId, t.proposalStatus),
     index("tasks_series_idx").on(t.seriesId),
+    index("tasks_parent_idx").on(t.parentTaskId),
   ],
 );
 

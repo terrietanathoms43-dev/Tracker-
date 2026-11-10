@@ -26,13 +26,19 @@ export const ORG_ROLE_DESCRIPTIONS: Record<OrgRole, string> = {
 
 // --- tasks --------------------------------------------------------------------
 
-/** The one set of task statuses, used everywhere: lists, the board, every form, the reports. */
+/**
+ * The one set of task statuses, used everywhere: lists, the board, every form, the reports. Deferred and Cancelled
+ * (2026-11-07 log) close a task without completing it, like Rejected: each asks for a reason, none is ever overdue.
+ */
 export const TASK_STATUSES = [
   "not_started",
   "in_progress",
   "awaiting_approval",
   "blocked",
+  "deferred",
   "rejected",
+  "cancelled",
+  "merged",
   "completed",
 ] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -42,12 +48,23 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   in_progress: "In progress",
   awaiting_approval: "Awaiting approval",
   blocked: "Blocked",
+  deferred: "Deferred",
   rejected: "Rejected",
+  cancelled: "Cancelled",
+  merged: "Merged",
   completed: "Completed",
 };
 
-/** Completed and rejected: hidden from lists unless "Show closed" is on. */
-export const CLOSED_STATUSES: readonly TaskStatus[] = ["completed", "rejected"];
+/** The closed statuses: hidden from lists unless "Show closed" is on, never overdue, never on the board but Completed. */
+export const CLOSED_STATUSES: readonly TaskStatus[] = ["completed", "rejected", "deferred", "cancelled", "merged"];
+
+/**
+ * Closed without being completed: each asks for a reason (kept in `tasks.rejection_reason`) and can be reopened.
+ * Merged (sub-tasks, 2026-11-08 log) is only possible on a task attached to a parent: a duplicate folded into it.
+ */
+export const CLOSED_WITHOUT_COMPLETION: readonly TaskStatus[] = ["rejected", "deferred", "cancelled", "merged"];
+
+export const isClosedStatus = (status: TaskStatus): boolean => CLOSED_STATUSES.includes(status);
 
 export const TASK_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
@@ -76,6 +93,9 @@ export const TASK_ACTIVITY_KINDS = [
   "approved",
   "sent_back",
   "rejected",
+  "deferred",
+  "cancelled",
+  "merged",
   "completed",
   "reopened",
   "progress_updated",
@@ -90,6 +110,8 @@ export const TASK_ACTIVITY_KINDS = [
   "proposal_resubmitted",
   "proposal_sent",
   "published",
+  "attached",
+  "detached",
 ] as const;
 export type TaskActivityKind = (typeof TASK_ACTIVITY_KINDS)[number];
 
@@ -145,6 +167,8 @@ export const NOTIFICATION_KINDS = [
   "proposal_waiting",
   "proposal_decided",
   "commented",
+  "comment_resolved",
+  "goal_achieved",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 

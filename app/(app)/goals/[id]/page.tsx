@@ -12,6 +12,7 @@ import { GoalStatusActions } from "@/components/goals/goal-status-actions";
 import { PlanningHeader, PlanningSummary } from "@/components/goals/planning-header";
 import { SubGoals } from "@/components/goals/sub-goals";
 import { PlanningTasks } from "@/components/projects/task-groups";
+import { CloserHome } from "@/components/tasks/closer-chip";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { SelectionProvider } from "@/components/tasks/selection";
 import { approvalSettings } from "@/lib/dal/approvals";
@@ -19,7 +20,7 @@ import { connectionsOf, getGoal, listGoals, ownerOptions, parentGoalOptions, sub
 import { pinnedProjectIds, projectOptions } from "@/lib/dal/projects";
 import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { tasksForGoal } from "@/lib/dal/tasks";
-import { canCompleteGoal, canCreateTask, canManagePlanning, isLeader, isStakeholder } from "@/lib/permissions";
+import { canCompleteGoal, canCreatePlanning, canCreateTask, canManagePlanning, isLeader, isStakeholder } from "@/lib/permissions";
 import { dayKey } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
 
@@ -37,17 +38,18 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
   const viewer = await requireViewer();
   await catchUpRecurrences(viewer);
   const manage = canManagePlanning(viewer);
+  const create = canCreatePlanning(viewer);
   // One round trip; nothing renders unless getGoal finds the goal in this workspace for a viewer who may read it.
   const [goal, subGoals, tasks, connections, people, projects, parents, allGoals, pinned] = await Promise.all([
     getGoal(viewer, id),
     subGoalsOf(viewer, id),
     tasksForGoal(viewer, id),
     connectionsOf(viewer, id),
-    manage ? ownerOptions(viewer) : [],
-    manage ? projectOptions(viewer) : [],
-    manage ? parentGoalOptions(viewer) : [],
+    manage || create ? ownerOptions(viewer) : [],
+    manage || create ? projectOptions(viewer) : [],
+    manage || create ? parentGoalOptions(viewer) : [],
     manage ? listGoals(viewer, { includeCompleted: false, topLevelOnly: true }) : [],
-    manage ? pinnedProjectIds(viewer) : [],
+    manage || create ? pinnedProjectIds(viewer) : [],
   ]);
   if (goal === null) notFound();
   const settings = manage ? await approvalSettings(viewer, { goalId: goal.id }) : null;
@@ -79,7 +81,7 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
     />
   ) : null;
   const deleteDialog = manage ? (
-    <GoalDeleteDialog goal={{ id: goal.id, title: goal.title, projectId: goal.project.id, projectName: goal.project.name, tasks: tasks.filter((task) => task.goal?.id === goal.id).length, subGoals: goal.subGoals }} />
+    <GoalDeleteDialog goal={{ id: goal.id, title: goal.title, projectId: goal.project.id, projectName: goal.project.name, tasks: tasks.filter((task) => task.goal?.id === goal.id && !task.goalCloser).length, subGoals: goal.subGoals }} />
   ) : null;
 
   return (
@@ -123,11 +125,11 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
             goals={subGoals}
             today={today}
             action={
-              manage && active ? (
+              create && active ? (
                 <GoalDialog people={people} parent={{ id: goal.id, title: goal.title, targetDate: goal.targetDate, projectId: goal.project.id }} viewerId={viewer.userId} today={today} variant="outline" />
               ) : null
             }
-            empty={manage && active ? "No sub-goals yet. Split a big goal into steps, each with its own target on or before this goal's." : "This goal has no sub-goals."}
+            empty={create && active ? "No sub-goals yet. Split a big goal into steps, each with its own target on or before this goal's." : "This goal has no sub-goals."}
           />
         ) : null}
         <GoalConnections
@@ -138,7 +140,9 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
           canEdit={manage}
         />
         <SelectionProvider enabled={!isStakeholder(viewer)} canDelete={isLeader(viewer)}>
-          <PlanningTasks items={tasks} today={today} readOnly={isStakeholder(viewer)} empty={active ? "No tasks serve this goal yet. Add one above." : "No tasks served this goal."} />
+          <CloserHome goalId={goal.id}>
+            <PlanningTasks items={tasks} today={today} readOnly={isStakeholder(viewer)} empty={active ? "No tasks serve this goal yet. Add one above." : "No tasks served this goal."} />
+          </CloserHome>
         </SelectionProvider>
       </div>
     </div>

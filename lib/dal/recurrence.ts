@@ -1,10 +1,11 @@
 import "server-only";
-import { and, asc, desc, eq, isNotNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, notInArray, sql } from "drizzle-orm";
 import { cache } from "react";
 import { db, type Tx } from "@/db";
 import { goals, tasks } from "@/db/schema";
 import { recordActivity } from "@/lib/dal/activity";
 import { applyAssignment, assignmentOf } from "@/lib/dal/assignments";
+import { createGoalCloser } from "@/lib/dal/goal-closers";
 import { liveOnly } from "@/lib/dal/tasks";
 import type { Viewer } from "@/lib/permissions";
 import { describeRecurrence, missedOccurrences, type Recurrence } from "@/lib/recurrence";
@@ -31,7 +32,6 @@ type SourceTask = {
   dueTime: string | null;
   recurrence: Recurrence | null;
   seriesId: string | null;
-  goalCloser: boolean;
 };
 
 /** The first due day of a series: the schedule's anchor, so "every 2 weeks" keeps its rhythm whoever finishes late. */
@@ -70,7 +70,6 @@ export async function createTaskOccurrence(tx: Tx, actorId: string, source: Sour
       dueTime: source.dueTime,
       recurrence: rule,
       seriesId: source.seriesId ?? source.id,
-      goalCloser: source.goalCloser,
       createdAt: now,
       updatedAt: now,
     })
@@ -100,7 +99,8 @@ type SourceGoal = {
 /**
  * The next occurrence of a repeating goal: same project, owner, criteria and rule, target on `targetDate`, and fresh
  * copies of the goal's own live tasks (each due the same number of days after the new target as before, the same
- * people, the "Everything completed" task included).
+ * people). Its "Everything completed" task is copied like the rest, due on the new target, and a goal that had none
+ * to copy gets a fresh one: every occurrence ends with that step.
  */
 export async function createGoalOccurrence(tx: Tx, actorId: string, goal: SourceGoal, targetDate: string, now: Date): Promise<NextGoal> {
   const shift = goal.targetDate ? calendarDaysBetween(goal.targetDate, targetDate) : 0;
@@ -126,7 +126,7 @@ export async function createGoalOccurrence(tx: Tx, actorId: string, goal: Source
   const copies = await tx
     .select({ id: tasks.id, title: tasks.title, description: tasks.description, priority: tasks.priority, dueDate: tasks.dueDate, dueTime: tasks.dueTime, createdBy: tasks.createdBy, goalCloser: tasks.goalCloser })
     .from(tasks)
-    .where(and(eq(tasks.orgId, goal.orgId), eq(tasks.goalId, goal.id), liveOnly, ne(tasks.status, "rejected")));
+    .where(and(eq(tasks.orgId, goal.orgId), eq(tasks.goalId, goal.id), liveOnly, notInArray(tasks.status, ["rejected", "cancelled"])));
   for (const source of copies) {
     const [task] = await tx
       .insert(tasks)
@@ -148,6 +148,7 @@ export async function createGoalOccurrence(tx: Tx, actorId: string, goal: Source
     await applyAssignment(tx, task.id, actorId, [], await assignmentOf(tx, source.id), now);
     await recordActivity(tx, { orgId: goal.orgId, taskId: task.id, actorId }, [{ kind: "created", after: { title: source.title, copiedFrom: source.id }, note: `Copied into the next occurrence of the goal “${goal.title}”.` }], now);
   }
+  if (!copies.some((source) => source.goalCloser)) await createGoalCloser(tx, { id: created.id, orgId: goal.orgId, projectId: goal.projectId, ownerId: goal.ownerId, targetDate }, actorId, now);
   return { id: created.id, targetDate, tasks: copies.length };
 }
 
@@ -167,7 +168,6 @@ async function catchUpTasks(tx: Tx, viewer: Viewer, today: string): Promise<numb
       dueTime: tasks.dueTime,
       recurrence: tasks.recurrence,
       seriesId: tasks.seriesId,
-      goalCloser: tasks.goalCloser,
     })
     .from(tasks)
     .where(and(eq(tasks.orgId, viewer.orgId), isNotNull(tasks.seriesId), isNotNull(tasks.recurrence), isNotNull(tasks.dueDate), liveOnly))

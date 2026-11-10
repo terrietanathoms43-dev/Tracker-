@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3015",
+    "dev:against": "node scripts/dev-against.mjs",
     "build": "next build",
     "start": "next start --port 3015",
     "lint": "eslint",

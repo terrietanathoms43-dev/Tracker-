@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ArrowLeft, ClipboardCheck, Flag, Link2, Lock, NotebookPen, Repeat } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, CornerDownRight, GitMerge, Link2, Lock, NotebookPen, Repeat } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -15,9 +15,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { describeRecurrence, formatTime } from "@/lib/recurrence";
+import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskAbilities, TaskDetail } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneeStack } from "../assignee-stack";
+import { CloserChip } from "../closer-chip";
 import { DueLabel } from "../due-label";
 import { FOCUS_UPDATE_EVENT } from "../task-actions";
 
@@ -61,7 +63,7 @@ function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boole
       </div>
     );
   }
-  const title = <span className={cn(detail.status === "rejected" && "text-muted-foreground line-through", pending && "opacity-60")}>{value}</span>;
+  const title = <span className={cn((detail.status === "rejected" || detail.status === "cancelled" || detail.status === "merged") && "text-muted-foreground line-through", pending && "opacity-60")}>{value}</span>;
   return (
     <h1 className="text-xl leading-snug font-semibold tracking-tight md:text-2xl">
       {editable ? (
@@ -135,12 +137,19 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
         ) : (
           <StatusBadge status={detail.status} />
         )}
-        {detail.goalCloser ? (
-          <span className="inline-flex h-6 items-center gap-1 rounded-md bg-primary/10 px-2 text-[12px] font-medium text-primary" title="Complete this last: it marks the goal achieved" data-goal-closer>
-            <Flag className="size-3" aria-hidden />
-            Marks the goal achieved
-          </span>
+        {detail.parent !== null ? (
+          <Link href={`/tasks/${detail.parent.id}`} prefetch={false} className="inline-flex h-6 min-w-0 max-w-full items-center gap-1 rounded-md border px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground" data-part-of>
+            <CornerDownRight className="size-3.5 shrink-0" aria-hidden />
+            <span className="truncate">Part of {detail.parent.title}</span>
+          </Link>
         ) : null}
+        {detail.subTasks > 0 ? (
+          <a href="#sub-tasks" className="inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground" data-sub-tasks-count>
+            <GitMerge className="size-3.5" aria-hidden />
+            {describeSubTasks(detail.subTasks)}
+          </a>
+        ) : null}
+        {detail.goalCloser && detail.goal ? <CloserChip goal={detail.goal} variant="header" /> : null}
         {detail.assignees.length > 0 ? (
           <AssigneeStack assignees={detail.assignees} names />
         ) : (

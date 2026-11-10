@@ -43,7 +43,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
   const [dueTime, setDueTime] = useState("");
   const [recurrence, setRecurrence] = useState<Recurrence | null>(null);
   const [nextAction, setNextAction] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(defaults.description ?? "");
   const [errors, setErrors] = useState<Errors>({});
   const [pending, startTransition] = useTransition();
 
@@ -56,14 +56,16 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
   // Sign-off applies where the task is going (the goal's rule first, else the project's): it will start local.
   const goalChoice = goalId ? goals.find((goal) => goal.id === goalId) : undefined;
   const projectChoice = projectId ? options?.projects.find((project) => project.id === projectId) : undefined;
-  const local = !proposes && (goalChoice ? (goalChoice.signOff ?? false) : (projectChoice?.signOff ?? false));
+  // A sub-task (2026-11-08 log) is made where its parent is, live like its parent: no project or goal to pick.
+  const subTask = Boolean(defaults.parentId);
+  const local = !proposes && !subTask && (goalChoice ? (goalChoice.signOff ?? false) : (projectChoice?.signOff ?? false));
 
   function submit() {
     startTransition(async () => {
       // The default assignee is "me", which only the options can name: a quick Enter waits for them.
       const ready = options ?? (await loadTaskFormOptions()).options;
       const assigneeIds = assignment ?? me(ready);
-      const result = await createTask({ title, assigneeIds, projectId, goalId, priority, dueDate, dueTime, recurrence, nextAction, description });
+      const result = await createTask({ title, assigneeIds, projectId, goalId, parentId: defaults.parentId ?? "", priority, dueDate, dueTime, recurrence, nextAction, description });
       if (!result.ok) {
         setErrors(result.fieldErrors ?? { title: [result.error] });
         return;
@@ -96,6 +98,10 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
           <ClipboardCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
           This is a proposal: a leader or admin signs it off before it becomes a live task. You can follow it under Proposals.
         </p>
+      ) : subTask ? (
+        <p className="rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" data-sub-task-hint>
+          A sub-task: it is made under its parent task, in the same project and goal, and listed beneath it.
+        </p>
       ) : local ? (
         <p className="flex items-start gap-2 rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" data-local-hint>
           <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -118,7 +124,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
             <Input id="task-time" type="time" value={dueTime} className="w-32" onChange={(event) => setDueTime(event.target.value)} />
           </Field>
         </div>
-        {loading || options.projects.length > 0 || projectId ? (
+        {!subTask && (loading || options.projects.length > 0 || projectId) ? (
           <Field id="task-project" label="Project" error={error("projectId")}>
             <ProjectPicker
               id="task-project"
@@ -135,7 +141,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
             />
           </Field>
         ) : null}
-        {loading || goals.length > 0 || goalId ? (
+        {!subTask && (loading || goals.length > 0 || goalId) ? (
           <Field id="task-goal" label="Goal" hint={projectId ? undefined : "Picking a goal puts the task in that goal's project."} error={error("goalId")}>
             <GoalPicker
               id="task-goal"

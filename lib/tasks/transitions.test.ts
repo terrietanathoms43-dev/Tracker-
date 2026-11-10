@@ -1,9 +1,9 @@
 // The status rules of docs/PLAN.md §5, checked without a database.
 import { describe, expect, it } from "vitest";
-import { needsInput, planTransition, type TaskState } from "./transitions";
+import { APPROVAL_NOTE_REQUIRED, MERGE_NEEDS_PARENT, needsInput, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type TaskState } from "./transitions";
 
 const now = new Date("2026-10-15T12:00:00Z");
-const task = (overrides: Partial<TaskState> = {}): TaskState => ({ status: "in_progress", startedAt: new Date("2026-10-01"), approverId: null, blockedReason: null, openComments: 0, ...overrides });
+const task = (overrides: Partial<TaskState> = {}): TaskState => ({ status: "in_progress", startedAt: new Date("2026-10-01"), approverId: null, blockedReason: null, openComments: 0, parentTaskId: null, ...overrides });
 const kinds = (plan: ReturnType<typeof planTransition>) => (plan.ok ? plan.activities.map((a) => a.kind) : plan.error);
 
 describe("status transitions (PLAN §5)", () => {
@@ -65,10 +65,10 @@ describe("status transitions (PLAN §5)", () => {
   });
 
   it("refuses to complete, or approve, a task while a comment is open", () => {
-    expect(planTransition(task({ openComments: 2 }), "completed", {}, now)).toEqual({ ok: false, error: "Resolve the 2 open comments before completing this task." });
-    expect(planTransition(task({ status: "awaiting_approval", approverId: "morgan", openComments: 1 }), "completed", {}, now, "approve")).toEqual({ ok: false, error: "Resolve the 1 open comment before completing this task." });
-    expect(planTransition(task({ openComments: 1 }), "completed", {}, now).ok).toBe(false);
-    expect(planTransition(task({ openComments: 0 }), "completed", {}, now).ok).toBe(true);
+    expect(planTransition(task({ openComments: 2 }), "completed", { summary: "Done" }, now)).toEqual({ ok: false, error: "Resolve the 2 open comments before completing this task." });
+    expect(planTransition(task({ status: "awaiting_approval", approverId: "morgan", openComments: 1 }), "completed", { note: "Fine" }, now, "approve")).toEqual({ ok: false, error: "Resolve the 1 open comment before completing this task." });
+    expect(planTransition(task({ openComments: 1 }), "completed", { summary: "Done" }, now).ok).toBe(false);
+    expect(planTransition(task({ openComments: 0 }), "completed", { summary: "Done" }, now).ok).toBe(true);
     // Other moves are not held: a blocked or sent-back task with an open question is normal.
     expect(planTransition(task({ openComments: 3 }), "blocked", { reason: "Waiting" }, now).ok).toBe(true);
     expect(planTransition(task({ openComments: 3 }), "awaiting_approval", { approverId: "morgan" }, now).ok).toBe(true);
@@ -80,6 +80,40 @@ describe("status transitions (PLAN §5)", () => {
 
   it("only the statuses that ask for something open a dialog", () => {
     expect(["not_started", "in_progress"].map((s) => needsInput(s as "in_progress"))).toEqual([false, false]);
-    expect(["blocked", "awaiting_approval", "rejected", "completed"].every((s) => needsInput(s as "blocked"))).toBe(true);
+    expect(["blocked", "awaiting_approval", "rejected", "deferred", "cancelled", "completed"].every((s) => needsInput(s as "blocked"))).toBe(true);
+  });
+
+  it("completing needs its sign-off words: the summary, or the approver's note", () => {
+    expect(planTransition(task(), "completed", {}, now)).toEqual({ ok: false, error: SUMMARY_REQUIRED });
+    expect(planTransition(task(), "completed", { summary: "   " }, now).ok).toBe(false);
+    const awaiting = task({ status: "awaiting_approval", approverId: "morgan" });
+    expect(planTransition(awaiting, "completed", {}, now, "approve")).toEqual({ ok: false, error: APPROVAL_NOTE_REQUIRED });
+    // The approver's note stands as the summary.
+    expect(planTransition(awaiting, "completed", { note: "Checked on staging" }, now, "approve")).toMatchObject({ ok: true, patch: { completionSummary: "Checked on staging" } });
+  });
+
+  it("deferring and cancelling close the task with a reason; leaving them is a reopen that clears it", () => {
+    expect(planTransition(task(), "deferred", {}, now)).toEqual({ ok: false, error: REASON_PROMPTS.deferred });
+    expect(planTransition(task(), "cancelled", { reason: " " }, now)).toEqual({ ok: false, error: REASON_PROMPTS.cancelled });
+    const deferred = planTransition(task(), "deferred", { reason: "After the launch" }, now);
+    expect(deferred).toMatchObject({ ok: true, patch: { status: "deferred", rejectionReason: "After the launch" }, activities: [{ kind: "deferred", note: "After the launch" }] });
+    const cancelled = planTransition(task({ status: "blocked", blockedReason: "PO" }), "cancelled", { reason: "Superseded" }, now);
+    expect(cancelled).toMatchObject({ ok: true, patch: { status: "cancelled", rejectionReason: "Superseded", blockedReason: null } });
+    expect(kinds(cancelled)).toEqual(["unblocked", "cancelled"]);
+    const reopened = planTransition(task({ status: "deferred" }), "not_started", {}, now);
+    expect(reopened).toMatchObject({ ok: true, patch: { status: "not_started", rejectionReason: null } });
+    expect(kinds(reopened)).toEqual(["reopened"]);
+    // Closing a rejected task another way swaps the reason without a reopen.
+    expect(kinds(planTransition(task({ status: "rejected" }), "cancelled", { reason: "Gone" }, now))).toEqual(["cancelled"]);
+  });
+
+  it("only a sub-task can be merged, and merging closes it with its parent as the reason", () => {
+    expect(planTransition(task(), "merged", { reason: "Merged into X" }, now)).toEqual({ ok: false, error: MERGE_NEEDS_PARENT });
+    const child = task({ parentTaskId: "parent" });
+    expect(planTransition(child, "merged", {}, now)).toEqual({ ok: false, error: REASON_PROMPTS.merged });
+    const merged = planTransition(child, "merged", { reason: "Merged into “Ship the status page”" }, now);
+    expect(merged).toMatchObject({ ok: true, patch: { status: "merged", rejectionReason: "Merged into “Ship the status page”" }, activities: [{ kind: "merged" }] });
+    expect(kinds(planTransition(task({ status: "merged", parentTaskId: "parent" }), "not_started", {}, now))).toEqual(["reopened"]);
+    expect(needsInput("merged")).toBe(true);
   });
 });

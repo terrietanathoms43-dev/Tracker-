@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import { ArrowRight, GitBranch, ShieldCheck } from "lucide-react";
 import Link from "next/link";
+import { CloserHome } from "@/components/tasks/closer-chip";
 import { TaskList } from "@/components/tasks/task-list";
 import type { GoalListItem } from "@/lib/dal/goals";
 import type { TaskListItem } from "@/lib/tasks/types";
@@ -66,7 +67,9 @@ function GoalBlock({ goal, tasks, today, showProject, nested = false, readOnly }
       </div>
       {shown.length > 0 ? (
         <div className="border-t">
-          <TaskList page={{ items: shown, nextCursor: null }} today={today} showReason={false} readOnly={readOnly} />
+          <CloserHome goalId={goal.id}>
+            <TaskList page={{ items: shown, nextCursor: null }} today={today} showReason={false} readOnly={readOnly} />
+          </CloserHome>
           {more > 0 ? (
             <Link href={`/goals/${goal.id}`} className="flex items-center justify-center gap-1.5 border-t px-4 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
               {more} more open {more === 1 ? "task" : "tasks"}

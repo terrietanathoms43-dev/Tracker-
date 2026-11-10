@@ -28,13 +28,20 @@ export type TaskListItem = {
   assignees: Assignees;
   project: { id: string; name: string } | null;
   goal: { id: string; title: string } | null;
+  /** The task this one is attached to (sub-tasks, 2026-11-08 log): drawn under it in lists, or as a "Part of" link. */
+  parent: { id: string; title: string } | null;
+  /** How many tasks are attached to this one. */
+  subTasks: number;
   /** Null for a live task; a proposal's state otherwise ("local": the maker's alone, not sent yet). */
   proposal: ProposalStatus | null;
   /** A local task: whether sending it on starts a sign-off chain (true) or publishes it at once (false). */
   needsSignOff: boolean;
-  /** The goal's "Everything completed" task: completing it marks the goal achieved (2026-11-04 log). */
+  /**
+   * The goal's "Everything completed" task (2026-11-04 and 2026-11-09 logs): completing it, last, marks `goal`
+   * achieved. Every list names it by that goal (components/tasks/closer-chip.tsx).
+   */
   goalCloser: boolean;
-  /** Whether the row's menu offers Delete (leaders, the proposer of an open proposal, the maker of a local task). */
+  /** Whether the row's menu offers Delete (leaders, the proposer of an open proposal, the maker of a local task; never a goal's closer). */
   canDelete: boolean;
   updatedAt: string;
   /** Attention lists only: why it is there ("Overdue", "Your approval", …). */
@@ -77,6 +84,10 @@ export type CreateDefaults = {
   projectId?: string;
   goalId?: string;
   title?: string;
+  /** "Make a task" from a comment (2026-11-07 log) hands over the comment, quoted, with a link back. */
+  description?: string;
+  /** A sub-task: made attached to this task, in its project and goal (2026-11-08 log). */
+  parentId?: string;
   priority?: TaskPriority;
   dueDate?: string;
   assigneeIds?: string[];
@@ -109,6 +120,10 @@ export type TaskDetail = {
   seriesId: string | null;
   project: { id: string; name: string } | null;
   goal: { id: string; title: string } | null;
+  /** The task this one is attached to (sub-tasks, 2026-11-08 log). */
+  parent: { id: string; title: string } | null;
+  /** How many tasks are attached to this one; the page lists them. */
+  subTasks: number;
   assignees: Assignees;
   approver: Person | null;
   creator: Person;
@@ -117,8 +132,10 @@ export type TaskDetail = {
   needsSignOff: boolean;
   /** The sign-off chain, in order (empty for a task that was live from the start, or not sent yet). */
   approvals: ApprovalStepView[];
-  /** The goal's "Everything completed" task. */
+  /** The goal's "Everything completed" task: it stays with its goal and completing it marks the goal achieved. */
   goalCloser: boolean;
+  /** A closer only: the other tasks under its goal still open, which it waits for (0 for any other task). */
+  closerWaitsFor: number;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
@@ -152,6 +169,12 @@ export type UpdateContext = {
     openComments: number;
     /** A repeating task: completing it makes the next occurrence. */
     repeats: string | null;
+    /** The task it is attached to: only then may it be marked Merged. */
+    parent: { id: string; title: string } | null;
+    /** Open tasks attached to it: it cannot be completed while there are any. */
+    openSubTasks: number;
+    /** A goal's "Everything completed" task: the goal it marks achieved, and the other tasks under it still open, which it waits for. */
+    closer: { goalTitle: string | null; openOthers: number } | null;
   };
   people: PersonOption[];
   defaultApprover: string | null;

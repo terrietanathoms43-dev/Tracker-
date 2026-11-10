@@ -1,12 +1,12 @@
 "use client";
 
 import { cn } from "cn";
-import { ExternalLink, FolderPlus, Goal, MoreHorizontal, NotebookPen, Send, Trash2, Upload, UserPlus } from "lucide-react";
+import { ExternalLink, FolderPlus, GitMerge, Goal, MoreHorizontal, NotebookPen, Send, Trash2, Unlink, Upload, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 import { sendLocalTask } from "@/actions/proposals";
-import { deleteTask, editTask, getTaskFormOptions, setAssignees } from "@/actions/tasks";
+import { deleteTask, detachTask, editTask, getTaskFormOptions, setAssignees } from "@/actions/tasks";
 import { GoalPicker } from "@/components/goals/goal-picker";
 import { ProjectPicker } from "@/components/projects/project-picker";
 import { StatusIcon } from "@/components/status-badge";
@@ -38,6 +38,7 @@ import { idsOf } from "@/lib/tasks/assignees";
 import type { TaskFormOptions, TaskListItem } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneePicker } from "./assignee-picker";
+import { AttachTaskDialog } from "./attach-task-dialog";
 import { StatusMenuItems, useChangeStatus } from "./status-menu";
 import { useTaskActions } from "./task-actions";
 
@@ -51,7 +52,7 @@ const isLive = (task: TaskListItem) => task.proposal === null || task.proposal =
 /** The one thing a local task offers: "Send for sign-off" or "Publish" (lib/tasks/types.ts needsSignOff). */
 const sendLabel = (task: TaskListItem) => (task.needsSignOff ? "Send for sign-off" : "Publish");
 
-type MenuDialog = "assign" | "goal" | "project" | "delete" | null;
+type MenuDialog = "assign" | "goal" | "project" | "parent" | "delete" | null;
 
 function useMenuDialog() {
   const [dialog, setDialog] = useState<MenuDialog>(null);
@@ -176,14 +177,17 @@ function DeleteDialog({ task, onClose }: { task: TaskListItem; onClose: () => vo
 function MenuDialogs({ task, dialog, onClose }: { task: TaskListItem; dialog: MenuDialog; onClose: () => void }) {
   if (dialog === "assign") return <AssignDialog task={task} onClose={onClose} />;
   if (dialog === "goal" || dialog === "project") return <AttachDialog task={task} kind={dialog} onClose={onClose} />;
+  if (dialog === "parent") return <AttachTaskDialog taskIds={[task.id]} title={task.title} onClose={onClose} />;
   if (dialog === "delete") return <DeleteDialog task={task} onClose={onClose} />;
   return null;
 }
 
-const ATTACH_ITEMS: { key: MenuDialog & string; label: string; icon: typeof UserPlus }[] = [
-  { key: "assign", label: "Assign to…", icon: UserPlus },
-  { key: "goal", label: "Attach to goal…", icon: Goal },
-  { key: "project", label: "Attach to project…", icon: FolderPlus },
+/** A sub-task lives where its parent lives (2026-11-08 log), so its own project and goal are not offered. */
+const ATTACH_ITEMS: { key: MenuDialog & string; label: string; icon: typeof UserPlus; forChildren: boolean }[] = [
+  { key: "assign", label: "Assign to…", icon: UserPlus, forChildren: true },
+  { key: "goal", label: "Attach to goal…", icon: Goal, forChildren: false },
+  { key: "project", label: "Attach to project…", icon: FolderPlus, forChildren: false },
+  { key: "parent", label: "Attach to a task…", icon: GitMerge, forChildren: false },
 ];
 
 /** The "⋯" menu for a row or a board card. */
@@ -193,6 +197,8 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
   const [options, setOptions] = useState<TaskFormOptions | null>(null);
   const [, startTransition] = useTransition();
   const [deleting, setDeleting] = useState(false);
+  const [attaching, setAttaching] = useState(false);
+  const detach = () => startTransition(async () => void toastResult(await detachTask({ taskId: task.id })));
 
   // The New-task form's pickers feed the sub-menus; fetched once, the first time the menu opens.
   const loadOptions = (open: boolean) => {
@@ -242,7 +248,7 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
                   Change status
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-48">
-                  <StatusMenuItems current={task.status} onPick={(status) => change(task.status, status)} />
+                  <StatusMenuItems current={task.status} onPick={(status) => change(task.status, status)} hasParent={task.parent !== null} />
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
               <DropdownMenuSeparator />
@@ -271,6 +277,20 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
               )}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
+          {task.parent !== null ? (
+            <DropdownMenuItem onSelect={detach} data-menu-detach>
+              <Unlink />
+              Detach from its task
+            </DropdownMenuItem>
+          ) : live && !task.goalCloser ? (
+            <DropdownMenuItem onSelect={() => setAttaching(true)} data-menu-attach-task>
+              <GitMerge />
+              Attach to a task…
+            </DropdownMenuItem>
+          ) : null}
+          {/* A sub-task follows its parent and a goal's closer its goal: neither is offered another place. */}
+          {task.parent !== null || task.goalCloser ? null : (
+          <>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="gap-2">
               <Goal />
@@ -311,6 +331,8 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
               )}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
+          </>
+          )}
           {task.canDelete ? (
             <>
               <DropdownMenuSeparator />
@@ -323,6 +345,7 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
         </DropdownMenuContent>
       </DropdownMenu>
       {deleting ? <DeleteDialog task={task} onClose={() => setDeleting(false)} /> : null}
+      {attaching ? <AttachTaskDialog taskIds={[task.id]} title={task.title} onClose={() => setAttaching(false)} /> : null}
     </>
   );
 }
@@ -379,12 +402,18 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
             </SheetButton>
             {readOnly ? null : (
               <>
-                {ATTACH_ITEMS.map(({ key, label, icon: Icon }) => (
+                {ATTACH_ITEMS.filter((item) => (task.parent === null && !task.goalCloser ? item.key !== "parent" || live : item.forChildren)).map(({ key, label, icon: Icon }) => (
                   <SheetButton key={key} onClick={then(() => open(key))}>
                     <Icon className="size-4 text-muted-foreground" />
                     {label}
                   </SheetButton>
                 ))}
+                {task.parent !== null ? (
+                  <SheetButton onClick={then(() => startTransition(async () => void toastResult(await detachTask({ taskId: task.id }))))}>
+                    <Unlink className="size-4 text-muted-foreground" />
+                    Detach from its task
+                  </SheetButton>
+                ) : null}
                 {task.canDelete ? (
                   <SheetButton onClick={then(() => open("delete"))}>
                     <Trash2 className="size-4 text-destructive" />
@@ -395,7 +424,7 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
                   <>
                     <p className="px-3 pt-3 pb-1 text-[13px] text-muted-foreground">Change status</p>
                     <div className="grid grid-cols-2 gap-1">
-                      {TASK_STATUSES.map((status) => (
+                      {TASK_STATUSES.filter((status) => status !== "merged" || task.parent !== null).map((status) => (
                         <SheetButton key={status} disabled={status === task.status} onClick={then(() => change(task.status, status))}>
                           <StatusIcon status={status} />
                           {TASK_STATUS_LABELS[status]}

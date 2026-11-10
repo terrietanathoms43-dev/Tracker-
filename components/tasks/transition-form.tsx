@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquareWarning } from "lucide-react";
+import { Flag, MessageSquareWarning } from "lucide-react";
 import { useState, useTransition } from "react";
 import { changeStatus } from "@/actions/tasks";
 import { Field } from "@/components/field";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
+import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
 import { openCommentsMessage } from "@/lib/tasks/transitions";
 import type { UpdateContext } from "@/lib/tasks/types";
@@ -22,12 +23,22 @@ export const TRANSITION_TITLES: Partial<Record<TaskStatus, string>> = {
    awaiting_approval: "Send for approval",
    completed: "Mark as completed",
    rejected: "Reject this task",
+   deferred: "Defer this task",
+   cancelled: "Cancel this task",
+   merged: "Merge into its parent",
+};
+
+/** The question each closed-without-completion status asks, and its hint. */
+const CLOSE_PROMPTS: Record<"rejected" | "deferred" | "cancelled", { label: string; hint: string }> = {
+   rejected: { label: "Why is it rejected?", hint: "Kept in the task's history." },
+   deferred: { label: "Why is it deferred?", hint: "Until when, if you know. Kept in the task's history; the task can be reopened later." },
+   cancelled: { label: "Why is it cancelled?", hint: "Kept in the task's history. A cancelled task stays for the record; delete it to remove it." },
 };
 
 /**
- * Exactly the fields a status asks for (apex-ux flow D): a reason, an approver, or an optional summary and evidence.
- * Completing a task with open comments is refused by the server (lib/tasks/transitions.ts); the dialog says so
- * instead of offering a Save that fails.
+ * Exactly the fields a status asks for (apex-ux flow D): a reason, an approver, or the completion summary (required,
+ * 2026-11-07 log) and optional evidence. Completing a task with open comments is refused by the server
+ * (lib/tasks/transitions.ts); the dialog says so instead of offering a Save that fails.
  */
 export function TransitionForm({ context, status, onDone }: { context: UpdateContext; status: TaskStatus; onDone: () => void }) {
    const { task, people } = context;
@@ -40,8 +51,15 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
    const [errors, setErrors] = useState<Record<string, string[] | undefined>>({});
    const [pending, startTransition] = useTransition();
    const heldByComments = status === "completed" && task.openComments > 0;
+   // Sub-tasks (2026-11-08 log): a parent waits for its open sub-tasks; a merge only works on a sub-task and needs no words.
+   const heldBySubTasks = status === "completed" && task.openSubTasks > 0;
+   // A goal's "Everything completed" task is its last step (2026-11-09 log): it waits for every other task under the goal.
+   const heldByGoal = status === "completed" && task.closer !== null && task.closer.openOthers > 0;
+   const held = heldByComments || heldBySubTasks || heldByGoal;
+   const merging = status === "merged";
+   const closing = status === "rejected" || status === "deferred" || status === "cancelled";
    const ready =
-      status === "blocked" || status === "rejected" ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : !heldByComments;
+      status === "blocked" || closing ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? !held && summary.trim() !== "" : merging ? task.parent !== null : true;
 
    return (
       <form
@@ -94,8 +112,8 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                </Field>
             </>
          ) : null}
-         {status === "rejected" ? (
-            <Field id="transition-reason" label="Why is it rejected?" hint="Kept in the task's history." error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
+         {closing ? (
+            <Field id="transition-reason" label={CLOSE_PROMPTS[status].label} hint={CLOSE_PROMPTS[status].hint} error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
                <Textarea
                   id="transition-reason"
                   value={reason}
@@ -127,9 +145,40 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                <span>{openCommentsMessage(task.openComments)} They are under Comments and history on the task page.</span>
             </p>
          ) : null}
-         {status === "completed" && !heldByComments ? (
+         {heldBySubTasks && !heldByComments ? (
+            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+               <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
+               <span>
+                  Finish the {task.openSubTasks} open {task.openSubTasks === 1 ? "sub-task" : "sub-tasks"} first, or merge them: this task waits for them.
+               </span>
+            </p>
+         ) : null}
+         {heldByGoal && !heldByComments && !heldBySubTasks && task.closer ? (
+            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status" data-closer-hold>
+               <Flag className="mt-0.5 size-4 shrink-0" aria-hidden />
+               <span>{closerHeldMessage(task.closer.openOthers, task.closer.goalTitle)}</span>
+            </p>
+         ) : null}
+         {merging ? (
+            <p className="text-sm text-muted-foreground" data-merge-note>
+               {task.parent ? (
+                  <>
+                     This task is folded into <span className="font-medium text-foreground">{task.parent.title}</span>: it closes as Merged, stays listed under it with its comments and history, and can be reopened or detached later.
+                  </>
+               ) : (
+                  "Only a sub-task can be merged: attach it to the task it duplicates first."
+               )}
+            </p>
+         ) : null}
+         {status === "completed" && !held ? (
             <>
-               <Field id="transition-summary" label="Completion summary" hint="Optional: what changed, and why it matters." count={{ value: summary, max: LIMITS.completionSummary }}>
+               {task.closer ? (
+                  <p className="flex items-center gap-1.5 text-[13px] font-medium text-primary" data-closer-note>
+                     <Flag className="size-3.5 shrink-0" aria-hidden />
+                     {closerReadyMessage(task.closer.goalTitle)}
+                  </p>
+               ) : null}
+               <Field id="transition-summary" label="Completion summary" hint="Required: what was done, and why it matters. These are the sign-off words on the task." error={errors.summary?.[0]} count={{ value: summary, max: LIMITS.completionSummary }}>
                   <Textarea
                      id="transition-summary"
                      value={summary}
