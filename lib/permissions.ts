@@ -12,7 +12,24 @@ export type Viewer = {
   orgId: string;
   orgRole: OrgRole;
   timezone: string;
+  /** Admin-set switches for this workspace (org_config); absent means every toggle is off. */
+  toggles?: PermissionToggles;
 };
+
+/**
+ * The permissions an admin may hand out per workspace from Settings (org_config.permission_overrides,
+ * written through the admin panel). Everything not listed here stays fixed in code. Toggles only ever
+ * widen a predicate — they can grant, never take away.
+ */
+export const PERMISSION_TOGGLES = {
+  membersCanPlan: { label: "Create projects and goals", description: "Members may create projects and goals, not only leaders and admins." },
+  membersCanInvite: { label: "Invite people", description: "Members may invite people as members or stakeholders (admins are only ever invited by admins)." },
+  membersCanDeleteOwnTasks: { label: "Delete their own tasks", description: "Members may delete a task they created, not only leaders and admins." },
+} as const;
+export type PermissionToggle = keyof typeof PERMISSION_TOGGLES;
+export type PermissionToggles = Partial<Record<PermissionToggle, boolean>>;
+
+const toggled = (viewer: Viewer, toggle: PermissionToggle) => viewer.toggles?.[toggle] === true;
 
 type OrgScoped = { orgId: string };
 
@@ -90,11 +107,12 @@ export function canRejectTask(viewer: Viewer, task: TaskScope): boolean {
   return isWorker(viewer) && canEditTask(viewer, task) && isLive(task);
 }
 
-/** Deleting destroys the task and its history: leaders and admins; a proposer may withdraw their own open proposal; a local task is its maker's to delete. */
+/** Deleting destroys the task and its history: leaders and admins; a proposer may withdraw their own open proposal; a local task is its maker's to delete; the toggle lets anyone delete a task they created. */
 export function canDeleteTask(viewer: Viewer, task?: Pick<TaskScope, "createdBy" | "proposalStatus">): boolean {
   if (task !== undefined && isLocal(task)) return task.createdBy === viewer.userId;
   if (isLeader(viewer)) return true;
-  return task !== undefined && task.createdBy === viewer.userId && isOpenProposal(task);
+  if (task === undefined || task.createdBy !== viewer.userId) return false;
+  return isOpenProposal(task) || (isLive(task) && toggled(viewer, "membersCanDeleteOwnTasks"));
 }
 
 /** Sending a local task for sign-off, or publishing it where no sign-off applies any more: its maker alone. */
@@ -107,6 +125,8 @@ export function canSendLocalTask(viewer: Viewer, task: Pick<TaskScope, "orgId" |
 /** Everyone in the workspace reads its projects and goals; a stakeholder needs them to sign goals off. */
 export const canReadPlanning = (viewer: Viewer) => viewer.orgId.length > 0;
 export const canManagePlanning = (viewer: Viewer) => isLeader(viewer);
+/** Creating a project or a goal: leaders and admins, or any worker where the membersCanPlan toggle is on. */
+export const canCreatePlanning = (viewer: Viewer) => isLeader(viewer) || (isWorker(viewer) && toggled(viewer, "membersCanPlan"));
 
 /** Marking a goal completed (or open again): admins, leaders and stakeholders. Members never sign a goal off. */
 export const canCompleteGoal = (viewer: Viewer) => isLeader(viewer) || isStakeholder(viewer);
@@ -129,10 +149,11 @@ export const canSeeMembers = (viewer: Viewer) => isWorker(viewer);
 export const canSeeReports = (viewer: Viewer) => viewer.orgId.length > 0;
 export const canManageOrg = (viewer: Viewer) => isAdmin(viewer);
 
-/** Admins invite anyone; leaders invite members and stakeholders, never another admin. */
+/** Admins invite anyone; leaders invite members and stakeholders; the toggle lets members do the same. Nobody below admin invites an admin. */
 export function canInvite(viewer: Viewer, role: OrgRole): boolean {
   if (isAdmin(viewer)) return true;
-  return isLeader(viewer) && role !== "admin";
+  if (role === "admin") return false;
+  return isLeader(viewer) || (isWorker(viewer) && toggled(viewer, "membersCanInvite"));
 }
 
 /** The roles a viewer may offer in an invitation form, in the order the pickers show them. */

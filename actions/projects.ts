@@ -13,7 +13,7 @@ import { saveApprovalSettings } from "@/lib/dal/approvals";
 import { ownerError } from "@/lib/dal/goals";
 import { lockProject, savePins } from "@/lib/dal/projects";
 import { log } from "@/lib/log";
-import { canManageApprovals, canManagePlanning, canReadPlanning } from "@/lib/permissions";
+import { canCreatePlanning, canManageApprovals, canManagePlanning, canReadPlanning } from "@/lib/permissions";
 import { requireViewer } from "@/lib/viewer";
 
 // Every change to a project. Projects are the top of the funnel (docs/PLAN.md, 2026-11-03 log), workspace-wide and
@@ -66,7 +66,7 @@ const createSchema = z.object(projectFields);
 export async function createProject(input: z.input<typeof createSchema>): Promise<ActionResult<{ id: string }>> {
   return runAction("projects.create", createSchema, input, async (data) => {
     const viewer = await requireViewer();
-    if (!canManagePlanning(viewer)) throw new GuardError("forbidden");
+    if (!canCreatePlanning(viewer)) throw new GuardError("forbidden");
     const errors = await ownerErrors(db, viewer.orgId, data);
     if (errors) return fail(ERR.badRequest, errors);
     const [created] = await db

@@ -181,6 +181,28 @@ export const organizationMembers = pgTable(
   (t) => [primaryKey({ columns: [t.orgId, t.userId] }), index("organization_members_user_idx").on(t.userId)],
 );
 
+/**
+ * Workspace-level configuration set from Settings by admins (the admin panel). One row per workspace,
+ * created lazily: no row means every setting is at its default. `ai_api_key` is AES-256-GCM ciphertext
+ * (lib/secrets.ts) and is never sent to the client; `ai_api_key_tail` keeps only its last characters for
+ * the "configured" indicator.
+ */
+export const orgConfig = pgTable("org_config", {
+  orgId: text("org_id")
+    .primaryKey()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  /** The workspace default order for /home's tabs (HomeTab[]); a person's cookie may still reorder theirs. */
+  homeTabOrder: jsonb("home_tab_order").$type<string[]>(),
+  /** The AI engine for capture: "anthropic" | "openai"; null falls back to the deployment's env vars. */
+  aiProvider: text("ai_provider"),
+  aiApiKey: text("ai_api_key"),
+  aiApiKeyTail: text("ai_api_key_tail"),
+  /** Admin-set permission switches: toggle key → boolean (lib/permissions.ts PERMISSION_TOGGLES). */
+  permissionOverrides: jsonb("permission_overrides").$type<Record<string, boolean>>(),
+  updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: updatedAt(),
+});
+
 export const invitations = pgTable(
   "invitations",
   {
