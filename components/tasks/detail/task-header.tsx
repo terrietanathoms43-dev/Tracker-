@@ -19,6 +19,7 @@ import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskAbilities, TaskDetail } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneeStack } from "../assignee-stack";
+import { CloserChip } from "../closer-chip";
 import { DueLabel } from "../due-label";
 import { FOCUS_UPDATE_EVENT } from "../task-actions";
 
@@ -148,7 +149,7 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
             {describeSubTasks(detail.subTasks)}
           </a>
         ) : null}
-
+        {detail.goalCloser && detail.goal ? <CloserChip goal={detail.goal} variant="header" /> : null}
         {detail.assignees.length > 0 ? (
           <AssigneeStack assignees={detail.assignees} names />
         ) : (

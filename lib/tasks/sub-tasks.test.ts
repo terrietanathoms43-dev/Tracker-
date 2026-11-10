@@ -20,6 +20,7 @@ const item = (id: string, parent: string | null = null): TaskListItem => ({
   subTasks: 0,
   proposal: null,
   needsSignOff: false,
+  goalCloser: false,
   canDelete: false,
   updatedAt: "2026-11-08T00:00:00.000Z",
 });

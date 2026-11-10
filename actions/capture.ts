@@ -10,8 +10,8 @@ import { captureProviderFor } from "@/lib/capture/availability";
 import { captureDraftSchema, describeCounts, draftCounts, type CaptureDraft, type CaptureOutcome } from "@/lib/capture/draft";
 import { CaptureError, proposeWork } from "@/lib/capture/provider";
 import { recordActivity } from "@/lib/dal/activity";
-
 import { applyAssignment, snapshotAssignment, validateAssignment } from "@/lib/dal/assignments";
+import { createGoalCloser } from "@/lib/dal/goal-closers";
 import { captureContext } from "@/lib/dal/capture";
 import { subGoalDeadlineProblem } from "@/lib/goals/deadlines";
 import { LIMITS } from "@/lib/limits";
@@ -157,6 +157,8 @@ export async function applyCapture(input: z.input<typeof captureDraftSchema>): P
             updatedAt: now,
           })
           .returning({ id: goals.id });
+        // Like every goal, it is made with its "Everything completed" task (lib/dal/goal-closers.ts).
+        await createGoalCloser(tx, { id: created.id, orgId: viewer.orgId, projectId: goalProject, ownerId: viewer.userId, targetDate: goal.targetDate || null }, viewer.userId, now);
         goalIdByKey.set(goal.key, created.id);
         goalProjectById.set(created.id, goalProject);
         createdGoalIds.push(created.id);

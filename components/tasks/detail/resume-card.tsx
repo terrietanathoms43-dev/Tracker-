@@ -1,8 +1,10 @@
-import { CheckCircle2, Clock, MessageSquareWarning, OctagonAlert } from "lucide-react";
+import { CheckCircle2, Clock, Flag, MessageSquareWarning, OctagonAlert } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusIcon } from "@/components/status-badge";
 import { CLOSED_WITHOUT_COMPLETION, isClosedStatus, TASK_STATUS_LABELS } from "@/lib/constants";
+import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf } from "@/lib/tasks/people";
 import type { EvidenceLink, TaskAbilities, TaskDetail, UpdateContext } from "@/lib/tasks/types";
 import { EvidenceChips } from "../evidence-chips";
@@ -153,6 +155,12 @@ export function ResumeCard({
             <MessageSquareWarning className="size-4 shrink-0" aria-hidden />
             {detail.openComments === 1 ? "1 open comment" : `${detail.openComments} open comments`} to resolve before this task can be completed
           </a>
+        ) : null}
+        {!closed && detail.goalCloser && detail.goal ? (
+          <Link href={`/goals/${detail.goal.id}`} className="flex items-center gap-2 rounded-md text-[13px] text-primary underline-offset-4 hover:underline" data-closer-status>
+            <Flag className="size-4 shrink-0" aria-hidden />
+            {detail.closerWaitsFor > 0 ? closerHeldMessage(detail.closerWaitsFor, detail.goal.title) : closerReadyMessage(detail.goal.title)}
+          </Link>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <p className="text-[13px] text-muted-foreground">

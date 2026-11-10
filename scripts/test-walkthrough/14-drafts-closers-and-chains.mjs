@@ -2,10 +2,12 @@
 // log). Morgan jots notes that save themselves, keeps the notepad floating over another page, folds and reopens it,
 // and turns the notes into a draft; Sam's task under Lumen Health starts local (2026-11-06 log) and, once sent for
 // sign-off from the list's Local section, shows at once in the project, the list and My Work as waiting for
-// sign-off; Morgan's decision on a task Sam changed meanwhile is refused, then goes through; Jordan
-// can't complete a goal's "Everything completed" task while another task is open, and completing it last achieves
-// the goal; a daily task three days behind gets its missed days, stopping at its end date, and loading again doubles
-// nothing; a sign-off step names two people; a goal is deleted together with its sub-goal and the tasks stay.
+// sign-off; Morgan's decision on a task Sam changed meanwhile is refused, then goes through; a goal's "Everything
+// completed" task (2026-11-09 log) can't be completed while another task under the goal is open (the server refuses
+// a dialog that went stale), completing it last achieves the goal and tells its owner, and reopening a task under
+// the achieved goal opens the goal and its closer again; a daily task three days behind gets its missed days,
+// stopping at its end date, and loading again doubles nothing; a sign-off step names two people; a goal is deleted
+// together with its sub-goal: the tasks stay, the two closers go.
 //
 // Usage: node scripts/test-walkthrough/14-drafts-closers-and-chains.mjs [--base=http://localhost:3021]
 import { closePool, finish, openBrowser, query, sleep, step, stoppedOn, tidy } from "./lib.mjs";
@@ -100,25 +102,49 @@ try {
   await morgan.click("Approve", { near: `${TITLE} edited`, exact: true, wait: 2500 });
   step("after the refresh the decision goes through", await morgan.waitFor("Signed off. It waits for the next person.", 10_000));
 
-  // --- 4. goals and tasks are one thing: the last task achieves the goal, reopening one reopens it ---------------------------
-  const [review] = await query(`select id from goals where org_id = (${org}) and title = 'Every incident gets a review'`);
-  const under = await query("select id, title from tasks where goal_id = $1 and status not in ('completed', 'rejected', 'deferred', 'cancelled') and (proposal_status is null or proposal_status = 'approved') order by created_at", [review.id]);
-  step("the goal has one open task left", under.length === 1, JSON.stringify(under.map((task) => task.title)));
-  const last = under[0];
+  // --- 4. the goal's closer: it waits for the other tasks, achieves the goal, and opens again with it ------------------------
+  const [review] = await query(`select id, owner_id from goals where org_id = (${org}) and title = 'Every incident gets a review'`);
+  const under = await query("select id, title, goal_closer from tasks where goal_id = $1 and status not in ('completed', 'rejected', 'deferred', 'cancelled') and (proposal_status is null or proposal_status = 'approved') order by goal_closer, created_at", [review.id]);
+  step("the goal has one open task and its closer", under.length === 2 && !under[0].goal_closer && under[1].goal_closer, JSON.stringify(under.map((task) => task.title)));
+  const [last, closer] = under;
+  const goalStatus = async () => (await query("select status, completed_at from goals where id = $1", [review.id]))[0];
   const jordan = (browsers.jordan = await openBrowser({ role: "member", width: 1280, height: 900 }));
   await morgan.goto(`/goals/${review.id}`, 4000);
   await morgan.waitFor("Every incident gets a review");
   await morgan.click("Mark completed", { exact: true, wait: 2500 });
   step("marking the goal completed with a task still open is refused with the count", await morgan.waitFor("Finish the 1 open task", 10_000));
   await complete(jordan, last.id, "Review template agreed and published.");
-  step("completing the last task says the goal is achieved", await jordan.waitFor("is achieved", 10_000));
-  const [achieved] = await query("select status, completed_at from goals where id = $1", [review.id]);
+  step("completing the other task leaves the goal active: the closer is still open", (await jordan.waitFor("Marked completed.", 10_000)) && !(await jordan.has("is achieved")) && (await goalStatus())?.status === "active");
+  // Morgan opens the closer's dialog while nothing else is open; Jordan reopens the task; Morgan's save is refused.
+  await morgan.goto(`/tasks/${closer.id}`, 4000);
+  await morgan.waitFor("Completing this marks", 10_000);
+  await morgan.click("Change status", { wait: 800 });
+  await morgan.click("Completed", { exact: true, within: "[role=menu]", wait: 1500 });
+  await morgan.waitFor("Mark as completed", 5000);
+  await morgan.type("#transition-summary", "Every review this quarter is written up.");
+  await reopen(jordan, last.id);
+  await sleep(1500);
+  await morgan.click("Mark as completed", { exact: true, within: "[role=dialog]", wait: 2500 });
+  step("the server refuses a closer whose dialog went stale: another task is open again", (await morgan.waitFor("Finish the other 1 task under", 10_000)) && (await goalStatus())?.status === "active");
+  await morgan.press("Escape", 600);
+  await complete(jordan, last.id, "Review template agreed and published.");
+  await jordan.waitFor("Marked completed.", 10_000);
+  // Jordan, a member, completes the closer: the goal is achieved and Morgan, its owner, hears.
+  await complete(jordan, closer.id, "Every review this quarter is written up.");
+  step("completing the closer says the goal is achieved", await jordan.waitFor("is achieved", 10_000));
+  const achieved = await goalStatus();
   step("the goal is completed in the database", achieved?.status === "completed" && achieved?.completed_at !== null, JSON.stringify(achieved));
+  const heard = await query("select title from notifications where user_id = $1 and kind = 'goal_achieved' and href = $2", [review.owner_id, `/goals/${review.id}`]);
+  step("the goal's owner is told it was achieved", heard.length === 1 && heard[0].title === "Goal achieved: Every incident gets a review", JSON.stringify(heard));
   await reopen(jordan, last.id);
   step("reopening a task under an achieved goal makes the goal active again", await jordan.waitFor("is active again", 10_000));
-  const [reactivated] = await query("select status, completed_at from goals where id = $1", [review.id]);
+  const reactivated = await goalStatus();
   step("the goal is active again in the database", reactivated?.status === "active" && reactivated?.completed_at === null, JSON.stringify(reactivated));
+  const [reopenedCloser] = await query("select status, (select count(*)::int from task_activity a where a.task_id = t.id and a.kind = 'reopened') as reopened from tasks t where t.id = $1", [closer.id]);
+  step("and its closer is open again, with the reason in its history", reopenedCloser?.status === "not_started" && reopenedCloser?.reopened === 1, JSON.stringify(reopenedCloser));
   await complete(jordan, last.id, "Review template agreed and published.");
+  await jordan.waitFor("Marked completed.", 10_000);
+  await complete(jordan, closer.id, "Every review this quarter is written up.");
   await jordan.waitFor("is achieved", 10_000);
 
   // --- 5. missed repeats are caught up, within the rule's end -----------------------------------------------------------------
@@ -161,6 +187,7 @@ try {
   // --- 7. delete a goal together with its sub-goal -----------------------------------------------------------------------------
   const [ship] = await query(`select id, project_id from goals where org_id = (${org}) and title = 'Ship the self-serve onboarding'`);
   const [sub] = await query("select id from goals where parent_goal_id = $1", [ship.id]);
+  const closers = await query("select id from tasks where goal_closer and goal_id = any($1::text[])", [[ship.id, sub.id]]);
   await morgan.goto(`/goals/${ship.id}`, 4000);
   await morgan.clickSelector("[data-delete-goal]");
   await morgan.waitFor("Delete this goal?", 5000);
@@ -171,6 +198,8 @@ try {
   const [gone] = await query("select count(*)::int as n from goals where id = any($1::text[])", [[ship.id, sub.id]]);
   const [detached] = await query("select count(*)::int as n from tasks where project_id = $1 and goal_id is null", [ship.project_id]);
   step("both goals are gone and their tasks stay in the project", gone.n === 0 && detached.n > 0, JSON.stringify({ gone, detached }));
+  const [left] = await query("select count(*)::int as n from tasks where id = any($1::text[]) or (project_id = $2 and goal_closer and goal_id is null)", [closers.map((row) => row.id), ship.project_id]);
+  step("their two closers went with them: no “Everything completed” is left without a goal", closers.length === 2 && left.n === 0, JSON.stringify({ closers: closers.length, left }));
   step("no console errors", morgan.problems.length === 0 && sam.problems.length === 0 && jordan.problems.length === 0, JSON.stringify([...morgan.problems, ...sam.problems, ...jordan.problems].slice(0, 2)));
 } catch (error) {
   await stoppedOn(error, "14", browsers);

@@ -29,7 +29,8 @@ export function GoalDeleteDialog({ goal }: { goal: { id: string; title: string; 
       router.push(`/projects/${result.data.projectId}`);
     });
   const consequences = [
-    goal.tasks > 0 ? `${goal.tasks} ${goal.tasks === 1 ? "task stays" : "tasks stay"} in ${goal.projectName}, without a goal. Their history keeps a line saying why.` : "No task is linked to it directly.",
+    goal.tasks > 0 ? `${goal.tasks} ${goal.tasks === 1 ? "task stays" : "tasks stay"} in ${goal.projectName}, without a goal. Their history keeps a line saying why.` : "No other task is linked to it directly.",
+    "Its “Everything completed” task goes with it.",
     goal.subGoals > 0
       ? withSubGoals
         ? `${goal.subGoals} ${goal.subGoals === 1 ? "sub-goal is" : "sub-goals are"} deleted too; their tasks stay in ${goal.projectName} the same way.`

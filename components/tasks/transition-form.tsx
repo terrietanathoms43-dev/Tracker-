@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquareWarning } from "lucide-react";
+import { Flag, MessageSquareWarning } from "lucide-react";
 import { useState, useTransition } from "react";
 import { changeStatus } from "@/actions/tasks";
 import { Field } from "@/components/field";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
+import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
 import { openCommentsMessage } from "@/lib/tasks/transitions";
 import type { UpdateContext } from "@/lib/tasks/types";
@@ -52,10 +53,13 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
    const heldByComments = status === "completed" && task.openComments > 0;
    // Sub-tasks (2026-11-08 log): a parent waits for its open sub-tasks; a merge only works on a sub-task and needs no words.
    const heldBySubTasks = status === "completed" && task.openSubTasks > 0;
+   // A goal's "Everything completed" task is its last step (2026-11-09 log): it waits for every other task under the goal.
+   const heldByGoal = status === "completed" && task.closer !== null && task.closer.openOthers > 0;
+   const held = heldByComments || heldBySubTasks || heldByGoal;
    const merging = status === "merged";
    const closing = status === "rejected" || status === "deferred" || status === "cancelled";
    const ready =
-      status === "blocked" || closing ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? !heldByComments && !heldBySubTasks && summary.trim() !== "" : merging ? task.parent !== null : true;
+      status === "blocked" || closing ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? !held && summary.trim() !== "" : merging ? task.parent !== null : true;
 
    return (
       <form
@@ -149,6 +153,12 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                </span>
             </p>
          ) : null}
+         {heldByGoal && !heldByComments && !heldBySubTasks && task.closer ? (
+            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status" data-closer-hold>
+               <Flag className="mt-0.5 size-4 shrink-0" aria-hidden />
+               <span>{closerHeldMessage(task.closer.openOthers, task.closer.goalTitle)}</span>
+            </p>
+         ) : null}
          {merging ? (
             <p className="text-sm text-muted-foreground" data-merge-note>
                {task.parent ? (
@@ -160,8 +170,14 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                )}
             </p>
          ) : null}
-         {status === "completed" && !heldByComments && !heldBySubTasks ? (
+         {status === "completed" && !held ? (
             <>
+               {task.closer ? (
+                  <p className="flex items-center gap-1.5 text-[13px] font-medium text-primary" data-closer-note>
+                     <Flag className="size-3.5 shrink-0" aria-hidden />
+                     {closerReadyMessage(task.closer.goalTitle)}
+                  </p>
+               ) : null}
                <Field id="transition-summary" label="Completion summary" hint="Required: what was done, and why it matters. These are the sign-off words on the task." error={errors.summary?.[0]} count={{ value: summary, max: LIMITS.completionSummary }}>
                   <Textarea
                      id="transition-summary"

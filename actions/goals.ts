@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 import { LIMITS } from "@/lib/limits";
@@ -8,16 +8,18 @@ import { optionalText, requiredText } from "@/lib/sanitize";
 import { db, type Tx } from "@/db";
 import { goalLinks, goals, notifications, projects, tasks } from "@/db/schema";
 import { ERR, fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
-import { GOAL_STATUSES, type GoalStatus } from "@/lib/constants";
+import { CLOSED_STATUSES, GOAL_STATUSES, type GoalStatus } from "@/lib/constants";
 import { saveApprovalSettings } from "@/lib/dal/approvals";
 import { recordActivity } from "@/lib/dal/activity";
 import { findGoal, goalsById, linkEdgesForCycleCheck, lockGoal, ownerError, subGoalDeadlines } from "@/lib/dal/goals";
-import { assertNoOpenTasks } from "@/lib/dal/goal-achievement";
+import { assertNoOpenTasks, goalAchievedNotice } from "@/lib/dal/goal-achievement";
+import { completeGoalCloser, createGoalCloser, deleteGoalClosers, reopenGoalCloser } from "@/lib/dal/goal-closers";
 import { findProject } from "@/lib/dal/projects";
 import { createGoalOccurrence, type NextGoal } from "@/lib/dal/recurrence";
 import { parentDeadlineProblem, subGoalDeadlineProblem } from "@/lib/goals/deadlines";
 import { wouldCycle } from "@/lib/goals/graph";
 import { log } from "@/lib/log";
+import { dispatch } from "@/lib/notify";
 import { canCompleteGoal, canDeleteGoal, canLinkGoals, canManageApprovals, canManagePlanning } from "@/lib/permissions";
 import { nextAfterFinishing, normalizeRecurrence, type Recurrence } from "@/lib/recurrence";
 import { dayKey, formatDay } from "@/lib/time";
@@ -27,7 +29,9 @@ import { requireViewer } from "@/lib/viewer";
 // admins (canManagePlanning); marking one completed is for admins, leaders and stakeholders (canCompleteGoal).
 // They are paused or completed, or deleted without their tasks (2026-11-04 log), so the work keeps its history. A goal may be a
 // sub-goal of one top-level goal in the same project (2026-10-30 log); a sub-goal's target date never passes its
-// parent's. A repeating goal makes its next occurrence, tasks included, when it is completed.
+// parent's. A repeating goal makes its next occurrence, tasks included, when it is completed. Every goal is made with
+// its "Everything completed" task (lib/dal/goal-closers.ts, 2026-11-09 log): completing that task is what achieves
+// the goal, and the row here follows the goal (completed with it by hand, open again with it, gone with it).
 
 // --- shared checks -----------------------------------------------------------------------------------------
 
@@ -136,6 +140,8 @@ export async function createGoal(input: z.input<typeof createSchema>): Promise<A
         .values({ orgId: viewer.orgId, projectId: placed.projectId, ownerId, createdBy: viewer.userId, ...goalValues(data) })
         .returning({ id: goals.id });
       if (data.recurrence !== null) await tx.update(goals).set({ seriesId: row.id }).where(eq(goals.id, row.id));
+      // Every goal is made with its "Everything completed" task: its last step, which marks it achieved.
+      await createGoalCloser(tx, { id: row.id, orgId: viewer.orgId, projectId: placed.projectId, ownerId, targetDate: data.targetDate || null }, viewer.userId, new Date());
       return ok({ id: row.id, projectId: placed.projectId });
     });
     if (!result.ok) return result;
@@ -177,6 +183,27 @@ export async function updateGoal(input: z.input<typeof updateSchema>): Promise<A
         .update(goals)
         .set({ ...goalValues(data), projectId: placed.projectId, ownerId, seriesId: data.recurrence ? (goal.seriesId ?? goal.id) : goal.seriesId, updatedAt: new Date() })
         .where(eq(goals.id, goal.id));
+      const target = data.targetDate || null;
+      if (target !== goal.targetDate) {
+        // The closer is due when its goal is: it follows a moved target unless someone gave it a day of its own.
+        const now = new Date();
+        const following = await tx
+          .update(tasks)
+          .set({ dueDate: target, updatedAt: now })
+          .where(
+            and(
+              eq(tasks.orgId, viewer.orgId),
+              eq(tasks.goalId, goal.id),
+              eq(tasks.goalCloser, true),
+              notInArray(tasks.status, [...CLOSED_STATUSES]),
+              goal.targetDate === null ? isNull(tasks.dueDate) : eq(tasks.dueDate, goal.targetDate),
+            ),
+          )
+          .returning({ id: tasks.id });
+        for (const closer of following) {
+          await recordActivity(tx, { orgId: viewer.orgId, taskId: closer.id, actorId: viewer.userId }, [{ kind: "due_changed", before: { dueDate: goal.targetDate }, after: { dueDate: target }, note: "Moved with its goal's target date." }], now);
+        }
+      }
       if (placed.projectId !== goal.projectId) {
         // The goal moved: its sub-goals and every task under the family follow it.
         await tx.update(goals).set({ projectId: placed.projectId, updatedAt: new Date() }).where(eq(goals.parentGoalId, goal.id));
@@ -217,7 +244,8 @@ async function spawnNextGoal(tx: Tx, viewerId: string, orgId: string, goal: NonN
 /**
  * Marks a goal completed, pauses it, or makes it active again. Completing (and reopening a completed goal) is for
  * admins, leaders and stakeholders; pausing is for whoever manages planning. Completing a repeating goal makes the
- * next one, tasks included.
+ * next one, tasks included. The goal's "Everything completed" task goes with it: completed with a goal marked
+ * completed here (refused while any other task under the goal is open), open again with a goal reopened here.
  */
 export async function setGoalStatus(input: z.input<typeof statusSchema>): Promise<ActionResult<{ next: NextGoal | null }>> {
   return runAction("goals.status", statusSchema, input, async (data) => {
@@ -231,9 +259,14 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
       if (completing ? !canCompleteGoal(viewer) : !canManagePlanning(viewer)) {
         throw new GuardError("forbidden", completing ? "Only admins, leaders and stakeholders can mark a goal completed." : "Only leaders and admins can pause a goal.");
       }
-      if (goal.status === data.status) return { from: goal.status, next: null };
-      // A goal is achieved when its tasks are done (lib/dal/goal-achievement.ts): the button is a shortcut, not a way round that.
-      if (data.status === "completed") await assertNoOpenTasks(tx, viewer.orgId, goal);
+      if (goal.status === data.status) return { from: goal.status, next: null, achieved: null };
+      const closerGoal = { ...goal, orgId: viewer.orgId };
+      // A goal is achieved when its tasks are done (lib/dal/goal-achievement.ts): the button is a shortcut, not a way
+      // round that. What it does stand in for is the goal's last step, so the closer is completed with the goal.
+      if (data.status === "completed") {
+        await assertNoOpenTasks(tx, viewer.orgId, goal);
+        await completeGoalCloser(tx, viewer.userId, closerGoal, now);
+      }
       await tx
         .update(goals)
         .set({
@@ -243,10 +276,14 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
           updatedAt: now,
         })
         .where(eq(goals.id, goal.id));
+      // A goal that is no longer completed has its last step open again.
+      if (goal.status === "completed") await reopenGoalCloser(tx, viewer.userId, closerGoal, now);
       const next = data.status === "completed" ? await spawnNextGoal(tx, viewer.userId, viewer.orgId, goal, today, now) : null;
-      return { from: goal.status, next };
+      return { from: goal.status, next, achieved: data.status === "completed" ? { title: goal.title, people: [goal.ownerId, goal.createdBy] } : null };
     });
     log.info("goals.status_changed", { orgId: viewer.orgId, goalId: data.goalId, from: outcome.from, to: data.status, next: outcome.next?.id ?? null, by: viewer.userId });
+    // The goal's owner and maker hear that it was achieved, as they do when its last task achieves it.
+    if (outcome.achieved) await dispatch(goalAchievedNotice(viewer, { id: data.goalId, title: outcome.achieved.title }, outcome.achieved.people));
     refresh();
     const next = outcome.next;
     const message = next
@@ -263,8 +300,8 @@ const deleteSchema = z.object({ goalId: id, deleteSubGoals: z.boolean().default(
 /**
  * Deletes a goal (docs/PLAN.md, 2026-11-04 log). Nothing under it is lost: its own tasks stay in the project
  * without a goal (each gets a history line saying why); its sub-goals become top-level goals of the same project
- * with their tasks, or, when asked, go too (their tasks stay the same way); only the goal's links, sign-off chain
- * and notifications go with it.
+ * with their tasks, or, when asked, go too (their tasks stay the same way); only the goal's links, sign-off chain,
+ * notifications and its "Everything completed" task (which means nothing without the goal) go with it.
  */
 export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<ActionResult<{ projectId: string; tasks: number; subGoals: number; subGoalsDeleted: number }>> {
   return runAction("goals.delete", deleteSchema, input, async (data) => {
@@ -294,10 +331,12 @@ export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<A
         .select({ id: goals.id, title: goals.title })
         .from(goals)
         .where(and(eq(goals.orgId, viewer.orgId), eq(goals.parentGoalId, goal.id)));
+      await deleteGoalClosers(tx, viewer.orgId, goal.id);
       let detachedTasks = await detach(tx, goal);
       let subGoalsDeleted = 0;
       if (data.deleteSubGoals) {
         for (const sub of subGoals) {
+          await deleteGoalClosers(tx, viewer.orgId, sub.id);
           detachedTasks += await detach(tx, sub);
           await tx.delete(goals).where(eq(goals.id, sub.id));
           await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/goals/${sub.id}`)));

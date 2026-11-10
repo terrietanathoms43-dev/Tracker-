@@ -112,6 +112,21 @@ export const subTasksSql = sql<number>`(select count(*)::int from tasks c where 
 /** Open live tasks attached to this one: a parent cannot be completed while there are any. */
 export const openSubTasksSql = sql<number>`(select count(*)::int from tasks c where c.parent_task_id = ${tasks}.id and (c.proposal_status is null or c.proposal_status = 'approved') and c.status not in (${closedList}))`;
 
+/** The title of the task's goal, for a read that does not join goals. */
+export const goalTitleSql = sql<string | null>`(select g.title from goals g where g.id = ${tasks}.goal_id)`;
+
+/**
+ * Open live tasks under the task's goal and its sub-goals, itself aside: what a goal's "Everything completed" task
+ * waits for (lib/dal/goal-achievement.ts `openTasksUnderGoal` counts the same inside a transaction).
+ */
+export const otherOpenGoalTasksSql = sql<number>`(select count(*)::int from tasks o where o.org_id = ${tasks}.org_id and o.id <> ${tasks}.id and (o.proposal_status is null or o.proposal_status = 'approved') and o.status not in (${closedList}) and o.goal_id in (select g.id from goals g where g.id = ${tasks}.goal_id or g.parent_goal_id = ${tasks}.goal_id))`;
+
+/**
+ * A task named in plain text: a goal's closer carries its goal, "Everything completed · Ship onboarding", so a feed
+ * or a notice never says the bare title (lib/tasks/closer.ts `closerLabel` writes the same in TypeScript).
+ */
+export const taskLabelSql = sql<string>`(case when ${tasks}.goal_closer then coalesce(${tasks}.title || ' · ' || (select g.title from goals g where g.id = ${tasks}.goal_id), ${tasks}.title) else ${tasks}.title end)`;
+
 /** A proposal's chain with the people in it, in order (lib/dal/approvals.ts reads the same shape). */
 export const approvalsJson = sql<ApprovalStepView[]>`coalesce((
   select json_agg(json_build_object(
@@ -139,6 +154,7 @@ const listColumns = {
   createdBy: tasks.createdBy,
   proposalStatus: tasks.proposalStatus,
   needsSignOff: needsSignOffSql,
+  goalCloser: tasks.goalCloser,
   goalId: goals.id,
   goalTitle: goals.title,
   projectId: projects.id,
@@ -164,6 +180,7 @@ type ListRow = {
   createdBy: string;
   proposalStatus: ProposalStatus | null;
   needsSignOff: boolean;
+  goalCloser: boolean;
   goalId: string | null;
   goalTitle: string | null;
   projectId: string | null;
@@ -173,6 +190,9 @@ type ListRow = {
   subTasks: number;
   assignees: Person[];
 };
+
+/** A closer is one while it has its goal: a row flagged `goal_closer` whose goal is gone (old data) is an ordinary task. */
+const isCloser = (row: { goalCloser: boolean; goalId: string | null }): boolean => row.goalCloser && row.goalId !== null;
 
 export function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
   return {
@@ -193,7 +213,9 @@ export function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
     subTasks: row.subTasks,
     proposal: row.proposalStatus,
     needsSignOff: row.needsSignOff,
-    canDelete: canDeleteTask(viewer, { createdBy: row.createdBy, proposalStatus: row.proposalStatus }),
+    goalCloser: isCloser(row),
+    // A goal's closer goes with its goal, never on its own.
+    canDelete: !isCloser(row) && canDeleteTask(viewer, { createdBy: row.createdBy, proposalStatus: row.proposalStatus }),
     assignees: row.assignees,
   };
 }
@@ -254,12 +276,17 @@ function dateFilterConditions(viewer: Viewer, filters: Pick<TaskFilters, "dateFi
   return dateRangeConditions(column, filters.from, filters.to, viewer.timezone);
 }
 
+/**
+ * What a search term is matched against: the title, the description and, for a goal's closer, the goal it closes
+ * (the lists name it by its goal, so the goal's name finds it). Needs the goals join of selectList().
+ */
+const textMatch = (term: string): SQL => or(ilike(tasks.title, term), ilike(tasks.description, term), and(eq(tasks.goalCloser, true), ilike(goals.title, term)))!;
+
 /** The conditions every filter shares between the list and the board (status is handled by each); `scope` is which tasks at all (the main board unless told otherwise). */
 function filterConditions(viewer: Viewer, filters: TaskFilters, today: string, scope: SQL = visibleWork(viewer)): SQL[] {
   const where: SQL[] = [visibility(viewer), scope];
   if (filters.q) {
-    const term = `%${escapeLike(filters.q)}%`;
-    where.push(or(ilike(tasks.title, term), ilike(tasks.description, term))!);
+    where.push(textMatch(`%${escapeLike(filters.q)}%`));
   }
   if (filters.assignee === "me") where.push(assignedTo(viewer.userId));
   else if (filters.assignee === "none") where.push(unassigned);
@@ -356,7 +383,7 @@ export async function searchTasks(viewer: Viewer, q: string, limit = 8): Promise
   if (term === "") return [];
   const like = `%${escapeLike(term)}%`;
   const rows = await selectList()
-    .where(and(visibility(viewer), paletteScope(viewer), or(ilike(tasks.title, like), ilike(tasks.description, like))))
+    .where(and(visibility(viewer), paletteScope(viewer), textMatch(like)))
     .orderBy(sql`(${tasks.status} in (${closedList}))`, desc(tasks.updatedAt))
     .limit(limit);
   return rows.map((row) => toListItem(row, viewer));
@@ -443,7 +470,7 @@ export async function approvalStagingTasks(viewer: Viewer, project = ""): Promis
   const rows = await db
     .select({
       id: tasks.id,
-      title: tasks.title,
+      title: taskLabelSql,
       priority: tasks.priority,
       dueDate: tasks.dueDate,
       updatedAt: tasks.updatedAt,
@@ -552,11 +579,12 @@ export async function tasksForProject(viewer: Viewer, projectId: string): Promis
   return rows.map((row) => toListItem(row, viewer));
 }
 
-/** Every live task serving a goal: linked to it or to one of its sub-goals (open first). */
+/** Every live task serving a goal: linked to it or to one of its sub-goals (open first, the goal's closer after the work it waits for). */
 export async function tasksForGoal(viewer: Viewer, goalId: string): Promise<TaskListItem[]> {
+  const today = todayFor(viewer);
   const rows = await selectList()
     .where(and(visibility(viewer), visibleWork(viewer), inGoal(viewer, goalId)))
-    .orderBy(...groupedOrder(todayFor(viewer)))
+    .orderBy(sql`(${tasks.status} in (${closedList}))`, asc(tasks.goalCloser), ...orderBy("smart", today))
     .limit(500);
   return rows.map((row) => toListItem(row, viewer));
 }
@@ -567,7 +595,7 @@ export async function openTasksForGoals(viewer: Viewer, goalIds: string[]): Prom
   if (goalIds.length === 0) return out;
   const rows = await selectList()
     .where(and(visibility(viewer), visibleWork(viewer), isOpen, inArray(tasks.goalId, goalIds)))
-    .orderBy(...orderBy("smart", todayFor(viewer)))
+    .orderBy(asc(tasks.goalCloser), ...orderBy("smart", todayFor(viewer)))
     .limit(1000);
   for (const row of rows) {
     if (row.goalId === null) continue;
@@ -717,7 +745,7 @@ export async function recentActivity(viewer: Viewer, limit: number, since?: Date
       after: taskActivity.after,
       createdAt: taskActivity.createdAt,
       taskId: tasks.id,
-      taskTitle: tasks.title,
+      taskTitle: taskLabelSql,
       actorId: actor.id,
       actorName: actor.name,
       actorEmail: actor.email,
@@ -773,6 +801,7 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
       openComments: openCommentsSql,
       parentTitle: parentTitleSql,
       subTasks: subTasksSql,
+      otherOpenGoalTasks: otherOpenGoalTasksSql,
       approver: sql<Person | null>`case when ${approverUser.id} is null then null else ${personJson(approverUser)} end`,
       creator: sql<Person>`${personJson(creatorUser)}`,
       lastUpdate: sql<{ author: Person; at: string } | null>`(select json_build_object('at', u.created_at, 'author', json_build_object('id', au.id, 'name', au.name, 'email', au.email, 'image', au.image)) from task_updates u join users au on au.id = u.author_id where u.task_id = ${tasks}.id and u.kind = 'progress' order by u.created_at desc limit 1)`,
@@ -804,6 +833,8 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     creator: row.creator,
     proposalStatus: t.proposalStatus,
     needsSignOff: row.needsSignOff,
+    goalCloser: isCloser(t),
+    closerWaitsFor: isCloser(t) ? row.otherOpenGoalTasks : 0,
     approvals: row.approvals.map((step) => ({ ...step, decidedAt: step.decidedAt ? new Date(step.decidedAt).toISOString() : null })),
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
@@ -839,6 +870,10 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
       parentTaskId: tasks.parentTaskId,
       parentTitle: parentTitleSql,
       openSubTasks: openSubTasksSql,
+      goalCloser: tasks.goalCloser,
+      goalId: tasks.goalId,
+      goalTitle: goalTitleSql,
+      otherOpenGoalTasks: otherOpenGoalTasksSql,
       assignees: assigneesJson,
       openComments: openCommentsSql,
     })
@@ -849,6 +884,8 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
   return {
     ...basics,
     parent: row.parentTaskId && row.parentTitle !== null ? { id: row.parentTaskId, title: row.parentTitle } : null,
+    /** A goal's closer: the goal it marks achieved and how many other tasks it still waits for. */
+    closer: isCloser(row) ? { goalTitle: row.goalTitle, openOthers: row.otherOpenGoalTasks } : null,
     assigneeIds: assignees.map((person) => person.id),
     scope: scopeOf({ orgId: viewer.orgId, createdBy: row.createdBy, approverId: row.approverId, proposalStatus: row.proposalStatus }, assignees),
   };
@@ -866,17 +903,17 @@ export async function listLinks(viewer: Viewer, taskId: string): Promise<Evidenc
 
 /**
  * The task row an action works on, locked (`select … for update`) for the rest of the transaction, with its
- * assignment, its open-comment count (the transition rules need it) and the scope its permission checks need.
- * Null when the id is unknown or belongs to another workspace.
+ * assignment, its open-comment count (the transition rules need it), its goal's title (a goal's closer is named by
+ * it) and the scope its permission checks need. Null when the id is unknown or belongs to another workspace.
  */
 export async function lockTask(tx: Tx, orgId: string, id: string) {
   const [row] = await tx
-    .select({ task: tasks, openComments: openCommentsSql })
+    .select({ task: tasks, openComments: openCommentsSql, goalTitle: goalTitleSql })
     .from(tasks)
     .where(and(eq(tasks.id, id), eq(tasks.orgId, orgId)))
     .for("update", { of: tasks });
   if (!row) return null;
-  const t = { ...row.task, openComments: row.openComments };
+  const t = { ...row.task, goalCloser: isCloser(row.task), openComments: row.openComments, goalTitle: row.goalTitle };
   const assignment = await assignmentOf(tx, t.id);
   return { task: t, assignment, scope: scopeOf(t, assignment) };
 }

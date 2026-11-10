@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LIMITS } from "@/lib/limits";
+import { taskLabel } from "@/lib/tasks/closer";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 
@@ -64,7 +65,7 @@ export function AttachTaskDialog({
   const term = query.trim().toLowerCase();
   const pickingChild = parentId !== undefined;
   const offered = (term === "" ? recent : results.q.toLowerCase() === term ? results.items : []).filter(
-    (task) => !excludeIds.includes(task.id) && task.id !== parentId && task.parent === null && (task.proposal === null || task.proposal === "approved") && (!pickingChild || task.subTasks === 0),
+    (task) => !excludeIds.includes(task.id) && task.id !== parentId && task.parent === null && (task.proposal === null || task.proposal === "approved") && (!pickingChild || (task.subTasks === 0 && !task.goalCloser)),
   );
 
   const pick = (picked: string) =>
@@ -95,7 +96,7 @@ export function AttachTaskDialog({
                 {offered.map((task) => (
                   <CommandItem key={task.id} value={task.id} disabled={pending} onSelect={() => pick(task.id)} data-attach-choice={task.id}>
                     <StatusIcon status={task.status} />
-                    <span className="truncate">{task.title}</span>
+                    <span className="truncate">{taskLabel(task)}</span>
                     {task.project ? <span className="ml-auto truncate text-[12px] text-muted-foreground">{task.project.name}</span> : null}
                   </CommandItem>
                 ))}

@@ -19,6 +19,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "@/db/schema";
 import { CLOSED_STATUSES, ORG_ROLE_LABELS, PROPOSAL_STATUS_LABELS, TASK_STATUS_LABELS, type TaskActivityKind } from "@/lib/constants";
+import { CLOSER_DESCRIPTION, CLOSER_TITLE } from "@/lib/tasks/closer";
 import { TEST_EMAIL_DOMAIN, TEST_HOME, TEST_PERSONAS, type TestPersona } from "@/lib/test-mode";
 import { dayKey } from "@/lib/time";
 import { DEMO, OTHER, PEOPLE, type OrgSeed, type Person, type SeedTask } from "./seed-data";
@@ -516,6 +517,29 @@ async function seedOrg(tx: Tx, seed: OrgSeed, ids: Ids, now: number): Promise<Se
     await tx.insert(taskActivity).values(rows.flatMap((row) => row.activity));
   }
 
+  // 5. Every open goal's "Everything completed" task (lib/dal/goal-closers.ts): its last step, due on the goal's
+  // target, assigned to the goal's owner, as createGoal makes it.
+  const openGoals = seed.goals.filter((goal) => goal.status !== "completed");
+  const closerRows = openGoals.map((goal) => ({
+    id: crypto.randomUUID(),
+    orgId,
+    projectId: projectId(goal.project),
+    goalId: goalId(goal.key),
+    title: CLOSER_TITLE,
+    description: CLOSER_DESCRIPTION,
+    createdBy: who(goal.createdBy),
+    dueDate: due(goal.targetInDays),
+    goalCloser: true,
+    createdAt: at(goal.createdDaysAgo),
+    updatedAt: at(goal.createdDaysAgo),
+  }));
+  if (closerRows.length > 0) {
+    await tx.insert(tasks).values(closerRows);
+    await tx.insert(taskAssignees).values(closerRows.map((row, index) => ({ taskId: row.id, userId: who(openGoals[index].owner), assignedBy: row.createdBy, assignedAt: row.createdAt })));
+    await tx.insert(taskActivity).values(
+      closerRows.map((row) => ({ orgId, taskId: row.id, actorId: row.createdBy, kind: "created" as const, after: { title: CLOSER_TITLE, goalCloser: true }, note: "Made with the goal: completing it marks the goal achieved.", createdAt: row.createdAt })),
+    );
+  }
 
   if (seed.notifications.length > 0) {
     await tx.insert(notifications).values(

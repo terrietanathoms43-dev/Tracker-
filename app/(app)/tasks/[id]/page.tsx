@@ -15,6 +15,7 @@ import { activePlanning, getTask, listLinks, taskPeople, tasksForParent } from "
 import { canApproveTask, canEditTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
 import { describeRecurrence } from "@/lib/recurrence";
 import { defaultApproverFor } from "@/lib/tasks/approver";
+import { closerLabel } from "@/lib/tasks/closer";
 import { nameOf } from "@/lib/tasks/people";
 import type { TaskAbilities, UpdateContext } from "@/lib/tasks/types";
 import { dayKey } from "@/lib/time";
@@ -69,7 +70,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
     ? {
         task: {
           id: detail.id,
-          title: detail.title,
+          title: detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title,
           status: detail.status,
           assigneeIds: scope.assigneeIds,
           nextAction: detail.nextAction,
@@ -79,6 +80,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           repeats: detail.recurrence ? describeRecurrence(detail.recurrence, detail.dueDate) : null,
           parent: detail.parent,
           openSubTasks: subTasks === null ? 0 : subTasks.filter((item) => !["completed", "rejected", "deferred", "cancelled", "merged"].includes(item.status)).length,
+          closer: detail.goalCloser ? { goalTitle: detail.goal?.title ?? null, openOthers: detail.closerWaitsFor } : null,
         },
         people,
         defaultApprover: defaultApproverFor(people, detail.approver?.id ?? null, scope.assigneeIds),
@@ -88,7 +90,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <CurrentTask id={detail.id} title={detail.title} actionable={abilities.progress} />
+      <CurrentTask id={detail.id} title={detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title} actionable={abilities.progress} />
       <TaskHeader detail={detail} abilities={abilities} today={today} />
       <div className="grid gap-5">
         <ResumeCard detail={detail} links={links} removableLinks={removableLinks} abilities={abilities} updateContext={updateContext} localChain={localChain} timeZone={viewer.timezone} now={now} />

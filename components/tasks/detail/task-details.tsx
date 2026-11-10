@@ -63,7 +63,8 @@ export function TaskDetails({
   const edit = abilities.edit;
   const live = detail.proposalStatus === null || detail.proposalStatus === "approved";
   // A sub-task lives where its parent lives (2026-11-08 log): its project and goal are read here, changed on the parent.
-  const canPlace = edit && detail.parent === null;
+  // A goal's "Everything completed" task stays with its goal (2026-11-09 log), and it is the goal that repeats.
+  const canPlace = edit && detail.parent === null && !detail.goalCloser;
   // The task's own goal stays offered even when it is no longer active (the picker needs it to show the name).
   const goalChoices = withCurrent(goals, detail.goal ? { ...detail.goal, projectId: detail.project?.id ?? "" } : null);
   return (
@@ -100,7 +101,7 @@ export function TaskDetails({
             )}
           </Row>
           <Row label="Repeat">
-            {edit ? (
+            {edit && !detail.goalCloser ? (
               <RecurrenceEditor key={JSON.stringify(detail.recurrence)} taskId={detail.id} recurrence={detail.recurrence} dueDate={detail.dueDate} />
             ) : detail.recurrence ? (
               <span className="inline-flex items-center gap-1.5">
@@ -134,6 +135,7 @@ export function TaskDetails({
                 </Link>
               ) : null}
               {detail.parent !== null ? <span className="text-[13px] text-muted-foreground">Follows its parent task</span> : null}
+              {detail.goalCloser ? <span className="text-[13px] text-muted-foreground">Follows its goal</span> : null}
             </div>
           </Row>
           <Row label="Goal">
@@ -148,6 +150,7 @@ export function TaskDetails({
                   {canPlace ? "Open" : detail.goal.title}
                 </Link>
               ) : null}
+              {detail.goalCloser ? <span className="text-[13px] text-muted-foreground">Completing this task marks the goal achieved</span> : null}
             </div>
           </Row>
           {detail.approver ? <Row label="Approver">{nameOf(detail.approver)}</Row> : null}

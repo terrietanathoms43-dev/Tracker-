@@ -1,6 +1,6 @@
 "use client";
 
-import { Link2, MessageSquareWarning, Repeat } from "lucide-react";
+import { Flag, Link2, MessageSquareWarning, Repeat } from "lucide-react";
 import { useState, useTransition, type RefObject } from "react";
 import { updateProgress } from "@/actions/tasks";
 import { CharacterCounter } from "@/components/character-counter";
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
+import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
 import { openCommentsMessage } from "@/lib/tasks/transitions";
 import type { UpdateContext } from "@/lib/tasks/types";
@@ -74,7 +75,10 @@ export function UpdateProgressForm({
   // The same rules the server applies (lib/tasks/transitions.ts, sub-tasks), shown before the save instead of after it.
   const heldByComments = completing && task.openComments > 0;
   const heldBySubTasks = completing && task.openSubTasks > 0;
-  const summaryMissing = completing && !heldByComments && !heldBySubTasks && summary.trim() === "";
+  // A goal's "Everything completed" task is its last step (2026-11-09 log): it waits for every other task under the goal.
+  const heldByGoal = completing && task.closer !== null && task.closer.openOthers > 0;
+  const held = heldByComments || heldBySubTasks || heldByGoal;
+  const summaryMissing = completing && !held && summary.trim() === "";
   // The statuses this person may move the task to: completing a task that waits for approval is approving it;
   // rejecting and cancelling are edit rights; only a sub-task can be merged.
   const choices = TASK_STATUSES.filter((each) => {
@@ -300,12 +304,18 @@ export function UpdateProgressForm({
           </span>
         </p>
       ) : null}
+      {heldByGoal && !heldByComments && !heldBySubTasks && task.closer ? (
+        <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status" data-closer-hold>
+          <Flag className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>{closerHeldMessage(task.closer.openOthers, task.closer.goalTitle)}</span>
+        </p>
+      ) : null}
       {merging && task.parent ? (
         <p className="text-[13px] text-muted-foreground" data-merge-note>
           Folded into <span className="font-medium text-foreground">{task.parent.title}</span>: it closes as Merged and stays listed under it.
         </p>
       ) : null}
-      {completing && !heldByComments && !heldBySubTasks ? (
+      {completing && !held ? (
         <div className="grid gap-1">
           <Textarea
             aria-label="Completion summary"
@@ -322,6 +332,11 @@ export function UpdateProgressForm({
                 <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
                   <Repeat className="size-3.5" aria-hidden />
                   Repeats {task.repeats.toLowerCase()}: completing makes the next one.
+                </span>
+              ) : task.closer ? (
+                <span className="flex items-center gap-1.5 text-[13px] font-medium text-primary" data-closer-note>
+                  <Flag className="size-3.5 shrink-0" aria-hidden />
+                  {closerReadyMessage(task.closer.goalTitle)}
                 </span>
               ) : (
                 <span className="text-[13px] text-muted-foreground">The sign-off words on the task: what was done.</span>
@@ -366,7 +381,7 @@ export function UpdateProgressForm({
         )}
         <div className="flex items-center gap-3">
           <span className="hidden text-[13px] text-muted-foreground sm:inline">Ctrl+Enter to save</span>
-          <Button type="submit" disabled={pending || progress.trim() === "" || heldByComments || heldBySubTasks || summaryMissing}>
+          <Button type="submit" disabled={pending || progress.trim() === "" || held || summaryMissing}>
             {pending ? "Saving…" : "Save update"}
           </Button>
         </div>
