@@ -2,6 +2,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { db, type Db, type Tx } from "@/db";
 import { orgConfig } from "@/db/schema";
+import type { OrgRole } from "@/lib/constants";
 import type { PermissionToggles } from "@/lib/permissions";
 
 // The workspace's admin-panel settings (Settings → Workspace, admins only). No row means defaults:
@@ -10,8 +11,8 @@ import type { PermissionToggles } from "@/lib/permissions";
 export type AiProvider = "anthropic" | "openai";
 
 export type OrgConfig = {
-  /** Workspace default for /home's tab order; a person's cookie may still reorder theirs (lib/home-tabs.ts). */
-  homeTabOrder: string[] | null;
+  /** Workspace default for /home's tab order, per role; a person's cookie may still reorder theirs (lib/home-tabs.ts). */
+  homeTabOrder: Partial<Record<OrgRole, string[]>> | null;
   /** Configured AI engine and key for capture; null = fall back to the deployment's env vars. */
   aiProvider: AiProvider | null;
   /** Encrypted (lib/secrets.ts) — never leaves the server. */
@@ -29,7 +30,8 @@ export async function getOrgConfig(orgId: string, executor: Db | Tx = db): Promi
   const [row] = await executor.select().from(orgConfig).where(eq(orgConfig.orgId, orgId)).limit(1);
   if (!row) return EMPTY;
   return {
-    homeTabOrder: row.homeTabOrder,
+    // An early array-shaped value (one order for everyone) reads as the same default for each role.
+    homeTabOrder: Array.isArray(row.homeTabOrder) ? { member: row.homeTabOrder, leader: row.homeTabOrder, admin: row.homeTabOrder } : row.homeTabOrder,
     aiProvider: row.aiProvider === "anthropic" || row.aiProvider === "openai" ? row.aiProvider : null,
     aiApiKey: row.aiApiKey,
     aiApiKeyTail: row.aiApiKeyTail,

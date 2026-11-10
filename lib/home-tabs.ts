@@ -51,11 +51,11 @@ export function parseTabConfig(value: unknown): Partial<HomeTabConfig> {
  * The parsed cookie merged over the workspace default (org_config.home_tab_order, set from the admin panel)
  * and then the canonical order — the person's own order first, every allowed tab present exactly once.
  */
-export function resolveTabConfig(value: unknown, role: OrgRole, orgOrder?: string[] | null): HomeTabConfig {
+export function resolveTabConfig(value: unknown, role: OrgRole, orgOrder?: Partial<Record<OrgRole, string[]>> | null): HomeTabConfig {
   const allowed = tabsForRole(role);
   const parsed = parseTabConfig(value);
   const savedOrder = (parsed.order ?? []).filter((tab) => allowed.includes(tab));
-  const workspaceDefault = (orgOrder ?? []).filter(isTab).filter((tab) => allowed.includes(tab));
+  const workspaceDefault = (orgOrder?.[role] ?? []).filter(isTab).filter((tab) => allowed.includes(tab));
   const order = [...savedOrder, ...workspaceDefault, ...CANONICAL_ORDER].filter((tab, index, all) => allowed.includes(tab) && all.indexOf(tab) === index);
   return { order };
 }
@@ -76,8 +76,9 @@ export function serializeTabConfig(config: HomeTabConfig): string {
 }
 
 /** The cookie string back into a config object for the role, over the workspace default order. */
-export function decodeTabConfig(raw: string | undefined, role: OrgRole, orgOrder?: string[] | null): HomeTabConfig {
-  if (!raw) return orgOrder && orgOrder.length > 0 ? resolveTabConfig({}, role, orgOrder) : defaultTabConfig(role);
+export function decodeTabConfig(raw: string | undefined, role: OrgRole, orgOrder?: Partial<Record<OrgRole, string[]>> | null): HomeTabConfig {
+  const hasDefault = (orgOrder?.[role]?.length ?? 0) > 0;
+  if (!raw) return hasDefault ? resolveTabConfig({}, role, orgOrder) : defaultTabConfig(role);
   try {
     return resolveTabConfig(JSON.parse(raw), role, orgOrder);
   } catch {

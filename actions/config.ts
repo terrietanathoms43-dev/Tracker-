@@ -5,8 +5,9 @@ import { z } from "zod";
 import { db } from "@/db";
 import { fail, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { getOrgConfig, saveOrgConfig } from "@/lib/dal/org-config";
+import { ORG_ROLES } from "@/lib/constants";
 import { requireOrgAdmin } from "@/lib/guards";
-import { HOME_TAB_KEYS } from "@/lib/home-tabs";
+import { HOME_TAB_KEYS, tabsForRole } from "@/lib/home-tabs";
 import { log } from "@/lib/log";
 import { encryptSecret } from "@/lib/secrets";
 
@@ -40,15 +41,21 @@ export async function setAiConfig(input: z.input<typeof aiSchema>): Promise<Acti
 }
 
 const tabOrderSchema = z.object({
+  role: z.enum(ORG_ROLES),
   order: z.array(z.enum(HOME_TAB_KEYS)).max(HOME_TAB_KEYS.length),
 });
 
-/** The workspace's default /home tab order (first tab is the landing). An empty list clears it back to built-in. */
+/** The workspace's default /home tab order for one role (first tab is the landing). An empty list clears that role's override. */
 export async function setHomeTabOrder(input: z.input<typeof tabOrderSchema>): Promise<ActionResult> {
   return runAction("config.tab_order", tabOrderSchema, input, async (data) => {
     const { viewer } = await requireOrgAdmin();
-    await db.transaction(async (tx) => saveOrgConfig(viewer.orgId, { homeTabOrder: data.order.length > 0 ? data.order : null }, viewer.userId, tx));
-    log.info("config.tab_order_saved", { orgId: viewer.orgId, order: data.order.join(","), by: viewer.userId });
+    const allowed = data.order.filter((tab) => tabsForRole(data.role).includes(tab));
+    const existing = await getOrgConfig(viewer.orgId);
+    const homeTabOrder = { ...(existing.homeTabOrder ?? {}) };
+    if (allowed.length > 0) homeTabOrder[data.role] = allowed;
+    else delete homeTabOrder[data.role];
+    await db.transaction(async (tx) => saveOrgConfig(viewer.orgId, { homeTabOrder }, viewer.userId, tx));
+    log.info("config.tab_order_saved", { orgId: viewer.orgId, role: data.role, order: allowed.join(","), by: viewer.userId });
     refresh();
     return ok(undefined, "Tab order saved.");
   });

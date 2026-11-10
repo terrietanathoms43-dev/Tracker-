@@ -10,7 +10,6 @@ import { WorkspaceForm, WorkspaceSummary } from "@/components/settings/workspace
 import { listPendingInvitations } from "@/lib/dal/invitations";
 import { getOrgConfig } from "@/lib/dal/org-config";
 import { listMembers } from "@/lib/dal/orgs";
-import { resolveTabConfig } from "@/lib/home-tabs";
 import { invitableRoles, isAdmin } from "@/lib/permissions";
 import { formatShortDate, timeZoneOptions } from "@/lib/time";
 import { requireViewerContext } from "@/lib/viewer";
@@ -69,7 +68,7 @@ export default async function WorkspaceSettingsPage() {
       {admin && config ? (
         <>
           <AiConfigCard provider={config.aiProvider ?? ""} tail={config.aiApiKeyTail} />
-          <TabOrderCard order={resolveTabConfig({}, "member", config.homeTabOrder).order} />
+          <TabOrderCard orders={config.homeTabOrder ?? {}} />
           <PermissionsCard overrides={config.permissionOverrides} />
         </>
       ) : null}

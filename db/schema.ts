@@ -191,8 +191,8 @@ export const orgConfig = pgTable("org_config", {
   orgId: text("org_id")
     .primaryKey()
     .references(() => organizations.id, { onDelete: "cascade" }),
-  /** The workspace default order for /home's tabs (HomeTab[]); a person's cookie may still reorder theirs. */
-  homeTabOrder: jsonb("home_tab_order").$type<string[]>(),
+  /** The workspace default /home tab order per role (role → HomeTab[]); a person's cookie may still reorder theirs. */
+  homeTabOrder: jsonb("home_tab_order").$type<Record<string, string[]>>(),
   /** The AI engine for capture: "anthropic" | "openai"; null falls back to the deployment's env vars. */
   aiProvider: text("ai_provider"),
   aiApiKey: text("ai_api_key"),
