@@ -36,7 +36,12 @@ export type TaskListItem = {
   proposal: ProposalStatus | null;
   /** A local task: whether sending it on starts a sign-off chain (true) or publishes it at once (false). */
   needsSignOff: boolean;
-  /** Whether the row's menu offers Delete (leaders, the proposer of an open proposal, the maker of a local task). */
+  /**
+   * The goal's "Everything completed" task (2026-11-04 and 2026-11-09 logs): completing it, last, marks `goal`
+   * achieved. Every list names it by that goal (components/tasks/closer-chip.tsx).
+   */
+  goalCloser: boolean;
+  /** Whether the row's menu offers Delete (leaders, the proposer of an open proposal, the maker of a local task; never a goal's closer). */
   canDelete: boolean;
   updatedAt: string;
   /** Attention lists only: why it is there ("Overdue", "Your approval", …). */
@@ -127,6 +132,10 @@ export type TaskDetail = {
   needsSignOff: boolean;
   /** The sign-off chain, in order (empty for a task that was live from the start, or not sent yet). */
   approvals: ApprovalStepView[];
+  /** The goal's "Everything completed" task: it stays with its goal and completing it marks the goal achieved. */
+  goalCloser: boolean;
+  /** A closer only: the other tasks under its goal still open, which it waits for (0 for any other task). */
+  closerWaitsFor: number;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
@@ -164,6 +173,8 @@ export type UpdateContext = {
     parent: { id: string; title: string } | null;
     /** Open tasks attached to it: it cannot be completed while there are any. */
     openSubTasks: number;
+    /** A goal's "Everything completed" task: the goal it marks achieved, and the other tasks under it still open, which it waits for. */
+    closer: { goalTitle: string | null; openOthers: number } | null;
   };
   people: PersonOption[];
   defaultApprover: string | null;

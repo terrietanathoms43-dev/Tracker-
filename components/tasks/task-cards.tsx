@@ -9,6 +9,7 @@ import { PriorityGlyph } from "@/components/priority-glyph";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { AssigneeStack } from "./assignee-stack";
+import { CloserChip } from "./closer-chip";
 import { DueLabel } from "./due-label";
 import { TaskActionSheet, TaskMenu } from "./task-menu";
 import { useLongPress } from "./use-long-press";
@@ -57,7 +58,7 @@ export function TaskCard({
                      {task.proposal === "pending" ? "Waiting for sign-off" : "Declined"}
                   </span>
                ) : null}
-
+               {task.goalCloser && task.goal ? <CloserChip goal={task.goal} variant="card" className="mt-1" /> : null}
                {task.parent !== null ? (
                   <p className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground" data-part-of-chip>
                      <CornerDownRight className="size-3 shrink-0" aria-hidden />

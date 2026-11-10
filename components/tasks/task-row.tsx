@@ -9,10 +9,12 @@ import { StatusIcon } from "@/components/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
 import { describeAssignees } from "@/lib/tasks/assignees";
+import { taskLabel } from "@/lib/tasks/closer";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { formatTime } from "@/lib/recurrence";
 import { AssigneeStack } from "./assignee-stack";
+import { CloserChip } from "./closer-chip";
 import { useTaskActions } from "./task-actions";
 import { DueLabel } from "./due-label";
 import { ReasonChip } from "./reason-chip";
@@ -43,7 +45,8 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
  * A screen that has more to say about a row (the Active scope report, 2026-11-07 log) adds a `badge` beside the
  * title, a `note` line under it, something `trailing` after the due date, and `attributes` on the row itself.
  * A sub-task drawn under its parent (2026-11-08 log) is `nested`: indented with a corner mark; one drawn away from
- * its parent carries a "Part of" link instead, and a parent a count of its sub-tasks.
+ * its parent carries a "Part of" link instead, and a parent a count of its sub-tasks. A goal's "Everything
+ * completed" task (2026-11-09 log) carries a chip naming the goal it marks achieved, right beside its title.
  */
 export function TaskRow({
   task,
@@ -83,6 +86,8 @@ export function TaskRow({
   const detailsId = `task-${task.id}-details`;
   const where = [task.project?.name, task.goal?.title].filter(Boolean).join(" › ");
   const closedWithoutCompleting = task.status === "rejected" || task.status === "cancelled" || task.status === "merged";
+  // What a screen reader hears for the row's controls: a goal's closer with its goal, never the bare title.
+  const label = taskLabel(task);
 
   return (
     <li
@@ -106,7 +111,7 @@ export function TaskRow({
       >
         {selectable ? (
           <span data-no-expand className={cn("-ml-1 flex items-center", selected || selection.selected.size > 0 ? "opacity-100" : "opacity-60 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100")}>
-            <Checkbox checked={selected} onCheckedChange={() => selection.toggle(task.id)} aria-label={`Select ${task.title}`} data-select-task={task.id} />
+            <Checkbox checked={selected} onCheckedChange={() => selection.toggle(task.id)} aria-label={`Select ${label}`} data-select-task={task.id} />
           </span>
         ) : null}
         {nested ? <CornerDownRight className="-ml-1 size-3.5 shrink-0 text-muted-foreground" aria-label="Sub-task of the task above" role="img" /> : null}
@@ -119,7 +124,7 @@ export function TaskRow({
         ) : canOpenCompletion ? (
           <button
             type="button"
-            aria-label={`Complete ${task.title}`}
+            aria-label={`Complete ${label}`}
             title="Open task completion"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
@@ -143,6 +148,7 @@ export function TaskRow({
           >
             {task.title}
           </Link>
+          {task.goalCloser && task.goal ? <CloserChip goal={task.goal} onClick={swallowClick} className="self-start md:max-w-[45%] md:shrink md:self-auto" /> : null}
           {task.subTasks > 0 ? (
             <Link href={`/tasks/${task.id}#sub-tasks`} prefetch={false} onClick={swallowClick} className="inline-flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground" data-sub-tasks-chip>
               <GitMerge className="size-3" aria-hidden />

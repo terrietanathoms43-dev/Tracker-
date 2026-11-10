@@ -9,6 +9,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LIMITS } from "@/lib/limits";
 import type { NavKey } from "@/lib/permissions";
+import { taskLabel } from "@/lib/tasks/closer";
 import { tasksHref } from "@/lib/tasks/filters";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { useTaskActions } from "./task-actions";
@@ -140,7 +141,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                 {latest.map((task) => (
                   <CommandItem key={`latest-${task.id}`} value={`latest-${task.id}`} onSelect={() => go(`/tasks/${task.id}`)}>
                     <StatusIcon status={task.status} />
-                    <span className="truncate">{task.title}</span>
+                    <span className="truncate">{taskLabel(task)}</span>
                     <span className="ml-auto text-[12px] text-muted-foreground">updated</span>
                   </CommandItem>
                 ))}
@@ -152,7 +153,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                   <CommandItem key={task.id} value={`task-${task.id}`} onSelect={() => go(`/tasks/${task.id}`)}>
                     <StatusIcon status={task.status} />
                     <span className="flex min-w-0 flex-col">
-                      <span className="truncate">{task.title}</span>
+                      <span className="truncate">{taskLabel(task)}</span>
                       {task.description ? <span className="truncate text-[12px] text-muted-foreground">{task.description.slice(0, 120)}</span> : null}
                     </span>
                   </CommandItem>

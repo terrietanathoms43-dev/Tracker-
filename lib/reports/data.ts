@@ -6,7 +6,7 @@ import { goals, projects, taskActivity, taskAssignees, tasks, taskUpdates } from
 import { CLOSED_STATUSES, CLOSED_WITHOUT_COMPLETION, type ProjectStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { pendingProposals, type ProposalListItem } from "@/lib/dal/approvals";
 import { listWorkers } from "@/lib/dal/orgs";
-import { approvalStagingTasks, assigneesJson, liveOnly, localOnly, progressForGoals, progressForProjects, type ApprovalStagingTask } from "@/lib/dal/tasks";
+import { approvalStagingTasks, assigneesJson, liveOnly, localOnly, progressForGoals, progressForProjects, taskLabelSql, type ApprovalStagingTask } from "@/lib/dal/tasks";
 import type { Viewer } from "@/lib/permissions";
 import type { Assignees } from "@/lib/tasks/types";
 import { calendarDaysBetween, dayKey } from "@/lib/time";
@@ -219,7 +219,7 @@ async function reportTasks(viewer: Viewer, project: ReportProject, where: SQL, o
   const rows = await db
     .select({
       id: tasks.id,
-      title: tasks.title,
+      title: taskLabelSql,
       status: tasks.status,
       priority: tasks.priority,
       dueDate: tasks.dueDate,
@@ -464,7 +464,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
     db
       .select({
         id: tasks.id,
-        title: tasks.title,
+        title: taskLabelSql,
         completedAt: tasks.completedAt,
         projectName: projects.name,
         isMine: mine,
@@ -477,7 +477,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       .select({
         day: sql<string>`to_char(${taskActivity.createdAt} at time zone ${viewer.timezone}, 'YYYY-MM-DD')`,
         taskId: taskActivity.taskId,
-        taskTitle: tasks.title,
+        taskTitle: taskLabelSql,
         projectName: projects.name,
         isMine: mine,
       })
@@ -490,7 +490,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
     db
       .select({
         id: tasks.id,
-        title: tasks.title,
+        title: taskLabelSql,
         dueDate: tasks.dueDate,
         projectName: projects.name,
         isMine: mine,

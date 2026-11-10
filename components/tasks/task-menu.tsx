@@ -282,13 +282,14 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
               <Unlink />
               Detach from its task
             </DropdownMenuItem>
-          ) : live ? (
+          ) : live && !task.goalCloser ? (
             <DropdownMenuItem onSelect={() => setAttaching(true)} data-menu-attach-task>
               <GitMerge />
               Attach to a task…
             </DropdownMenuItem>
           ) : null}
-          {task.parent !== null ? null : (
+          {/* A sub-task follows its parent and a goal's closer its goal: neither is offered another place. */}
+          {task.parent !== null || task.goalCloser ? null : (
           <>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="gap-2">
@@ -401,7 +402,7 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
             </SheetButton>
             {readOnly ? null : (
               <>
-                {ATTACH_ITEMS.filter((item) => (task.parent === null ? item.key !== "parent" || live : item.forChildren)).map(({ key, label, icon: Icon }) => (
+                {ATTACH_ITEMS.filter((item) => (task.parent === null && !task.goalCloser ? item.key !== "parent" || live : item.forChildren)).map(({ key, label, icon: Icon }) => (
                   <SheetButton key={key} onClick={then(() => open(key))}>
                     <Icon className="size-4 text-muted-foreground" />
                     {label}

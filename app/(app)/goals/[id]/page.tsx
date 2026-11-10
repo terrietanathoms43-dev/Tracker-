@@ -12,6 +12,7 @@ import { GoalStatusActions } from "@/components/goals/goal-status-actions";
 import { PlanningHeader, PlanningSummary } from "@/components/goals/planning-header";
 import { SubGoals } from "@/components/goals/sub-goals";
 import { PlanningTasks } from "@/components/projects/task-groups";
+import { CloserHome } from "@/components/tasks/closer-chip";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { SelectionProvider } from "@/components/tasks/selection";
 import { approvalSettings } from "@/lib/dal/approvals";
@@ -79,7 +80,7 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
     />
   ) : null;
   const deleteDialog = manage ? (
-    <GoalDeleteDialog goal={{ id: goal.id, title: goal.title, projectId: goal.project.id, projectName: goal.project.name, tasks: tasks.filter((task) => task.goal?.id === goal.id).length, subGoals: goal.subGoals }} />
+    <GoalDeleteDialog goal={{ id: goal.id, title: goal.title, projectId: goal.project.id, projectName: goal.project.name, tasks: tasks.filter((task) => task.goal?.id === goal.id && !task.goalCloser).length, subGoals: goal.subGoals }} />
   ) : null;
 
   return (
@@ -138,7 +139,9 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
           canEdit={manage}
         />
         <SelectionProvider enabled={!isStakeholder(viewer)} canDelete={isLeader(viewer)}>
-          <PlanningTasks items={tasks} today={today} readOnly={isStakeholder(viewer)} empty={active ? "No tasks serve this goal yet. Add one above." : "No tasks served this goal."} />
+          <CloserHome goalId={goal.id}>
+            <PlanningTasks items={tasks} today={today} readOnly={isStakeholder(viewer)} empty={active ? "No tasks serve this goal yet. Add one above." : "No tasks served this goal."} />
+          </CloserHome>
         </SelectionProvider>
       </div>
     </div>

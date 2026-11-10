@@ -1,8 +1,9 @@
 // Projects and goals, the funnel (docs/PLAN.md §6, 2026-11-03 log): Morgan creates a project, a goal inside it
-// from the project page (project preselected), a task from the goal page (project and goal preselected); progress
-// rolls up to both; the goal is connected to another and shows on the branch view; the navigation's project picker
-// narrows the task list and the goals; edit, pause, reactivate and complete the goal; complete, archive and
-// reactivate the project; a member reads without management controls; a stakeholder reads too; another workspace
+// from the project page (project preselected), which comes with its "Everything completed" task (2026-11-09 log), a
+// task from the goal page (project and goal preselected); progress rolls up to both; the goal is connected to another
+// and shows on the branch view; the navigation's project picker narrows the task list and the goals, and the list
+// names the closer by its goal; edit, pause and reactivate the goal; the closer waits for the other task, then
+// achieves the goal, and opens again when the goal is reopened; complete, archive and reactivate the project; a member reads without management controls; a stakeholder reads too; another workspace
 // sees nothing by id or in its lists.
 //
 // Usage: node scripts/test-walkthrough/07-planning.mjs [--base=http://localhost:3021]
@@ -64,7 +65,12 @@ try {
 
   // --- 2. a task from the goal page ------------------------------------------------------------------------------------
   await lead.goto(goalPath, 3500);
-  step("the goal page shows its title and its project, with no task of its own yet", (await lead.waitFor(GOAL)) && (await lead.has(PROJECT)) && !(await lead.has("Everything completed")));
+  step("the goal page shows its title, its project and the “Everything completed” task made with it", (await lead.waitFor(GOAL)) && (await lead.has(PROJECT)) && (await lead.waitFor("Everything completed")) && (await lead.has("Marks this goal achieved")));
+  const [closer] = await query(
+    "select t.id, t.status, t.due_date::text as due, g.target_date::text as target, (select count(*)::int from task_assignees a where a.task_id = t.id and a.user_id = g.owner_id) as owners from tasks t join goals g on g.id = t.goal_id where t.goal_id = $1 and t.goal_closer",
+    [goalRow.id],
+  );
+  step("the closer is in the database: open, due on the goal's target, assigned to the goal's owner", closer?.status === "not_started" && closer?.due === closer?.target && closer?.owners === 1, JSON.stringify(closer));
   step("the goal page has the add bar", await hasBar(lead));
   await sleep(1500);
   step("the project and the goal are preselected", (await value(lead, "#quick-add-project")) === projectRow.id && (await value(lead, "#quick-add-goal")) === goalRow.id);
@@ -73,9 +79,10 @@ try {
   step("creating a task shows the toast", await lead.waitFor("Task created."));
   const [taskRow] = await query("select project_id, goal_id from tasks where title = $1", [TASK]);
   step("the task is in the goal and in the goal's project", taskRow?.goal_id === goalRow.id && taskRow?.project_id === projectRow.id, JSON.stringify(taskRow));
-  step("the goal lists the task and counts it", (await lead.waitFor(TASK)) && (await lead.waitFor("of 1 task completed")));
+  step("the goal lists the task and counts it beside its closer", (await lead.waitFor(TASK)) && (await lead.waitFor("of 2 tasks completed")));
+  step("the closer is the goal's last open task", (await lead.evaluate(`[...document.querySelectorAll('section[aria-labelledby="open-tasks-heading"] [data-task-row]')].at(-1)?.getAttribute('data-task-row')`)) === closer.id);
   await lead.goto(projectPath, 3500);
-  step("the project counts the task too", (await lead.waitFor("of 1 task completed")) && (await lead.has(TASK)));
+  step("the project counts both too, and names the closer by its goal", (await lead.waitFor("of 2 tasks completed")) && (await lead.has(TASK)) && (await lead.has(`Goal: ${GOAL}`)));
 
   // --- 3. connections and the branch view ---------------------------------------------------------------------------------
   const [other] = await query(`select id, title from goals where org_id = (${org}) and status = 'active' and parent_goal_id is null and title = 'Cut incident response time in half'`);
@@ -96,6 +103,11 @@ try {
   await lead.goto("/home?view=list", 4000);
   step("the navigation's project picker finds the project by search", await pickChoice(lead, "[data-project-scope]", PROJECT));
   step("choosing the project in the navigation narrows the list to it", (await lead.waitFor(`In ${PROJECT}`)) && (await lead.has(TASK)) && !(await lead.has("Route pages to the secondary on-call")));
+  step(
+    "the list names the closer by its goal, with the way to it",
+    (await lead.evaluate(`[...document.querySelectorAll('[data-closer-chip]')].some((chip) => chip.textContent.includes(${JSON.stringify(GOAL)}) && chip.getAttribute('href') === ${JSON.stringify(goalPath)})`)) === true,
+  );
+  await lead.shot("07-list-names-the-closer");
   await lead.goto("/goals", 4000);
   step("the goals page follows the picker", (await lead.waitFor(`What ${PROJECT} is working towards`)) && (await lead.has(GOAL)) && !(await lead.has("Ship the self-serve onboarding")));
   await pickChoice(lead, "[data-project-scope]", "All projects", { search: "" });
@@ -115,6 +127,14 @@ try {
   step("reactivating works", await lead.waitFor("Goal is active again."));
   await lead.click("Mark completed", { exact: true, wait: 2500 });
   step("marking it completed with its task still open is refused", await lead.waitFor("Finish the 1 open task"));
+  // The closer is the goal's last step: it waits for the other task, and its dialog says so instead of saving.
+  await lead.goto(`/tasks/${closer.id}`, 4000);
+  step("the closer's page says which goal it marks achieved, and what it waits for", (await lead.waitFor(`Marks “${GOAL} edited” achieved`)) && (await lead.has("Finish the other 1 task under")));
+  await lead.shot("07-closer-page");
+  await lead.click("Change status", { wait: 800 });
+  await lead.click("Completed", { exact: true, within: "[role=menu]", wait: 1500 });
+  step("completing the closer first is held before the save", (await lead.waitForSelector("[data-closer-hold]", 5000)) && (await lead.evaluate(`document.querySelector('[role=dialog] button[type=submit]')?.disabled`)) === true);
+  await lead.press("Escape", 600);
   const [taskId] = await query("select id from tasks where title = $1", [TASK]);
   await lead.goto(`/tasks/${taskId.id}`, 4000);
   await lead.waitFor("Next action");
@@ -123,7 +143,17 @@ try {
   await lead.waitFor("Mark as completed", 5000);
   await lead.type("#transition-summary", "Every walkthrough step passed.");
   await lead.click("Mark as completed", { exact: true, within: "[role=dialog]", wait: 2500 });
-  step("completing its last task achieves the goal", await lead.waitFor("is achieved", 10_000));
+  const [stillActive] = await query("select status from goals where id = $1", [goalRow.id]);
+  step("completing the other task leaves the goal active: its closer is still open", (await lead.waitFor("Marked completed.", 10_000)) && !(await lead.has("is achieved")) && stillActive?.status === "active", JSON.stringify(stillActive));
+  await lead.goto(`/tasks/${closer.id}`, 4000);
+  step("the closer's page now says completing it achieves the goal", await lead.waitFor("Completing this marks", 10_000));
+  await lead.click("Change status", { wait: 800 });
+  await lead.click("Completed", { exact: true, within: "[role=menu]", wait: 1500 });
+  await lead.waitFor("Mark as completed", 5000);
+  step("the dialog says what the save does", await lead.waitForSelector("[data-closer-note]", 5000));
+  await lead.type("#transition-summary", "Everything under the goal is done.");
+  await lead.click("Mark as completed", { exact: true, within: "[role=dialog]", wait: 2500 });
+  step("completing the closer achieves the goal", await lead.waitFor("is achieved", 10_000));
   const [achievedGoal] = await query("select status from goals where id = $1", [goalRow.id]);
   step("the goal is completed in the database", achievedGoal?.status === "completed", JSON.stringify(achievedGoal));
   await lead.goto("/goals", 3000);
@@ -133,6 +163,8 @@ try {
   await lead.goto(goalPath, 3000);
   await lead.click("Reopen", { exact: true });
   step("a completed goal can be reopened", await lead.waitFor("Goal is active again."));
+  const [reopenedCloser] = await query("select status, completed_at from tasks where id = $1", [closer.id]);
+  step("its closer is open again with it", reopenedCloser?.status === "not_started" && reopenedCloser?.completed_at === null, JSON.stringify(reopenedCloser));
 
   // --- 6. the project's own states --------------------------------------------------------------------------------------
   await lead.goto(projectPath, 3000);

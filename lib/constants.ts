@@ -168,6 +168,7 @@ export const NOTIFICATION_KINDS = [
   "proposal_decided",
   "commented",
   "comment_resolved",
+  "goal_achieved",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
