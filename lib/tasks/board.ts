@@ -1,4 +1,5 @@
 import type { TaskStatus } from "@/lib/constants";
+import { clusterGroups } from "./groups";
 import type { TaskListItem } from "./types";
 
 // The board's columns (docs/PLAN.md §5): five statuses, left to right in the order work moves.
@@ -9,11 +10,15 @@ export type BoardStatus = (typeof BOARD_STATUSES)[number];
 
 export type BoardColumns = Record<BoardStatus, TaskListItem[]>;
 
-/** Splits already-sorted tasks into the board's columns, keeping their order. */
+/**
+ * Splits already-sorted tasks into the board's columns, keeping their order, except that the tasks of one group
+ * (2026-11-11 log) stand next to one another in a column, where the first of them stood.
+ */
 export function toBoardColumns(items: TaskListItem[]): BoardColumns {
   const columns: BoardColumns = { not_started: [], in_progress: [], awaiting_approval: [], blocked: [], completed: [] };
   for (const item of items) {
     if (item.status in columns) columns[item.status as BoardStatus].push(item);
   }
+  for (const status of BOARD_STATUSES) columns[status] = clusterGroups(columns[status]);
   return columns;
 }

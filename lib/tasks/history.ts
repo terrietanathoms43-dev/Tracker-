@@ -117,6 +117,15 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
       return { phrase: text(after.parentTitle) ? `attached it to ${text(after.parentTitle)}` : "attached it to a task", change: null };
     case "detached":
       return { phrase: text(before.parentTitle) ? `detached it from ${text(before.parentTitle)}` : "detached it from its parent", change: null };
+    case "grouped": {
+      const name = text(after.groupName);
+      const mates = Array.isArray(after.with) ? after.with.filter((title): title is string => typeof title === "string" && title !== "") : [];
+      const more = typeof after.size === "number" ? Math.max(0, after.size - 1 - mates.length) : 0;
+      const withWhom = mates.length > 0 ? ` with ${joinNames(more > 0 ? [...mates, `${more} more`] : mates)}` : "";
+      return { phrase: name ? `put it in the group ${name}${withWhom}` : `grouped it${withWhom}`, change: null };
+    }
+    case "ungrouped":
+      return { phrase: text(before.groupName) ? `took it out of the group ${text(before.groupName)}` : "took it out of its group", change: null };
     case "completed":
       return { phrase: "completed it", change: null };
     case "reopened":

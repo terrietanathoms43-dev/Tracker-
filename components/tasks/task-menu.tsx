@@ -1,11 +1,12 @@
 "use client";
 
 import { cn } from "cn";
-import { ExternalLink, FolderPlus, GitMerge, Goal, MoreHorizontal, NotebookPen, Send, Trash2, Unlink, Upload, UserPlus } from "lucide-react";
+import { ExternalLink, FolderPlus, GitMerge, Goal, Group, MoreHorizontal, NotebookPen, Send, Trash2, Ungroup, Unlink, Upload, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 import { sendLocalTask } from "@/actions/proposals";
+import { ungroupTask } from "@/actions/task-groups";
 import { deleteTask, detachTask, editTask, getTaskFormOptions, setAssignees } from "@/actions/tasks";
 import { GoalPicker } from "@/components/goals/goal-picker";
 import { ProjectPicker } from "@/components/projects/project-picker";
@@ -45,6 +46,9 @@ import { useTaskActions } from "./task-actions";
 // The two or three things people do from a list without opening the task (apex-ux §6): Update progress,
 // Change status, and the field edits below. A "⋯" menu with a pointer, a bottom sheet after a long press on touch.
 // A proposal or a local task has no progress or status to change; a local task's first item sends it on instead.
+// Two ways of tying tasks together sit here, and they are different things (docs/PLAN.md, 2026-11-11 log):
+// "Group with…" puts this task and another on the same level, shown together inside one border in every list
+// ("Remove from group" undoes it); "Attach to a task…" makes this one a sub-task of the other, parent and child.
 
 /** A task that is work: progress and status changes apply. A proposal or a local task has neither yet. */
 const isLive = (task: TaskListItem) => task.proposal === null || task.proposal === "approved";
@@ -52,7 +56,10 @@ const isLive = (task: TaskListItem) => task.proposal === null || task.proposal =
 /** The one thing a local task offers: "Send for sign-off" or "Publish" (lib/tasks/types.ts needsSignOff). */
 const sendLabel = (task: TaskListItem) => (task.needsSignOff ? "Send for sign-off" : "Publish");
 
-type MenuDialog = "assign" | "goal" | "project" | "parent" | "delete" | null;
+type MenuDialog = "assign" | "goal" | "project" | "parent" | "group" | "delete" | null;
+
+/** A task that may be in a group: live, top-level, and not a goal's closer (lib/tasks/groups.ts GROUP_REFUSALS). */
+const groupable = (task: TaskListItem) => isLive(task) && task.parent === null && !task.goalCloser;
 
 function useMenuDialog() {
   const [dialog, setDialog] = useState<MenuDialog>(null);
@@ -178,6 +185,7 @@ function MenuDialogs({ task, dialog, onClose }: { task: TaskListItem; dialog: Me
   if (dialog === "assign") return <AssignDialog task={task} onClose={onClose} />;
   if (dialog === "goal" || dialog === "project") return <AttachDialog task={task} kind={dialog} onClose={onClose} />;
   if (dialog === "parent") return <AttachTaskDialog taskIds={[task.id]} title={task.title} onClose={onClose} />;
+  if (dialog === "group") return <AttachTaskDialog mode="group" intoOwnGroup={task.group !== null} taskIds={[task.id]} title={task.title} onClose={onClose} />;
   if (dialog === "delete") return <DeleteDialog task={task} onClose={onClose} />;
   return null;
 }
@@ -198,7 +206,9 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
   const [, startTransition] = useTransition();
   const [deleting, setDeleting] = useState(false);
   const [attaching, setAttaching] = useState(false);
+  const [grouping, setGrouping] = useState(false);
   const detach = () => startTransition(async () => void toastResult(await detachTask({ taskId: task.id })));
+  const ungroup = () => startTransition(async () => void toastResult(await ungroupTask({ taskId: task.id })));
 
   // The New-task form's pickers feed the sub-menus; fetched once, the first time the menu opens.
   const loadOptions = (open: boolean) => {
@@ -277,6 +287,20 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
               )}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
+          {groupable(task) ? (
+            <>
+              <DropdownMenuItem onSelect={() => setGrouping(true)} data-menu-group-with>
+                <Group />
+                {task.group !== null ? "Add a task to its group…" : "Group with…"}
+              </DropdownMenuItem>
+              {task.group !== null ? (
+                <DropdownMenuItem onSelect={ungroup} data-menu-ungroup>
+                  <Ungroup />
+                  Remove from group
+                </DropdownMenuItem>
+              ) : null}
+            </>
+          ) : null}
           {task.parent !== null ? (
             <DropdownMenuItem onSelect={detach} data-menu-detach>
               <Unlink />
@@ -346,6 +370,7 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
       </DropdownMenu>
       {deleting ? <DeleteDialog task={task} onClose={() => setDeleting(false)} /> : null}
       {attaching ? <AttachTaskDialog taskIds={[task.id]} title={task.title} onClose={() => setAttaching(false)} /> : null}
+      {grouping ? <AttachTaskDialog mode="group" intoOwnGroup={task.group !== null} taskIds={[task.id]} title={task.title} onClose={() => setGrouping(false)} /> : null}
     </>
   );
 }
@@ -408,6 +433,18 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
                     {label}
                   </SheetButton>
                 ))}
+                {groupable(task) ? (
+                  <SheetButton onClick={then(() => open("group"))}>
+                    <Group className="size-4 text-muted-foreground" />
+                    {task.group !== null ? "Add a task to its group…" : "Group with…"}
+                  </SheetButton>
+                ) : null}
+                {groupable(task) && task.group !== null ? (
+                  <SheetButton onClick={then(() => startTransition(async () => void toastResult(await ungroupTask({ taskId: task.id }))))}>
+                    <Ungroup className="size-4 text-muted-foreground" />
+                    Remove from group
+                  </SheetButton>
+                ) : null}
                 {task.parent !== null ? (
                   <SheetButton onClick={then(() => startTransition(async () => void toastResult(await detachTask({ taskId: task.id }))))}>
                     <Unlink className="size-4 text-muted-foreground" />

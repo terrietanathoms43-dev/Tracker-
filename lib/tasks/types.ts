@@ -10,6 +10,9 @@ export type Person = { id: string; name: string | null; email: string | null; im
 /** Who a task is assigned to: any number of people, all equal (docs/PLAN.md, 2026-10-18 and 2026-10-30 logs). */
 export type Assignees = Person[];
 
+/** A group of tasks as a row names it: its optional name and how many live tasks are in it. */
+export type TaskGroupRef = { id: string; name: string | null; size: number };
+
 /** One row of any task list, board column or My Work group. The row expands to show the longer fields. */
 export type TaskListItem = {
   id: string;
@@ -32,6 +35,11 @@ export type TaskListItem = {
   parent: { id: string; title: string } | null;
   /** How many tasks are attached to this one. */
   subTasks: number;
+  /**
+   * The group it is in (2026-11-11 log): equals drawn together, inside one border, wherever a list shows more than
+   * one of them; alone on a page it carries a "Group" chip instead. Null for a task in no group (or a group of one).
+   */
+  group: TaskGroupRef | null;
   /** Null for a live task; a proposal's state otherwise ("local": the maker's alone, not sent yet). */
   proposal: ProposalStatus | null;
   /** A local task: whether sending it on starts a sign-off chain (true) or publishes it at once (false). */
@@ -124,6 +132,8 @@ export type TaskDetail = {
   parent: { id: string; title: string } | null;
   /** How many tasks are attached to this one; the page lists them. */
   subTasks: number;
+  /** The group it is in (2026-11-11 log); the page lists the others. */
+  group: TaskGroupRef | null;
   assignees: Assignees;
   approver: Person | null;
   creator: Person;
@@ -219,7 +229,7 @@ export type ActivityFeedItem = {
   at: string;
 };
 
-/** Completed out of total (rejected tasks don't count), with the problems inside it. */
+/** Completed out of total (tasks closed without completing, rejected, deferred, cancelled or merged, don't count), with the problems inside it. */
 export type TaskProgress = { completed: number; total: number; blocked: number; overdue: number };
 
 export type TaskCounts = { active: number; completed: number; overdue: number; blocked: number; awaiting: number };

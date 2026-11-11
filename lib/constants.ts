@@ -112,6 +112,8 @@ export const TASK_ACTIVITY_KINDS = [
   "published",
   "attached",
   "detached",
+  "grouped",
+  "ungrouped",
 ] as const;
 export type TaskActivityKind = (typeof TASK_ACTIVITY_KINDS)[number];
 

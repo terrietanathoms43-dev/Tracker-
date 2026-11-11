@@ -148,6 +148,8 @@ async function wipeOrgContents(tx: Tx, orgId: string): Promise<void> {
   // Tasks take their updates, links, assignments and sign-off chains with them; goals take their links and chains;
   // projects take their goals and chains (cascades).
   await tx.delete(tasks).where(eq(tasks.orgId, orgId));
+  // Groups of tasks hold nothing once their tasks are gone (2026-11-11 log).
+  await tx.delete(schema.taskGroups).where(eq(schema.taskGroups.orgId, orgId));
   await tx.delete(goals).where(eq(goals.orgId, orgId));
   await tx.delete(projects).where(eq(projects.orgId, orgId));
   await tx.delete(invitations).where(eq(invitations.orgId, orgId));

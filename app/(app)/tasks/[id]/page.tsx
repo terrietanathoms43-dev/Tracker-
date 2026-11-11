@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { GroupSection } from "@/components/tasks/detail/group-section";
 import { ResumeCard } from "@/components/tasks/detail/resume-card";
 import { SubTasksSection } from "@/components/tasks/detail/sub-tasks-section";
 import { TaskDetails } from "@/components/tasks/detail/task-details";
@@ -13,8 +14,8 @@ import { canDecideProposal, describeStepPeople } from "@/lib/approvals/policy";
 import { draftsForTask } from "@/lib/dal/drafts";
 import { listHistory } from "@/lib/dal/history";
 import { pinnedProjectIds } from "@/lib/dal/projects";
-import { activePlanning, getTask, listLinks, taskPeople, tasksForParent } from "@/lib/dal/tasks";
-import { canApproveTask, canEditTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
+import { activePlanning, getTask, listLinks, taskPeople, tasksForGroup, tasksForParent } from "@/lib/dal/tasks";
+import { canApproveTask, canEditTask, canGroupTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
 import { describeRecurrence } from "@/lib/recurrence";
 import { defaultApproverFor } from "@/lib/tasks/approver";
 import { closerLabel } from "@/lib/tasks/closer";
@@ -32,7 +33,8 @@ export const metadata: Metadata = { title: "Task" };
  * the header, the Resume card with its inline update form (or the proposal's sign-off strip, or a local task's
  * strip with the chain a send would start), the details, the viewer's own drafts attached to the task (private to
  * them, 2026-11-11 log), then comments and history. A local task is found only by its maker (lib/permissions.ts
- * canReadTask).
+ * canReadTask). What the task is tied to comes before the details: its sub-tasks, then the tasks it is grouped
+ * with (2026-11-11 log, task groups).
  */
 export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const { id } = await props.params;
@@ -52,7 +54,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const { detail, scope } = found;
   // Sub-tasks (2026-11-08 log): a live, top-level task lists the tasks attached to it; a sub-task has no section of its own.
   const live = detail.proposalStatus === null || detail.proposalStatus === "approved";
-  const subTasks = live && detail.parent === null ? await tasksForParent(viewer, id) : null;
+  const [subTasks, groupTasks] = await Promise.all([live && detail.parent === null ? tasksForParent(viewer, id) : null, detail.group !== null ? tasksForGroup(viewer, detail.group.id) : null]);
   const abilities: TaskAbilities = {
     edit: canEditTask(viewer, scope),
     progress: canUpdateProgress(viewer, scope),
@@ -101,8 +103,12 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
         {subTasks !== null ? (
           <SubTasksSection task={{ id: detail.id, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} items={subTasks} today={today} canEdit={abilities.edit} readOnly={!abilities.progress} />
         ) : null}
+        {detail.group !== null && groupTasks !== null ? (
+          <GroupSection task={{ id: detail.id, title: detail.title }} group={detail.group} others={groupTasks.filter((item) => item.id !== detail.id)} today={today} canEdit={canGroupTask(viewer, scope)} readOnly={!abilities.progress} />
+        ) : null}
         <TaskDetails
           detail={detail}
+          canGroup={canGroupTask(viewer, scope) && detail.parent === null && !detail.goalCloser}
           abilities={abilities}
           people={people.map(({ id: personId, name, email, image }) => ({ id: personId, name, email, image }))}
           viewerId={viewer.userId}

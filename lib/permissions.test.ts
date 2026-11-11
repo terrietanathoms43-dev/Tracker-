@@ -17,6 +17,8 @@ import {
   canRejectTask,
   canResolveComment,
   canSeeMembers,
+  canGroupTask,
+  canManageTaskGroup,
   canSendLocalTask,
   canSeeReports,
   canUpdateProgress,
@@ -146,6 +148,37 @@ describe("navigation", () => {
   it("gives stakeholders three destinations and everyone else six, Reports last", () => {
     expect(navFor({ orgRole: "stakeholder" })).toEqual(["home", "goals", "proposals", "reports"]);
     expect(navFor({ orgRole: "member" })).toEqual(["home", "my-work", "goals", "members", "proposals", "reports"]);
+  });
+});
+
+describe("groups of tasks (2026-11-11 log)", () => {
+  const mine: TaskScope = { orgId: "org1", assigneeIds: ["u1"], createdBy: "u9", proposalStatus: null };
+  const theirs: TaskScope = { orgId: "org1", assigneeIds: ["u2"], createdBy: "u3", proposalStatus: null };
+
+  it("lets whoever may edit a live task group it: leaders, the people on it, its maker", () => {
+    expect(canGroupTask(viewer("member"), mine)).toBe(true);
+    expect(canGroupTask(viewer("member"), theirs)).toBe(false);
+    expect(canGroupTask(viewer("leader"), theirs)).toBe(true);
+    expect(canGroupTask(viewer("admin"), theirs)).toBe(true);
+    expect(canGroupTask(viewer("member", "u3"), theirs)).toBe(true);
+  });
+
+  it("never groups work that is not live, and never for a stakeholder or another workspace", () => {
+    expect(canGroupTask(viewer("member"), { ...mine, proposalStatus: "pending" })).toBe(false);
+    expect(canGroupTask(viewer("member"), { ...mine, createdBy: "u1", proposalStatus: "local" })).toBe(false);
+    expect(canGroupTask(viewer("stakeholder"), { ...mine, createdBy: "u1" })).toBe(false);
+    expect(canGroupTask(viewer("admin", "u1", "org2"), mine)).toBe(false);
+  });
+
+  it("lets leaders, the group's maker, or someone who may edit every task in it rename or ungroup it", () => {
+    const group = { orgId: "org1", createdBy: "u7" };
+    expect(canManageTaskGroup(viewer("leader"), group, [theirs])).toBe(true);
+    expect(canManageTaskGroup(viewer("member", "u7"), group, [theirs])).toBe(true);
+    expect(canManageTaskGroup(viewer("member"), group, [mine, mine])).toBe(true);
+    expect(canManageTaskGroup(viewer("member"), group, [mine, theirs])).toBe(false);
+    expect(canManageTaskGroup(viewer("member"), group, [])).toBe(false);
+    expect(canManageTaskGroup(viewer("stakeholder", "u7"), group, [mine])).toBe(false);
+    expect(canManageTaskGroup(viewer("admin", "u1", "org2"), group, [mine])).toBe(false);
   });
 });
 

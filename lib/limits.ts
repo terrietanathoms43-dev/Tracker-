@@ -18,6 +18,8 @@ export const LIMITS = {
   /** The note a proposal is declined with (the proposer reads it). */
   approvalNote: 1_000,
   evidenceLabel: 120,
+  /** What a group of tasks has in common ("Login revamp"); optional. */
+  groupName: 80,
   /** Anything longer is not a link a person would click; http(s) is checked on top of this. */
   url: 2_048,
 
