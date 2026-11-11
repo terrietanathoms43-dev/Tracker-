@@ -17,7 +17,7 @@ const browsers = {};
 const org = "select id from organizations where slug = 'trackwise-demo'";
 
 const value = pickedValue;
-const hasBar = (browser) => browser.evaluate(`!!document.querySelector("#quick-add-title")`);
+const hasBar = (browser) => browser.evaluate(`!!document.querySelector("#quick-add-text")`);
 /** The page refreshes behind a status change; the add bar goes once the new render lands, up to a few seconds later. */
 const barGone = async (browser) => {
   const deadline = Date.now() + 10_000;
@@ -74,7 +74,7 @@ try {
   step("the goal page has the add bar", await hasBar(lead));
   await sleep(1500);
   step("the project and the goal are preselected", (await value(lead, "#quick-add-project")) === projectRow.id && (await value(lead, "#quick-add-goal")) === goalRow.id);
-  await lead.type("#quick-add-title", TASK);
+  await lead.type("#quick-add-text", TASK);
   await lead.click("Add task", { exact: true });
   step("creating a task shows the toast", await lead.waitFor("Task created."));
   const [taskRow] = await query("select project_id, goal_id from tasks where title = $1", [TASK]);

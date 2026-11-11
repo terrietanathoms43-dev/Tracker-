@@ -126,7 +126,7 @@ try {
   await morgan.goto(`/tasks/${target.id}`, 4000);
   await morgan.waitFor("Sub-tasks");
   await sleep(1000);
-  await morgan.type('[data-sub-tasks] input[id="quick-add-title"]', SUB);
+  await morgan.type('[data-sub-tasks] textarea[id="quick-add-text"]', SUB);
   await morgan.click("Add task", { exact: true, within: "[data-sub-tasks]", wait: 3000 });
   step("the add bar in the section makes a sub-task", await morgan.waitFor("Task created.", 10_000));
   const [made] = await query("select parent_task_id, project_id, proposal_status from tasks where title = $1", [SUB]);

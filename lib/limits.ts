@@ -5,8 +5,7 @@
 export const LIMITS = {
   // Tasks
   taskTitle: 200,
-  /** The quick-add bar takes typed shortcuts ("!high", "@tomorrow") that expand before the title is read. */
-  quickAddTitle: 260,
+  /** Also the add bar's cap: what is typed there is the description, and the title is taken from it (2026-11-11 log). */
   taskDescription: 10_000,
   nextAction: 1_000,
   progressNote: 4_000,
@@ -48,8 +47,11 @@ export const LIMITS = {
   captureTasks: 60,
   captureGoals: 12,
 
-  /** The Draft tab's notepad: a person's running notes in a workspace (2026-11-04 log). */
+  /** One draft on the Draft tab: a person's running notes in a workspace (2026-11-04 log; a list since 2026-11-11). */
   draft: 60_000,
+  draftTitle: 120,
+  /** How many drafts one person may keep in one workspace. */
+  draftsPerPerson: 200,
 
   // Transient text (filters and the command palette) — never stored, capped to keep URLs and queries sane.
   search: 100,

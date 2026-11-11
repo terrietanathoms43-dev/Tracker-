@@ -37,7 +37,7 @@ export function CreateTaskDialog({
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New task</DialogTitle>
-          <DialogDescription className="sr-only">Only the title is required.</DialogDescription>
+          <DialogDescription className="sr-only">Say what needs doing; everything else is optional.</DialogDescription>
         </DialogHeader>
         {open ? <CreateTaskForm
             defaults={defaults}

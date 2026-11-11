@@ -44,7 +44,7 @@ try {
   await sam.goto(`/projects/${lumen.id}`, 4000);
   await sam.waitFor("Lumen Health");
   step("the add bar says the task will stay local", await sam.waitForSelector("[data-local-hint]", 15_000));
-  await sam.type("#quick-add-title", TITLE);
+  await sam.type("#quick-add-text", TITLE);
   await sam.click("Add local task", { exact: true, wait: 3000 });
   step("the toast says it was saved as a local task", await sam.waitFor("Saved as a local task", 10_000));
   const [created] = await query("select id, proposal_status from tasks where title = $1", [TITLE]);
@@ -114,11 +114,11 @@ try {
   // --- 6. sign-off switched off: the remaining local tasks publish instead ---------------------------------------------------------
   await sam.goto(`/projects/${lumen.id}`, 4000);
   await sam.waitFor("Lumen Health");
-  await sam.type("#quick-add-title", TITLE2);
+  await sam.type("#quick-add-text", TITLE2);
   await sam.click("Add local task", { exact: true, wait: 3000 });
   await sam.waitFor("Saved as a local task", 10_000);
   await sleep(1500);
-  await sam.type("#quick-add-title", `${TITLE3} @tomorrow`);
+  await sam.type("#quick-add-text", `${TITLE3} @tomorrow`);
   await sam.click("Add local task", { exact: true, wait: 3000 });
   step("two more local tasks, one due tomorrow", (await sam.waitFor("Saved as a local task", 10_000)) && (await query("select count(*)::int as n from tasks where title in ($1, $2) and proposal_status = 'local' and (title <> $2 or due_date = current_date + 1 or due_date = current_date + 2)", [TITLE2, TITLE3]))[0].n === 2);
   await morgan.goto(`/projects/${lumen.id}`, 4000);
