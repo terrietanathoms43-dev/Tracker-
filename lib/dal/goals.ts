@@ -40,7 +40,7 @@ export type GoalListItem = {
   seriesId: string | null;
   requiresApproval: boolean;
   completedAt: string | null;
-  /** Tasks linked to the goal and to its sub-goals (rejected ones never count). */
+  /** Tasks linked to the goal and to its sub-goals (ones closed without completing never count). */
   progress: TaskProgress;
   createdAt: string;
   updatedAt: string;

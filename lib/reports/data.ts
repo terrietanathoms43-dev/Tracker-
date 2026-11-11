@@ -175,9 +175,9 @@ export type ReportProjectOption = {
 
 const CLOSED = [...CLOSED_STATUSES];
 const isOpen = notInArray(tasks.status, CLOSED);
-/** Counts for the pace: everything but what was closed without being completed (rejected, deferred, cancelled). */
+/** Counts for the pace: everything but what was closed without being completed (rejected, deferred, cancelled, merged). */
 const countsTowardsPace = notInArray(tasks.status, [...CLOSED_WITHOUT_COMPLETION]);
-/** `'rejected', 'deferred', 'cancelled'` for raw fragments. */
+/** `'rejected', 'deferred', 'cancelled', 'merged'` for raw fragments. */
 const closedWithoutCompletionList = sql.raw(CLOSED_WITHOUT_COMPLETION.map((status) => `'${status}'`).join(", "));
 /**
  * When a task was closed: completed_at for a completed task; for one closed without completing, the time of the
@@ -302,7 +302,7 @@ export function activeScopeTasks(viewer: Viewer, range: ReportRange, project: Re
 }
 
 /**
- * Is the work as a whole on pace? The scope's tasks (rejected ones aside) done against the share a straight line
+ * Is the work as a whole on pace? The scope's tasks (ones closed without completing aside) done against the share a straight line
  * from the start to the target date expects by today (lib/reports/pace.ts). For one project the line runs from
  * its creation to its target date (or, without one, its latest goal's); for the whole workspace, from the oldest
  * task to the latest top-level goal's target date.

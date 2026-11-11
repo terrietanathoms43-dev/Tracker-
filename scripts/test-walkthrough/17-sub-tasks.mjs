@@ -3,8 +3,9 @@
 // corner mark and the parent carries a "1 sub-task" chip; the task page shows "Part of" on the child and the Sub-tasks
 // section on the parent. Completing the parent is refused while the child is open; the child is marked Merged from
 // its status menu (its row struck through, the history naming the parent); the parent can be completed now. Detach
-// reopens the merged child. Then two ticked tasks are grouped under a third from the selection bar, and a sub-task is
-// made from the parent page's own add bar.
+// reopens the merged child. Then two ticked tasks are made sub-tasks of a third from the selection bar ("Make
+// sub-tasks of…": it was "Group under…" until grouping came to mean equals, 2026-11-11 log, walkthrough 18), and a
+// sub-task is made from the parent page's own add bar.
 //
 // Usage: node scripts/test-walkthrough/17-sub-tasks.mjs [--base=http://localhost:3021]
 import { closePool, finish, openBrowser, query, sleep, step, stoppedOn, tidy } from "./lib.mjs";
@@ -14,11 +15,11 @@ const org = "select id from organizations where slug = 'trackwise-demo'";
 const stamp = Date.now().toString(36);
 const SUB = `Walkthrough sub-task ${stamp}`;
 
-/** Two live, open, top-level tasks in different projects, so a move is visible. */
+/** Two live, open, top-level tasks in a project, so a move is visible. Never a goal's closer: it stays with its goal and cannot be attached. */
 async function twoTasks() {
   return query(
     `select t.id, t.title, t.project_id, t.goal_id from tasks t
-      where t.org_id = (${org}) and t.proposal_status is null and t.status = 'not_started' and t.parent_task_id is null and t.project_id is not null
+      where t.org_id = (${org}) and t.proposal_status is null and t.status = 'not_started' and t.parent_task_id is null and t.project_id is not null and not t.goal_closer
         and not exists (select 1 from tasks c where c.parent_task_id = t.id)
       order by t.created_at limit 2`,
   );
@@ -100,21 +101,21 @@ try {
   const [detached] = await query("select parent_task_id, status from tasks where id = $1", [child.id]);
   step("it is a task of its own again, not started", detached?.parent_task_id === null && detached?.status === "not_started", JSON.stringify(detached));
 
-  // --- 5. group two ticked tasks under a third from the selection bar ----------------------------------------------------------
+  // --- 5. make two ticked tasks sub-tasks of a third from the selection bar ---------------------------------------------------
   const rows = await query(
-    `select t.id, t.title from tasks t where t.org_id = (${org}) and t.proposal_status is null and t.status = 'not_started' and t.parent_task_id is null
+    `select t.id, t.title from tasks t where t.org_id = (${org}) and t.proposal_status is null and t.status = 'not_started' and t.parent_task_id is null and not t.goal_closer
         and not exists (select 1 from tasks c where c.parent_task_id = t.id) and t.id <> $1 order by t.created_at limit 3`,
     [parent.id],
   );
-  step("three more open tasks to group", rows.length === 3, JSON.stringify(rows.map((row) => row.title)));
+  step("three more open tasks to attach", rows.length === 3, JSON.stringify(rows.map((row) => row.title)));
   const [target, ...members] = rows;
   await morgan.goto("/home?view=list", 4000);
   await morgan.waitFor("Tasks");
   await sleep(1500);
   for (const row of members) await morgan.clickSelector(`[data-select-task="${row.id}"]`);
   await morgan.waitFor("2 selected", 5000);
-  await morgan.clickSelector("[data-bulk-group]", { wait: 1200 });
-  step("Group under… opens the attach dialog for the ticked tasks", (await morgan.waitForSelector("[data-attach-task-dialog]", 6000)) && (await morgan.has("Group 2 tasks under a task")));
+  await morgan.clickSelector("[data-bulk-attach]", { wait: 1200 });
+  step("Make sub-tasks of… opens the attach dialog for the ticked tasks", (await morgan.waitForSelector("[data-attach-task-dialog]", 6000)) && (await morgan.has("Make 2 tasks sub-tasks of a task")));
   await morgan.type("Search tasks by title", target.title.slice(0, 18));
   await sleep(900);
   await morgan.clickSelector(`[data-attach-choice="${target.id}"]`, { wait: 3000 });

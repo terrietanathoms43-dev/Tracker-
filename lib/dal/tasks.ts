@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, ilike, inArray, ne, notInArray, or, sql, type 
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, type Tx } from "@/db";
 import { goals, projects, taskActivity, taskLinks, tasks, users } from "@/db/schema";
-import { CLOSED_STATUSES, DUE_SOON_DAYS, RECENTLY_FINISHED_DAYS, type ProposalStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { CLOSED_STATUSES, CLOSED_WITHOUT_COMPLETION, DUE_SOON_DAYS, RECENTLY_FINISHED_DAYS, type ProposalStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { assignmentOf } from "@/lib/dal/assignments";
 import { listWorkers } from "@/lib/dal/orgs";
 import { pinnedProjectIds } from "@/lib/dal/projects";
@@ -23,6 +23,7 @@ import type {
   TaskCounts,
   TaskDetail,
   TaskFormOptions,
+  TaskGroupRef,
   TaskListItem,
   TaskPage,
   TaskProgress,
@@ -103,6 +104,12 @@ const unassigned = sql`not exists (select 1 from task_assignees ta where ta.task
 /** Comments nobody has resolved: while there are any, the task can't be completed (lib/tasks/transitions.ts). */
 export const openCommentsSql = sql<number>`(select count(*)::int from task_updates u where u.task_id = ${tasks}.id and u.kind = 'comment' and u.resolved_at is null)`;
 
+/** The name of the group the task is in (2026-11-11 log): null when the group has none, or the task is in no group. */
+export const groupNameSql = sql<string | null>`(select tg.name from task_groups tg where tg.id = ${tasks}.group_id)`;
+
+/** How many live tasks are in the task's group, itself included; 0 for a task in no group. A group is drawn from two up. */
+export const groupSizeSql = sql<number>`(select count(*)::int from tasks m where m.group_id = ${tasks}.group_id and (m.proposal_status is null or m.proposal_status = 'approved'))`;
+
 /** The title of the task this one is attached to (sub-tasks, 2026-11-08 log), null for a top-level task. */
 export const parentTitleSql = sql<string | null>`(select p.title from tasks p where p.id = ${tasks}.parent_task_id)`;
 
@@ -162,6 +169,9 @@ const listColumns = {
   parentTaskId: tasks.parentTaskId,
   parentTitle: parentTitleSql,
   subTasks: subTasksSql,
+  groupId: tasks.groupId,
+  groupName: groupNameSql,
+  groupSize: groupSizeSql,
   assignees: assigneesJson,
 };
 
@@ -188,8 +198,15 @@ type ListRow = {
   parentTaskId: string | null;
   parentTitle: string | null;
   subTasks: number;
+  groupId: string | null;
+  groupName: string | null;
+  groupSize: number;
   assignees: Person[];
 };
+
+/** A group is one from two live tasks up: a task left alone in its group reads as a task in none. */
+const groupOf = (row: { groupId: string | null; groupName: string | null; groupSize: number }): TaskGroupRef | null =>
+  row.groupId !== null && row.groupSize >= 2 ? { id: row.groupId, name: row.groupName, size: row.groupSize } : null;
 
 /** A closer is one while it has its goal: a row flagged `goal_closer` whose goal is gone (old data) is an ordinary task. */
 const isCloser = (row: { goalCloser: boolean; goalId: string | null }): boolean => row.goalCloser && row.goalId !== null;
@@ -211,6 +228,7 @@ export function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
     goal: row.goalId && row.goalTitle ? { id: row.goalId, title: row.goalTitle } : null,
     parent: row.parentTaskId && row.parentTitle !== null ? { id: row.parentTaskId, title: row.parentTitle } : null,
     subTasks: row.subTasks,
+    group: groupOf(row),
     proposal: row.proposalStatus,
     needsSignOff: row.needsSignOff,
     goalCloser: isCloser(row),
@@ -307,7 +325,10 @@ export const PAGE_SIZE = 50;
 
 /**
  * The task list: filters from the URL (lib/tasks/filters.ts), one of five sorts, `limit` at a time (50) with a
- * keyset cursor (the id of the last row shown), so "Load more" never skips or repeats a row.
+ * keyset cursor (the id of the last row shown), so "Load more" never skips or repeats a row. Grouped tasks show
+ * together (2026-11-11 log): the rest of a group on this page that matches the same filters but sorts onto a later
+ * page is brought forward and appended (`groupMates`), for the list to draw beside its group; the cursor stays the
+ * last row of the sorted page, and the list drops a row it already shows when the later page brings it again.
  */
 export async function listTasks(viewer: Viewer, filters: TaskFilters, options: { today: string; cursor?: string | null; limit?: number }): Promise<TaskPage> {
   const limit = options.limit ?? PAGE_SIZE;
@@ -329,7 +350,35 @@ export async function listTasks(viewer: Viewer, filters: TaskFilters, options: {
     .orderBy(...orderBy(filters.sort, today))
     .limit(limit + 1);
   const items = rows.slice(0, limit).map((row) => toListItem(row, viewer));
-  return { items, nextCursor: rows.length > limit ? items[items.length - 1].id : null };
+  const nextCursor = rows.length > limit ? items[items.length - 1].id : null;
+  if (nextCursor === null) return { items, nextCursor };
+  return { items: [...items, ...(await groupMates(viewer, items, where, orderBy(filters.sort, today)))], nextCursor };
+}
+
+/** How many tasks a page may pull forward to sit with their groups. */
+const GROUP_MATES_LIMIT = 100;
+
+/**
+ * The tasks that share a group with a row of `items` and pass the same conditions, but are not among them: the part
+ * of each group that a page cut off. In the list's own order.
+ */
+async function groupMates(viewer: Viewer, items: TaskListItem[], where: SQL[], order: SQL[]): Promise<TaskListItem[]> {
+  const groupIds = [...new Set(items.flatMap((item) => (item.group ? [item.group.id] : [])))];
+  if (groupIds.length === 0) return [];
+  const rows = await selectList()
+    .where(
+      and(
+        ...where,
+        inArray(tasks.groupId, groupIds),
+        notInArray(
+          tasks.id,
+          items.map((item) => item.id),
+        ),
+      ),
+    )
+    .orderBy(...order)
+    .limit(GROUP_MATES_LIMIT);
+  return rows.map((row) => toListItem(row, viewer));
 }
 
 /**
@@ -625,9 +674,18 @@ function tallyProgress(rows: ProgressRow[], keys: string[], today: string): Map<
 }
 
 /**
+ * What progress is counted over: every status but the ones that close a task without completing it (rejected,
+ * deferred, cancelled, merged). Such a task will never be completed, so it is in neither the done nor the total:
+ * a goal with three tasks done and one cancelled is three of three, not three of four, and is not "behind pace"
+ * because of it (2026-11-11 log; until then only rejected ones were left out). The reports' own pace counts the
+ * same way (`countsTowardsPace` in lib/reports/data.ts).
+ */
+export const countsTowardsProgress = notInArray(tasks.status, [...CLOSED_WITHOUT_COMPLETION]);
+
+/**
  * Progress per goal (completed / total, plus blocked and overdue), counting the live tasks linked to the goal and
- * to its sub-goals. Rejected tasks are left out of the total: they will never be completed. Every id asked for gets
- * an entry, zeros included.
+ * to its sub-goals. Tasks closed without being completed are left out of the total (`countsTowardsProgress`). Every
+ * id asked for gets an entry, zeros included.
  */
 export async function progressForGoals(viewer: Viewer, goalIds: string[]): Promise<Map<string, TaskProgress>> {
   if (goalIds.length === 0) return new Map();
@@ -641,7 +699,7 @@ export async function progressForGoals(viewer: Viewer, goalIds: string[]): Promi
   const direct = await db
     .select({ taskId: tasks.id, status: tasks.status, dueDate: tasks.dueDate, key: tasks.goalId })
     .from(tasks)
-    .where(and(visibility(viewer), liveOnly, ne(tasks.status, "rejected"), inArray(tasks.goalId, allIds)));
+    .where(and(visibility(viewer), liveOnly, countsTowardsProgress, inArray(tasks.goalId, allIds)));
   const rows: ProgressRow[] = [];
   for (const row of direct) {
     if (row.key === null) continue;
@@ -658,7 +716,7 @@ export async function progressForProjects(viewer: Viewer, projectIds: string[]):
   const rows = await db
     .select({ key: tasks.projectId, taskId: tasks.id, status: tasks.status, dueDate: tasks.dueDate })
     .from(tasks)
-    .where(and(visibility(viewer), liveOnly, ne(tasks.status, "rejected"), inArray(tasks.projectId, projectIds)));
+    .where(and(visibility(viewer), liveOnly, countsTowardsProgress, inArray(tasks.projectId, projectIds)));
   return tallyProgress(
     rows.filter((row): row is ProgressRow => row.key !== null),
     projectIds,
@@ -801,6 +859,8 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
       openComments: openCommentsSql,
       parentTitle: parentTitleSql,
       subTasks: subTasksSql,
+      groupName: groupNameSql,
+      groupSize: groupSizeSql,
       otherOpenGoalTasks: otherOpenGoalTasksSql,
       approver: sql<Person | null>`case when ${approverUser.id} is null then null else ${personJson(approverUser)} end`,
       creator: sql<Person>`${personJson(creatorUser)}`,
@@ -828,6 +888,7 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     goal: t.goalId && row.goalTitle ? { id: t.goalId, title: row.goalTitle } : null,
     parent: t.parentTaskId && row.parentTitle !== null ? { id: t.parentTaskId, title: row.parentTitle } : null,
     subTasks: row.subTasks,
+    group: groupOf({ groupId: t.groupId, groupName: row.groupName, groupSize: row.groupSize }),
     assignees: row.assignees,
     approver: row.approver,
     creator: row.creator,
@@ -924,6 +985,19 @@ export async function tasksForParent(viewer: Viewer, parentId: string): Promise<
   const rows = await selectList()
     .where(and(visibility(viewer), visibleWork(viewer), eq(tasks.parentTaskId, parentId)))
     .orderBy(...groupedOrder(today));
+  return rows.map((row) => toListItem(row, viewer));
+}
+
+/**
+ * The tasks of one group the viewer may see (2026-11-11 log), open first in the smart order: the task page lists
+ * them, the task itself included, so the group reads there the way it does in a list.
+ */
+export async function tasksForGroup(viewer: Viewer, groupId: string): Promise<TaskListItem[]> {
+  const today = todayFor(viewer);
+  const rows = await selectList()
+    .where(and(visibility(viewer), liveOnly, eq(tasks.groupId, groupId)))
+    .orderBy(...groupedOrder(today))
+    .limit(200);
   return rows.map((row) => toListItem(row, viewer));
 }
 

@@ -2,10 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { changeStatus } from "@/actions/tasks";
+import { Group } from "lucide-react";
 import { Kanban, KanbanBoard, KanbanColumn, KanbanColumnContent, KanbanOverlay, type KanbanMoveEvent } from "@/components/kanban";
 import { StatusIcon } from "@/components/status-badge";
 import { RECENTLY_FINISHED_DAYS, TASK_STATUS_LABELS } from "@/lib/constants";
 import { BOARD_STATUSES, type BoardColumns, type BoardStatus } from "@/lib/tasks/board";
+import { describeGroupCount, groupLabel, groupRuns } from "@/lib/tasks/groups";
 import { needsInput } from "@/lib/tasks/transitions";
 import { toastResult } from "@/lib/toast-result";
 import { useTaskActions } from "./task-actions";
@@ -16,7 +18,9 @@ import { TaskCard } from "./task-cards";
 // open the transition dialog instead of applying, the rest move straight away and the action's refresh()
 // re-renders the board. Order inside a column isn't persisted — the list's sort still owns it — so a card
 // dropped back in its own column snaps back. On a phone the columns scroll sideways and snap one at a
-// time; dragging is a pointer gesture (touch scroll wins, long-press still opens the action sheet).
+// time; dragging is a pointer gesture (touch scroll wins, long-press still opens the action sheet). The tasks of
+// one group (2026-11-11 log) stand together in a column, inside one border; a card alone in its column names its
+// group on the card instead.
 export function TaskBoard({
    columns,
    today,
@@ -91,9 +95,25 @@ export function TaskBoard({
                            </p>
                         ) : (
                            <KanbanColumnContent value={status}>
-                              {items.map((task) => (
-                                 <TaskCard key={task.id} task={task} today={today} />
-                              ))}
+                              {groupRuns(items).map((run) =>
+                                 run.group !== null && run.items.length > 1 ? (
+                                    <div key={`group-${run.group.id}-${run.items[0].id}`} className="flex flex-col gap-2 rounded-xl border-2 border-primary/35 bg-primary/[0.04] p-1.5" data-task-group={run.group.id}>
+                                       {/* A column is narrow: the name gets two lines of its own, the count sits under it. */}
+                                       <div className="px-1 text-[12px] leading-snug text-muted-foreground">
+                                          <p className="flex items-start gap-1.5">
+                                             <Group className="mt-0.5 size-3 shrink-0 text-primary" aria-hidden />
+                                             <span className="line-clamp-2 font-medium break-words text-foreground">{groupLabel(run.group)}</span>
+                                          </p>
+                                          <p className="pl-[18px] tabular-nums">{describeGroupCount(run.items.length, run.group.size)}</p>
+                                       </div>
+                                       {run.items.map((task) => (
+                                          <TaskCard key={task.id} task={task} today={today} inGroup />
+                                       ))}
+                                    </div>
+                                 ) : (
+                                    run.items.map((task) => <TaskCard key={task.id} task={task} today={today} />)
+                                 ),
+                              )}
                            </KanbanColumnContent>
                         )}
                      </KanbanColumn>

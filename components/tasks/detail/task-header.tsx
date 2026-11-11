@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ClipboardCheck, CornerDownRight, GitMerge, Link2, Lock, NotebookPen, Repeat } from "lucide-react";
+import { ClipboardCheck, CornerDownRight, GitMerge, Group, Link2, Lock, NotebookPen, Repeat } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { describeRecurrence, formatTime } from "@/lib/recurrence";
+import { groupLabel } from "@/lib/tasks/groups";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskAbilities, TaskDetail } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
@@ -147,6 +148,13 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
           <a href="#sub-tasks" className="inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground" data-sub-tasks-count>
             <GitMerge className="size-3.5" aria-hidden />
             {describeSubTasks(detail.subTasks)}
+          </a>
+        ) : null}
+        {detail.group !== null ? (
+          <a href="#group" className="inline-flex h-6 min-w-0 max-w-full items-center gap-1 rounded-md border border-primary/35 bg-primary/[0.05] px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground" data-group-count>
+            <Group className="size-3.5 shrink-0 text-primary" aria-hidden />
+            <span className="truncate">{groupLabel(detail.group)}</span>
+            <span className="shrink-0 tabular-nums">· {detail.group.size} tasks</span>
           </a>
         ) : null}
         {detail.goalCloser && detail.goal ? <CloserChip goal={detail.goal} variant="header" /> : null}

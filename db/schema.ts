@@ -419,6 +419,29 @@ export const approvalBypass = pgTable(
 
 // --- tasks ----------------------------------------------------------------------
 
+/**
+ * Tasks grouped together (docs/PLAN.md, 2026-11-11 log): equals, not parent and child. A task is in at most one
+ * group (`tasks.group_id`), and every list draws the members it shows side by side inside one border. A group of
+ * fewer than two live tasks is not drawn and is removed the next time its membership changes.
+ */
+export const taskGroups = pgTable(
+  "task_groups",
+  {
+    id: id(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** Optional: what the tasks have in common ("Login revamp"). Without one the lists say "Group". */
+    name: text("name"),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("task_groups_org_idx").on(t.orgId)],
+);
+
 export const tasks = pgTable(
   "tasks",
   {
@@ -431,6 +454,8 @@ export const tasks = pgTable(
     goalId: text("goal_id").references(() => goals.id, { onDelete: "set null" }),
     /** Sub-tasks (2026-11-08 log): the task this one is attached to, one level deep; a child lives where its parent lives. */
     parentTaskId: text("parent_task_id").references((): AnyPgColumn => tasks.id, { onDelete: "set null" }),
+    /** The group it is in (2026-11-11 log): equals drawn together in every list. A sub-task goes with its parent instead. */
+    groupId: text("group_id").references(() => taskGroups.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     description: text("description"),
     createdBy: text("created_by")
@@ -474,6 +499,7 @@ export const tasks = pgTable(
     index("tasks_org_proposal_idx").on(t.orgId, t.proposalStatus),
     index("tasks_series_idx").on(t.seriesId),
     index("tasks_parent_idx").on(t.parentTaskId),
+    index("tasks_group_idx").on(t.groupId),
   ],
 );
 
@@ -632,6 +658,7 @@ export type GoalLink = typeof goalLinks.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type ApprovalStep = typeof approvalSteps.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
+export type TaskGroup = typeof taskGroups.$inferSelect;
 export type TaskApproval = typeof taskApprovals.$inferSelect;
 export type TaskUpdate = typeof taskUpdates.$inferSelect;
 export type TaskLink = typeof taskLinks.$inferSelect;

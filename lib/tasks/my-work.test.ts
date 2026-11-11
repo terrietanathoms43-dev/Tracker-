@@ -27,6 +27,7 @@ function row(partial: Partial<TaskListItem> & Partial<Omit<MyWorkRow, "item">> =
       goal: null,
       parent: null,
       subTasks: 0,
+      group: null,
       proposal: null,
       needsSignOff: false,
       goalCloser: false,

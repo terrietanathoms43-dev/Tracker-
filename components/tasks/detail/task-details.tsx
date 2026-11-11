@@ -11,6 +11,7 @@ import type { GoalOption, Person, TaskAbilities, TaskDetail } from "@/lib/tasks/
 import { AssigneeStack } from "../assignee-stack";
 import { DueLabel } from "../due-label";
 import { ApprovalChain } from "../proposal-strip";
+import { GroupField } from "../task-group";
 import { AssigneesEditor, DescriptionEditor, DueEditor, GoalEditor, PickEditor, ProjectEditor, RecurrenceEditor, StatusEditor, TimeEditor } from "./detail-editors";
 
 // The task page's Details card: description and the facts that rarely change.
@@ -38,6 +39,7 @@ function withCurrent<T extends { id: string }>(options: T[], current: T | null):
  */
 export function TaskDetails({
   detail,
+  canGroup = false,
   abilities,
   people,
   viewerId,
@@ -49,6 +51,8 @@ export function TaskDetails({
   now,
 }: {
   detail: TaskDetail;
+  /** Whether the viewer may put this task in a group: an editor, on a live top-level task that is not a goal's closer. */
+  canGroup?: boolean;
   abilities: TaskAbilities;
   people: Person[];
   viewerId: string;
@@ -153,6 +157,11 @@ export function TaskDetails({
               {detail.goalCloser ? <span className="text-[13px] text-muted-foreground">Completing this task marks the goal achieved</span> : null}
             </div>
           </Row>
+          {detail.group !== null || canGroup ? (
+            <Row label="Group">
+              <GroupField taskId={detail.id} title={detail.title} group={detail.group} canGroup={canGroup} />
+            </Row>
+          ) : null}
           {detail.approver ? <Row label="Approver">{nameOf(detail.approver)}</Row> : null}
           {detail.approvals.length > 0 ? (
             <Row label="Sign-off">

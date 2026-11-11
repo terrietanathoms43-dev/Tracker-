@@ -20,6 +20,7 @@ import { findMembership, leaderIds } from "@/lib/dal/orgs";
 import { findProject } from "@/lib/dal/projects";
 import { applyGoalRules, describeGoalOutcome, goalAchievedNotice, reopenGoalForNewWork, type GoalOutcome } from "@/lib/dal/goal-achievement";
 import { seriesAnchor, seriesHasLaterOccurrence } from "@/lib/dal/recurrence";
+import { leaveGroup } from "@/lib/dal/task-groups";
 import { getTaskBasics, listTasks, lockTask, openSubTasks, recentTasks, searchTasks, subTaskIds, taskFormOptions, taskPeople } from "@/lib/dal/tasks";
 import { captureEngineFor } from "@/lib/capture/availability";
 import { log } from "@/lib/log";
@@ -249,6 +250,8 @@ async function attachUnder(tx: Tx, viewer: Viewer, child: Locked, parent: Locked
   if (parent.task.parentTaskId !== null) throw new GuardError("forbidden", "That task is a sub-task itself: attach to its parent instead (one level only).");
   if ((await subTaskIds(tx, viewer.orgId, child.task.id)).length > 0) throw new GuardError("forbidden", "That task has sub-tasks of its own: detach them first (one level only).");
   if (child.task.parentTaskId === parent.task.id) return;
+  // A sub-task goes where its parent goes, so it leaves a group of its own (2026-11-11 log).
+  await leaveGroup(tx, { orgId: viewer.orgId, actorId: viewer.userId }, child.task, now, { note: "It became a sub-task, which goes where its parent goes." });
   await tx.update(tasks).set({ parentTaskId: parent.task.id, projectId: parent.task.projectId, goalId: parent.task.goalId, updatedAt: now }).where(eq(tasks.id, child.task.id));
   await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, parent.task.id));
   await recordActivity(tx, { orgId: viewer.orgId, taskId: child.task.id, actorId: viewer.userId }, [{ kind: "attached", before: { parentId: child.task.parentTaskId }, after: { parentId: parent.task.id, parentTitle: parent.task.title } }], now);
@@ -972,6 +975,8 @@ export async function deleteTask(input: z.input<typeof deleteSchema>): Promise<A
       if (locked === null) throw new GuardError("not_found");
       if (!canDeleteTask(viewer, locked.scope)) throw new GuardError("forbidden", "Only leaders and admins can delete tasks.");
       if (locked.task.goalCloser) throw new GuardError("forbidden", closerDeleteMessage(locked.task.goalTitle));
+      // A group it leaves with one task is not a group any more (2026-11-11 log).
+      await leaveGroup(tx, { orgId: viewer.orgId, actorId: viewer.userId }, locked.task, new Date(), { record: false });
       await tx.delete(tasks).where(and(eq(tasks.id, data.taskId), eq(tasks.orgId, viewer.orgId)));
       await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/tasks/${data.taskId}`)));
       return locked.task.proposalStatus;
@@ -1131,7 +1136,10 @@ export async function bulkMove(input: z.input<typeof bulkMoveSchema>): Promise<A
 
 const bulkAttachSchema = z.object({ taskIds: bulkIds, parentId: id });
 
-/** Groups the ticked tasks under one task (the selection bar): each becomes its sub-task; the parent itself, if ticked, is skipped. */
+/**
+ * Makes the ticked tasks sub-tasks of one task (the selection bar's "Make sub-tasks of…"): each is attached under
+ * it; the parent itself, if ticked, is skipped. Not grouping: tasks grouped together stay equals (actions/task-groups.ts).
+ */
 export async function bulkAttach(input: z.input<typeof bulkAttachSchema>): Promise<ActionResult<BulkOutcome>> {
   return runAction("tasks.bulk_attach", bulkAttachSchema, input, async (data) => {
     const viewer = await requireViewer();
@@ -1187,6 +1195,7 @@ export async function bulkDelete(input: z.input<typeof bulkDeleteSchema>): Promi
     const { outcome } = await runBulk(viewer, data.taskIds, async (tx, { task, scope }) => {
       if (!canDeleteTask(viewer, scope)) throw new GuardError("forbidden", "only leaders and admins delete tasks");
       if (task.goalCloser) throw new GuardError("forbidden", "it marks its goal achieved and goes when the goal is deleted");
+      await leaveGroup(tx, { orgId: viewer.orgId, actorId: viewer.userId }, task, new Date(), { record: false });
       await tx.delete(tasks).where(and(eq(tasks.id, task.id), eq(tasks.orgId, viewer.orgId)));
       await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/tasks/${task.id}`)));
       return [];

@@ -21,6 +21,8 @@ The app runs on the team VPS under pm2, behind the reverse proxy, as two checkou
 
 **The 2026-11-07 release** (Deferred and Cancelled statuses, goals and their tasks moving together) needs, per environment, `npm run db:push` (two `task_status` values and two `task_activity_kind` values, additive) before the code is deployed. Until then production cannot hold a deferred or cancelled task. Pushed to the staging database on 2026-11-07.
 
+**Task groups** (2026-11-11: tasks grouped together, docs/PLAN.md) need, per environment, `npm run db:push` **before** the code is deployed: one table (`task_groups`), one column (`tasks.group_id`, with its index and foreign key) and two `task_activity_kind` values (`grouped`, `ungrouped`), all additive. Every task list reads `tasks.group_id`, so the code without the push fails on every list. The branch was built and walked through against a local database; the staging database had not been pushed when it was written.
+
 **The goals' "Everything completed" tasks** (2026-11-09: the client's review brought them back, so the 2026-11-07 step that deleted them, `db:remove-closers`, is gone and must not be run anywhere). After the code is deployed, run `npm run db:backfill-closers` once per environment (`--dry-run` first prints, per workspace, how many open goals lack one): it gives every goal that is not completed and has no closer its "Everything completed" task, assigned to the goal's owner. It is idempotent, and `delete from tasks where goal_closer` undoes it. Production never had its closers removed, so there it only covers goals that somehow lack one; the staging database lost them on 2026-11-07 and needs the run. A completed goal is left alone: it gets its closer when it is reopened.
 
 ## Staging
