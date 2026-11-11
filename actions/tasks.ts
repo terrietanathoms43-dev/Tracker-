@@ -45,6 +45,7 @@ import { projectScopeFor } from "@/lib/project-scope-server";
 import { describeRecurrence, nextAfterFinishing, normalizeRecurrence, sameRecurrence, type Recurrence } from "@/lib/recurrence";
 import { defaultApproverFor } from "@/lib/tasks/approver";
 import { sameIds } from "@/lib/tasks/assignees";
+import { titleFromText } from "@/lib/tasks/title-from";
 import { closerDeleteMessage, closerLabel, closerRepeatMessage, closerStaysMessage } from "@/lib/tasks/closer";
 import { parseFilters } from "@/lib/tasks/filters";
 import { asksReason, MERGE_NEEDS_PARENT, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
@@ -306,7 +307,8 @@ export async function detachTask(input: z.input<typeof detachSchema>): Promise<A
 // --- create ---------------------------------------------------------------------------------------------------
 
 const createSchema = z.object({
-  title: requiredText(1, LIMITS.taskTitle, "Give the task a title."),
+  /** Left empty (the add bar always does), the title is taken from the description (lib/tasks/title-from.ts, 2026-11-11 log). */
+  title: optionalText(LIMITS.taskTitle),
   assigneeIds: idList,
   projectId: z.string().max(64).default(""),
   goalId: z.string().max(64).default(""),
@@ -320,16 +322,23 @@ const createSchema = z.object({
   description: optionalText(LIMITS.taskDescription),
 });
 
+/** What a task with neither a title nor a description hears. */
+const NOTHING_TO_ADD = "Say what needs doing.";
+
 /**
- * Creates a task. Only the title is required. A task in a goal is in that goal's project. Where the project or goal
- * requires sign-off, a worker's task starts local (2026-11-06 log): theirs alone, off the main board, until they send
- * it for sign-off; a stakeholder's is a proposal at once. Nobody is told they are on it until it is live. A repeat
- * rule needs a due date to count from.
+ * Creates a task. It needs words: a description, a title, or both. The add bar sends what was typed as the
+ * description and no title, and the title is then the start of that text (2026-11-11 log); a title that is given
+ * stands as given. A task in a goal is in that goal's project. Where the project or goal requires sign-off, a
+ * worker's task starts local (2026-11-06 log): theirs alone, off the main board, until they send it for sign-off; a
+ * stakeholder's is a proposal at once. Nobody is told they are on it until it is live. A repeat rule needs a due
+ * date to count from.
  */
-export async function createTask(input: z.input<typeof createSchema>): Promise<ActionResult<{ id: string; proposal: boolean; local: boolean }>> {
+export async function createTask(input: z.input<typeof createSchema>): Promise<ActionResult<{ id: string; title: string; proposal: boolean; local: boolean }>> {
   return runAction("tasks.create", createSchema, input, async (data) => {
     const viewer = await requireViewer();
     if (!canCreateTask(viewer)) throw new GuardError("forbidden");
+    const title = data.title || titleFromText(data.description);
+    if (title === "") return fail(NOTHING_TO_ADD, { description: [NOTHING_TO_ADD] });
     if (data.recurrence !== null && data.dueDate === "") return fail("A repeating task needs a first due date.", { dueDate: ["Pick the first day it is due."] });
     const now = new Date();
     const notices: Notice[] = [];
@@ -355,7 +364,7 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
           projectId: placement.projectId,
           goalId: placement.goalId,
           parentTaskId: parent?.task.id ?? null,
-          title: data.title,
+          title,
           description: data.description || null,
           createdBy: viewer.userId,
           priority: data.priority,
@@ -371,7 +380,7 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
       // New work under an achieved goal makes it active again (lib/dal/goal-achievement.ts); local work waits until it is live.
       const reopened = placement.goalId !== null && !local ? await reopenGoalForNewWork(tx, viewer, placement.goalId, now) : null;
       await applyAssignment(tx, created.id, viewer.userId, [], assignment, now);
-      const drafts: ActivityDraft[] = [{ kind: "created", after: { title: data.title, proposal, local } }];
+      const drafts: ActivityDraft[] = [{ kind: "created", after: { title, proposal, local } }];
       if (parent !== null) {
         drafts.push({ kind: "attached", after: { parentId: parent.task.id, parentTitle: parent.task.title } });
         await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, parent.task.id));
@@ -380,10 +389,10 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
       const justMe = sameIds(assignment, [viewer.userId]);
       if (!justMe && assignment.length > 0) drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
       await recordActivity(tx, { orgId: viewer.orgId, taskId: created.id, actorId: viewer.userId }, drafts, now);
-      if (chain === null) notices.push(...assignedNotice(viewer, { id: created.id, title: data.title, nextAction: data.nextAction || null }, assignment, true));
-      else if (proposal) notices.push(...(await startChain(tx, viewer, { id: created.id, title: data.title }, chain, now)));
+      if (chain === null) notices.push(...assignedNotice(viewer, { id: created.id, title, nextAction: data.nextAction || null }, assignment, true));
+      else if (proposal) notices.push(...(await startChain(tx, viewer, { id: created.id, title }, chain, now)));
       if (data.nextAction) await tx.update(tasks).set({ nextAction: data.nextAction }).where(eq(tasks.id, created.id));
-      return { id: created.id, proposal, local, reopened };
+      return { id: created.id, title, proposal, local, reopened };
     });
     log.info("tasks.created", { orgId: viewer.orgId, taskId: outcome.id, proposal: outcome.proposal, local: outcome.local, by: viewer.userId });
     await dispatch(notices);

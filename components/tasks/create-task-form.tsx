@@ -15,20 +15,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import type { Recurrence } from "@/lib/recurrence";
+import { titleFromText } from "@/lib/tasks/title-from";
 import type { CreateDefaults } from "@/lib/tasks/types";
 import { AssigneePicker } from "./assignee-picker";
 import { RecurrencePicker } from "./recurrence-picker";
 import { loadTaskFormOptions, useTaskFormOptions } from "./use-task-form-options";
 
 // The New task form inside the create dialog (N, the New task button, the palette): everything the quick-add bar
-// doesn't ask for (a goal, a time of day, a repeat, a first next action, a description).
+// doesn't ask for (a goal, a time of day, a repeat, a first next action, a title of your own).
 
 type Errors = Record<string, string[] | undefined>;
 
 /**
- * Title is all it needs (apex-ux §4); the assignees start as you and the project as the page you came from. The
- * form shows at once: its pickers fill in when the options arrive, and a submit that beats them waits for them.
- * A goal puts the task in that goal's project. A stakeholder's task is a proposal, and the form says so.
+ * Saying what needs doing is all it needs (apex-ux §4): like the add bar, the first box is the description, and
+ * the title is taken from the start of it unless one is typed (lib/tasks/title-from.ts, 2026-11-11 log). The
+ * assignees start as you and the project as the page you came from. The form shows at once: its pickers fill in
+ * when the options arrive, and a submit that beats them waits for them. A goal puts the task in that goal's
+ * project. A stakeholder's task is a proposal, and the form says so.
  */
 export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?: CreateDefaults; onDone?: (id: string) => void; onCancel?: () => void }) {
   const router = useRouter();
@@ -59,15 +62,19 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
   // A sub-task (2026-11-08 log) is made where its parent is, live like its parent: no project or goal to pick.
   const subTask = Boolean(defaults.parentId);
   const local = !proposes && !subTask && (goalChoice ? (goalChoice.signOff ?? false) : (projectChoice?.signOff ?? false));
+  /** The title the task gets when the Title box is left empty. */
+  const derivedTitle = titleFromText(description);
+  const nameable = title.trim() !== "" || derivedTitle !== "";
 
   function submit() {
+    if (!nameable) return;
     startTransition(async () => {
       // The default assignee is "me", which only the options can name: a quick Enter waits for them.
       const ready = options ?? (await loadTaskFormOptions()).options;
       const assigneeIds = assignment ?? me(ready);
       const result = await createTask({ title, assigneeIds, projectId, goalId, parentId: defaults.parentId ?? "", priority, dueDate, dueTime, recurrence, nextAction, description });
       if (!result.ok) {
-        setErrors(result.fieldErrors ?? { title: [result.error] });
+        setErrors(result.fieldErrors ?? { description: [result.error] });
         return;
       }
       const id = result.data.id;
@@ -108,8 +115,26 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
           Sign-off is on here: the task stays local, seen by you alone, until you send it for sign-off from your Local section.
         </p>
       ) : null}
-      <Field id="task-title" label="Title" error={error("title")} count={{ value: title, max: LIMITS.taskTitle }}>
-        <Input id="task-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What needs doing?" maxLength={LIMITS.taskTitle} autoFocus aria-invalid={error("title") ? true : undefined} />
+      <Field id="task-description" label="What needs doing?" error={error("description")} count={{ value: description, max: LIMITS.taskDescription }}>
+        <Textarea
+          id="task-description"
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          placeholder="Describe the task. This is its description; the title is taken from the start of it."
+          rows={4}
+          maxLength={LIMITS.taskDescription}
+          autoFocus
+          aria-invalid={error("description") ? true : undefined}
+        />
+      </Field>
+      <Field
+        id="task-title"
+        label="Title"
+        hint={title.trim() === "" ? "Optional: left empty, the title is the start of the description." : undefined}
+        error={error("title")}
+        count={{ value: title, max: LIMITS.taskTitle }}
+      >
+        <Input id="task-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder={derivedTitle || "Taken from the description"} maxLength={LIMITS.taskTitle} aria-invalid={error("title") ? true : undefined} />
       </Field>
 
       <div className="grid items-start gap-4 sm:grid-cols-2">
@@ -172,17 +197,13 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
       <Field id="task-next" label="First next action" hint="Optional: the very next step, so whoever picks it up knows where to start." count={{ value: nextAction, max: LIMITS.nextAction }}>
         <Input id="task-next" value={nextAction} onChange={(event) => setNextAction(event.target.value)} placeholder="e.g. Reproduce it on staging" maxLength={LIMITS.nextAction} />
       </Field>
-      <Field id="task-description" label="Description" hint="Optional." count={{ value: description, max: LIMITS.taskDescription }}>
-        <Textarea id="task-description" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={LIMITS.taskDescription} />
-      </Field>
-
       <div className="flex items-center justify-end gap-2 pt-1">
         {onCancel ? (
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
         ) : null}
-        <Button type="submit" disabled={pending || title.trim() === ""}>
+        <Button type="submit" disabled={pending || !nameable}>
           {pending ? (proposes ? "Proposing…" : "Creating…") : proposes ? "Propose task" : local ? "Create local task" : "Create task"}
         </Button>
       </div>

@@ -80,8 +80,8 @@ export type TimelineGoalMarker = {
 };
 
 /**
- * What a task did on a day: it was completed, a blocker was raised on it, it was due and is still open (overdue,
- * drawn loud), or (today and later) it falls due.
+ * What a task did on a day: it was completed, it was blocked that day and still is (a blocker cleared since is not
+ * drawn, 2026-11-11 log), it was due and is still open (overdue, drawn loud), or (today and later) it falls due.
  */
 export type TimelineTaskKind = "completed" | "blocked" | "overdue" | "due";
 
@@ -98,7 +98,8 @@ export type TimelineDay = {
   date: string;
   completed: number;
   myCompleted: number;
-  blockedRaised: number;
+  /** Tasks blocked that day that are still blocked now. */
+  blocked: number;
   /** Open tasks that were due that day and still are: the chart's loudest mark. */
   overdue: number;
   myOverdue: number;
@@ -434,7 +435,7 @@ function goalMarkerCondition(project: ReportProject): SQL | undefined {
 
 /**
  * One entry per calendar day of the chart's window (lib/reports/range.ts: the range, then two weeks past today):
- * what was completed, which blockers were raised, what was due and is still open (overdue), what falls due from
+ * what was completed, what was blocked that day and still is, what was due and is still open (overdue), what falls due from
  * today on, and the goal deadlines with each goal's health, with the tasks behind each count so a bar can be split
  * into them. `activity` is every history row of every task in scope that day: the chart's y axis. With
  * `includeLocal` (the My work view) the viewer's own local tasks count too; otherwise local tasks are left out.
@@ -484,7 +485,20 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       .from(taskActivity)
       .innerJoin(tasks, eq(tasks.id, taskActivity.taskId))
       .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(taskActivity.orgId, viewer.orgId), taskScope, scoped, eq(taskActivity.kind, "blocked"), withinDays(taskActivity.createdAt, past, viewer.timezone)))
+      // A blocker is drawn while it stands (2026-11-11 log): the tasks blocked right now, each on the day its latest
+      // blocker was raised. One cleared since (the task unblocked, completed or closed) is history: it still counts
+      // in that day's activity and leaves the bars, so finished work never reads as blocked.
+      .where(
+        and(
+          eq(taskActivity.orgId, viewer.orgId),
+          taskScope,
+          scoped,
+          eq(taskActivity.kind, "blocked"),
+          eq(tasks.status, "blocked"),
+          sql`not exists (select 1 from task_activity later where later.task_id = ${taskActivity}.task_id and later.kind = 'blocked' and later.created_at > ${taskActivity}.created_at)`,
+          withinDays(taskActivity.createdAt, past, viewer.timezone),
+        ),
+      )
       .orderBy(asc(taskActivity.createdAt)),
     // Every open task due anywhere in the window: before today it is overdue, from today on it is due.
     db
@@ -594,7 +608,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       date,
       completed: count("completed"),
       myCompleted: count("completed", true),
-      blockedRaised: count("blocked"),
+      blocked: count("blocked"),
       overdue: count("overdue"),
       myOverdue: count("overdue", true),
       due: count("due"),

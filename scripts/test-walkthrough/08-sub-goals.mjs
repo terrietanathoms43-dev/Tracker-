@@ -62,8 +62,8 @@ try {
   await morgan.goto(subPath, 4000);
   step("the sub-goal page points back at its parent", (await morgan.waitFor(SUB_GOAL)) && (await morgan.has(parent.title)));
   step("a sub-goal offers no sub-goals of its own", !(await morgan.has("New sub-goal")) && !(await morgan.has("Sub-goals")));
-  step("the sub-goal page has the add bar", await morgan.evaluate(`!!document.querySelector("#quick-add-title")`));
-  await morgan.type("#quick-add-title", TASK);
+  step("the sub-goal page has the add bar", await morgan.evaluate(`!!document.querySelector("#quick-add-text")`));
+  await morgan.type("#quick-add-text", TASK);
   await morgan.click("Add task", { exact: true, wait: 2500 });
   step("adding a task shows the toast", await morgan.waitFor("Task created."));
   step("the sub-goal counts the task with its closer", await morgan.waitFor("of 2 tasks completed"));

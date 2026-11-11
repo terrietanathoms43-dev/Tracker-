@@ -332,7 +332,11 @@ export const projectPins = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.projectId] }), index("project_pins_user_org_idx").on(t.userId, t.orgId)],
 );
 
-/** A person's running notes in a workspace: the Draft tab and the floating notepad (2026-11-04 log). */
+/**
+ * The one running note per person per workspace of 2026-11-04. **Legacy since 2026-11-11**: drafts are a list now
+ * (`draft_notes` below). The table stays because real rows exist (additive changes only); a person's old note is
+ * carried into `draft_notes` the first time they open their drafts and this row is emptied (lib/dal/drafts.ts).
+ */
 export const drafts = pgTable(
   "drafts",
   {
@@ -346,6 +350,33 @@ export const drafts = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.orgId] })],
+);
+
+/**
+ * A person's drafts in a workspace (docs/PLAN.md, 2026-11-11 log): the Draft tab's list and the floating notepad.
+ * Any number of notes, each with a title of its own, each of which may be attached to one task so the working
+ * notes travel with the work. A draft is its author's alone wherever it shows, attached or not: the task page
+ * lists a task's drafts to their author only.
+ */
+export const draftNotes = pgTable(
+  "draft_notes",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** May be empty: the list then names the draft by its first line (lib/drafts.ts). */
+    title: text("title").notNull().default(""),
+    body: text("body").notNull().default(""),
+    /** The task the draft is attached to, in the same workspace; a deleted task just lets go of it. */
+    taskId: text("task_id").references((): AnyPgColumn => tasks.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("draft_notes_owner_idx").on(t.userId, t.orgId, t.updatedAt.desc()), index("draft_notes_task_idx").on(t.taskId)],
 );
 
 /**

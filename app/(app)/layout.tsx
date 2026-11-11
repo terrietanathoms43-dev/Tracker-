@@ -1,4 +1,5 @@
 import { Suspense, type ReactNode } from "react";
+import { RouteFreshness } from "@/components/shell/route-freshness";
 import { SidebarSearch } from "@/components/shell/search-button";
 import { ShortcutsHelp } from "@/components/shell/shortcuts-help";
 import { SidebarCollapseButton, SidebarExpandButton } from "@/components/shell/sidebar-toggle";
@@ -84,6 +85,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       </div>
       <ShortcutsHelp />
       <FloatingNotepad />
+      {/* Fresh data after Back / Forward and when the tab is looked at again (2026-11-11 log); it reads the address, so it streams. */}
+      <Suspense fallback={null}>
+        <RouteFreshness />
+      </Suspense>
     </TaskActionsProvider>
   );
 }

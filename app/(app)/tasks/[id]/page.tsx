@@ -3,12 +3,14 @@ import { notFound } from "next/navigation";
 import { ResumeCard } from "@/components/tasks/detail/resume-card";
 import { SubTasksSection } from "@/components/tasks/detail/sub-tasks-section";
 import { TaskDetails } from "@/components/tasks/detail/task-details";
+import { TaskDrafts } from "@/components/tasks/detail/task-drafts";
 import { TaskHeader } from "@/components/tasks/detail/task-header";
 import { TaskHistory } from "@/components/tasks/detail/task-history";
 import { CurrentTask } from "@/components/tasks/task-actions";
 import { db } from "@/db";
 import { chainForPlacement } from "@/lib/approvals/chain";
 import { canDecideProposal, describeStepPeople } from "@/lib/approvals/policy";
+import { draftsForTask } from "@/lib/dal/drafts";
 import { listHistory } from "@/lib/dal/history";
 import { pinnedProjectIds } from "@/lib/dal/projects";
 import { activePlanning, getTask, listLinks, taskPeople, tasksForParent } from "@/lib/dal/tasks";
@@ -18,7 +20,7 @@ import { defaultApproverFor } from "@/lib/tasks/approver";
 import { closerLabel } from "@/lib/tasks/closer";
 import { nameOf } from "@/lib/tasks/people";
 import type { TaskAbilities, UpdateContext } from "@/lib/tasks/types";
-import { dayKey } from "@/lib/time";
+import { dayKey, formatRelative } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
 
 // /tasks/[id]: one task, Resume card first.
@@ -28,21 +30,23 @@ export const metadata: Metadata = { title: "Task" };
 /**
  * "What is this, what happened, what happens next, who must act?" (docs/BRIEF.md §5), answered top down:
  * the header, the Resume card with its inline update form (or the proposal's sign-off strip, or a local task's
- * strip with the chain a send would start), the details, then comments and history. A local task is found only
- * by its maker (lib/permissions.ts canReadTask).
+ * strip with the chain a send would start), the details, the viewer's own drafts attached to the task (private to
+ * them, 2026-11-11 log), then comments and history. A local task is found only by its maker (lib/permissions.ts
+ * canReadTask).
  */
 export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const { id } = await props.params;
   const viewer = await requireViewer();
   const worker = isWorker(viewer);
   // One round trip; nothing is rendered unless the viewer may read the task (a foreign id is simply not found).
-  const [found, links, history, people, planning, pinnedProjects] = await Promise.all([
+  const [found, links, history, people, planning, pinnedProjects, drafts] = await Promise.all([
     getTask(viewer, id),
     listLinks(viewer, id),
     listHistory(viewer, id, null),
     worker ? taskPeople(viewer) : [],
     activePlanning(viewer),
     pinnedProjectIds(viewer),
+    draftsForTask(viewer, id),
   ]);
   if (found === null || !canReadTask(viewer, found.scope)) notFound();
   const { detail, scope } = found;
@@ -109,6 +113,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           timeZone={viewer.timezone}
           now={now}
         />
+        <TaskDrafts drafts={drafts.map((draft) => ({ ...draft, updated: formatRelative(new Date(draft.updatedAt), now, viewer.timezone) }))} />
         <TaskHistory task={{ id: detail.id, title: detail.title, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} initial={history} canComment={abilities.progress} openComments={detail.openComments} />
       </div>
     </div>

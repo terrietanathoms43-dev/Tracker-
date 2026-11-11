@@ -15,7 +15,8 @@ import { formatDay } from "@/lib/time";
 // range to two weeks past today. The y axis is the day's activity: every history row of every task in scope
 // (a completion, a comment, an edit, a status change, each +1), drawn as the grey line and its wash, so a glance
 // says whether the team is busier or quieter. The bars are counts, not heights: one fixed-size block per task
-// (completed, then blockers raised, then overdue, then, from today on, what falls due), stacked with a surface gap,
+// (completed, then what was blocked that day and still is, then overdue, then, from today on, what falls due),
+// stacked with a surface gap,
 // so a day with three completions shows three blocks whatever the activity scale. The chart fills its card with
 // no scrollbar: zoom shows fewer or more days (anchored on today) and ‹ › move along the window. Today is marked
 // with a strong line. Hovering a day keeps its tasks on show until another day is hovered; clicking pins it.
@@ -47,7 +48,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 const KIND_LABEL: Record<TimelineTaskKind, string> = {
   completed: "Completed",
-  blocked: "Blocker raised",
+  blocked: "Still blocked",
   overdue: "Overdue",
   due: "Due",
 };
@@ -282,7 +283,7 @@ export function RangeChart({
   const summary = [
     `${totals.activity} ${totals.activity === 1 ? "event" : "events"}`,
     `${totals.completed} ${showMyWork ? "completed by you" : "completed"}`,
-    totals.blocked > 0 ? `${totals.blocked} ${totals.blocked === 1 ? "blocker" : "blockers"} raised` : null,
+    totals.blocked > 0 ? `${totals.blocked} still blocked` : null,
     totals.due > 0 ? `${totals.due} due ahead` : null,
     totals.goals > 0 ? `${totals.goals} goal ${totals.goals === 1 ? "deadline" : "deadlines"}` : null,
   ]
@@ -318,7 +319,7 @@ export function RangeChart({
           </li>
           <li className="flex items-center gap-1.5">
             <Swatch kind="blocked" hatchId={hatchId} />
-            Blocker raised
+            Still blocked (on the day it was raised)
           </li>
           <li className="flex items-center gap-1.5">
             <Swatch kind="overdue" hatchId={hatchId} />
@@ -434,7 +435,7 @@ export function RangeChart({
               formatDay(day.date, today),
               !day.future ? `${day.activity} ${day.activity === 1 ? "event" : "events"}` : null,
               `${day.tasks.filter((task) => task.kind === "completed").length} completed`,
-              `${day.tasks.filter((task) => task.kind === "blocked").length} blockers raised`,
+              `${day.tasks.filter((task) => task.kind === "blocked").length} still blocked`,
               `${day.tasks.filter((task) => task.kind === "overdue").length} overdue`,
               `${day.tasks.filter((task) => task.kind === "due").length} due`,
               day.goalDeadlines.length > 0 ? `${day.goalDeadlines.length} goal deadline${day.goalDeadlines.length === 1 ? "" : "s"}` : null,
@@ -561,7 +562,7 @@ export function RangeChart({
                 <span className="rounded-sm bg-status-blocked-dot px-1.5 py-0.5 font-semibold text-white">{current.tasks.filter((task) => task.kind === "overdue").length} overdue</span>
               ) : null}
               <span className="font-medium text-status-completed-fg">{current.tasks.filter((task) => task.kind === "completed").length} completed</span>
-              {current.tasks.some((task) => task.kind === "blocked") ? <span className="font-medium text-status-blocked-fg">{current.tasks.filter((task) => task.kind === "blocked").length} blocked</span> : null}
+              {current.tasks.some((task) => task.kind === "blocked") ? <span className="font-medium text-status-blocked-fg">{current.tasks.filter((task) => task.kind === "blocked").length} still blocked</span> : null}
               {current.tasks.some((task) => task.kind === "due") ? <span className="font-medium text-status-in-progress-fg">{current.tasks.filter((task) => task.kind === "due").length} due</span> : null}
             </div>
           </div>
