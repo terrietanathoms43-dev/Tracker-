@@ -121,6 +121,8 @@ async function achieve(tx: Tx, viewer: Viewer, goal: LockedGoal, now: Date): Pro
  */
 async function reopen(tx: Tx, viewer: Viewer, goal: LockedGoal, now: Date, exceptTaskId: string | null): Promise<GoalOutcome> {
   await tx.update(goals).set({ status: "active", completedAt: null, completedBy: null, updatedAt: now }).where(eq(goals.id, goal.id));
+  // The closers this reopens are not handed to syncLinkedWork (lib/dal/comment-tasks.ts), which imports this module:
+  // a closer is never made from a comment (only createTask sets that link, and it never makes a closer).
   await reopenGoalCloser(tx, viewer.userId, goal, now, exceptTaskId);
   return { goal: { id: goal.id, title: goal.title }, achieved: false, reopened: true, next: null, notify: [] };
 }

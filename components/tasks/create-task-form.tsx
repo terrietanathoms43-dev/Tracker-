@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardCheck, Lock } from "lucide-react";
+import { ClipboardCheck, Lock, MessageSquareText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import type { Recurrence } from "@/lib/recurrence";
+import { fromCommentHint } from "@/lib/tasks/comment-tasks";
 import { titleFromText } from "@/lib/tasks/title-from";
 import type { CreateDefaults } from "@/lib/tasks/types";
 import { AssigneePicker } from "./assignee-picker";
@@ -61,6 +62,8 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
   const projectChoice = projectId ? options?.projects.find((project) => project.id === projectId) : undefined;
   // A sub-task (2026-11-08 log) is made where its parent is, live like its parent: no project or goal to pick.
   const subTask = Boolean(defaults.parentId);
+  // Made from a comment (2026-11-11 log): linked to it, not a sub-task; the project and goal start as the comment's task's.
+  const fromComment = defaults.sourceComment ?? null;
   const local = !proposes && !subTask && (goalChoice ? (goalChoice.signOff ?? false) : (projectChoice?.signOff ?? false));
   /** The title the task gets when the Title box is left empty. */
   const derivedTitle = titleFromText(description);
@@ -72,7 +75,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
       // The default assignee is "me", which only the options can name: a quick Enter waits for them.
       const ready = options ?? (await loadTaskFormOptions()).options;
       const assigneeIds = assignment ?? me(ready);
-      const result = await createTask({ title, assigneeIds, projectId, goalId, parentId: defaults.parentId ?? "", priority, dueDate, dueTime, recurrence, nextAction, description });
+      const result = await createTask({ title, assigneeIds, projectId, goalId, parentId: defaults.parentId ?? "", sourceCommentId: fromComment?.id ?? "", priority, dueDate, dueTime, recurrence, nextAction, description });
       if (!result.ok) {
         setErrors(result.fieldErrors ?? { description: [result.error] });
         return;
@@ -100,6 +103,12 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
         }
       }}
     >
+      {fromComment !== null ? (
+        <p className="flex items-start gap-2 rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" data-from-comment-hint>
+          <MessageSquareText className="mt-0.5 size-4 shrink-0" aria-hidden />
+          {fromCommentHint(fromComment.taskTitle)}
+        </p>
+      ) : null}
       {proposes ? (
         <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg">
           <ClipboardCheck className="mt-0.5 size-4 shrink-0" aria-hidden />

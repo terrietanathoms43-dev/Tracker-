@@ -136,7 +136,7 @@ export function ApprovalStaging({ tasks }: { tasks: ApprovalStagingTask[] }) {
                   {held ? (
                     <Link href={`/tasks/${task.id}#history-heading`} className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] font-medium text-status-awaiting-fg underline-offset-4 hover:underline">
                       <MessageSquareWarning className="size-4" aria-hidden />
-                      {openCommentsMessage(task.openComments)}
+                      {openCommentsMessage(task.openComments, task.commentsWaitingOnTasks)}
                     </Link>
                   ) : null}
                 </div>
@@ -154,7 +154,7 @@ export function ApprovalStaging({ tasks }: { tasks: ApprovalStagingTask[] }) {
                     <Undo2 className="size-3.5" aria-hidden />
                     Send back
                   </Button>
-                  <Button size="sm" disabled={isPending || held} title={held ? openCommentsMessage(task.openComments) : undefined} onClick={() => handleApprove(task.id)}>
+                  <Button size="sm" disabled={isPending || held} title={held ? openCommentsMessage(task.openComments, task.commentsWaitingOnTasks) : undefined} onClick={() => handleApprove(task.id)}>
                     <Check className="size-3.5" aria-hidden />
                     {isPending ? "Approving…" : "Approve"}
                   </Button>

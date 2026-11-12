@@ -3,11 +3,11 @@ import { and, asc, desc, eq, gte, ilike, inArray, ne, notInArray, or, sql, type 
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, type Tx } from "@/db";
 import { goals, projects, taskActivity, taskLinks, tasks, users } from "@/db/schema";
-import { CLOSED_STATUSES, CLOSED_WITHOUT_COMPLETION, DUE_SOON_DAYS, RECENTLY_FINISHED_DAYS, type ProposalStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { CLOSED_STATUSES, CLOSED_WITHOUT_COMPLETION, DUE_SOON_DAYS, isClosedStatus, RECENTLY_FINISHED_DAYS, type ProposalStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { assignmentOf } from "@/lib/dal/assignments";
 import { listWorkers } from "@/lib/dal/orgs";
 import { pinnedProjectIds } from "@/lib/dal/projects";
-import { canDeleteTask, isStakeholder, type TaskScope, type Viewer } from "@/lib/permissions";
+import { canDeleteTask, canReadTask, canUpdateProgress, isStakeholder, type TaskScope, type Viewer } from "@/lib/permissions";
 import { describeRecurrence, type Recurrence } from "@/lib/recurrence";
 import { BOARD_STATUSES, toBoardColumns, type BoardColumns } from "@/lib/tasks/board";
 import type { TaskFilters, TaskSort } from "@/lib/tasks/filters";
@@ -104,6 +104,58 @@ const unassigned = sql`not exists (select 1 from task_assignees ta where ta.task
 /** Comments nobody has resolved: while there are any, the task can't be completed (lib/tasks/transitions.ts). */
 export const openCommentsSql = sql<number>`(select count(*)::int from task_updates u where u.task_id = ${tasks}.id and u.kind = 'comment' and u.resolved_at is null)`;
 
+/**
+ * Of the open comments, the ones waiting for a task made from them (2026-11-11 log): such a comment cannot be
+ * resolved by hand, and resolves itself when the last open live task made from it is closed.
+ */
+export const commentsWaitingSql = sql<number>`(select count(*)::int from task_updates u where u.task_id = ${tasks}.id and u.kind = 'comment' and u.resolved_at is null and exists (select 1 from tasks lt where lt.source_comment_id = u.id and (lt.proposal_status is null or lt.proposal_status = 'approved') and lt.status not in (${closedList})))`;
+
+/** The comment a task was made from, as `fromCommentJson` returns it: the task it is on carries what a permission check needs. */
+type FromCommentRow = {
+  id: string;
+  resolved: boolean;
+  author: string;
+  excerpt: string;
+  otherOpen: number;
+  task: { id: string; title: string; status: TaskStatus; orgId: string; createdBy: string; approverId: string | null; proposalStatus: ProposalStatus | null; assigneeIds: string[] };
+};
+
+/**
+ * The comment a task was made from (2026-11-11 log) with the task that comment is on (named by its goal when it is a
+ * closer), and how many other live tasks made from it are still open; null for a task made any other way, or when
+ * the comment is gone. Whether the viewer may read the comment's task is decided after, by `fromCommentFor`.
+ */
+export const fromCommentJson = sql<FromCommentRow | null>`(
+  select json_build_object(
+    'id', c.id, 'resolved', c.resolved_at is not null, 'author', coalesce(cu.name, cu.email, 'Someone'), 'excerpt', left(c.body, 280),
+    'otherOpen', (select count(*)::int from tasks o where o.source_comment_id = c.id and o.id <> ${tasks}.id and (o.proposal_status is null or o.proposal_status = 'approved') and o.status not in (${closedList})),
+    'task', json_build_object(
+      'id', ct.id, 'status', ct.status, 'orgId', ct.org_id, 'createdBy', ct.created_by, 'approverId', ct.approver_id, 'proposalStatus', ct.proposal_status,
+      'title', case when ct.goal_closer then coalesce(ct.title || ' · ' || (select cg.title from goals cg where cg.id = ct.goal_id), ct.title) else ct.title end,
+      'assigneeIds', coalesce((select json_agg(cta.user_id) from task_assignees cta where cta.task_id = ct.id), '[]'::json)))
+  from task_updates c join tasks ct on ct.id = c.task_id join users cu on cu.id = c.author_id
+  where c.id = ${tasks}.source_comment_id and c.kind = 'comment' and ct.org_id = ${tasks}.org_id)`;
+
+/**
+ * The comment a task came from, as the viewer may see it: the task it is on, its author and its words only when the
+ * viewer may read that task (a local task is its maker's alone); "Reopen that task" only when that task is closed and
+ * the viewer may put it back in progress.
+ */
+function fromCommentFor(viewer: Viewer, row: FromCommentRow | null): TaskDetail["fromComment"] {
+  if (row === null) return null;
+  const scope: TaskScope = { orgId: row.task.orgId, createdBy: row.task.createdBy, approverId: row.task.approverId, proposalStatus: row.task.proposalStatus, assigneeIds: row.task.assigneeIds };
+  const readable = canReadTask(viewer, scope);
+  return {
+    id: row.id,
+    resolved: row.resolved,
+    otherOpen: row.otherOpen,
+    author: readable ? row.author : null,
+    excerpt: readable ? row.excerpt : null,
+    task: readable ? { id: row.task.id, title: row.task.title, status: row.task.status } : null,
+    canReopenTask: readable && isClosedStatus(row.task.status) && canUpdateProgress(viewer, scope),
+  };
+}
+
 /** The name of the group the task is in (2026-11-11 log): null when the group has none, or the task is in no group. */
 export const groupNameSql = sql<string | null>`(select tg.name from task_groups tg where tg.id = ${tasks}.group_id)`;
 
@@ -172,6 +224,7 @@ const listColumns = {
   groupId: tasks.groupId,
   groupName: groupNameSql,
   groupSize: groupSizeSql,
+  sourceCommentId: tasks.sourceCommentId,
   assignees: assigneesJson,
 };
 
@@ -201,6 +254,7 @@ type ListRow = {
   groupId: string | null;
   groupName: string | null;
   groupSize: number;
+  sourceCommentId: string | null;
   assignees: Person[];
 };
 
@@ -229,6 +283,7 @@ export function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
     parent: row.parentTaskId && row.parentTitle !== null ? { id: row.parentTaskId, title: row.parentTitle } : null,
     subTasks: row.subTasks,
     group: groupOf(row),
+    fromComment: row.sourceCommentId !== null,
     proposal: row.proposalStatus,
     needsSignOff: row.needsSignOff,
     goalCloser: isCloser(row),
@@ -508,6 +563,8 @@ export type ApprovalStagingTask = {
   evidence: { url: string; label: string | null }[];
   /** Open comments: approving is refused until they are resolved. */
   openComments: number;
+  /** Of those, the ones waiting for a task made from them (2026-11-11 log). */
+  commentsWaitingOnTasks: number;
 };
 
 /**
@@ -533,6 +590,7 @@ export async function approvalStagingTasks(viewer: Viewer, project = ""): Promis
       goalTitle: goals.title,
       people: assigneesJson,
       openComments: openCommentsSql,
+      commentsWaiting: commentsWaitingSql,
       evidence: sql<{ url: string; label: string | null }[]>`coalesce((select json_agg(json_build_object('url', l.url, 'label', l.label) order by l.created_at) from task_links l where l.task_id = ${tasks}.id), '[]'::json)`,
     })
     .from(tasks)
@@ -556,6 +614,7 @@ export async function approvalStagingTasks(viewer: Viewer, project = ""): Promis
     assignees: row.people,
     evidence: row.evidence,
     openComments: row.openComments,
+    commentsWaitingOnTasks: row.commentsWaiting,
   }));
 }
 
@@ -857,10 +916,12 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
       approvals: approvalsJson,
       needsSignOff: needsSignOffSql,
       openComments: openCommentsSql,
+      commentsWaiting: commentsWaitingSql,
       parentTitle: parentTitleSql,
       subTasks: subTasksSql,
       groupName: groupNameSql,
       groupSize: groupSizeSql,
+      fromComment: fromCommentJson,
       otherOpenGoalTasks: otherOpenGoalTasksSql,
       approver: sql<Person | null>`case when ${approverUser.id} is null then null else ${personJson(approverUser)} end`,
       creator: sql<Person>`${personJson(creatorUser)}`,
@@ -889,6 +950,7 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     parent: t.parentTaskId && row.parentTitle !== null ? { id: t.parentTaskId, title: row.parentTitle } : null,
     subTasks: row.subTasks,
     group: groupOf({ groupId: t.groupId, groupName: row.groupName, groupSize: row.groupSize }),
+    fromComment: fromCommentFor(viewer, row.fromComment),
     assignees: row.assignees,
     approver: row.approver,
     creator: row.creator,
@@ -908,6 +970,7 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     nextAction: t.nextAction,
     completionSummary: t.completionSummary,
     openComments: row.openComments,
+    commentsWaitingOnTasks: row.commentsWaiting,
     lastUpdate: row.lastUpdate ? { author: row.lastUpdate.author, at: new Date(row.lastUpdate.at).toISOString() } : null,
   };
   return { detail, scope: scopeOf(t, row.assignees) };
@@ -937,13 +1000,18 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
       otherOpenGoalTasks: otherOpenGoalTasksSql,
       assignees: assigneesJson,
       openComments: openCommentsSql,
+      commentsWaiting: commentsWaitingSql,
+      fromCommentRow: fromCommentJson,
     })
     .from(tasks)
     .where(and(eq(tasks.id, id), eq(tasks.orgId, viewer.orgId)));
   if (!row) return null;
-  const { assignees, ...basics } = row;
+  const { assignees, fromCommentRow, ...basics } = row;
+  const from = fromCommentFor(viewer, fromCommentRow);
   return {
     ...basics,
+    /** Made from a comment: what closing or reopening this task does to that comment (the forms say it before the save). */
+    fromComment: from === null ? null : { resolved: from.resolved, taskTitle: from.task?.title ?? null, taskStatus: from.task?.status ?? null, otherOpen: from.otherOpen },
     parent: row.parentTaskId && row.parentTitle !== null ? { id: row.parentTaskId, title: row.parentTitle } : null,
     /** A goal's closer: the goal it marks achieved and how many other tasks it still waits for. */
     closer: isCloser(row) ? { goalTitle: row.goalTitle, openOthers: row.otherOpenGoalTasks } : null,
@@ -969,12 +1037,12 @@ export async function listLinks(viewer: Viewer, taskId: string): Promise<Evidenc
  */
 export async function lockTask(tx: Tx, orgId: string, id: string) {
   const [row] = await tx
-    .select({ task: tasks, openComments: openCommentsSql, goalTitle: goalTitleSql })
+    .select({ task: tasks, openComments: openCommentsSql, commentsWaitingOnTasks: commentsWaitingSql, goalTitle: goalTitleSql })
     .from(tasks)
     .where(and(eq(tasks.id, id), eq(tasks.orgId, orgId)))
     .for("update", { of: tasks });
   if (!row) return null;
-  const t = { ...row.task, goalCloser: isCloser(row.task), openComments: row.openComments, goalTitle: row.goalTitle };
+  const t = { ...row.task, goalCloser: isCloser(row.task), openComments: row.openComments, commentsWaitingOnTasks: row.commentsWaitingOnTasks, goalTitle: row.goalTitle };
   const assignment = await assignmentOf(tx, t.id);
   return { task: t, assignment, scope: scopeOf(t, assignment) };
 }

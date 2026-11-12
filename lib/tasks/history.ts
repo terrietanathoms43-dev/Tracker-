@@ -21,6 +21,8 @@ export type HistoryRow = {
   /** Comments: when it was marked resolved, and by whom. */
   resolved_at: Date | string | null;
   resolved_by_name: string | null;
+  /** Comments: the live tasks made from it, oldest first (null when there are none, and on every other row). */
+  linked?: { id: string; title: string; status: TaskStatus }[] | null;
   actor_id: string;
   actor_name: string | null;
   actor_email: string | null;
@@ -80,7 +82,7 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
   const after = row.after ?? {};
   switch (row.kind) {
     case "created":
-      return { phrase: after.local === true ? "created it as a local task" : after.proposal === true ? "proposed the task" : "created the task", change: null };
+      return { phrase: after.local === true ? "created it as a local task" : after.proposal === true ? "proposed the task" : text(after.fromCommentId) ? "made the task from a comment" : "created the task", change: null };
     case "edited":
       return editedPhrase(before, after);
     case "status_changed":
@@ -130,10 +132,11 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
       return { phrase: "completed it", change: null };
     case "reopened":
       return { phrase: "reopened it", change: { before: statusLabel(before.status), after: statusLabel(after.status) } };
+    // A comment resolved or opened again by the task made from it (2026-11-11 log): the note names that task.
     case "comment_resolved":
-      return { phrase: "resolved a comment", change: null };
+      return { phrase: text(after.byTaskId) ? "resolved a comment by closing the task made from it" : "resolved a comment", change: null };
     case "comment_reopened":
-      return { phrase: "reopened a comment", change: null };
+      return { phrase: text(after.byTaskId) ? "opened a comment again by reopening the task made from it" : "reopened a comment", change: null };
     case "link_added":
       return { phrase: `added evidence: ${text(after.label) ?? text(after.url) ?? "a link"}`, change: null };
     case "link_removed":
@@ -181,6 +184,7 @@ export function phraseHistory(row: HistoryRow, timeZone: string, now: Date): His
     nextAction: row.next_action,
     blocker: row.blocker,
     resolved: row.type === "comment" && row.resolved_at ? { by: row.resolved_by_name ?? "someone", at: new Date(row.resolved_at).toISOString() } : null,
+    tasks: row.type === "comment" ? (row.linked ?? []) : [],
     at: at.toISOString(),
     day,
     dayLabel,

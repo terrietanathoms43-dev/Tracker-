@@ -91,7 +91,7 @@ function NoteDialog({
  * log: the note stands as the completion summary); Send back returns it with a note on what must change.
  * Approving is held while comments are open (the same rule as completing), and the button says why.
  */
-export function ApprovalActions({ taskId, openComments = 0 }: { taskId: string; openComments?: number }) {
+export function ApprovalActions({ taskId, openComments = 0, commentsWaitingOnTasks = 0 }: { taskId: string; openComments?: number; commentsWaitingOnTasks?: number }) {
   const [dialog, setDialog] = useState<"approve" | "send_back" | null>(null);
   const [pending, startTransition] = useTransition();
   const held = openComments > 0;
@@ -126,7 +126,7 @@ export function ApprovalActions({ taskId, openComments = 0 }: { taskId: string; 
               {approveButton}
             </span>
           </TooltipTrigger>
-          <TooltipContent>{openCommentsMessage(openComments)}</TooltipContent>
+          <TooltipContent>{openCommentsMessage(openComments, commentsWaitingOnTasks)}</TooltipContent>
         </Tooltip>
       ) : (
         approveButton

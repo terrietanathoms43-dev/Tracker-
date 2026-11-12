@@ -456,6 +456,12 @@ export const tasks = pgTable(
     parentTaskId: text("parent_task_id").references((): AnyPgColumn => tasks.id, { onDelete: "set null" }),
     /** The group it is in (2026-11-11 log): equals drawn together in every list. A sub-task goes with its parent instead. */
     groupId: text("group_id").references(() => taskGroups.id, { onDelete: "set null" }),
+    /**
+     * The comment this task was made from ("Make a task", 2026-11-11 log): a link only, not a sub-task. The comment
+     * stays open while a live task made from it is open and resolves itself when the last one is closed; reopening
+     * the task opens it again. Copies (a repeat's next occurrence, a repeating goal's tasks) never carry it.
+     */
+    sourceCommentId: text("source_comment_id").references((): AnyPgColumn => taskUpdates.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     description: text("description"),
     createdBy: text("created_by")
@@ -500,6 +506,7 @@ export const tasks = pgTable(
     index("tasks_series_idx").on(t.seriesId),
     index("tasks_parent_idx").on(t.parentTaskId),
     index("tasks_group_idx").on(t.groupId),
+    index("tasks_source_comment_idx").on(t.sourceCommentId),
   ],
 );
 

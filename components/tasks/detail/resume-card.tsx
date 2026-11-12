@@ -51,7 +51,7 @@ function StatusStrip({ detail, abilities, localChain, timeZone, now }: { detail:
           <span className="font-medium">Awaiting approval</span>
           {detail.approver ? ` from ${nameOf(detail.approver)}` : ""}
         </p>
-        {abilities.approve ? <ApprovalActions taskId={detail.id} openComments={detail.openComments} /> : null}
+        {abilities.approve ? <ApprovalActions taskId={detail.id} openComments={detail.openComments} commentsWaitingOnTasks={detail.commentsWaitingOnTasks} /> : null}
       </div>
     );
   }
@@ -154,6 +154,9 @@ export function ResumeCard({
           <a href="#history-heading" className="flex items-center gap-2 rounded-md text-[13px] text-status-awaiting-fg underline-offset-4 hover:underline">
             <MessageSquareWarning className="size-4 shrink-0" aria-hidden />
             {detail.openComments === 1 ? "1 open comment" : `${detail.openComments} open comments`} to resolve before this task can be completed
+            {detail.commentsWaitingOnTasks > 0
+              ? ` (${detail.commentsWaitingOnTasks === detail.openComments ? (detail.openComments === 1 ? "it waits" : "they wait") : `${detail.commentsWaitingOnTasks} of them ${detail.commentsWaitingOnTasks === 1 ? "waits" : "wait"}`} for a task made from the comment)`
+              : ""}
           </a>
         ) : null}
         {!closed && detail.goalCloser && detail.goal ? (

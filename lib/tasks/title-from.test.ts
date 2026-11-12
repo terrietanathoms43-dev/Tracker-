@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { titleFromComment } from "./comment-tasks";
 import { TITLE_SNIPPET_MAX, titleCoversText, titleFromText } from "./title-from";
 
 // The title a task gets from the text typed into the add bar (docs/PLAN.md, 2026-11-11 log).
@@ -73,5 +74,13 @@ describe("titleCoversText", () => {
   it("is false once there is more to read", () => {
     expect(titleCoversText("Fix the login bug\nIt fails for Google accounts.")).toBe(false);
     expect(titleCoversText("x".repeat(TITLE_SNIPPET_MAX + 1))).toBe(false);
+  });
+});
+
+describe("titleFromComment", () => {
+  it("makes a comment's first line that says something its title, cut to the cap", () => {
+    expect(titleFromComment("\n  \nThe export drops the last row\nmore detail", 200)).toBe("The export drops the last row");
+    expect(titleFromComment("abcdefghij", 5)).toBe("abcd…");
+    expect(titleFromComment("", 200)).toBe("");
   });
 });

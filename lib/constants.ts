@@ -171,6 +171,8 @@ export const NOTIFICATION_KINDS = [
   "commented",
   "comment_resolved",
   "goal_achieved",
+  /** A completed task is in progress again: a comment on it opened again when the task made from it was reopened (2026-11-11 log). */
+  "reopened",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
