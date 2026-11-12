@@ -3,8 +3,10 @@
 import { cn } from "cn";
 import { CalendarClock, CalendarX2, CheckCircle2, ChevronLeft, ChevronRight, Flag, Maximize2, OctagonAlert, Pin, ZoomIn, ZoomOut } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { StatusIcon } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { TASK_STATUS_LABELS, type TaskStatus } from "@/lib/constants";
 import type { TimelineDay, TimelineTaskKind, TimelineTaskSummary } from "@/lib/reports/data";
 import { HEALTH_LABELS, HEALTH_ORDER, type HealthStatus } from "@/lib/reports/health";
 import type { Pace } from "@/lib/reports/pace";
@@ -14,10 +16,13 @@ import { formatDay } from "@/lib/time";
 // The daily chart (docs/PLAN.md, 2026-11-01 and 2026-11-03 logs). One column per calendar day from the start of the
 // range to two weeks past today. The y axis is the day's activity: every history row of every task in scope
 // (a completion, a comment, an edit, a status change, each +1), drawn as the grey line and its wash, so a glance
-// says whether the team is busier or quieter. The bars are counts, not heights: one fixed-size block per task
-// (completed, then what was blocked that day and still is, then overdue, then, from today on, what falls due),
-// stacked with a surface gap,
-// so a day with three completions shows three blocks whatever the activity scale. The chart fills its card with
+// says whether the team is busier or quieter. The bars are counts, not heights: one fixed-size block per task,
+// stacked with a surface gap, so a day with three completions shows three blocks whatever the activity scale.
+// Every status has its mark (2026-11-12 log): a task is drawn once for the status it is in now, on the day it
+// reached it (what ended first: completed, rejected, deferred, cancelled, merged; then what stands: still blocked,
+// awaiting approval, in progress, not started), then what is overdue and, from today on, what falls due. The live
+// statuses are solid in the status's own colour; the four that close a task without completing it share one grey
+// in the app, so each is a hollow block with its own mark inside (a cross, pause bars, a slash, a merge arrow). The chart fills its card with
 // no scrollbar: zoom shows fewer or more days (anchored on today) and ‹ › move along the window. Today is marked
 // with a strong line. Hovering a day keeps its tasks on show until another day is hovered; clicking pins it.
 
@@ -47,17 +52,85 @@ const ASSUMED_WIDTH = 960;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const KIND_LABEL: Record<TimelineTaskKind, string> = {
-  completed: "Completed",
+  ...TASK_STATUS_LABELS,
   blocked: "Still blocked",
   overdue: "Overdue",
   due: "Due",
 };
 const KIND_BADGE: Record<TimelineTaskKind, string> = {
-  completed: "bg-status-completed-bg text-status-completed-fg",
+  not_started: "bg-status-not-started-bg text-status-not-started-fg",
+  in_progress: "bg-status-in-progress-bg text-status-in-progress-fg",
+  awaiting_approval: "bg-status-awaiting-bg text-status-awaiting-fg",
   blocked: "bg-status-blocked-bg text-status-blocked-fg",
+  completed: "bg-status-completed-bg text-status-completed-fg",
+  rejected: "bg-status-rejected-bg text-status-rejected-fg",
+  deferred: "bg-status-deferred-bg text-status-deferred-fg",
+  cancelled: "bg-status-cancelled-bg text-status-cancelled-fg",
+  merged: "bg-status-merged-bg text-status-merged-fg",
   overdue: "bg-status-blocked-dot text-white",
   due: "bg-status-in-progress-bg text-status-in-progress-fg",
 };
+/** The colour of a kind's count in the day inspector's heading. */
+const KIND_TEXT: Record<TimelineTaskKind, string> = {
+  not_started: "text-status-not-started-fg",
+  in_progress: "text-status-in-progress-fg",
+  awaiting_approval: "text-status-awaiting-fg",
+  blocked: "text-status-blocked-fg",
+  completed: "text-status-completed-fg",
+  rejected: "text-status-rejected-fg",
+  deferred: "text-status-deferred-fg",
+  cancelled: "text-status-cancelled-fg",
+  merged: "text-status-merged-fg",
+  overdue: "text-status-blocked-fg",
+  due: "text-status-in-progress-fg",
+};
+
+/** The legend's status row, in the order a task moves through them. */
+const STATUS_KINDS: readonly TaskStatus[] = ["not_started", "in_progress", "awaiting_approval", "blocked", "completed", "rejected", "deferred", "cancelled", "merged"];
+/** The statuses the chart drew before 2026-11-12, and the date marks: each has its own count in a day's summary. */
+const SUMMARY_KINDS: readonly TimelineTaskKind[] = ["completed", "blocked", "overdue", "due"];
+/** The statuses that close a task without completing it: one grey in the app, so each block carries its own mark. */
+const DROPPED: readonly TimelineTaskKind[] = ["rejected", "deferred", "cancelled", "merged"];
+
+/** How a kind's block is painted: the same colours the status wears everywhere else. */
+function blockPaint(kind: TimelineTaskKind, hatchId: string): { fill: string; stroke: string | null; strokeWidth: number } {
+  switch (kind) {
+    case "completed":
+      return { fill: "var(--status-completed-dot)", stroke: null, strokeWidth: 1 };
+    case "blocked":
+      return { fill: `url(#${hatchId})`, stroke: null, strokeWidth: 1 };
+    case "overdue":
+      return { fill: "var(--status-blocked-dot)", stroke: "var(--status-blocked-fg)", strokeWidth: 1.5 };
+    case "due":
+      return { fill: "var(--card)", stroke: "var(--status-in-progress-dot)", strokeWidth: 1.5 };
+    case "in_progress":
+      return { fill: "var(--status-in-progress-dot)", stroke: null, strokeWidth: 1 };
+    case "awaiting_approval":
+      return { fill: "var(--status-awaiting-dot)", stroke: null, strokeWidth: 1 };
+    case "not_started":
+      return { fill: "var(--status-not-started-dot)", stroke: null, strokeWidth: 1 };
+    default:
+      return { fill: `var(--status-${kind}-bg)`, stroke: `var(--status-${kind}-dot)`, strokeWidth: 1 };
+  }
+}
+
+/**
+ * The mark inside a hollow block: a cross (rejected), pause bars (deferred), a slash (cancelled), an arrow joining
+ * (merged). Nothing for the other kinds, or when the block is too small to hold one (the tooltip and the day's
+ * list still say which it is).
+ */
+function droppedMark(kind: TimelineTaskKind, x: number, y: number, width: number, height: number): string | null {
+  if (!DROPPED.includes(kind)) return null;
+  const half = (Math.min(width, height) - 4) / 2;
+  if (half < 1.5) return null;
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const p = (dx: number, dy: number) => `${(cx + dx).toFixed(1)},${(cy + dy).toFixed(1)}`;
+  if (kind === "rejected") return `M${p(-half, -half)} L${p(half, half)} M${p(-half, half)} L${p(half, -half)}`;
+  if (kind === "deferred") return `M${p(-half / 2, -half)} L${p(-half / 2, half)} M${p(half / 2, -half)} L${p(half / 2, half)}`;
+  if (kind === "cancelled") return `M${p(-half, half)} L${p(half, -half)}`;
+  return `M${p(-half * 0.7, -half)} L${p(half * 0.7, 0)} L${p(-half * 0.7, half)}`;
+}
 
 /** A goal deadline pin wears the goal's health, so an at-risk or delayed deadline is red before anyone hovers. */
 const PIN_TONE: Record<HealthStatus, { fill: string; stroke: string }> = {
@@ -78,21 +151,21 @@ function topSegmentPath(x: number, y: number, width: number, height: number): st
   return `M${x},${y + height} V${y + r} Q${x},${y} ${x + r},${y} H${x + width - r} Q${x + width},${y} ${x + width},${y + r} V${y + height} Z`;
 }
 
+/** The day list's icon: a status wears the icon it has everywhere else; the two date marks have their own. */
 function KindIcon({ kind, className }: { kind: TimelineTaskKind; className?: string }) {
-  if (kind === "completed") return <CheckCircle2 className={cn("size-3.5 shrink-0 text-status-completed-dot", className)} aria-hidden />;
-  if (kind === "blocked") return <OctagonAlert className={cn("size-3.5 shrink-0 text-status-blocked-dot", className)} aria-hidden />;
   if (kind === "overdue") return <CalendarX2 className={cn("size-3.5 shrink-0 text-status-blocked-fg", className)} aria-hidden />;
-  return <CalendarClock className={cn("size-3.5 shrink-0 text-status-in-progress-dot", className)} aria-hidden />;
+  if (kind === "due") return <CalendarClock className={cn("size-3.5 shrink-0 text-status-in-progress-dot", className)} aria-hidden />;
+  return <StatusIcon status={kind} className={cn("size-3.5", className)} />;
 }
 
 /** A swatch for the legend, drawn the way the bar draws that kind. */
 function Swatch({ kind, hatchId }: { kind: TimelineTaskKind; hatchId: string }) {
-  if (kind === "due") return <span className="inline-block size-3 rounded-[3px] border-[1.5px] border-status-in-progress-dot" aria-hidden />;
-  if (kind === "overdue") return <span className="inline-block size-3 rounded-[3px] bg-status-blocked-dot ring-1 ring-status-blocked-fg" aria-hidden />;
-  if (kind === "completed") return <span className="inline-block size-3 rounded-[3px] bg-status-completed-dot" aria-hidden />;
+  const paint = blockPaint(kind, hatchId);
+  const mark = droppedMark(kind, 0, 0, 12, 12);
   return (
-    <svg width="12" height="12" className="shrink-0 rounded-[3px]" aria-hidden>
-      <rect width="12" height="12" fill={`url(#${hatchId})`} />
+    <svg width="12" height="12" viewBox="0 0 12 12" className="shrink-0" aria-hidden>
+      <rect x="0.75" y="0.75" width="10.5" height="10.5" rx="3" fill={paint.fill} stroke={paint.stroke ?? "none"} strokeWidth={paint.stroke === null ? 0 : paint.strokeWidth} />
+      {mark !== null ? <path d={mark} fill="none" stroke={`var(--status-${kind}-fg)`} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> : null}
     </svg>
   );
 }
@@ -201,21 +274,26 @@ export function RangeChart({
     days.findIndex((day) => day.date === today),
   );
 
+  // How many blocks of each kind the window draws: the legend's counts, and a kind with none is dimmed there.
+  const drawn = new Map<TimelineTaskKind, number>();
+  for (const day of days) for (const task of day.tasks) drawn.set(task.kind, (drawn.get(task.kind) ?? 0) + 1);
+  const drawnOf = (kind: TimelineTaskKind) => drawn.get(kind) ?? 0;
   const totals = {
-    completed: days.reduce((sum, day) => sum + day.tasks.filter((task) => task.kind === "completed").length, 0),
-    blocked: days.reduce((sum, day) => sum + day.tasks.filter((task) => task.kind === "blocked").length, 0),
-    overdue: days.reduce((sum, day) => sum + day.tasks.filter((task) => task.kind === "overdue").length, 0),
-    due: days.reduce((sum, day) => sum + day.tasks.filter((task) => task.kind === "due").length, 0),
+    completed: drawnOf("completed"),
+    blocked: drawnOf("blocked"),
+    overdue: drawnOf("overdue"),
+    due: drawnOf("due"),
+    blocks: days.reduce((sum, day) => sum + day.tasks.length, 0),
     goals: days.reduce((sum, day) => sum + day.goalDeadlines.length, 0),
     activity: days.reduce((sum, day) => sum + day.activity, 0),
   };
   const overdueTotal = totals.overdue + overdueEarlier;
   const overdueNote = overdueTotal > 0 ? `${overdueTotal} overdue${overdueEarlier > 0 ? ` (${overdueEarlier} due before this window)` : ""}` : null;
 
-  if (total === 0 || totals.completed + totals.blocked + totals.due + totals.goals + totals.activity + overdueTotal === 0) {
+  if (total === 0 || totals.blocks + totals.goals + totals.activity + overdueEarlier === 0) {
     return (
       <div className="rounded-lg border bg-card p-6 text-center text-[13px] text-muted-foreground">
-        {showMyWork ? "Nothing of yours was completed, blocked or falls due in this window." : "Nothing happened, was completed, blocked or falls due in this window."}
+        {showMyWork ? "Nothing of yours changed status or falls due in this window." : "Nothing happened, changed status or falls due in this window."}
       </div>
     );
   }
@@ -308,19 +386,21 @@ export function RangeChart({
             {summary} · to {TIMELINE_LOOKAHEAD_DAYS} days ahead
           </p>
         </div>
-        <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground" aria-label="Legend">
-          <li className="flex items-center gap-1.5">
-            <span className="inline-block h-0.5 w-4 rounded-full bg-muted-foreground" aria-hidden />
-            Activity per day (the axis)
-          </li>
-          <li className="flex items-center gap-1.5">
-            <Swatch kind="completed" hatchId={hatchId} />
-            {showMyWork ? "My completions" : "Completed"} (one block each)
-          </li>
-          <li className="flex items-center gap-1.5">
-            <Swatch kind="blocked" hatchId={hatchId} />
-            Still blocked (on the day it was raised)
-          </li>
+      </div>
+
+      {/* The legend. Every status has its mark: one block per task, on the day it reached the status it is in now. */}
+      <div className="mb-3 grid gap-1.5 text-[11px] text-muted-foreground">
+        <ul className="flex flex-wrap items-center gap-x-3 gap-y-1" aria-label="Statuses on the chart" data-status-legend>
+          <li className="font-medium text-foreground">{showMyWork ? "One block per task of yours, on the day it reached its status:" : "One block per task, on the day it reached its status:"}</li>
+          {STATUS_KINDS.map((kind) => (
+            <li key={kind} className={cn("flex items-center gap-1.5", drawnOf(kind) === 0 && "opacity-55")} data-legend-kind={kind} data-count={drawnOf(kind)}>
+              <Swatch kind={kind} hatchId={hatchId} />
+              {KIND_LABEL[kind]}
+              {drawnOf(kind) > 0 ? <span className="font-medium text-foreground tabular-nums">{drawnOf(kind)}</span> : null}
+            </li>
+          ))}
+        </ul>
+        <ul className="flex flex-wrap items-center gap-x-3 gap-y-1" aria-label="Legend">
           <li className="flex items-center gap-1.5">
             <Swatch kind="overdue" hatchId={hatchId} />
             Overdue
@@ -328,6 +408,10 @@ export function RangeChart({
           <li className="flex items-center gap-1.5">
             <Swatch kind="due" hatchId={hatchId} />
             Due
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="inline-block h-0.5 w-4 rounded-full bg-muted-foreground" aria-hidden />
+            Activity per day (the axis)
           </li>
           {totals.goals > 0 ? (
             <li className="flex items-center gap-1.5">
@@ -438,6 +522,9 @@ export function RangeChart({
               `${day.tasks.filter((task) => task.kind === "blocked").length} still blocked`,
               `${day.tasks.filter((task) => task.kind === "overdue").length} overdue`,
               `${day.tasks.filter((task) => task.kind === "due").length} due`,
+              ...STATUS_KINDS.filter((kind) => !SUMMARY_KINDS.includes(kind) && day.tasks.some((task) => task.kind === kind)).map(
+                (kind) => `${day.tasks.filter((task) => task.kind === kind).length} ${KIND_LABEL[kind].toLowerCase()}`,
+              ),
               day.goalDeadlines.length > 0 ? `${day.goalDeadlines.length} goal deadline${day.goalDeadlines.length === 1 ? "" : "s"}` : null,
             ]
               .filter(Boolean)
@@ -499,26 +586,31 @@ export function RangeChart({
                   const isTop = position === day.tasks.length - 1;
                   const key = `${day.date}:${task.id}:${task.kind}`;
                   const hovered = hoverTask === key;
-                  const fill = task.kind === "completed" ? "var(--status-completed-dot)" : task.kind === "blocked" ? `url(#${hatchId})` : task.kind === "overdue" ? "var(--status-blocked-dot)" : "var(--card)";
-                  const stroke = task.kind === "due" ? "var(--status-in-progress-dot)" : task.kind === "overdue" ? "var(--status-blocked-fg)" : hovered ? "var(--foreground)" : "none";
+                  const paint = blockPaint(task.kind, hatchId);
+                  const mark = droppedMark(task.kind, x, top + GAP, bar, height);
                   const common = {
-                    fill,
-                    stroke,
-                    strokeWidth: task.kind === "due" || task.kind === "overdue" ? 1.5 : 1,
+                    fill: paint.fill,
+                    stroke: paint.stroke ?? (hovered ? "var(--foreground)" : "none"),
+                    strokeWidth: paint.strokeWidth,
                     opacity: hovered || hoverTask === null ? 1 : 0.75,
                     "data-segment": task.kind,
                     onMouseEnter: () => setHoverTask(key),
                     onMouseLeave: () => setHoverTask(null),
                     className: "pointer-events-auto",
                   } as const;
-                  return isTop ? (
-                    <path key={key} d={topSegmentPath(x, top + GAP, bar, height)} {...common}>
-                      <title>{`${task.title}: ${KIND_LABEL[task.kind]}`}</title>
-                    </path>
-                  ) : (
-                    <rect key={key} x={x} y={top + GAP} width={bar} height={height} {...common}>
-                      <title>{`${task.title}: ${KIND_LABEL[task.kind]}`}</title>
-                    </rect>
+                  return (
+                    <Fragment key={key}>
+                      {isTop ? (
+                        <path d={topSegmentPath(x, top + GAP, bar, height)} {...common}>
+                          <title>{`${task.title}: ${KIND_LABEL[task.kind]}`}</title>
+                        </path>
+                      ) : (
+                        <rect x={x} y={top + GAP} width={bar} height={height} {...common}>
+                          <title>{`${task.title}: ${KIND_LABEL[task.kind]}`}</title>
+                        </rect>
+                      )}
+                      {mark !== null ? <path d={mark} fill="none" stroke={`var(--status-${task.kind}-fg)`} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="pointer-events-none" data-segment-mark={task.kind} /> : null}
+                    </Fragment>
                   );
                 })}
 
@@ -564,6 +656,11 @@ export function RangeChart({
               <span className="font-medium text-status-completed-fg">{current.tasks.filter((task) => task.kind === "completed").length} completed</span>
               {current.tasks.some((task) => task.kind === "blocked") ? <span className="font-medium text-status-blocked-fg">{current.tasks.filter((task) => task.kind === "blocked").length} still blocked</span> : null}
               {current.tasks.some((task) => task.kind === "due") ? <span className="font-medium text-status-in-progress-fg">{current.tasks.filter((task) => task.kind === "due").length} due</span> : null}
+              {STATUS_KINDS.filter((kind) => !SUMMARY_KINDS.includes(kind) && current.tasks.some((task) => task.kind === kind)).map((kind) => (
+                <span key={kind} className={cn("font-medium", KIND_TEXT[kind])}>
+                  {current.tasks.filter((task) => task.kind === kind).length} {KIND_LABEL[kind].toLowerCase()}
+                </span>
+              ))}
             </div>
           </div>
 
@@ -593,7 +690,7 @@ export function RangeChart({
 
           <ul className="mt-2.5 grid gap-1">
             {current.tasks.length === 0 ? (
-              <li className="text-[12px] text-muted-foreground">{current.future ? "Nothing falls due on this day." : "No task was completed, blocked or due on this day."}</li>
+              <li className="text-[12px] text-muted-foreground">{current.future ? "Nothing falls due on this day." : "No task changed status or was due on this day."}</li>
             ) : (
               current.tasks.map((task: TimelineTaskSummary) => {
                 const key = `${current.date}:${task.id}:${task.kind}`;
