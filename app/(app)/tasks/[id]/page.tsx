@@ -1,24 +1,29 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { GroupSection } from "@/components/tasks/detail/group-section";
 import { ResumeCard } from "@/components/tasks/detail/resume-card";
 import { SubTasksSection } from "@/components/tasks/detail/sub-tasks-section";
 import { TaskDetails } from "@/components/tasks/detail/task-details";
+import { TaskDrafts } from "@/components/tasks/detail/task-drafts";
 import { TaskHeader } from "@/components/tasks/detail/task-header";
 import { TaskHistory } from "@/components/tasks/detail/task-history";
+import { UpstreamCard } from "@/components/tasks/detail/upstream-card";
 import { CurrentTask } from "@/components/tasks/task-actions";
 import { db } from "@/db";
 import { chainForPlacement } from "@/lib/approvals/chain";
 import { canDecideProposal, describeStepPeople } from "@/lib/approvals/policy";
+import { isClosedStatus } from "@/lib/constants";
+import { draftsForTask } from "@/lib/dal/drafts";
 import { listHistory } from "@/lib/dal/history";
 import { pinnedProjectIds } from "@/lib/dal/projects";
-import { activePlanning, getTask, listLinks, taskPeople, tasksForParent } from "@/lib/dal/tasks";
-import { canApproveTask, canEditTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
+import { activePlanning, getTask, listLinks, taskPeople, tasksForGroup, tasksForParent } from "@/lib/dal/tasks";
+import { canApproveTask, canEditTask, canGroupTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
 import { describeRecurrence } from "@/lib/recurrence";
 import { defaultApproverFor } from "@/lib/tasks/approver";
 import { closerLabel } from "@/lib/tasks/closer";
 import { nameOf } from "@/lib/tasks/people";
 import type { TaskAbilities, UpdateContext } from "@/lib/tasks/types";
-import { dayKey } from "@/lib/time";
+import { dayKey, formatRelative } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
 
 // /tasks/[id]: one task, Resume card first.
@@ -28,27 +33,30 @@ export const metadata: Metadata = { title: "Task" };
 /**
  * "What is this, what happened, what happens next, who must act?" (docs/BRIEF.md §5), answered top down:
  * the header, the Resume card with its inline update form (or the proposal's sign-off strip, or a local task's
- * strip with the chain a send would start), the details, then comments and history. A local task is found only
- * by its maker (lib/permissions.ts canReadTask).
+ * strip with the chain a send would start), the details, the viewer's own drafts attached to the task (private to
+ * them, 2026-11-11 log), then comments and history. A local task is found only by its maker (lib/permissions.ts
+ * canReadTask). What the task is tied to comes before the details: the comment it was made from above the Resume
+ * card, then its sub-tasks, then the tasks it is grouped with (2026-11-11 log, task groups and comment tasks).
  */
 export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const { id } = await props.params;
   const viewer = await requireViewer();
   const worker = isWorker(viewer);
   // One round trip; nothing is rendered unless the viewer may read the task (a foreign id is simply not found).
-  const [found, links, history, people, planning, pinnedProjects] = await Promise.all([
+  const [found, links, history, people, planning, pinnedProjects, drafts] = await Promise.all([
     getTask(viewer, id),
     listLinks(viewer, id),
     listHistory(viewer, id, null),
     worker ? taskPeople(viewer) : [],
     activePlanning(viewer),
     pinnedProjectIds(viewer),
+    draftsForTask(viewer, id),
   ]);
   if (found === null || !canReadTask(viewer, found.scope)) notFound();
   const { detail, scope } = found;
   // Sub-tasks (2026-11-08 log): a live, top-level task lists the tasks attached to it; a sub-task has no section of its own.
   const live = detail.proposalStatus === null || detail.proposalStatus === "approved";
-  const subTasks = live && detail.parent === null ? await tasksForParent(viewer, id) : null;
+  const [subTasks, groupTasks] = await Promise.all([live && detail.parent === null ? tasksForParent(viewer, id) : null, detail.group !== null ? tasksForGroup(viewer, detail.group.id) : null]);
   const abilities: TaskAbilities = {
     edit: canEditTask(viewer, scope),
     progress: canUpdateProgress(viewer, scope),
@@ -77,6 +85,8 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           blockedReason: detail.blockedReason,
           blockedBy: detail.blockedBy,
           openComments: detail.openComments,
+          commentsWaitingOnTasks: detail.commentsWaitingOnTasks,
+          fromComment: detail.fromComment === null ? null : { resolved: detail.fromComment.resolved, taskTitle: detail.fromComment.task?.title ?? null, taskStatus: detail.fromComment.task?.status ?? null, otherOpen: detail.fromComment.otherOpen },
           repeats: detail.recurrence ? describeRecurrence(detail.recurrence, detail.dueDate) : null,
           parent: detail.parent,
           openSubTasks: subTasks === null ? 0 : subTasks.filter((item) => !["completed", "rejected", "deferred", "cancelled", "merged"].includes(item.status)).length,
@@ -93,12 +103,17 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
       <CurrentTask id={detail.id} title={detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title} actionable={abilities.progress} />
       <TaskHeader detail={detail} abilities={abilities} today={today} />
       <div className="grid gap-5">
+        {detail.fromComment !== null ? <UpstreamCard fromComment={detail.fromComment} closed={isClosedStatus(detail.status)} /> : null}
         <ResumeCard detail={detail} links={links} removableLinks={removableLinks} abilities={abilities} updateContext={updateContext} localChain={localChain} timeZone={viewer.timezone} now={now} />
         {subTasks !== null ? (
           <SubTasksSection task={{ id: detail.id, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} items={subTasks} today={today} canEdit={abilities.edit} readOnly={!abilities.progress} />
         ) : null}
+        {detail.group !== null && groupTasks !== null ? (
+          <GroupSection task={{ id: detail.id, title: detail.title }} group={detail.group} others={groupTasks.filter((item) => item.id !== detail.id)} today={today} canEdit={canGroupTask(viewer, scope)} readOnly={!abilities.progress} />
+        ) : null}
         <TaskDetails
           detail={detail}
+          canGroup={canGroupTask(viewer, scope) && detail.parent === null && !detail.goalCloser}
           abilities={abilities}
           people={people.map(({ id: personId, name, email, image }) => ({ id: personId, name, email, image }))}
           viewerId={viewer.userId}
@@ -109,6 +124,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           timeZone={viewer.timezone}
           now={now}
         />
+        <TaskDrafts drafts={drafts.map((draft) => ({ ...draft, updated: formatRelative(new Date(draft.updatedAt), now, viewer.timezone) }))} />
         <TaskHistory task={{ id: detail.id, title: detail.title, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} initial={history} canComment={abilities.progress} openComments={detail.openComments} />
       </div>
     </div>

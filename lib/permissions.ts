@@ -115,6 +115,23 @@ export function canDeleteTask(viewer: Viewer, task?: Pick<TaskScope, "createdBy"
   return isOpenProposal(task) || (isLive(task) && toggled(viewer, "membersCanDeleteOwnTasks"));
 }
 
+/**
+ * Putting a task in a group, or taking it out (2026-11-11 log): whoever may edit it, once it is live. Which tasks
+ * can be grouped at all (not a sub-task, not a goal's closer) is the action's to say.
+ */
+export function canGroupTask(viewer: Viewer, task: TaskScope): boolean {
+  return isWorker(viewer) && isLive(task) && canEditTask(viewer, task);
+}
+
+/**
+ * Renaming a group or ungrouping all of it: leaders and admins, whoever made the group, or someone who may edit
+ * every task in it. Anyone else takes their own tasks out one at a time.
+ */
+export function canManageTaskGroup(viewer: Viewer, group: OrgScoped & { createdBy: string }, members: TaskScope[]): boolean {
+  if (!inOrg(viewer, group) || !isWorker(viewer)) return false;
+  return isLeader(viewer) || group.createdBy === viewer.userId || (members.length > 0 && members.every((task) => canEditTask(viewer, task)));
+}
+
 /** Sending a local task for sign-off, or publishing it where no sign-off applies any more: its maker alone. */
 export function canSendLocalTask(viewer: Viewer, task: Pick<TaskScope, "orgId" | "createdBy" | "proposalStatus">): boolean {
   return inOrg(viewer, task) && isLocal(task) && task.createdBy === viewer.userId;

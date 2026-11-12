@@ -80,10 +80,12 @@ export type TimelineGoalMarker = {
 };
 
 /**
- * What a task did on a day: it was completed, a blocker was raised on it, it was due and is still open (overdue,
- * drawn loud), or (today and later) it falls due.
+ * What a task did on a day. A status mark (2026-11-12 log: every status has one): the task is drawn once for the
+ * status it is in now, on the day it reached it; a status it has left since is not drawn (a blocker cleared, a task
+ * reopened; 2026-11-11 log). A date mark: it was due and is still open (overdue, drawn loud), or (today and later)
+ * it falls due.
  */
-export type TimelineTaskKind = "completed" | "blocked" | "overdue" | "due";
+export type TimelineTaskKind = TaskStatus | "overdue" | "due";
 
 export type TimelineTaskSummary = {
   id: string;
@@ -98,7 +100,8 @@ export type TimelineDay = {
   date: string;
   completed: number;
   myCompleted: number;
-  blockedRaised: number;
+  /** Tasks blocked that day that are still blocked now. */
+  blocked: number;
   /** Open tasks that were due that day and still are: the chart's loudest mark. */
   overdue: number;
   myOverdue: number;
@@ -106,7 +109,10 @@ export type TimelineDay = {
   due: number;
   myDue: number;
   goalDeadlines: TimelineGoalMarker[];
-  /** Every task behind the counts, in the order the bar stacks them: completed, blocked, overdue, then due. */
+  /**
+   * Every task drawn that day, in the order the bar stacks them: what ended (completed, rejected, deferred,
+   * cancelled, merged), what stands (blocked, awaiting approval, in progress, not started), then overdue and due.
+   */
   tasks: TimelineTaskSummary[];
   /** Everything that happened to a task that day (every history row: created, edited, status, comments, links…). */
   activity: number;
@@ -174,9 +180,9 @@ export type ReportProjectOption = {
 
 const CLOSED = [...CLOSED_STATUSES];
 const isOpen = notInArray(tasks.status, CLOSED);
-/** Counts for the pace: everything but what was closed without being completed (rejected, deferred, cancelled). */
+/** Counts for the pace: everything but what was closed without being completed (rejected, deferred, cancelled, merged). */
 const countsTowardsPace = notInArray(tasks.status, [...CLOSED_WITHOUT_COMPLETION]);
-/** `'rejected', 'deferred', 'cancelled'` for raw fragments. */
+/** `'rejected', 'deferred', 'cancelled', 'merged'` for raw fragments. */
 const closedWithoutCompletionList = sql.raw(CLOSED_WITHOUT_COMPLETION.map((status) => `'${status}'`).join(", "));
 /**
  * When a task was closed: completed_at for a completed task; for one closed without completing, the time of the
@@ -186,6 +192,12 @@ const closedAtSql = sql<Date | null>`(case
   when ${tasks.status} = 'completed' then ${tasks.completedAt}
   when ${tasks.status} in (${closedWithoutCompletionList}) then (select max(a.created_at) from task_activity a where a.task_id = ${tasks}.id and a.kind in (${closedWithoutCompletionList}))
   else null end)`;
+
+/**
+ * When a task reached the status it is in now: its latest history row that put it there (every status change
+ * records `after.status`), or its creation when nothing ever moved it (a task still not started).
+ */
+const enteredStatusAtSql = sql<Date>`coalesce((select max(a.created_at) from task_activity a where a.task_id = ${tasks}.id and a.after->>'status' = ${tasks}.status::text), ${tasks}.created_at)`;
 
 /** The tasks the report is about: everything, or one project's (an undefined condition is dropped by `and`). */
 function projectCondition(project: ReportProject): SQL | undefined {
@@ -301,7 +313,7 @@ export function activeScopeTasks(viewer: Viewer, range: ReportRange, project: Re
 }
 
 /**
- * Is the work as a whole on pace? The scope's tasks (rejected ones aside) done against the share a straight line
+ * Is the work as a whole on pace? The scope's tasks (ones closed without completing aside) done against the share a straight line
  * from the start to the target date expects by today (lib/reports/pace.ts). For one project the line runs from
  * its creation to its target date (or, without one, its latest goal's); for the whole workspace, from the oldest
  * task to the latest top-level goal's target date.
@@ -434,9 +446,9 @@ function goalMarkerCondition(project: ReportProject): SQL | undefined {
 
 /**
  * One entry per calendar day of the chart's window (lib/reports/range.ts: the range, then two weeks past today):
- * what was completed, which blockers were raised, what was due and is still open (overdue), what falls due from
- * today on, and the goal deadlines with each goal's health, with the tasks behind each count so a bar can be split
- * into them. `activity` is every history row of every task in scope that day: the chart's y axis. With
+ * what was completed, what was blocked that day and still is, every task in any other status on the day it reached
+ * it (2026-11-12 log), what was due and is still open (overdue), what falls due from today on, and the goal
+ * deadlines with each goal's health, with the tasks behind each count so a bar can be split into them. `activity` is every history row of every task in scope that day: the chart's y axis. With
  * `includeLocal` (the My work view) the viewer's own local tasks count too; otherwise local tasks are left out.
  */
 export async function reportTimeline(viewer: Viewer, range: ReportRange, today: string, project: ReportProject, options: { includeLocal?: boolean } = {}): Promise<TimelineDay[]> {
@@ -450,7 +462,9 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
   const taskScope = options.includeLocal ? or(liveOnly, localOnly(viewer)) : liveOnly;
   const activityScope = options.includeLocal ? or(notLocal, localOnly(viewer)) : notLocal;
 
-  const [goalRows, completedRows, blockerRows, dueRows, activityRows] = await Promise.all([
+  const enteredDay = sql<string>`to_char(${enteredStatusAtSql} at time zone ${viewer.timezone}, 'YYYY-MM-DD')`;
+
+  const [goalRows, completedRows, blockerRows, statusRows, dueRows, activityRows] = await Promise.all([
     db
       .select({
         id: goals.id,
@@ -484,8 +498,37 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       .from(taskActivity)
       .innerJoin(tasks, eq(tasks.id, taskActivity.taskId))
       .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(taskActivity.orgId, viewer.orgId), taskScope, scoped, eq(taskActivity.kind, "blocked"), withinDays(taskActivity.createdAt, past, viewer.timezone)))
+      // A blocker is drawn while it stands (2026-11-11 log): the tasks blocked right now, each on the day its latest
+      // blocker was raised. One cleared since (the task unblocked, completed or closed) is history: it still counts
+      // in that day's activity and leaves the bars, so finished work never reads as blocked.
+      .where(
+        and(
+          eq(taskActivity.orgId, viewer.orgId),
+          taskScope,
+          scoped,
+          eq(taskActivity.kind, "blocked"),
+          eq(tasks.status, "blocked"),
+          sql`not exists (select 1 from task_activity later where later.task_id = ${taskActivity}.task_id and later.kind = 'blocked' and later.created_at > ${taskActivity}.created_at)`,
+          withinDays(taskActivity.createdAt, past, viewer.timezone),
+        ),
+      )
       .orderBy(asc(taskActivity.createdAt)),
+    // Every other status (2026-11-12 log): the tasks in it now, each on the day it reached it, so a task that was
+    // cancelled, deferred, rejected, merged, sent for approval, started or only added is on the chart too. Like a
+    // blocker, a status a task has left since is history: it counts in that day's activity and leaves the bars.
+    db
+      .select({
+        id: tasks.id,
+        title: taskLabelSql,
+        status: tasks.status,
+        day: enteredDay,
+        projectName: projects.name,
+        isMine: mine,
+      })
+      .from(tasks)
+      .leftJoin(projects, eq(projects.id, tasks.projectId))
+      .where(and(eq(tasks.orgId, viewer.orgId), taskScope, scoped, notInArray(tasks.status, ["completed", "blocked"]), withinDays(enteredStatusAtSql, past, viewer.timezone)))
+      .orderBy(asc(enteredStatusAtSql), asc(tasks.title)),
     // Every open task due anywhere in the window: before today it is overdue, from today on it is due.
     db
       .select({
@@ -540,6 +583,14 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       isMine: row.isMine,
       project: row.projectName,
     });
+  for (const row of statusRows)
+    add(row.day, {
+      id: row.id,
+      title: row.title,
+      kind: row.status,
+      isMine: row.isMine,
+      project: row.projectName,
+    });
   for (const row of dueRows) {
     if (row.dueDate)
       add(row.dueDate, {
@@ -583,9 +634,16 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
 
   const ORDER: Record<TimelineTaskKind, number> = {
     completed: 0,
-    blocked: 1,
-    overdue: 2,
-    due: 3,
+    rejected: 1,
+    deferred: 2,
+    cancelled: 3,
+    merged: 4,
+    blocked: 5,
+    awaiting_approval: 6,
+    in_progress: 7,
+    not_started: 8,
+    overdue: 9,
+    due: 10,
   };
   return daysOf(window).map((date) => {
     const dayTasks = (byDay.get(date) ?? []).sort((a, b) => ORDER[a.kind] - ORDER[b.kind]);
@@ -594,7 +652,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       date,
       completed: count("completed"),
       myCompleted: count("completed", true),
-      blockedRaised: count("blocked"),
+      blocked: count("blocked"),
       overdue: count("overdue"),
       myOverdue: count("overdue", true),
       due: count("due"),

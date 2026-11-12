@@ -16,13 +16,13 @@ import { prefetchTaskFormOptions } from "./use-task-form-options";
 /** Fired on the task page to scroll to and focus its inline Update progress form. */
 export const FOCUS_UPDATE_EVENT = "trackwise:focus-update";
 
-/** The quick-add bar's title field carries this attribute, so N can find it. */
+/** The quick-add bar's text box carries this attribute, so N can find it. */
 export const QUICK_ADD_ATTRIBUTE = "data-quick-add";
 
-/** Focuses the page's quick-add bar; false when the page has none. */
+/** Focuses the page's quick-add bar; false when the page has none (a page the router keeps hidden doesn't count). */
 function focusQuickAdd(): boolean {
-  const input = document.querySelector<HTMLInputElement>(`[${QUICK_ADD_ATTRIBUTE}]`);
-  if (input === null) return false;
+  const input = [...document.querySelectorAll<HTMLElement>(`[${QUICK_ADD_ATTRIBUTE}]`)].find((box) => box.checkVisibility?.() ?? box.offsetParent !== null);
+  if (input === undefined) return false;
   input.scrollIntoView({ block: "nearest" });
   input.focus();
   return true;

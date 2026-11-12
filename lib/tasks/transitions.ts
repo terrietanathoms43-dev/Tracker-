@@ -11,6 +11,8 @@ export type TaskState = {
   blockedReason: string | null;
   /** Comments nobody has resolved yet. While there are any, the task cannot be completed (2026-10-30 log). */
   openComments: number;
+  /** Of those, the ones waiting for a task made from them (2026-11-11 log): the refusal says so. */
+  commentsWaitingOnTasks?: number;
   /** The task it is attached to (sub-tasks, 2026-11-08 log): only such a task can be merged. */
   parentTaskId: string | null;
 };
@@ -57,9 +59,17 @@ const clean = (value: string | null | undefined) => {
   return trimmed === "" ? null : trimmed;
 };
 
-/** Why a task with open comments can't be completed: the same words on the server and under the forms' Completed option. */
-export function openCommentsMessage(count: number): string {
-  return `Resolve the ${count} open ${count === 1 ? "comment" : "comments"} before completing this task.`;
+/**
+ * Why a task with open comments can't be completed: the same words on the server and under the forms' Completed
+ * option. `waiting` of them have a task made from them still open (2026-11-11 log): those are not resolved by hand,
+ * they resolve themselves when that task is closed.
+ */
+export function openCommentsMessage(count: number, waiting = 0): string {
+  const base = `Resolve the ${count} open ${count === 1 ? "comment" : "comments"} before completing this task.`;
+  if (waiting <= 0) return base;
+  if (count === 1) return `${base} It waits for the task made from it: closing that task resolves it.`;
+  const which = waiting >= count ? "Each waits" : waiting === 1 ? "One of them waits" : `${waiting} of them wait`;
+  return `${base} ${which} for a task made from the comment: closing that task resolves it.`;
 }
 
 /** What the forms and the server say when Completed is chosen without its summary. */
@@ -92,7 +102,7 @@ export function planTransition(task: TaskState, to: TaskStatus, input: Transitio
   const from = task.status;
   if (via !== "status" && from !== "awaiting_approval") return { ok: false, error: "This task isn't waiting for approval." };
   if (from === to && to !== "awaiting_approval") return { ok: true, patch: {}, activities: [] };
-  if (to === "completed" && task.openComments > 0) return { ok: false, error: openCommentsMessage(task.openComments) };
+  if (to === "completed" && task.openComments > 0) return { ok: false, error: openCommentsMessage(task.openComments, task.commentsWaitingOnTasks ?? 0) };
 
   if (to === "merged" && task.parentTaskId === null) return { ok: false, error: MERGE_NEEDS_PARENT };
   const reason = clean(input.reason);

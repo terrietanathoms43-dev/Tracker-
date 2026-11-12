@@ -13,13 +13,14 @@ import { saveApprovalSettings } from "@/lib/dal/approvals";
 import { recordActivity } from "@/lib/dal/activity";
 import { findGoal, goalsById, linkEdgesForCycleCheck, lockGoal, ownerError, subGoalDeadlines } from "@/lib/dal/goals";
 import { assertNoOpenTasks, goalAchievedNotice } from "@/lib/dal/goal-achievement";
-import { completeGoalCloser, createGoalCloser, deleteGoalClosers, reopenGoalCloser } from "@/lib/dal/goal-closers";
+import { syncLinkedWork } from "@/lib/dal/comment-tasks";
+import { completeGoalCloser, createGoalCloser, deleteGoalClosers, reopenGoalCloser, type ChangedCloser } from "@/lib/dal/goal-closers";
 import { findProject } from "@/lib/dal/projects";
 import { createGoalOccurrence, type NextGoal } from "@/lib/dal/recurrence";
 import { parentDeadlineProblem, subGoalDeadlineProblem } from "@/lib/goals/deadlines";
 import { wouldCycle } from "@/lib/goals/graph";
 import { log } from "@/lib/log";
-import { dispatch } from "@/lib/notify";
+import { dispatch, type Notice } from "@/lib/notify";
 import { canCompleteGoal, canCreatePlanning, canDeleteGoal, canLinkGoals, canManageApprovals, canManagePlanning } from "@/lib/permissions";
 import { nextAfterFinishing, normalizeRecurrence, type Recurrence } from "@/lib/recurrence";
 import { dayKey, formatDay } from "@/lib/time";
@@ -252,6 +253,7 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
     const viewer = await requireViewer();
     const now = new Date();
     const today = dayKey(now, viewer.timezone);
+    const notices: Notice[] = [];
     const outcome = await db.transaction(async (tx) => {
       const goal = await lockGoal(tx, viewer.orgId, data.goalId);
       if (goal === null) throw new GuardError("not_found");
@@ -261,11 +263,15 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
       }
       if (goal.status === data.status) return { from: goal.status, next: null, achieved: null };
       const closerGoal = { ...goal, orgId: viewer.orgId };
+      // Every status change syncs the comment a task was made from (lib/dal/comment-tasks.ts); a closer has none.
+      const sync = async (changed: ChangedCloser[]) => {
+        for (const closer of changed) notices.push(...(await syncLinkedWork(tx, viewer, closer, closer.to, now)).notices);
+      };
       // A goal is achieved when its tasks are done (lib/dal/goal-achievement.ts): the button is a shortcut, not a way
       // round that. What it does stand in for is the goal's last step, so the closer is completed with the goal.
       if (data.status === "completed") {
         await assertNoOpenTasks(tx, viewer.orgId, goal);
-        await completeGoalCloser(tx, viewer.userId, closerGoal, now);
+        await sync(await completeGoalCloser(tx, viewer.userId, closerGoal, now));
       }
       await tx
         .update(goals)
@@ -277,13 +283,13 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
         })
         .where(eq(goals.id, goal.id));
       // A goal that is no longer completed has its last step open again.
-      if (goal.status === "completed") await reopenGoalCloser(tx, viewer.userId, closerGoal, now);
+      if (goal.status === "completed") await sync(await reopenGoalCloser(tx, viewer.userId, closerGoal, now));
       const next = data.status === "completed" ? await spawnNextGoal(tx, viewer.userId, viewer.orgId, goal, today, now) : null;
       return { from: goal.status, next, achieved: data.status === "completed" ? { title: goal.title, people: [goal.ownerId, goal.createdBy] } : null };
     });
     log.info("goals.status_changed", { orgId: viewer.orgId, goalId: data.goalId, from: outcome.from, to: data.status, next: outcome.next?.id ?? null, by: viewer.userId });
     // The goal's owner and maker hear that it was achieved, as they do when its last task achieves it.
-    if (outcome.achieved) await dispatch(goalAchievedNotice(viewer, { id: data.goalId, title: outcome.achieved.title }, outcome.achieved.people));
+    await dispatch([...notices, ...(outcome.achieved ? goalAchievedNotice(viewer, { id: data.goalId, title: outcome.achieved.title }, outcome.achieved.people) : [])]);
     refresh();
     const next = outcome.next;
     const message = next

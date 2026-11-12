@@ -1,6 +1,6 @@
 "use client";
 
-import { Flag, Link2, MessageSquareWarning, Repeat } from "lucide-react";
+import { Flag, Link2, MessageSquareText, MessageSquareWarning, Repeat } from "lucide-react";
 import { useState, useTransition, type RefObject } from "react";
 import { updateProgress } from "@/actions/tasks";
 import { CharacterCounter } from "@/components/character-counter";
@@ -10,9 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { CLOSED_WITHOUT_COMPLETION, isClosedStatus, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
+import { closingResolvesMessage, reopeningMessage } from "@/lib/tasks/comment-tasks";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
 import { openCommentsMessage } from "@/lib/tasks/transitions";
 import type { UpdateContext } from "@/lib/tasks/types";
@@ -79,6 +80,10 @@ export function UpdateProgressForm({
   const heldByGoal = completing && task.closer !== null && task.closer.openOthers > 0;
   const held = heldByComments || heldBySubTasks || heldByGoal;
   const summaryMissing = completing && !held && summary.trim() === "";
+  // Made from a comment (2026-11-11 log): what closing or reopening it does to that comment, said before the save.
+  const reopening = isClosedStatus(task.status) && !isClosedStatus(effective);
+  const linkedComment =
+    task.fromComment === null ? null : closing && !held && !isClosedStatus(task.status) ? closingResolvesMessage(task.fromComment) : reopening ? reopeningMessage(task.fromComment) : null;
   // The statuses this person may move the task to: completing a task that waits for approval is approving it;
   // rejecting and cancelling are edit rights; only a sub-task can be merged.
   const choices = TASK_STATUSES.filter((each) => {
@@ -293,7 +298,16 @@ export function UpdateProgressForm({
       {heldByComments ? (
         <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
           <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <span>{openCommentsMessage(task.openComments)} Resolve them under Comments and history, or keep the task open for now.</span>
+          <span>
+            {openCommentsMessage(task.openComments, task.commentsWaitingOnTasks)}{" "}
+            {task.commentsWaitingOnTasks > 0 ? `${task.openComments === 1 ? "It is" : "They are"} under Comments and history; keep the task open for now.` : "Resolve them under Comments and history, or keep the task open for now."}
+          </span>
+        </p>
+      ) : null}
+      {linkedComment !== null ? (
+        <p className="flex items-start gap-2 rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" role="status" data-closes-comment>
+          <MessageSquareText className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>{linkedComment}</span>
         </p>
       ) : null}
       {heldBySubTasks && !heldByComments ? (

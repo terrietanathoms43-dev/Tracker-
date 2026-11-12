@@ -19,8 +19,9 @@ import { canSeeReports, isStakeholder } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
 import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { buildActiveScope, buildReport } from "@/lib/reports/build";
-import { defaultReportCut, parseReportCut, parseReportRange, reportCutsFor } from "@/lib/reports/params";
-import { addDays, dayKey, formatAbsolute, formatDay } from "@/lib/time";
+import { defaultReportCut, parseReportCadence, parseReportCut, parseReportRange, reportCutsFor } from "@/lib/reports/params";
+import { cadenceRange } from "@/lib/reports/range";
+import { addDays, dayKey, formatAbsolute, formatDay, weekdayName } from "@/lib/time";
 import { requireViewerContext } from "@/lib/viewer";
 
 // /reports: a date range, the navigation's project (or all of them) and the facts (docs/PLAN.md §8, 2026-11-01 and
@@ -37,7 +38,6 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const now = new Date();
   const today = dayKey(now, viewer.timezone);
   const [searchParams, scope] = await Promise.all([props.searchParams, scopedProject(viewer)]);
-  const range = parseReportRange(searchParams, today);
   const project = scope?.id ?? "";
 
   // Views: every role has the Active scope beside its own; otherwise a leader or admin may switch, a member only
@@ -47,6 +47,10 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const cut = parseReportCut(searchParams, defaultReportCut(viewer.orgRole), cuts);
   // The Active scope is about one day (the day of the last report), not a span: the controls show a single Since.
   const since = cut === "scope";
+  // Its daily read (2026-11-12 log): the address names a cadence and the Since day is worked out from today, so the
+  // same link is right tomorrow. Every other address carries its dates.
+  const cadence = parseReportCadence(searchParams, cut);
+  const range = cadence !== null ? cadenceRange(cadence, today) : parseReportRange(searchParams, today);
 
   const scopeLabel = scope ? scope.name : "All projects";
   const stakeholder = isStakeholder(viewer);
@@ -55,13 +59,13 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
     <>
       <PageHeader
         title="Reports"
-        description={`${org.name} · ${scopeLabel} · ${since ? `since ${formatDay(range.from, today)}` : `${formatDay(range.from, today)} – ${formatDay(range.to, today)}`}`}
+        description={`${org.name} · ${scopeLabel} · ${since ? `since ${cadence !== null ? `${weekdayName(range.from)}, ` : ""}${formatDay(range.from, today)}` : `${formatDay(range.from, today)} – ${formatDay(range.to, today)}`}`}
         action={<PrintButton />}
       />
 
       <div className="mb-6 grid gap-4">
-        <ReportCutTabs current={cut} cuts={cuts} range={range} project={project} />
-        <ReportControls range={range} today={today} cut={cut} project={project} since={since} />
+        <ReportCutTabs current={cut} cuts={cuts} range={range} project={project} cadence={cadence} />
+        <ReportControls range={range} today={today} cut={cut} project={project} since={since} cadence={cadence} />
       </div>
     </>
   );

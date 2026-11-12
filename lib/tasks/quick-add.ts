@@ -1,8 +1,10 @@
 import type { TaskPriority } from "@/lib/constants";
 import type { Person } from "./types";
 
-// The quick-add bar's typed shortcuts: "Fix the login bug !high @tomorrow @sam" is a task titled "Fix the login
-// bug", high priority, due tomorrow, assigned to Sam. Pure, so the bar and the unit tests read titles the same way.
+// The quick-add bar's typed shortcuts: "Fix the login bug !high @tomorrow @sam" is a task about "Fix the login
+// bug", high priority, due tomorrow, assigned to Sam. What is left of the text is the task's description, and its
+// title is taken from that (lib/tasks/title-from.ts, 2026-11-11 log). Pure, so the bar and the unit tests read a
+// text the same way.
 
 /** `!word` → priority. "medium" is accepted for "normal", the word most trackers use. */
 const PRIORITY_WORDS: Record<string, TaskPriority> = { urgent: "urgent", high: "high", normal: "normal", medium: "normal", low: "low" };
@@ -18,13 +20,13 @@ export type MentionTarget = { id: string; label: string; handle: string; keys: s
 export type QuickAddToken = { kind: "priority" | "due" | "person"; start: number; end: number };
 
 export type QuickAddParse = {
-  /** The text with every recognised token taken out. */
-  title: string;
+  /** The text with every recognised token taken out, line breaks kept: the task's description. */
+  text: string;
   /** The last `!word` wins. */
   priority: TaskPriority | null;
   due: DueWord | null;
   people: string[];
-  /** `@words` that name nobody, or more than one person: they stay in the title. */
+  /** `@words` that name nobody, or more than one person: they stay in the text. */
   unmatched: string[];
   tokens: QuickAddToken[];
 };
@@ -62,9 +64,9 @@ export function mentionTargets(people: Person[]): MentionTarget[] {
 /** A `!` or `@` at the start of the text or after a space, and the word glued to it. */
 const TOKEN = /(^|\s)([!@])([^\s!@]+)/gu;
 
-/** Reads a quick-add title. Unknown `!words` and `@words` are left alone: "ping @ops" with nobody called Ops stays as typed. */
+/** Reads a quick-add text. Unknown `!words` and `@words` are left alone: "ping @ops" with nobody called Ops stays as typed. */
 export function parseQuickAdd(text: string, targets: MentionTarget[]): QuickAddParse {
-  const result: QuickAddParse = { title: "", priority: null, due: null, people: [], unmatched: [], tokens: [] };
+  const result: QuickAddParse = { text: "", priority: null, due: null, people: [], unmatched: [], tokens: [] };
   for (const match of text.matchAll(TOKEN)) {
     const [, lead, symbol, raw] = match;
     const start = match.index + lead.length;
@@ -90,11 +92,11 @@ export function parseQuickAdd(text: string, targets: MentionTarget[]): QuickAddP
     if (!result.people.includes(found[0].id)) result.people.push(found[0].id);
     result.tokens.push({ kind: "person", start, end });
   }
-  result.title = removeTokens(text, result.tokens);
+  result.text = removeTokens(text, result.tokens);
   return result;
 }
 
-/** The text without the given tokens, spaces tidied. */
+/** The text without the given tokens: spaces tidied, line breaks kept (the text is a description, not one line). */
 export function removeTokens(text: string, tokens: QuickAddToken[]): string {
   let out = "";
   let at = 0;
@@ -102,7 +104,11 @@ export function removeTokens(text: string, tokens: QuickAddToken[]): string {
     out += text.slice(at, token.start);
     at = token.end;
   }
-  return (out + text.slice(at)).replace(/\s+/g, " ").trim();
+  return (out + text.slice(at))
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ ?\n ?/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /** The `!word` or `@word` the caret is in (or right after), for suggestions; null anywhere else. */

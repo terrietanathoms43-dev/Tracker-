@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronDown, ClipboardCheck, CornerDownRight, GitMerge, Lock, Repeat, XCircle } from "lucide-react";
+import { ChevronDown, ClipboardCheck, CornerDownRight, GitMerge, Lock, MessageSquareText, Repeat, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
 import { describeAssignees } from "@/lib/tasks/assignees";
 import { taskLabel } from "@/lib/tasks/closer";
+import { groupLabel } from "@/lib/tasks/groups";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { formatTime } from "@/lib/recurrence";
@@ -20,6 +21,7 @@ import { DueLabel } from "./due-label";
 import { ReasonChip } from "./reason-chip";
 import { useTaskSelection } from "./selection";
 import { SendLocalButton } from "./send-local";
+import { GroupChip } from "./task-group";
 import { TaskActionSheet, TaskMenu } from "./task-menu";
 import { useLongPress } from "./use-long-press";
 
@@ -47,6 +49,9 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
  * A sub-task drawn under its parent (2026-11-08 log) is `nested`: indented with a corner mark; one drawn away from
  * its parent carries a "Part of" link instead, and a parent a count of its sub-tasks. A goal's "Everything
  * completed" task (2026-11-09 log) carries a chip naming the goal it marks achieved, right beside its title.
+ * A task in a group (2026-11-11 log) is drawn inside the group's border by the list (`inGroup`); where the rest of
+ * its group is not on the page it carries a chip naming the group instead. A task made from a comment carries a
+ * "From a comment" chip (2026-11-11 log): closing it resolves that comment.
  */
 export function TaskRow({
   task,
@@ -54,6 +59,7 @@ export function TaskRow({
   showReason = true,
   readOnly = false,
   nested = false,
+  inGroup = false,
   badge,
   note,
   trailing,
@@ -64,6 +70,7 @@ export function TaskRow({
   showReason?: boolean;
   readOnly?: boolean;
   nested?: boolean;
+  inGroup?: boolean;
   badge?: ReactNode;
   note?: ReactNode;
   trailing?: ReactNode;
@@ -99,6 +106,7 @@ export function TaskRow({
       data-proposal={task.proposal ?? undefined}
       data-nested={nested || undefined}
       data-parent={task.parent?.id}
+      data-group={task.group?.id}
       {...attributes}
     >
       <div
@@ -160,6 +168,13 @@ export function TaskRow({
               <CornerDownRight className="size-3 shrink-0" aria-hidden />
               <span className="truncate">Part of {task.parent.title}</span>
             </Link>
+          ) : null}
+          {task.group !== null && !inGroup ? <GroupChip taskId={task.id} group={task.group} onClick={swallowClick} /> : null}
+          {task.fromComment ? (
+            <span className="inline-flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium text-muted-foreground" title="Made from a comment: the comment resolves itself when this task is closed" data-from-comment-chip>
+              <MessageSquareText className="size-3" aria-hidden />
+              <span className="sr-only sm:not-sr-only">From a comment</span>
+            </span>
           ) : null}
           {badge}
           {task.nextAction || reason || task.proposal === "pending" || task.proposal === "declined" || local ? (
@@ -224,6 +239,15 @@ export function TaskRow({
                 </span>
               ) : null}
               {where || (task.parent === null ? "Standalone task" : null)}
+              {task.group !== null ? (
+                <span className="block text-muted-foreground">
+                  Grouped:{" "}
+                  <Link href={`/tasks/${task.id}#group`} prefetch={false} className="text-link underline-offset-4 hover:underline">
+                    {groupLabel(task.group)}
+                  </Link>{" "}
+                  ({task.group.size} tasks)
+                </span>
+              ) : null}
             </Fact>
             <Fact label="Due">
               {task.dueDate ? (

@@ -1,11 +1,12 @@
 "use client";
 
 import { cn } from "cn";
-import { ClipboardCheck, CornerDownRight, GitMerge } from "lucide-react";
+import { ClipboardCheck, CornerDownRight, GitMerge, Group } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { KanbanItem, KanbanItemHandle } from "@/components/kanban";
 import { PriorityGlyph } from "@/components/priority-glyph";
+import { groupLabel } from "@/lib/tasks/groups";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { AssigneeStack } from "./assignee-stack";
@@ -16,17 +17,20 @@ import { useLongPress } from "./use-long-press";
 
 // A compact task card for a board column: title, next action, due, priority and assignee, with a "⋯"
 // menu and the long-press action sheet. The whole card is the drag handle — 10px of movement starts a
-// drag, less stays a click — so the stretched title link still opens the task.
+// drag, less stays a click — so the stretched title link still opens the task. A card in a group (2026-11-11 log)
+// names it, unless the column has already drawn the group's border round it (`inGroup`).
 export function TaskCard({
    task,
    today,
    readOnly = false,
    overlay = false,
+   inGroup = false,
 }: {
    task: TaskListItem;
    today: string;
    readOnly?: boolean;
    overlay?: boolean;
+   inGroup?: boolean;
 }) {
    const [sheetOpen, setSheetOpen] = useState(false);
    const { handlers, swallowClick } = useLongPress(() => setSheetOpen(true));
@@ -63,6 +67,14 @@ export function TaskCard({
                   <p className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground" data-part-of-chip>
                      <CornerDownRight className="size-3 shrink-0" aria-hidden />
                      <span className="truncate">Part of {task.parent.title}</span>
+                  </p>
+               ) : null}
+               {task.group !== null && !inGroup ? (
+                  <p className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground" data-group-chip={task.group.id}>
+                     <Group className="size-3 shrink-0 text-primary" aria-hidden />
+                     <span className="truncate">
+                        {groupLabel(task.group)} · {task.group.size}
+                     </span>
                   </p>
                ) : null}
                {task.subTasks > 0 ? (

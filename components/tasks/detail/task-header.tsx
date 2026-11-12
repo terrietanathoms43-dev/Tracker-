@@ -1,11 +1,12 @@
 "use client";
 
 import { cn } from "cn";
-import { ArrowLeft, ClipboardCheck, CornerDownRight, GitMerge, Link2, Lock, NotebookPen, Repeat } from "lucide-react";
+import { ClipboardCheck, CornerDownRight, GitMerge, Group, Link2, Lock, NotebookPen, Repeat } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { editTask } from "@/actions/tasks";
+import { BackLink } from "@/components/back-link";
 import { CharacterCounter } from "@/components/character-counter";
 import { PriorityGlyph } from "@/components/priority-glyph";
 import { StatusBadge } from "@/components/status-badge";
@@ -15,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { describeRecurrence, formatTime } from "@/lib/recurrence";
+import { groupLabel } from "@/lib/tasks/groups";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskAbilities, TaskDetail } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
@@ -23,7 +25,8 @@ import { CloserChip } from "../closer-chip";
 import { DueLabel } from "../due-label";
 import { FOCUS_UPDATE_EVENT } from "../task-actions";
 
-// The task page header: back link, title (editable), copy link, and a one-line summary.
+// The task page header: the back arrow (the browser's Back, components/back-link.tsx), title (editable), copy link,
+// and a one-line summary.
 
 /** The title, editable in place for people who may edit: Enter saves, Escape cancels. */
 function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boolean }) {
@@ -79,16 +82,14 @@ function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boole
 
 /** What this is and who holds it, at a glance: title, status, assignee, due date and priority. */
 export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; abilities: TaskAbilities; today: string }) {
-  // A proposal belongs on the Proposals page; a local task is in its maker's lists; a stakeholder's way around is the goals.
+  // Where the arrow leads when there is no screen to go back to (a new tab, an emailed link): a proposal belongs on
+  // the Proposals page; a local task is in its maker's lists; a stakeholder's way around is the goals.
   const proposal = detail.proposalStatus === "pending" || detail.proposalStatus === "declined";
   const local = detail.proposalStatus === "local";
   const back = proposal ? { href: "/proposals", label: "Proposals" } : local || abilities.progress ? { href: "/home?view=list", label: "Tasks" } : { href: "/goals", label: "Goals" };
   return (
     <header className="mb-5">
-      <Link href={back.href} className="inline-flex items-center gap-1.5 rounded-md text-[13px] text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-3.5" aria-hidden />
-        {back.label}
-      </Link>
+      <BackLink href={back.href} label={back.label} />
       <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-0 flex-1 basis-72">
           <TitleEditor key={detail.title} detail={detail} editable={abilities.edit} />
@@ -147,6 +148,13 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
           <a href="#sub-tasks" className="inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground" data-sub-tasks-count>
             <GitMerge className="size-3.5" aria-hidden />
             {describeSubTasks(detail.subTasks)}
+          </a>
+        ) : null}
+        {detail.group !== null ? (
+          <a href="#group" className="inline-flex h-6 min-w-0 max-w-full items-center gap-1 rounded-md border border-primary/35 bg-primary/[0.05] px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground" data-group-count>
+            <Group className="size-3.5 shrink-0 text-primary" aria-hidden />
+            <span className="truncate">{groupLabel(detail.group)}</span>
+            <span className="shrink-0 tabular-nums">· {detail.group.size} tasks</span>
           </a>
         ) : null}
         {detail.goalCloser && detail.goal ? <CloserChip goal={detail.goal} variant="header" /> : null}

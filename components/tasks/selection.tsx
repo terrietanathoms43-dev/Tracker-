@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckSquare, FolderInput, GitMerge, ListChecks, Trash2, UserPlus, X } from "lucide-react";
+import { CheckSquare, FolderInput, GitMerge, Group, ListChecks, Trash2, UserPlus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createContext, use, useCallback, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -22,12 +22,15 @@ import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS, TASK_STATUSES, type Task
 import { LIMITS } from "@/lib/limits";
 import { nameOf } from "@/lib/tasks/people";
 import { AssigneePicker } from "./assignee-picker";
+import { GroupTogetherDialog } from "./task-group";
 import { useTaskFormOptions } from "./use-task-form-options";
 
 // Several tasks at once (docs/PLAN.md, 2026-11-04 log): tick rows, and a bar at the foot of the screen sets a
-// status, assigns people, moves them to a project or goal, or deletes them. Every task is checked by the same
-// rules as on its own page, one transaction each, and the bar says which ones could not change and why; those
-// stay ticked so they can be put right and tried again.
+// status, assigns people, moves them to a project or goal, groups them together, or deletes them. Every task is
+// checked by the same rules as on its own page, one transaction each, and the bar says which ones could not change
+// and why; those stay ticked so they can be put right and tried again. Two different things sit side by side here
+// (2026-11-11 log): **Group together** makes the ticked tasks one group of equals that every list draws inside one
+// border; **Make sub-tasks of…** attaches them under one task, parent and child (it was "Group under…").
 
 type Selection = {
   selected: ReadonlySet<string>;
@@ -99,7 +102,7 @@ const INPUT_STATUSES = new Set<TaskStatus>(["blocked", "awaiting_approval", "com
 function SelectionBar({ selection }: { selection: Selection }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [dialog, setDialog] = useState<{ kind: "status"; status: TaskStatus } | { kind: "assign" } | { kind: "move" } | { kind: "group" } | { kind: "delete" } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "status"; status: TaskStatus } | { kind: "assign" } | { kind: "move" } | { kind: "group" } | { kind: "attach" } | { kind: "delete" } | null>(null);
   const ids = [...selection.selected];
   const count = ids.length;
 
@@ -170,9 +173,13 @@ function SelectionBar({ selection }: { selection: Selection }) {
           <FolderInput aria-hidden />
           Move
         </Button>
-        <Button variant="outline" size="sm" disabled={pending} onClick={() => setDialog({ kind: "group" })} data-bulk-group>
+        <Button variant="outline" size="sm" disabled={pending || count < 2} title={count < 2 ? "Tick two or more tasks to group them together" : "Show these tasks together, inside one border, in every list"} onClick={() => setDialog({ kind: "group" })} data-bulk-group>
+          <Group aria-hidden />
+          Group together
+        </Button>
+        <Button variant="outline" size="sm" disabled={pending} title="Attach these tasks under one task, as its sub-tasks" onClick={() => setDialog({ kind: "attach" })} data-bulk-attach>
           <GitMerge aria-hidden />
-          Group under…
+          Make sub-tasks of…
         </Button>
         {selection.canDelete ? (
           <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" disabled={pending} onClick={() => setDialog({ kind: "delete" })} data-bulk-delete>
@@ -187,7 +194,8 @@ function SelectionBar({ selection }: { selection: Selection }) {
       {dialog?.kind === "status" ? <BulkStatusDialog status={dialog.status} count={count} pending={pending} onClose={() => setDialog(null)} onApply={(fields) => run(() => bulkChangeStatus({ taskIds: ids, status: dialog.status, ...fields }))} /> : null}
       {dialog?.kind === "assign" ? <BulkAssignDialog count={count} pending={pending} onClose={() => setDialog(null)} onApply={(fields) => run(() => bulkAssign({ taskIds: ids, ...fields }))} /> : null}
       {dialog?.kind === "move" ? <BulkMoveDialog count={count} pending={pending} onClose={() => setDialog(null)} onApply={(fields) => run(() => bulkMove({ taskIds: ids, ...fields }))} /> : null}
-      {dialog?.kind === "group" ? (
+      {dialog?.kind === "group" ? <GroupTogetherDialog taskIds={ids} pending={pending} onClose={() => setDialog(null)} run={run} /> : null}
+      {dialog?.kind === "attach" ? (
         <AttachTaskDialog
           taskIds={ids}
           onClose={() => setDialog(null)}

@@ -1,11 +1,13 @@
 import { cn } from "cn";
 import { Panel, PanelEmpty } from "@/components/dashboard/panel";
 import { CsvLink } from "@/components/reports/report-controls";
+import { TaskGroupBlock } from "@/components/tasks/task-group";
 import { TaskRow } from "@/components/tasks/task-row";
 import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS } from "@/lib/constants";
 import type { ReportTask } from "@/lib/reports/data";
 import type { ReportProject } from "@/lib/reports/params";
 import { addedInCycle, type ActiveScope } from "@/lib/reports/scope";
+import { groupRows } from "@/lib/tasks/groups";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { formatDay } from "@/lib/time";
 
@@ -71,7 +73,7 @@ export function ActiveScopeView({
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
         <p className="max-w-3xl text-sm text-muted-foreground" data-scope-intro>
           Every task still open, plus everything closed on or after <strong className="font-medium text-foreground">{since}</strong> (completed, or rejected, deferred or cancelled): the work this
-          report cycle was to get through. To start from the day of the last report, choose Custom above and set Since to that day.
+          report cycle was to get through. For a daily read choose Daily above; to start from the day of the last report, choose Custom and set Since to that day.
         </p>
         <CsvLink range={active.range} table="scope" project={project} label="Active scope" />
       </div>
@@ -92,40 +94,57 @@ export function ActiveScopeView({
       ) : (
         active.groups.map((group) => {
           const closed = group.status === "completed" || CLOSED_WITHOUT_COMPLETION.includes(group.status);
+          const scopeOf = new Map(group.tasks.map((task) => [task.id, task]));
+          // The standard row, with what the report adds to it.
+          const row = (item: TaskListItem, inGroup: boolean) => {
+            const task = scopeOf.get(item.id);
+            if (task === undefined) return null;
+            const added = addedInCycle(task, active.range);
+            return (
+              <TaskRow
+                key={task.id}
+                task={item}
+                today={today}
+                showReason={false}
+                readOnly={readOnly}
+                inGroup={inGroup}
+                attributes={{ "data-scope-task": task.id, "data-added": added ? "yes" : "no" }}
+                badge={
+                  added ? (
+                    <span className="inline-flex h-5 shrink-0 items-center rounded-md border px-1.5 text-[11px] font-medium text-muted-foreground" title={`Added ${formatDay(task.createdDay, today)}`}>
+                      New this cycle
+                    </span>
+                  ) : null
+                }
+                note={<Note task={task} />}
+                trailing={
+                  closed && task.closedDay ? (
+                    <span className="relative hidden shrink-0 text-[13px] whitespace-nowrap text-muted-foreground sm:inline" data-scope-closed>
+                      {group.label} {formatDay(task.closedDay, today)}
+                    </span>
+                  ) : null
+                }
+              />
+            );
+          };
+          // Rows stay flat here (the report's own order); the tasks of one group share a border (2026-11-11 log).
+          const entries = groupRows(
+            group.tasks.flatMap((task) => items.get(task.id) ?? []),
+            false,
+          );
           return (
             <div key={group.status} id={`scope-${group.status}`} data-scope-group={group.status} data-count={group.tasks.length} className="min-w-0 scroll-mt-20">
               <Panel title={closed ? `${group.label} since ${since}` : group.label} count={group.tasks.length}>
                 <ul className="divide-y">
-                  {group.tasks.map((task) => {
-                    const item = items.get(task.id);
-                    if (item === undefined) return null;
-                    const added = addedInCycle(task, active.range);
-                    return (
-                      <TaskRow
-                        key={task.id}
-                        task={item}
-                        today={today}
-                        showReason={false}
-                        readOnly={readOnly}
-                        attributes={{ "data-scope-task": task.id, "data-added": added ? "yes" : "no" }}
-                        badge={
-                          added ? (
-                            <span className="inline-flex h-5 shrink-0 items-center rounded-md border px-1.5 text-[11px] font-medium text-muted-foreground" title={`Added ${formatDay(task.createdDay, today)}`}>
-                              New this cycle
-                            </span>
-                          ) : null
-                        }
-                        note={<Note task={task} />}
-                        trailing={
-                          closed && task.closedDay ? (
-                            <span className="relative hidden shrink-0 text-[13px] whitespace-nowrap text-muted-foreground sm:inline" data-scope-closed>
-                              {group.label} {formatDay(task.closedDay, today)}
-                            </span>
-                          ) : null
-                        }
-                      />
-                    );
-                  })}
+                  {entries.map((entry) =>
+                    entry.type === "row" ? (
+                      row(entry.row.task, false)
+                    ) : (
+                      <TaskGroupBlock key={`group-${entry.group.id}`} group={entry.group} shown={entry.shown} readOnly={readOnly}>
+                        {entry.rows.map((each) => row(each.task, true))}
+                      </TaskGroupBlock>
+                    ),
+                  )}
                 </ul>
               </Panel>
             </div>

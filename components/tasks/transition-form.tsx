@@ -1,6 +1,6 @@
 "use client";
 
-import { Flag, MessageSquareWarning } from "lucide-react";
+import { Flag, MessageSquareText, MessageSquareWarning } from "lucide-react";
 import { useState, useTransition } from "react";
 import { changeStatus } from "@/actions/tasks";
 import { Field } from "@/components/field";
@@ -8,9 +8,10 @@ import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { TaskStatus } from "@/lib/constants";
+import { isClosedStatus, type TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
+import { closingResolvesMessage } from "@/lib/tasks/comment-tasks";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
 import { openCommentsMessage } from "@/lib/tasks/transitions";
 import type { UpdateContext } from "@/lib/tasks/types";
@@ -58,6 +59,8 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
    const held = heldByComments || heldBySubTasks || heldByGoal;
    const merging = status === "merged";
    const closing = status === "rejected" || status === "deferred" || status === "cancelled";
+   // Made from a comment (2026-11-11 log): closing it in any way resolves that comment, said before the save.
+   const closesComment = task.fromComment !== null && isClosedStatus(status) && !isClosedStatus(task.status) && !held ? closingResolvesMessage(task.fromComment) : null;
    const ready =
       status === "blocked" || closing ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? !held && summary.trim() !== "" : merging ? task.parent !== null : true;
 
@@ -142,7 +145,15 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
          {heldByComments ? (
             <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
                <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
-               <span>{openCommentsMessage(task.openComments)} They are under Comments and history on the task page.</span>
+               <span>
+                  {openCommentsMessage(task.openComments, task.commentsWaitingOnTasks)} {task.openComments === 1 ? "It is" : "They are"} under Comments and history on the task page.
+               </span>
+            </p>
+         ) : null}
+         {closesComment !== null ? (
+            <p className="flex items-start gap-2 rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" role="status" data-closes-comment>
+               <MessageSquareText className="mt-0.5 size-4 shrink-0" aria-hidden />
+               <span>{closesComment}</span>
             </p>
          ) : null}
          {heldBySubTasks && !heldByComments ? (

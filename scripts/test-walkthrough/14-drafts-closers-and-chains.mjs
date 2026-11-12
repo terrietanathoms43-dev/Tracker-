@@ -43,8 +43,8 @@ try {
   step("the Draft tab opens with the notepad", (await morgan.waitFor("Jot anything", 15_000)) && (await morgan.evaluate(`document.querySelector('#draft-body') !== null`)));
   await morgan.type("#draft-body", NOTES);
   step("typing saves itself", await morgan.waitForSelector('[data-draft-save][data-save-state="saved"]', 10_000));
-  const [draft] = await query(`select body from drafts d join users u on u.id = d.user_id where u.email = 'morgan@trackwise.test' and d.org_id = (${org})`);
-  step("the note is in the database", (draft?.body ?? "").includes(`Draft check ${stamp}`));
+  const [draft] = await query(`select body from draft_notes d join users u on u.id = d.user_id where u.email = 'morgan@trackwise.test' and d.org_id = (${org}) order by d.updated_at desc limit 1`);
+  step("the note is in the database, as Morgan's first draft", (draft?.body ?? "").includes(`Draft check ${stamp}`));
   await morgan.click("Keep the notepad open while you browse", { wait: 800 });
   await morgan.goto("/goals", 4000);
   await morgan.waitFor("Goals");
@@ -69,7 +69,7 @@ try {
   await sam.goto(`/projects/${lumen.id}`, 4000);
   await sam.waitFor("Lumen Health");
   const TITLE = `Visible proposal ${stamp}`;
-  await sam.type("#quick-add-title", TITLE);
+  await sam.type("#quick-add-text", TITLE);
   await sam.click("Add local task", { exact: true, wait: 3000 });
   step("the add bar saves it as a local task", await sam.waitFor("Saved as a local task", 10_000));
   const [row] = await query("select id from tasks where title = $1", [TITLE]);

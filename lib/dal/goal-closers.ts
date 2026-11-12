@@ -3,11 +3,11 @@ import { and, asc, eq } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { notifications, tasks } from "@/db/schema";
 import { GuardError } from "@/lib/action-result";
-import { isClosedStatus } from "@/lib/constants";
+import { isClosedStatus, type ProposalStatus, type TaskStatus } from "@/lib/constants";
 import { recordActivity } from "@/lib/dal/activity";
 import { applyAssignment } from "@/lib/dal/assignments";
 import { findMembership } from "@/lib/dal/orgs";
-import { openCommentsSql } from "@/lib/dal/tasks";
+import { commentsWaitingSql, openCommentsSql } from "@/lib/dal/tasks";
 import { CLOSER_DESCRIPTION, CLOSER_TITLE } from "@/lib/tasks/closer";
 import { planTransition } from "@/lib/tasks/transitions";
 
@@ -61,7 +61,10 @@ function closersOf(tx: Tx, orgId: string, goalId: string) {
       approverId: tasks.approverId,
       blockedReason: tasks.blockedReason,
       parentTaskId: tasks.parentTaskId,
+      sourceCommentId: tasks.sourceCommentId,
+      proposalStatus: tasks.proposalStatus,
       openComments: openCommentsSql,
+      commentsWaitingOnTasks: commentsWaitingSql,
     })
     .from(tasks)
     .where(and(eq(tasks.orgId, orgId), eq(tasks.goalId, goalId), eq(tasks.goalCloser, true)))
@@ -70,15 +73,24 @@ function closersOf(tx: Tx, orgId: string, goalId: string) {
 }
 
 /**
+ * A closer whose status this module changed, as it was before: the caller hands it to `syncLinkedWork`
+ * (lib/dal/comment-tasks.ts), like every other status change. A closer is never made from a comment, so that finds
+ * nothing to do; the call keeps the rule "every status change syncs" without exceptions.
+ */
+export type ChangedCloser = { id: string; title: string; status: TaskStatus; sourceCommentId: string | null; proposalStatus: ProposalStatus | null; to: TaskStatus };
+
+/**
  * A goal that is active again has its last step open again: its completed closer goes back to Not started, with a
  * history line saying why, and a goal that has none (its closer was removed on 2026-11-07, before they came back)
  * gets one now. `exceptTaskId` is the task whose own status change reopened the goal: the caller writes that row.
+ * Returns the closers it reopened.
  */
-export async function reopenGoalCloser(tx: Tx, actorId: string, goal: CloserGoal, now: Date, exceptTaskId: string | null = null): Promise<void> {
+export async function reopenGoalCloser(tx: Tx, actorId: string, goal: CloserGoal, now: Date, exceptTaskId: string | null = null): Promise<ChangedCloser[]> {
   const closers = await closersOf(tx, goal.orgId, goal.id);
+  const changed: ChangedCloser[] = [];
   if (closers.length === 0) {
     await createGoalCloser(tx, goal, actorId, now, `Made when “${goal.title}” became active again: completing it marks the goal achieved.`);
-    return;
+    return changed;
   }
   for (const closer of closers) {
     if (closer.id === exceptTaskId || closer.status !== "completed") continue;
@@ -90,14 +102,18 @@ export async function reopenGoalCloser(tx: Tx, actorId: string, goal: CloserGoal
       .where(eq(tasks.id, closer.id));
     const note = `Open again with its goal: “${goal.title}” is active again.`;
     await recordActivity(tx, { orgId: goal.orgId, taskId: closer.id, actorId }, plan.activities.map((activity) => (activity.kind === "reopened" ? { ...activity, note } : activity)), now);
+    changed.push({ id: closer.id, title: closer.title, status: closer.status, sourceCommentId: closer.sourceCommentId, proposalStatus: closer.proposalStatus, to: "not_started" });
   }
+  return changed;
 }
 
 /**
  * The goal page's Mark completed completes the goal's open closer with it, so the goal and its last step never
- * disagree. Whatever would stop the closer being completed by hand (an open comment) stops this too.
+ * disagree. Whatever would stop the closer being completed by hand (an open comment) stops this too. Returns the
+ * closers it completed.
  */
-export async function completeGoalCloser(tx: Tx, actorId: string, goal: CloserGoal, now: Date): Promise<void> {
+export async function completeGoalCloser(tx: Tx, actorId: string, goal: CloserGoal, now: Date): Promise<ChangedCloser[]> {
+  const changed: ChangedCloser[] = [];
   for (const closer of await closersOf(tx, goal.orgId, goal.id)) {
     if (isClosedStatus(closer.status)) continue;
     const plan = planTransition(closer, "completed", { summary: `Completed with its goal: “${goal.title}” was marked completed.` }, now);
@@ -107,7 +123,9 @@ export async function completeGoalCloser(tx: Tx, actorId: string, goal: CloserGo
       .set({ ...plan.patch, updatedAt: now })
       .where(eq(tasks.id, closer.id));
     await recordActivity(tx, { orgId: goal.orgId, taskId: closer.id, actorId }, plan.activities, now);
+    changed.push({ id: closer.id, title: closer.title, status: closer.status, sourceCommentId: closer.sourceCommentId, proposalStatus: closer.proposalStatus, to: "completed" });
   }
+  return changed;
 }
 
 /** A deleted goal takes its closer with it: the task means nothing without the goal. Returns how many went. */

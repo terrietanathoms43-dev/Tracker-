@@ -1,5 +1,6 @@
 import type { ApprovalDecision, OrgRole, ProposalStatus, TaskActivityKind, TaskPriority, TaskStatus } from "@/lib/constants";
 import type { Recurrence } from "@/lib/recurrence";
+import type { FromCommentContext } from "./comment-tasks";
 
 // Shapes that cross from server to client: plain JSON only (instants as ISO strings, calendar days as
 // "YYYY-MM-DD"), so a server component can hand them straight to a client component.
@@ -9,6 +10,12 @@ export type Person = { id: string; name: string | null; email: string | null; im
 
 /** Who a task is assigned to: any number of people, all equal (docs/PLAN.md, 2026-10-18 and 2026-10-30 logs). */
 export type Assignees = Person[];
+
+/** A group of tasks as a row names it: its optional name and how many live tasks are in it. */
+export type TaskGroupRef = { id: string; name: string | null; size: number };
+
+/** A task named beside something else (a task made from a comment, the task a comment sits on): enough for a link and a status mark. */
+export type TaskRef = { id: string; title: string; status: TaskStatus };
 
 /** One row of any task list, board column or My Work group. The row expands to show the longer fields. */
 export type TaskListItem = {
@@ -32,6 +39,13 @@ export type TaskListItem = {
   parent: { id: string; title: string } | null;
   /** How many tasks are attached to this one. */
   subTasks: number;
+  /**
+   * The group it is in (2026-11-11 log): equals drawn together, inside one border, wherever a list shows more than
+   * one of them; alone on a page it carries a "Group" chip instead. Null for a task in no group (or a group of one).
+   */
+  group: TaskGroupRef | null;
+  /** Made from a comment (2026-11-11 log): that comment stays open until this task is closed. */
+  fromComment: boolean;
   /** Null for a live task; a proposal's state otherwise ("local": the maker's alone, not sent yet). */
   proposal: ProposalStatus | null;
   /** A local task: whether sending it on starts a sign-off chain (true) or publishes it at once (false). */
@@ -88,6 +102,12 @@ export type CreateDefaults = {
   description?: string;
   /** A sub-task: made attached to this task, in its project and goal (2026-11-08 log). */
   parentId?: string;
+  /**
+   * "Make a task" on a comment (2026-11-11 log): the task is linked to the comment, which then waits for it. A link,
+   * not a sub-task: the project and goal start as the comment's task's and can be changed. `taskTitle` names the task
+   * the comment is on, for the form's hint.
+   */
+  sourceComment?: { id: string; taskTitle: string };
   priority?: TaskPriority;
   dueDate?: string;
   assigneeIds?: string[];
@@ -124,6 +144,14 @@ export type TaskDetail = {
   parent: { id: string; title: string } | null;
   /** How many tasks are attached to this one; the page lists them. */
   subTasks: number;
+  /** The group it is in (2026-11-11 log); the page lists the others. */
+  group: TaskGroupRef | null;
+  /**
+   * The comment this task was made from (2026-11-11 log), whether it is still open, and how many other live tasks
+   * made from it are open. `author`, `excerpt` and `task` (the task the comment is on) are null when the viewer may
+   * not read that task; `canReopenTask`: that task is closed and the viewer may put it back in progress.
+   */
+  fromComment: { id: string; resolved: boolean; otherOpen: number; author: string | null; excerpt: string | null; task: TaskRef | null; canReopenTask: boolean } | null;
   assignees: Assignees;
   approver: Person | null;
   creator: Person;
@@ -148,6 +176,8 @@ export type TaskDetail = {
   completionSummary: string | null;
   /** Comments nobody has marked resolved yet; while there are any, the task can't be completed. */
   openComments: number;
+  /** Of those, the ones waiting for a task made from them: they resolve themselves when that task is closed. */
+  commentsWaitingOnTasks: number;
   /** The newest progress update (comments don't count): who wrote it and when. */
   lastUpdate: { author: Person; at: string } | null;
 };
@@ -167,6 +197,10 @@ export type UpdateContext = {
     blockedBy: string | null;
     /** Comments still open: completing is refused until they are resolved. */
     openComments: number;
+    /** Of those, the ones that wait for a task made from them (they resolve themselves when it is closed). */
+    commentsWaitingOnTasks: number;
+    /** Made from a comment (2026-11-11 log): what closing or reopening this task does to that comment. */
+    fromComment: FromCommentContext | null;
     /** A repeating task: completing it makes the next occurrence. */
     repeats: string | null;
     /** The task it is attached to: only then may it be marked Merged. */
@@ -195,6 +229,11 @@ export type HistoryItem = {
   blocker: string | null;
   /** Comments only: who marked it resolved and when; null while it is open. */
   resolved: { by: string; at: string } | null;
+  /**
+   * Comments only: the live tasks made from it (2026-11-11 log). While one of them is open the comment cannot be
+   * resolved by hand; it resolves itself when the last of them is closed.
+   */
+  tasks: TaskRef[];
   at: string;
   day: string;
   dayLabel: string;
@@ -219,7 +258,7 @@ export type ActivityFeedItem = {
   at: string;
 };
 
-/** Completed out of total (rejected tasks don't count), with the problems inside it. */
+/** Completed out of total (tasks closed without completing, rejected, deferred, cancelled or merged, don't count), with the problems inside it. */
 export type TaskProgress = { completed: number; total: number; blocked: number; overdue: number };
 
 export type TaskCounts = { active: number; completed: number; overdue: number; blocked: number; awaiting: number };
