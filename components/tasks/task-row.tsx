@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronDown, ClipboardCheck, CornerDownRight, GitMerge, Lock, Repeat, XCircle } from "lucide-react";
+import { ChevronDown, ClipboardCheck, CornerDownRight, GitMerge, Lock, MessageSquareText, Repeat, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
@@ -50,7 +50,8 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
  * its parent carries a "Part of" link instead, and a parent a count of its sub-tasks. A goal's "Everything
  * completed" task (2026-11-09 log) carries a chip naming the goal it marks achieved, right beside its title.
  * A task in a group (2026-11-11 log) is drawn inside the group's border by the list (`inGroup`); where the rest of
- * its group is not on the page it carries a chip naming the group instead.
+ * its group is not on the page it carries a chip naming the group instead. A task made from a comment carries a
+ * "From a comment" chip (2026-11-11 log): closing it resolves that comment.
  */
 export function TaskRow({
   task,
@@ -169,6 +170,12 @@ export function TaskRow({
             </Link>
           ) : null}
           {task.group !== null && !inGroup ? <GroupChip taskId={task.id} group={task.group} onClick={swallowClick} /> : null}
+          {task.fromComment ? (
+            <span className="inline-flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium text-muted-foreground" title="Made from a comment: the comment resolves itself when this task is closed" data-from-comment-chip>
+              <MessageSquareText className="size-3" aria-hidden />
+              <span className="sr-only sm:not-sr-only">From a comment</span>
+            </span>
+          ) : null}
           {badge}
           {task.nextAction || reason || task.proposal === "pending" || task.proposal === "declined" || local ? (
             <span className="flex min-w-0 items-center gap-1.5">

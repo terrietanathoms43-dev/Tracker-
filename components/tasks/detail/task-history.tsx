@@ -1,12 +1,16 @@
 "use client";
 
 import { cn } from "cn";
-import { ArrowRight, CheckCircle2, ListPlus, RotateCcw } from "lucide-react";
+import { ArrowRight, CheckCircle2, Hourglass, ListPlus, RotateCcw } from "lucide-react";
+import Link from "next/link";
 import { Fragment, useState, useTransition } from "react";
 import { loadHistory, setCommentResolved } from "@/actions/tasks";
+import { StatusIcon } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
+import { isClosedStatus, TASK_STATUS_LABELS } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
+import { commentWaitsMessage, titleFromComment, waitsForLabel } from "@/lib/tasks/comment-tasks";
 import { nameOf } from "@/lib/tasks/people";
 import type { HistoryItem, HistoryPage } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
@@ -16,19 +20,15 @@ import { CommentForm } from "./comment-form";
 // Comments and history on the task page, newest first, 20 at a time. A comment is open until someone resolves
 // it, and a task with an open comment can't be completed (docs/PLAN.md, 2026-10-30 log). "Make a task" on a
 // comment (2026-11-07 log) opens the New task form with the comment as the task: its first line as the title,
-// the whole of it quoted in the description with a link back here, in this task's project and goal. The comment
-// stays open for someone to resolve by hand.
+// the whole of it quoted in the description with a link back here, in this task's project and goal (both can be
+// changed). Since 2026-11-11 the two stay linked (a link, not a sub-task): the comment carries a chip for each task
+// made from it, waits for them (no Resolve while one is open) and resolves itself when the last is closed;
+// reopening one opens the comment again. "Make a task" stays, for a second task from the same comment.
 
 /** Where the comments live, for the task the button makes. */
 export type HistoryTask = { id: string; title: string; projectId: string | null; goalId: string | null };
 
-/** The title a comment becomes: its first line, cut to the title cap. */
-function titleFrom(body: string): string {
-  const line = body.split(/\r?\n/).map((part) => part.trim()).find((part) => part !== "") ?? "";
-  return line.length > LIMITS.taskTitle ? `${line.slice(0, LIMITS.taskTitle - 1)}…` : line;
-}
-
-/** "Make a task" on one comment: the New task dialog, prefilled from the comment. */
+/** "Make a task" on one open comment: the New task dialog, prefilled from the comment and linked to it. */
 function MakeTaskButton({ task, item }: { task: HistoryTask; item: HistoryItem }) {
   const { openCreate } = useTaskActions();
   return (
@@ -41,10 +41,11 @@ function MakeTaskButton({ task, item }: { task: HistoryTask; item: HistoryItem }
       data-make-task
       onClick={() =>
         openCreate({
-          title: titleFrom(item.body ?? ""),
+          title: titleFromComment(item.body ?? "", LIMITS.taskTitle),
           description: `From a comment by ${nameOf(item.actor)} on “${task.title}” (/tasks/${task.id}):\n\n${item.body ?? ""}`,
           projectId: task.projectId ?? "",
           goalId: task.goalId ?? "",
+          sourceComment: { id: item.id, taskTitle: task.title },
         })
       }
     >
@@ -74,10 +75,29 @@ function ResolveButton({ taskId, item }: { taskId: string; item: HistoryItem }) 
   );
 }
 
+/** One task made from a comment, as a chip beside "Make a task": its status, its title (a link) and its status in words. */
+function MadeTaskChip({ made }: { made: HistoryItem["tasks"][number] }) {
+  return (
+    <Link
+      href={`/tasks/${made.id}`}
+      prefetch={false}
+      className="inline-flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-md border bg-background px-2 text-[12px] font-medium hover:bg-accent sm:max-w-64"
+      title={`Made from this comment: ${made.title} (${TASK_STATUS_LABELS[made.status]})`}
+      data-comment-task={made.id}
+    >
+      <StatusIcon status={made.status} />
+      <span className={cn("min-w-0 truncate", isClosedStatus(made.status) && made.status !== "completed" && "text-muted-foreground line-through")}>{made.title}</span>
+      <span className="shrink-0 font-normal text-muted-foreground">· {TASK_STATUS_LABELS[made.status]}</span>
+    </Link>
+  );
+}
+
 function Entry({ task, item, canResolve }: { task: HistoryTask; item: HistoryItem; canResolve: boolean }) {
   const taskId = task.id;
   const comment = item.type === "comment";
   const resolved = comment && item.resolved !== null;
+  // Open tasks made from the comment: it cannot be resolved by hand until they are closed.
+  const waitingFor = comment && !resolved ? item.tasks.filter((made) => !isClosedStatus(made.status)) : [];
   return (
     <li className="flex gap-3 py-2.5">
       <UserAvatar name={item.actor.name} email={item.actor.email} image={item.actor.image} size="sm" className="mt-0.5" />
@@ -112,21 +132,37 @@ function Entry({ task, item, canResolve }: { task: HistoryTask; item: HistoryIte
             ) : null}
           </div>
         ) : comment ? (
-          <div className={cn("mt-1 rounded-md border", resolved ? "border-dashed bg-muted/30" : "border-status-awaiting-dot/40 bg-status-awaiting-bg/40")}>
-            <p className={cn("px-3 py-2 text-base whitespace-pre-line", resolved && "text-muted-foreground")}>{item.body}</p>
+          <div
+            id={`comment-${item.id}`}
+            className={cn("mt-1 scroll-mt-24 rounded-md border", resolved ? "border-dashed bg-muted/30" : "border-status-awaiting-dot/40 bg-status-awaiting-bg/40")}
+            data-comment={item.id}
+            data-comment-state={resolved ? "resolved" : waitingFor.length > 0 ? "waiting" : "open"}
+          >
+            <p className={cn("px-3 py-2 text-base break-words whitespace-pre-line", resolved && "text-muted-foreground")}>{item.body}</p>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-inherit px-3 py-1.5 text-[13px]">
               {resolved ? (
                 <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                   <CheckCircle2 className="size-3.5 text-status-completed-dot" aria-hidden />
                   Resolved by {item.resolved!.by}
+                  {item.tasks.length > 0 && item.tasks.every((made) => isClosedStatus(made.status)) ? ` · ${item.tasks.length === 1 ? "its task was" : "its tasks were"} closed` : ""}
                 </span>
               ) : (
                 <span className="font-medium text-status-awaiting-fg">Open comment</span>
               )}
-              {canResolve ? (
-                <span className="flex items-center gap-1">
-                  <MakeTaskButton task={task} item={item} />
-                  <ResolveButton taskId={taskId} item={item} />
+              {item.tasks.length > 0 || canResolve || waitingFor.length > 0 ? (
+                <span className="flex min-w-0 flex-wrap items-center justify-end gap-1">
+                  {item.tasks.map((made) => (
+                    <MadeTaskChip key={made.id} made={made} />
+                  ))}
+                  {canResolve && !resolved ? <MakeTaskButton task={task} item={item} /> : null}
+                  {waitingFor.length > 0 ? (
+                    <span className="inline-flex h-7 min-w-0 items-center gap-1.5 px-1.5 font-medium text-status-awaiting-fg" title={commentWaitsMessage(waitingFor.map((made) => made.title))} data-comment-waits>
+                      <Hourglass className="size-3.5 shrink-0" aria-hidden />
+                      <span className="truncate">{waitsForLabel(waitingFor.map((made) => made.title))}</span>
+                    </span>
+                  ) : canResolve ? (
+                    <ResolveButton taskId={taskId} item={item} />
+                  ) : null}
                 </span>
               ) : null}
             </div>

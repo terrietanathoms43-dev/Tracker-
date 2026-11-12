@@ -20,6 +20,7 @@ const item = (id: string, parent: string | null = null): TaskListItem => ({
   parent: parent === null ? null : { id: parent, title: parent },
   subTasks: 0,
   group: null,
+  fromComment: false,
   proposal: null,
   needsSignOff: false,
   goalCloser: false,

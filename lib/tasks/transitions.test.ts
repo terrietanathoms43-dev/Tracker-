@@ -1,6 +1,8 @@
 // The status rules of docs/PLAN.md §5, checked without a database.
 import { describe, expect, it } from "vitest";
-import { APPROVAL_NOTE_REQUIRED, MERGE_NEEDS_PARENT, needsInput, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type TaskState } from "./transitions";
+import { closingResolvesMessage, commentWaitsMessage, fromCommentHint, reopenedBecause, reopeningMessage, resolvedByTaskNote, waitsForLabel } from "./comment-tasks";
+import { phraseHistory, type HistoryRow } from "./history";
+import { APPROVAL_NOTE_REQUIRED, MERGE_NEEDS_PARENT, needsInput, openCommentsMessage, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type TaskState } from "./transitions";
 
 const now = new Date("2026-10-15T12:00:00Z");
 const task = (overrides: Partial<TaskState> = {}): TaskState => ({ status: "in_progress", startedAt: new Date("2026-10-01"), approverId: null, blockedReason: null, openComments: 0, parentTaskId: null, ...overrides });
@@ -115,5 +117,67 @@ describe("status transitions (PLAN §5)", () => {
     expect(merged).toMatchObject({ ok: true, patch: { status: "merged", rejectionReason: "Merged into “Ship the status page”" }, activities: [{ kind: "merged" }] });
     expect(kinds(planTransition(task({ status: "merged", parentTaskId: "parent" }), "not_started", {}, now))).toEqual(["reopened"]);
     expect(needsInput("merged")).toBe(true);
+  });
+});
+
+describe("tasks made from comments (2026-11-11 log)", () => {
+  it("the hold on completing says how many open comments wait on tasks, and keeps its old words when none do", () => {
+    expect(openCommentsMessage(2)).toBe("Resolve the 2 open comments before completing this task.");
+    expect(openCommentsMessage(1, 1)).toBe("Resolve the 1 open comment before completing this task. It waits for the task made from it: closing that task resolves it.");
+    expect(openCommentsMessage(3, 1)).toContain("One of them waits for a task made from the comment");
+    expect(openCommentsMessage(3, 2)).toContain("2 of them wait for a task made from the comment");
+    expect(openCommentsMessage(2, 2)).toContain("Each waits for a task made from the comment");
+    // The server refuses with the same words; cancelling, deferring and rejecting are not held.
+    expect(planTransition(task({ openComments: 1, commentsWaitingOnTasks: 1 }), "completed", { summary: "Done" }, now)).toEqual({ ok: false, error: openCommentsMessage(1, 1) });
+    expect(planTransition(task({ openComments: 1, commentsWaitingOnTasks: 1 }), "cancelled", { reason: "Not needed" }, now).ok).toBe(true);
+  });
+
+  it("names what a comment waits for, and what the forms say before the save", () => {
+    expect(commentWaitsMessage(["Fix the export"])).toBe("This comment waits for “Fix the export”: it resolves itself when that task is closed.");
+    expect(waitsForLabel(["A", "B"])).toBe("Waits for “A” and “B”");
+    expect(waitsForLabel(["A", "B", "C"])).toBe("Waits for 3 tasks");
+    expect(fromCommentHint("Ship the report")).toBe("Made from a comment on “Ship the report”: the comment stays open until this task is closed, then resolves itself.");
+    const open = { resolved: false, taskTitle: "Ship the report" as string | null, taskStatus: "in_progress" as const, otherOpen: 0 };
+    expect(closingResolvesMessage(open)).toBe("Closing this task resolves the comment it was made from on “Ship the report”.");
+    expect(closingResolvesMessage({ ...open, otherOpen: 2 })).toContain("still waits for 2 other tasks");
+    expect(closingResolvesMessage({ ...open, resolved: true })).toBeNull();
+    // A viewer who may not read the task the comment is on is not told its title.
+    expect(closingResolvesMessage({ ...open, taskTitle: null })).toBe("Closing this task resolves the comment it was made from.");
+    expect(reopeningMessage({ ...open, resolved: true, taskStatus: "completed" })).toBe(
+      "Reopening this task opens the comment it was made from on “Ship the report” again, and “Ship the report”, which is completed, goes back to In progress.",
+    );
+    expect(reopeningMessage(open)).toBeNull();
+  });
+
+  it("the history says what the link did", () => {
+    expect(resolvedByTaskNote("Fix the export", "cancelled")).toBe("The task made from it, “Fix the export”, was cancelled.");
+    expect(reopenedBecause("Fix the export")).toBe("A comment on it is open again: “Fix the export”, the task made from that comment, was reopened.");
+    const row = (overrides: Partial<HistoryRow>): HistoryRow => ({
+      type: "activity",
+      id: "a1",
+      created_at: now,
+      kind: "created",
+      body: null,
+      next_action: null,
+      blocker: null,
+      before: null,
+      after: null,
+      note: null,
+      resolved_at: null,
+      resolved_by_name: null,
+      actor_id: "u1",
+      actor_name: "Jordan Dev",
+      actor_email: null,
+      actor_image: null,
+      before_assignee: null,
+      after_assignee: null,
+      approver_name: null,
+      ...overrides,
+    });
+    expect(phraseHistory(row({ after: { title: "Fix the export", fromCommentId: "c1", fromTaskId: "t1" } }), "UTC", now).phrase).toBe("made the task from a comment");
+    expect(phraseHistory(row({ kind: "comment_resolved", after: { commentId: "c1", byTaskId: "t2" } }), "UTC", now).phrase).toBe("resolved a comment by closing the task made from it");
+    const comment = phraseHistory(row({ type: "comment", kind: null, body: "The export drops a row", linked: [{ id: "t2", title: "Fix the export", status: "in_progress" }] }), "UTC", now);
+    expect(comment.tasks).toEqual([{ id: "t2", title: "Fix the export", status: "in_progress" }]);
+    expect(phraseHistory(row({ kind: "completed" }), "UTC", now).tasks).toEqual([]);
   });
 });

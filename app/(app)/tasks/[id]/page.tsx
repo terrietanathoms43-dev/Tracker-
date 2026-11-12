@@ -7,10 +7,12 @@ import { TaskDetails } from "@/components/tasks/detail/task-details";
 import { TaskDrafts } from "@/components/tasks/detail/task-drafts";
 import { TaskHeader } from "@/components/tasks/detail/task-header";
 import { TaskHistory } from "@/components/tasks/detail/task-history";
+import { UpstreamCard } from "@/components/tasks/detail/upstream-card";
 import { CurrentTask } from "@/components/tasks/task-actions";
 import { db } from "@/db";
 import { chainForPlacement } from "@/lib/approvals/chain";
 import { canDecideProposal, describeStepPeople } from "@/lib/approvals/policy";
+import { isClosedStatus } from "@/lib/constants";
 import { draftsForTask } from "@/lib/dal/drafts";
 import { listHistory } from "@/lib/dal/history";
 import { pinnedProjectIds } from "@/lib/dal/projects";
@@ -33,8 +35,8 @@ export const metadata: Metadata = { title: "Task" };
  * the header, the Resume card with its inline update form (or the proposal's sign-off strip, or a local task's
  * strip with the chain a send would start), the details, the viewer's own drafts attached to the task (private to
  * them, 2026-11-11 log), then comments and history. A local task is found only by its maker (lib/permissions.ts
- * canReadTask). What the task is tied to comes before the details: its sub-tasks, then the tasks it is grouped
- * with (2026-11-11 log, task groups).
+ * canReadTask). What the task is tied to comes before the details: the comment it was made from above the Resume
+ * card, then its sub-tasks, then the tasks it is grouped with (2026-11-11 log, task groups and comment tasks).
  */
 export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const { id } = await props.params;
@@ -83,6 +85,8 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           blockedReason: detail.blockedReason,
           blockedBy: detail.blockedBy,
           openComments: detail.openComments,
+          commentsWaitingOnTasks: detail.commentsWaitingOnTasks,
+          fromComment: detail.fromComment === null ? null : { resolved: detail.fromComment.resolved, taskTitle: detail.fromComment.task?.title ?? null, taskStatus: detail.fromComment.task?.status ?? null, otherOpen: detail.fromComment.otherOpen },
           repeats: detail.recurrence ? describeRecurrence(detail.recurrence, detail.dueDate) : null,
           parent: detail.parent,
           openSubTasks: subTasks === null ? 0 : subTasks.filter((item) => !["completed", "rejected", "deferred", "cancelled", "merged"].includes(item.status)).length,
@@ -99,6 +103,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
       <CurrentTask id={detail.id} title={detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title} actionable={abilities.progress} />
       <TaskHeader detail={detail} abilities={abilities} today={today} />
       <div className="grid gap-5">
+        {detail.fromComment !== null ? <UpstreamCard fromComment={detail.fromComment} closed={isClosedStatus(detail.status)} /> : null}
         <ResumeCard detail={detail} links={links} removableLinks={removableLinks} abilities={abilities} updateContext={updateContext} localChain={localChain} timeZone={viewer.timezone} now={now} />
         {subTasks !== null ? (
           <SubTasksSection task={{ id: detail.id, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} items={subTasks} today={today} canEdit={abilities.edit} readOnly={!abilities.progress} />

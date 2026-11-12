@@ -14,6 +14,7 @@ import { describeRegate, regateMovedTask } from "@/lib/approvals/move";
 import { submitLocalTask } from "@/lib/approvals/submit";
 import { recordActivity } from "@/lib/dal/activity";
 import { applyAssignment, snapshotAssignment, validateAssignment } from "@/lib/dal/assignments";
+import { describeLinked, lockSourceComment, openTasksFromComment, syncLinkedWork, type LinkedOutcome } from "@/lib/dal/comment-tasks";
 import { findGoal } from "@/lib/dal/goals";
 import { listHistory, lockComment } from "@/lib/dal/history";
 import { findMembership, leaderIds } from "@/lib/dal/orgs";
@@ -48,6 +49,7 @@ import { defaultApproverFor } from "@/lib/tasks/approver";
 import { sameIds } from "@/lib/tasks/assignees";
 import { titleFromText } from "@/lib/tasks/title-from";
 import { closerDeleteMessage, closerLabel, closerRepeatMessage, closerStaysMessage } from "@/lib/tasks/closer";
+import { commentWaitsMessage } from "@/lib/tasks/comment-tasks";
 import { parseFilters } from "@/lib/tasks/filters";
 import { asksReason, MERGE_NEEDS_PARENT, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
 import type { HistoryPage, TaskFormOptions, TaskListItem, TaskPage, UpdateContext } from "@/lib/tasks/types";
@@ -284,7 +286,8 @@ export async function detachTask(input: z.input<typeof detachSchema>): Promise<A
   return runAction("tasks.detach", detachSchema, input, async (data) => {
     const viewer = await requireViewer();
     const now = new Date();
-    const reopened = await db.transaction(async (tx) => {
+    const notices: Notice[] = [];
+    const { reopened, linked } = await db.transaction(async (tx) => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
       const { task, scope } = locked;
@@ -299,11 +302,15 @@ export async function detachTask(input: z.input<typeof detachSchema>): Promise<A
       const drafts: ActivityDraft[] = [{ kind: "detached", before: { parentId: task.parentTaskId, parentTitle: parent?.title ?? null }, after: { parentId: null } }];
       if (reopen) drafts.push({ kind: "reopened", before: { status: "merged" }, after: { status: "not_started" }, note: "Detached, so it is a task of its own again." });
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
-      return reopen;
+      // Open again, it opens the comment it was made from again (lib/dal/comment-tasks.ts).
+      const linked = reopen ? await syncLinkedWork(tx, viewer, task, "not_started", now) : null;
+      if (linked !== null) notices.push(...linked.notices);
+      return { reopened: reopen, linked };
     });
     log.info("tasks.detached", { orgId: viewer.orgId, taskId: data.taskId, reopened, by: viewer.userId });
+    await dispatch(notices);
     refresh();
-    return ok(undefined, reopened ? "Detached and open again." : "Detached.");
+    return ok(undefined, (reopened ? "Detached and open again." : "Detached.") + describeLinked(linked));
   });
 }
 
@@ -317,6 +324,11 @@ const createSchema = z.object({
   goalId: z.string().max(64).default(""),
   /** A sub-task (2026-11-08 log): made attached to this task, in its project and goal, live like its parent. */
   parentId: z.string().max(64).default(""),
+  /**
+   * "Make a task" on a comment (2026-11-11 log): the comment this task is made from. A link, not a sub-task: the
+   * comment then waits for the task, and resolves itself when it is closed.
+   */
+  sourceCommentId: z.string().max(64).default(""),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
   dueDate: day,
   dueTime: clock,
@@ -334,7 +346,8 @@ const NOTHING_TO_ADD = "Say what needs doing.";
  * stands as given. A task in a goal is in that goal's project. Where the project or goal requires sign-off, a
  * worker's task starts local (2026-11-06 log): theirs alone, off the main board, until they send it for sign-off; a
  * stakeholder's is a proposal at once. Nobody is told they are on it until it is live. A repeat rule needs a due
- * date to count from.
+ * date to count from. A task made from a comment is linked to it (2026-11-11 log): the comment must be an open
+ * comment of this workspace on a task the viewer may read, and it waits for the task from then on.
  */
 export async function createTask(input: z.input<typeof createSchema>): Promise<ActionResult<{ id: string; title: string; proposal: boolean; local: boolean }>> {
   return runAction("tasks.create", createSchema, input, async (data) => {
@@ -347,6 +360,11 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
     const notices: Notice[] = [];
     const outcome = await db.transaction(async (tx) => {
       const assignment = await validateAssignment(tx, viewer.orgId, data.assigneeIds);
+      // Made from a comment: a comment of this workspace, on a task the viewer may read, still open. Both are locked
+      // (the task first), so the comment cannot be resolved by hand between this check and the commit.
+      const source = data.sourceCommentId ? await lockSourceComment(tx, viewer.orgId, data.sourceCommentId) : null;
+      if (data.sourceCommentId && (source === null || !canReadTask(viewer, source.commented.scope))) throw new GuardError("not_found", "That comment doesn't exist any more, or you can't see it.");
+      if (source !== null && source.comment.resolvedAt !== null) throw new GuardError("conflict", "That comment is already resolved. Reopen it first to make a task from it.");
       // A sub-task is made where its parent is, live like its parent (the parent already passed sign-off there).
       const parent = data.parentId ? await lockTask(tx, viewer.orgId, data.parentId) : null;
       if (data.parentId && parent === null) throw new GuardError("not_found", "That parent task does not exist, or you cannot see it.");
@@ -367,6 +385,7 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
           projectId: placement.projectId,
           goalId: placement.goalId,
           parentTaskId: parent?.task.id ?? null,
+          sourceCommentId: source?.comment.id ?? null,
           title,
           description: data.description || null,
           createdBy: viewer.userId,
@@ -383,11 +402,13 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
       // New work under an achieved goal makes it active again (lib/dal/goal-achievement.ts); local work waits until it is live.
       const reopened = placement.goalId !== null && !local ? await reopenGoalForNewWork(tx, viewer, placement.goalId, now) : null;
       await applyAssignment(tx, created.id, viewer.userId, [], assignment, now);
-      const drafts: ActivityDraft[] = [{ kind: "created", after: { title, proposal, local } }];
+      const drafts: ActivityDraft[] = [{ kind: "created", after: { title, proposal, local, ...(source !== null ? { fromCommentId: source.comment.id, fromTaskId: source.commented.task.id } : {}) } }];
       if (parent !== null) {
         drafts.push({ kind: "attached", after: { parentId: parent.task.id, parentTitle: parent.task.title } });
         await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, parent.task.id));
       }
+      // The comment's task changed too: its comment now waits for a task.
+      if (source !== null && source.commented.task.id !== parent?.task.id) await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, source.commented.task.id));
       // Assigning work to yourself alone is not news worth a history line.
       const justMe = sameIds(assignment, [viewer.userId]);
       if (!justMe && assignment.length > 0) drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
@@ -395,16 +416,21 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
       if (chain === null) notices.push(...assignedNotice(viewer, { id: created.id, title, nextAction: data.nextAction || null }, assignment, true));
       else if (proposal) notices.push(...(await startChain(tx, viewer, { id: created.id, title }, chain, now)));
       if (data.nextAction) await tx.update(tasks).set({ nextAction: data.nextAction }).where(eq(tasks.id, created.id));
-      return { id: created.id, title, proposal, local, reopened };
+      return { id: created.id, title, proposal, local, reopened, fromComment: source !== null };
     });
-    log.info("tasks.created", { orgId: viewer.orgId, taskId: outcome.id, proposal: outcome.proposal, local: outcome.local, by: viewer.userId });
+    log.info("tasks.created", { orgId: viewer.orgId, taskId: outcome.id, proposal: outcome.proposal, local: outcome.local, fromComment: outcome.fromComment, by: viewer.userId });
     await dispatch(notices);
     refresh();
-    const { reopened, ...created } = outcome;
+    const { reopened, fromComment, ...created } = outcome;
     return ok(
       created,
-      (outcome.local ? "Saved as a local task: only you can see it until you send it for sign-off." : outcome.proposal ? "Proposed. It goes live once it is signed off." : "Task created.") +
-        (reopened ? ` “${reopened.title}” is active again.` : ""),
+      (outcome.local
+        ? "Saved as a local task: only you can see it until you send it for sign-off."
+        : outcome.proposal
+          ? "Proposed. It goes live once it is signed off."
+          : fromComment
+            ? "Task created from the comment. The comment resolves itself when this task is closed."
+            : "Task created.") + (reopened ? ` “${reopened.title}” is active again.` : ""),
     );
   });
 }
@@ -585,7 +611,7 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
     const viewer = await requireViewer();
     const now = new Date();
     const notices: Notice[] = [];
-    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null; goal: GoalOutcome | null } | null> => {
+    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null; goal: GoalOutcome | null; linked: LinkedOutcome } | null> => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
       const { task, assignment, scope } = locked;
@@ -612,7 +638,10 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [...plan.activities, ...evidence], now);
       notices.push(...(await noticesFor(tx, viewer, noticeTask(task), assignment, plan.activities, data.approverId || task.approverId, data.note || null)));
       const nextDue = data.status === "completed" ? await spawnNextOccurrence(tx, viewer, task, assignment, now) : null;
-      return { nextDue, goal };
+      // The comment it was made from: resolved by closing it, open again by reopening it (lib/dal/comment-tasks.ts).
+      const linked = await syncLinkedWork(tx, viewer, task, data.status, now);
+      notices.push(...linked.notices);
+      return { nextDue, goal, linked };
     });
     if (outcome !== null && "error" in outcome) return fail(outcome.error);
     log.info("tasks.status_changed", { orgId: viewer.orgId, taskId: data.taskId, to: data.status, via: data.via, by: viewer.userId });
@@ -620,7 +649,7 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
     refresh();
     const today = dayKey(now, viewer.timezone);
     const nextDue = outcome?.nextDue ?? null;
-    const achieved = describeGoalOutcome(outcome?.goal ?? null, today, formatDay);
+    const achieved = describeGoalOutcome(outcome?.goal ?? null, today, formatDay) + describeLinked(outcome?.linked ?? null);
     if (data.via === "approve") return ok(undefined, withNextDue("Approved.", nextDue, today) + achieved);
     if (data.via === "send_back") return ok(undefined, "Sent back.");
     return ok(undefined, withNextDue(STATUS_TOASTS[data.status] ?? "Status changed.", nextDue, today) + achieved);
@@ -664,7 +693,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
     const viewer = await requireViewer();
     const now = new Date();
     const notices: Notice[] = [];
-    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null; goal: GoalOutcome | null }> => {
+    const outcome = await db.transaction(async (tx): Promise<{ error: string } | { nextDue: string | null; goal: GoalOutcome | null; linked: LinkedOutcome | null }> => {
       const locked = await lockTask(tx, viewer.orgId, data.taskId);
       if (locked === null) throw new GuardError("not_found");
       const { task, assignment, scope } = locked;
@@ -735,14 +764,17 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         .where(eq(tasks.id, task.id));
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
       const nextDue = target === "completed" ? await spawnNextOccurrence(tx, viewer, task, after, now) : null;
-      return { nextDue, goal };
+      // The comment it was made from (lib/dal/comment-tasks.ts).
+      const linked = target !== null ? await syncLinkedWork(tx, viewer, task, target, now) : null;
+      if (linked !== null) notices.push(...linked.notices);
+      return { nextDue, goal, linked };
     });
     if ("error" in outcome) return fail(outcome.error);
     log.info("tasks.progress_updated", { orgId: viewer.orgId, taskId: data.taskId, by: viewer.userId, status: data.status || null });
     await dispatch(notices);
     refresh();
     const today = dayKey(now, viewer.timezone);
-    return ok(undefined, withNextDue("Update saved.", outcome.nextDue, today) + describeGoalOutcome(outcome.goal, today, formatDay));
+    return ok(undefined, withNextDue("Update saved.", outcome.nextDue, today) + describeGoalOutcome(outcome.goal, today, formatDay) + describeLinked(outcome.linked));
   });
 }
 
@@ -793,6 +825,11 @@ export async function setCommentResolved(input: z.input<typeof resolveSchema>): 
       const comment = await lockComment(tx, locked.task.id, data.commentId);
       if (comment === null) throw new GuardError("not_found", "That comment doesn't exist, or you can't see it.");
       if ((comment.resolvedAt !== null) === data.resolved) return false;
+      // A comment with an open task made from it waits for that task (2026-11-11 log): it resolves itself when the task is closed.
+      if (data.resolved) {
+        const waitingFor = await openTasksFromComment(tx, viewer.orgId, comment.id);
+        if (waitingFor.length > 0) throw new GuardError("conflict", commentWaitsMessage(waitingFor.map((each) => each.title)));
+      }
       await tx
         .update(taskUpdates)
         .set({ resolvedAt: data.resolved ? now : null, resolvedBy: data.resolved ? viewer.userId : null })
@@ -944,6 +981,8 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
         blockedReason: task.blockedReason,
         blockedBy: task.blockedBy,
         openComments: task.openComments,
+        commentsWaitingOnTasks: task.commentsWaiting,
+        fromComment: task.fromComment,
         repeats: task.recurrence ? describeRecurrence(task.recurrence, task.dueDate) : null,
         parent: task.parent,
         openSubTasks: task.openSubTasks,
@@ -1061,6 +1100,8 @@ export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>):
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, stampMerge(plan.activities, task, rules.parentTitle), now);
       const sent = await noticesFor(tx, viewer, noticeTask(task), assignment, plan.activities, data.approverId || task.approverId, null);
       if (data.status === "completed") await spawnNextOccurrence(tx, viewer, task, assignment, now);
+      // The comment it was made from (lib/dal/comment-tasks.ts).
+      sent.push(...(await syncLinkedWork(tx, viewer, task, data.status, now)).notices);
       return goal?.achieved ? [...sent, ...goalAchievedNotice(viewer, goal.goal, goal.notify)] : sent;
     });
     log.info("tasks.bulk_status", { orgId: viewer.orgId, to: data.status, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
