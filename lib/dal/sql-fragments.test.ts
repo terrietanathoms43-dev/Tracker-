@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { db } from "@/db";
+import { not } from "drizzle-orm";
 import { tasks } from "@/db/schema";
+import { automaticGoalTask } from "@/lib/dal/goal-closers";
+import { CLOSER_DESCRIPTION, CLOSER_TITLE } from "@/lib/tasks/closer";
 import { CLOSED_STATUSES, CLOSED_WITHOUT_COMPLETION } from "@/lib/constants";
 import { assigneesJson, commentsWaitingSql, countsTowardsProgress, fromCommentJson, goalTitleSql, groupNameSql, groupSizeSql, needsSignOffSql, openCommentsSql, otherOpenGoalTasksSql, selectList, taskLabelSql } from "@/lib/dal/tasks";
 
@@ -30,6 +33,17 @@ describe("correlated SQL fragments", () => {
     expect(sql).toContain('g.id = "tasks".goal_id or g.parent_goal_id = "tasks".goal_id');
     expect(sql).toContain('case when "tasks".goal_closer then');
     expect(sql).not.toMatch(/= "(id|goal_id|org_id)"/);
+  });
+
+  it("deletes flagged goal closers and exact legacy generated rows, but detaches other work", () => {
+    const deletion = db.select({ id: tasks.id }).from(tasks).where(automaticGoalTask()).toSQL();
+    expect(deletion.sql).toContain('"tasks"."goal_closer"');
+    expect(deletion.sql).toContain('"tasks"."title"');
+    expect(deletion.sql).toContain('"tasks"."description"');
+    expect(deletion.params).toEqual([true, CLOSER_TITLE, CLOSER_DESCRIPTION]);
+    const detachment = db.select({ id: tasks.id }).from(tasks).where(not(automaticGoalTask())).toSQL();
+    expect(detachment.sql).toContain("not (");
+    expect(detachment.params).toEqual(deletion.params);
   });
 
   it("a group's fragments read the outer task's group: its name, and how many live tasks are in it", () => {
