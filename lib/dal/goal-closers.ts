@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, or, sql, type SQL } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { notifications, tasks } from "@/db/schema";
 import { GuardError } from "@/lib/action-result";
@@ -134,10 +134,12 @@ export async function completeGoalCloser(tx: Tx, actorId: string, goal: CloserGo
  * A user-written task merely named "Everything completed" must be kept with the other work.
  */
 export function automaticGoalTask(): SQL {
-  return or(
+  // COALESCE is essential: a normal task may have a null description. Without it, NOT(predicate)
+  // is null rather than true and that task would miss the detachment history.
+  return sql<boolean>`coalesce(${or(
     eq(tasks.goalCloser, true),
     and(eq(tasks.title, CLOSER_TITLE), eq(tasks.description, CLOSER_DESCRIPTION)),
-  )!;
+  )}, false)`;
 }
 
 /** A deleted goal takes only its automatically generated closer(s) with it. Returns how many went. */
