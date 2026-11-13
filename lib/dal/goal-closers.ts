@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, or, type SQL } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { notifications, tasks } from "@/db/schema";
 import { GuardError } from "@/lib/action-result";
@@ -128,11 +128,23 @@ export async function completeGoalCloser(tx: Tx, actorId: string, goal: CloserGo
   return changed;
 }
 
-/** A deleted goal takes its closer with it: the task means nothing without the goal. Returns how many went. */
+/**
+ * The generated task is marked by goalCloser. An older generated row may have lost that flag during a
+ * previous data change; recognise only the exact built-in title AND description as a legacy fallback.
+ * A user-written task merely named "Everything completed" must be kept with the other work.
+ */
+export function automaticGoalTask(): SQL {
+  return or(
+    eq(tasks.goalCloser, true),
+    and(eq(tasks.title, CLOSER_TITLE), eq(tasks.description, CLOSER_DESCRIPTION)),
+  )!;
+}
+
+/** A deleted goal takes only its automatically generated closer(s) with it. Returns how many went. */
 export async function deleteGoalClosers(tx: Tx, orgId: string, goalId: string): Promise<number> {
   const gone = await tx
     .delete(tasks)
-    .where(and(eq(tasks.orgId, orgId), eq(tasks.goalId, goalId), eq(tasks.goalCloser, true)))
+    .where(and(eq(tasks.orgId, orgId), eq(tasks.goalId, goalId), automaticGoalTask()))
     .returning({ id: tasks.id });
   for (const row of gone) await tx.delete(notifications).where(and(eq(notifications.orgId, orgId), eq(notifications.href, `/tasks/${row.id}`)));
   return gone.length;
