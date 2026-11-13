@@ -1,4 +1,4 @@
-import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS } from "@/lib/constants";
+import { isClosedWithoutCompletion, statusLabel, type StatusCatalog } from "@/lib/statuses";
 import { nameOf } from "@/lib/tasks/people";
 import { formatDue } from "@/lib/time";
 import type { ContributionRow, ReportTask } from "./data";
@@ -41,13 +41,13 @@ export function deliveredTable(tasks: ReportTask[]): CsvCell[][] {
   ];
 }
 
-export function openTable(tasks: ReportTask[], today: string): CsvCell[][] {
+export function openTable(tasks: ReportTask[], today: string, catalog: StatusCatalog): CsvCell[][] {
   return [
     ["Title", "Assignees", "Status", "Due date", "Due", "Next action"],
     ...tasks.map((task) => [
       task.title,
       peopleOf(task),
-      TASK_STATUS_LABELS[task.status],
+      statusLabel(catalog, task.status),
       task.dueDate,
       task.dueDate ? formatDue(task.dueDate, today).text : "",
       task.nextAction,
@@ -63,15 +63,16 @@ export function contributionsTable(rows: ContributionRow[]): CsvCell[][] {
 }
 
 /** What a scope row says in one column: the blocker (and who unblocks it), why it was closed without completing, the completion summary, or the next action. */
-const scopeDetail = (task: ReportTask): string | null => {
-  if (task.status === "completed") return task.completionSummary;
-  if (CLOSED_WITHOUT_COMPLETION.includes(task.status)) return task.rejectionReason;
-  if (task.status === "blocked") return [task.blockedReason, task.blockedBy ? `Waiting on ${task.blockedBy}` : null].filter((part) => part !== null).join(" · ") || null;
+const scopeDetail = (task: ReportTask, catalog: StatusCatalog): string | null => {
+  const status = catalog.find((each) => each.key === task.status);
+  if (status?.kind === "completed") return task.completionSummary;
+  if (status !== undefined && isClosedWithoutCompletion(status)) return task.rejectionReason;
+  if (status?.kind === "blocked") return [task.blockedReason, task.blockedBy ? `Waiting on ${task.blockedBy}` : null].filter((part) => part !== null).join(" · ") || null;
   return task.nextAction;
 };
 
 /** The active scope in the view's order (lib/reports/scope.ts): one row per task, its place, its dates, and one Detail column. */
-export function scopeTable(scope: ActiveScope): CsvCell[][] {
+export function scopeTable(scope: ActiveScope, catalog: StatusCatalog): CsvCell[][] {
   return [
     ["Title", "Project", "Goal", "Assignees", "Status", "Due date", "Closed on", "Added on", "New this cycle", "Detail"],
     ...scope.groups.flatMap((group) =>
@@ -80,12 +81,12 @@ export function scopeTable(scope: ActiveScope): CsvCell[][] {
         task.project?.name ?? "",
         task.goalTitle ?? "",
         peopleOf(task),
-        TASK_STATUS_LABELS[task.status],
+        statusLabel(catalog, task.status),
         task.dueDate,
         task.closedDay,
         task.createdDay,
         addedInCycle(task, scope.range) ? "yes" : "no",
-        scopeDetail(task),
+        scopeDetail(task, catalog),
       ]),
     ),
   ];

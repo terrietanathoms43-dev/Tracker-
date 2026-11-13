@@ -12,6 +12,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import {
@@ -23,7 +24,6 @@ import {
   PROPOSAL_STATUSES,
   TASK_ACTIVITY_KINDS,
   TASK_PRIORITIES,
-  TASK_STATUSES,
   TASK_UPDATE_KINDS,
 } from "@/lib/constants";
 import type { Recurrence } from "@/lib/recurrence";
@@ -49,7 +49,7 @@ export const orgRoleEnum = pgEnum("org_role", ORG_ROLES);
 export const goalStatusEnum = pgEnum("goal_status", GOAL_STATUSES);
 export const projectStatusEnum = pgEnum("project_status", PROJECT_STATUSES);
 export const taskPriorityEnum = pgEnum("task_priority", TASK_PRIORITIES);
-export const taskStatusEnum = pgEnum("task_status", TASK_STATUSES);
+// tasks.status is plain text (2026-11-11): workspace-configurable statuses can't live in a fixed pgEnum.
 export const taskUpdateKindEnum = pgEnum("task_update_kind", TASK_UPDATE_KINDS);
 export const taskActivityKindEnum = pgEnum("task_activity_kind", TASK_ACTIVITY_KINDS);
 export const proposalStatusEnum = pgEnum("proposal_status", PROPOSAL_STATUSES);
@@ -202,6 +202,36 @@ export const orgConfig = pgTable("org_config", {
   updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
   updatedAt: updatedAt(),
 });
+
+/**
+ * The workspace's task statuses (2026-11-11, lib/statuses.ts): one row per status the org has touched —
+ * a built-in key it edited, or a `custom_*` key it added. Behaviour never lives here: a built-in's kind is
+ * fixed by its key and a custom status is open-or-closed by its `closed` flag. `archived_at` retires a
+ * status from pickers while existing tasks keep it; statuses are never deleted.
+ */
+export const taskStatuses = pgTable(
+  "task_statuses",
+  {
+    id: id(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** "not_started" | … | a built-in TaskStatus key, or "custom_<8 hex>" for org-made statuses. */
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    /** A key of lib/statuses.ts STATUS_ICONS. */
+    icon: text("icon").notNull(),
+    /** A lib/statuses.ts StatusTone — one of the existing status-* colour families. */
+    tone: text("tone").notNull(),
+    closed: boolean("closed").notNull().default(false),
+    position: integer("position").notNull().default(0),
+    archivedAt: tstz("archived_at"),
+    updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("task_statuses_org_key_idx").on(t.orgId, t.key)],
+);
 
 export const invitations = pgTable(
   "invitations",
@@ -407,7 +437,8 @@ export const tasks = pgTable(
       .references(() => users.id),
     approverId: text("approver_id").references(() => users.id, { onDelete: "set null" }),
     priority: taskPriorityEnum("priority").notNull().default("normal"),
-    status: taskStatusEnum("status").notNull().default("not_started"),
+    /** A status key: a built-in TaskStatus, or a workspace's custom `custom_*` key (task_statuses). */
+    status: text("status").notNull().default("not_started"),
     dueDate: day("due_date"),
     /** "HH:MM" in the workspace's day, when a time matters ("every day at 8:00 AM"). */
     dueTime: text("due_time"),

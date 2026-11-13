@@ -133,7 +133,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
           )}
         </section>
         <SelectionProvider enabled={!isStakeholder(viewer)} canDelete={isLeader(viewer)}>
-          <PlanningTasks items={tasks} today={today} groupByStatus readOnly={isStakeholder(viewer)} empty={active ? "No tasks in this project yet. Add the first one above." : "No tasks in this project."} />
+          <PlanningTasks items={tasks} today={today} statuses={viewer.statuses} groupByStatus readOnly={isStakeholder(viewer)} empty={active ? "No tasks in this project yet. Add the first one above." : "No tasks in this project."} />
         </SelectionProvider>
       </div>
     </div>

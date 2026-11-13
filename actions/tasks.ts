@@ -8,7 +8,7 @@ import { cappedText, optionalLink, optionalText, requiredLink, requiredText } fr
 import { db, type Tx } from "@/db";
 import { notifications, taskLinks, taskUpdates, tasks, users } from "@/db/schema";
 import { fail, GuardError, guardMessage, ok, runAction, type ActionResult } from "@/lib/action-result";
-import { CLOSED_WITHOUT_COMPLETION, isClosedStatus, TASK_PRIORITIES, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { TASK_PRIORITIES } from "@/lib/constants";
 import { assignedNotice, chainForPlacement, startChain } from "@/lib/approvals/chain";
 import { describeRegate, regateMovedTask } from "@/lib/approvals/move";
 import { submitLocalTask } from "@/lib/approvals/submit";
@@ -47,7 +47,8 @@ import { defaultApproverFor } from "@/lib/tasks/approver";
 import { sameIds } from "@/lib/tasks/assignees";
 import { closerDeleteMessage, closerLabel, closerRepeatMessage, closerStaysMessage } from "@/lib/tasks/closer";
 import { parseFilters } from "@/lib/tasks/filters";
-import { asksReason, MERGE_NEEDS_PARENT, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
+import { isClosedStatusKey, statusDef, statusLabel, type StatusCatalog, type TaskStatusDef } from "@/lib/statuses";
+import { MERGE_NEEDS_PARENT, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
 import type { HistoryPage, TaskFormOptions, TaskListItem, TaskPage, UpdateContext } from "@/lib/tasks/types";
 import { dayKey, formatDay } from "@/lib/time";
 import { requireViewer, requireViewerContext } from "@/lib/viewer";
@@ -114,9 +115,9 @@ async function insertLink(tx: Tx, taskId: string, userId: string, url: string, l
 }
 
 /** Who may move a task: finishing an approval is the approver's, rejecting and cancelling need edit rights, the rest is progress. */
-function mayMove(viewer: Viewer, scope: TaskScope, from: TaskStatus, to: TaskStatus, via: TransitionVia): boolean {
-  if (via !== "status" || (from === "awaiting_approval" && to === "completed")) return canApproveTask(viewer, scope);
-  if (to === "rejected" || to === "cancelled") return canRejectTask(viewer, scope);
+function mayMove(viewer: Viewer, scope: TaskScope, from: string, to: TaskStatusDef, via: TransitionVia): boolean {
+  if (via !== "status" || (from === "awaiting_approval" && to.kind === "completed")) return canApproveTask(viewer, scope);
+  if (to.key === "rejected" || to.key === "cancelled" || (!to.builtin && to.kind === "closed")) return canRejectTask(viewer, scope);
   return canUpdateProgress(viewer, scope);
 }
 
@@ -206,9 +207,9 @@ const CHILD_CANNOT_MOVE = "A sub-task lives where its parent lives: move the par
  * What a status change must respect because of sub-tasks: a parent waits for its open sub-tasks before it can be
  * completed, and a merge names the parent as its reason. Returns the reason to plan with.
  */
-async function subTaskRules(tx: Tx, orgId: string, task: { id: string; status: TaskStatus; parentTaskId: string | null }, to: TaskStatus, reason: string): Promise<{ ok: true; reason: string; parentTitle: string | null } | { ok: false; error: string }> {
+async function subTaskRules(tx: Tx, orgId: string, task: { id: string; status: string; parentTaskId: string | null }, to: string, reason: string, catalog: StatusCatalog): Promise<{ ok: true; reason: string; parentTitle: string | null } | { ok: false; error: string }> {
   if (to === "completed" && task.status !== "completed") {
-    const open = await openSubTasks(tx, orgId, task.id);
+    const open = await openSubTasks(tx, orgId, task.id, catalog);
     if (open > 0) return { ok: false, error: subTasksMessage(open) };
   }
   if (to === "merged") {
@@ -251,7 +252,7 @@ async function attachUnder(tx: Tx, viewer: Viewer, child: Locked, parent: Locked
   await tx.update(tasks).set({ parentTaskId: parent.task.id, projectId: parent.task.projectId, goalId: parent.task.goalId, updatedAt: now }).where(eq(tasks.id, child.task.id));
   await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, parent.task.id));
   await recordActivity(tx, { orgId: viewer.orgId, taskId: child.task.id, actorId: viewer.userId }, [{ kind: "attached", before: { parentId: child.task.parentTaskId }, after: { parentId: parent.task.id, parentTitle: parent.task.title } }], now);
-  if (parent.task.goalId !== null && parent.task.goalId !== child.task.goalId && !isClosedStatus(child.task.status)) await reopenGoalForNewWork(tx, viewer, parent.task.goalId, now);
+  if (parent.task.goalId !== null && parent.task.goalId !== child.task.goalId && !isClosedStatusKey(viewer.statuses, child.task.status)) await reopenGoalForNewWork(tx, viewer, parent.task.goalId, now);
 }
 
 const attachSchema = z.object({ taskId: id, parentId: id });
@@ -545,7 +546,7 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
 
 const statusSchema = z.object({
   taskId: id,
-  status: z.enum(TASK_STATUSES),
+  status: z.string().regex(/^[a-z0-9_]{1,64}$/),
   reason: optionalText(LIMITS.blockedReason),
   blockedBy: optionalText(LIMITS.blockedBy),
   approverId: z.string().max(64).default(""),
@@ -556,7 +557,7 @@ const statusSchema = z.object({
   via: z.enum(["status", "approve", "send_back"]).default("status"),
 });
 
-const STATUS_TOASTS: Partial<Record<TaskStatus, string>> = {
+const STATUS_TOASTS: Partial<Record<string, string>> = {
   completed: "Marked completed.",
   blocked: "Marked blocked.",
   awaiting_approval: "Sent for approval.",
@@ -579,15 +580,15 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       const { task, assignment, scope } = locked;
       // Completing a task that waits for approval is approving it, whichever control asked.
       const via: TransitionVia = data.via === "status" && task.status === "awaiting_approval" && data.status === "completed" ? "approve" : data.via;
-      if (!mayMove(viewer, scope, task.status, data.status, via)) throw new GuardError("forbidden");
+      if (!mayMove(viewer, scope, task.status, statusDef(viewer.statuses, data.status), via)) throw new GuardError("forbidden");
       if (data.status === "awaiting_approval" && data.approverId) {
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
         if (assignment.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
       }
-      const rules = await subTaskRules(tx, viewer.orgId, task, data.status, data.reason);
+      const rules = await subTaskRules(tx, viewer.orgId, task, data.status, data.reason, viewer.statuses);
       if (!rules.ok) return { error: rules.error };
       const transition: TransitionInput = { reason: rules.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary, note: data.note };
-      const plan = planTransition(task, data.status, transition, now, via);
+      const plan = planTransition(task, data.status, transition, now, viewer.statuses, via);
       if (!plan.ok) return { error: plan.error };
       if (plan.activities.length === 0) return null;
       plan.activities = stampMerge(plan.activities, task, rules.parentTitle);
@@ -617,13 +618,17 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
 
 // --- update progress --------------------------------------------------------------------------------------------
 
+// Statuses that need a reason at the zod layer (built-ins only; a custom closed status's reason is enforced
+// by planTransition, which has the workspace's catalog — the schema cannot).
+const NEEDS_REASON = new Set(["blocked", "rejected", "deferred", "cancelled", "merged"]);
+
 const progressSchema = z
   .object({
     taskId: id,
     progress: requiredText(1, LIMITS.progressNote, "Say what you got done."),
     nextAction: optionalText(LIMITS.nextAction),
     /** The status the update leaves the task in; "" keeps it as it is. The one set of statuses, as everywhere. */
-    status: z.enum(["", ...TASK_STATUSES]).default(""),
+    status: z.string().regex(/^[a-z0-9_]{0,64}$/).default(""),
     reason: optionalText(LIMITS.blockedReason),
     blockedBy: optionalText(LIMITS.blockedBy),
     evidenceUrl: httpUrl,
@@ -634,9 +639,9 @@ const progressSchema = z
   })
   .superRefine((value, ctx) => {
     const status = value.status === "" ? null : value.status;
-    const closing = status === "completed" || (status !== null && CLOSED_WITHOUT_COMPLETION.includes(status));
+    const closing = status === "completed" || (status !== null && NEEDS_REASON.has(status));
     if (!closing && value.nextAction === "") ctx.addIssue({ code: "custom", path: ["nextAction"], message: "Say what happens next." });
-    if (status !== null && asksReason(status) && value.reason === "") ctx.addIssue({ code: "custom", path: ["reason"], message: REASON_PROMPTS[status] });
+    if (status !== null && NEEDS_REASON.has(status) && value.reason === "") ctx.addIssue({ code: "custom", path: ["reason"], message: REASON_PROMPTS[status] });
     if (status === "awaiting_approval" && value.approverId === "") ctx.addIssue({ code: "custom", path: ["approverId"], message: "Choose who approves it." });
     if (status === "completed" && value.summary === "") ctx.addIssue({ code: "custom", path: ["summary"], message: SUMMARY_REQUIRED });
   });
@@ -663,23 +668,23 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
       const after = handingOver ? [data.handOverTo] : assignment;
 
       // The status the update leaves the task in: what was picked, or no change.
-      const target: TaskStatus | null = data.status === "" || data.status === task.status ? null : data.status;
+      const target: string | null = data.status === "" || data.status === task.status ? null : data.status;
 
       const drafts: ActivityDraft[] = [{ kind: "progress_updated", after: { progress: data.progress.slice(0, 500), nextAction: data.nextAction || null } }];
       let patch: Record<string, unknown> = {};
       let goal: GoalOutcome | null = null;
       if (target !== null) {
         const via: TransitionVia = task.status === "awaiting_approval" && target === "completed" ? "approve" : "status";
-        if (!mayMove(viewer, scope, task.status, target, via)) {
+        if (!mayMove(viewer, scope, task.status, statusDef(viewer.statuses, target), via)) {
           throw new GuardError("forbidden", target === "rejected" || target === "cancelled" ? `Only people who may edit this task can ${target === "rejected" ? "reject" : "cancel"} it.` : "Only the approver can complete a task that is waiting for approval.");
         }
         if (target === "awaiting_approval") {
           await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
           if (after.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
         }
-        const rules = await subTaskRules(tx, viewer.orgId, task, target, data.reason);
+        const rules = await subTaskRules(tx, viewer.orgId, task, target, data.reason, viewer.statuses);
         if (!rules.ok) return { error: rules.error };
-        const plan = planTransition(task, target, { reason: rules.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
+        const plan = planTransition(task, target, { reason: rules.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, viewer.statuses, via);
         if (!plan.ok) return { error: plan.error };
         goal = await applyGoalRules(tx, viewer, task, target, now);
         if (goal?.achieved) notices.push(...goalAchievedNotice(viewer, goal.goal, goal.notify));
@@ -939,6 +944,7 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
       },
       people,
       defaultApprover: defaultApproverFor(people, task.approverId, task.assigneeIds),
+      statuses: viewer.statuses,
       abilities: {
         edit: canEditTask(viewer, task.scope),
         progress: canUpdateProgress(viewer, task.scope),
@@ -1018,7 +1024,7 @@ function bulkResult<T extends BulkOutcome>(outcome: T, did: string, headline?: s
 
 const bulkStatusSchema = z.object({
   taskIds: bulkIds,
-  status: z.enum(TASK_STATUSES),
+  status: z.string().regex(/^[a-z0-9_]{1,64}$/),
   reason: optionalText(LIMITS.blockedReason),
   blockedBy: optionalText(LIMITS.blockedBy),
   approverId: z.string().max(64).default(""),
@@ -1032,14 +1038,14 @@ export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>):
     const now = new Date();
     const { outcome, notices } = await runBulk(viewer, data.taskIds, async (tx, { task, assignment, scope }) => {
       const via: TransitionVia = task.status === "awaiting_approval" && data.status === "completed" ? "approve" : "status";
-      if (!mayMove(viewer, scope, task.status, data.status, via)) throw new GuardError("forbidden", "you can't change its status");
+      if (!mayMove(viewer, scope, task.status, statusDef(viewer.statuses, data.status), via)) throw new GuardError("forbidden", "you can't change its status");
       if (data.status === "awaiting_approval" && data.approverId) {
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
         if (assignment.includes(data.approverId)) throw new GuardError("forbidden", "the approver is assigned to it");
       }
-      const rules = await subTaskRules(tx, viewer.orgId, task, data.status, data.reason);
+      const rules = await subTaskRules(tx, viewer.orgId, task, data.status, data.reason, viewer.statuses);
       if (!rules.ok) throw new GuardError("conflict", rules.error);
-      const plan = planTransition(task, data.status, { reason: rules.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, via);
+      const plan = planTransition(task, data.status, { reason: rules.reason, blockedBy: data.blockedBy, approverId: data.approverId || null, summary: data.summary }, now, viewer.statuses, via);
       if (!plan.ok) throw new GuardError("conflict", plan.error);
       if (plan.activities.length === 0) return [];
       const goal = await applyGoalRules(tx, viewer, task, data.status, now);
@@ -1052,7 +1058,7 @@ export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>):
     log.info("tasks.bulk_status", { orgId: viewer.orgId, to: data.status, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
     await dispatch(notices);
     refresh();
-    return bulkResult(outcome, `marked ${TASK_STATUS_LABELS[data.status].toLowerCase()}`);
+    return bulkResult(outcome, `marked ${statusLabel(viewer.statuses, data.status).toLowerCase()}`);
   });
 }
 

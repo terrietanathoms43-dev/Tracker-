@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { tasks } from "@/db/schema";
+import { DEFAULT_STATUSES } from "@/lib/statuses";
 import { assigneesJson, goalTitleSql, needsSignOffSql, openCommentsSql, otherOpenGoalTasksSql, selectList, taskLabelSql } from "@/lib/dal/tasks";
 
 // A correlated subquery must name the outer table. Drizzle renders `${tasks.id}` as a bare "id" in a select from one
@@ -22,7 +23,7 @@ describe("correlated SQL fragments", () => {
   });
 
   it("a closer's fragments read the outer task's goal: its name, and the other open tasks it waits for", () => {
-    const { sql } = db.select({ goal: goalTitleSql, waitsFor: otherOpenGoalTasksSql, label: taskLabelSql }).from(tasks).toSQL();
+    const { sql } = db.select({ goal: goalTitleSql, waitsFor: otherOpenGoalTasksSql(DEFAULT_STATUSES), label: taskLabelSql }).from(tasks).toSQL();
     expect(sql).toContain('g.id = "tasks".goal_id');
     // The count leaves the task itself out and stays inside its workspace, its goal and that goal's sub-goals.
     expect(sql).toContain('o.org_id = "tasks".org_id and o.id <> "tasks".id');

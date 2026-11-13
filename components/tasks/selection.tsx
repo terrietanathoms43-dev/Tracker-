@@ -18,7 +18,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-result";
-import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { useStatusCatalog } from "@/components/status-catalog";
+import { activeStatuses, isClosedWithoutCompletion, type TaskStatusDef } from "@/lib/statuses";
+import { needsInput } from "@/lib/tasks/transitions";
 import { LIMITS } from "@/lib/limits";
 import { nameOf } from "@/lib/tasks/people";
 import { AssigneePicker } from "./assignee-picker";
@@ -93,13 +95,15 @@ export function SelectionProvider({ enabled = true, canDelete = false, bar = tru
   );
 }
 
-const INPUT_STATUSES = new Set<TaskStatus>(["blocked", "awaiting_approval", "completed", "rejected", "deferred", "cancelled"]);
+/** Statuses that need a reason, an approver or a summary: they go through the dialog, the rest run at once. */
+const needsDialog = (status: TaskStatusDef) => needsInput(status) || isClosedWithoutCompletion(status);
 
 /** The bar: count, Select all, the actions, Clear. Fixed above the phone's tabs, floating at the foot on a desktop. */
 function SelectionBar({ selection }: { selection: Selection }) {
+  const statuses = useStatusCatalog();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [dialog, setDialog] = useState<{ kind: "status"; status: TaskStatus } | { kind: "assign" } | { kind: "move" } | { kind: "group" } | { kind: "delete" } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "status"; status: TaskStatusDef } | { kind: "assign" } | { kind: "move" } | { kind: "group" } | { kind: "delete" } | null>(null);
   const ids = [...selection.selected];
   const count = ids.length;
 
@@ -146,18 +150,18 @@ function SelectionBar({ selection }: { selection: Selection }) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52">
-            {TASK_STATUSES.map((status) => (
+            {activeStatuses(statuses).map((status) => (
               <DropdownMenuItem
-                key={status}
+                key={status.key}
                 className="gap-2"
-                data-bulk-status-choice={status}
+                data-bulk-status-choice={status.key}
                 onSelect={() => {
-                  if (INPUT_STATUSES.has(status)) setDialog({ kind: "status", status });
-                  else run(() => bulkChangeStatus({ taskIds: ids, status }));
+                  if (needsDialog(status)) setDialog({ kind: "status", status });
+                  else run(() => bulkChangeStatus({ taskIds: ids, status: status.key }));
                 }}
               >
                 <StatusIcon status={status} />
-                {TASK_STATUS_LABELS[status]}
+                {status.label}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
@@ -184,7 +188,7 @@ function SelectionBar({ selection }: { selection: Selection }) {
           <X aria-hidden />
         </Button>
       </div>
-      {dialog?.kind === "status" ? <BulkStatusDialog status={dialog.status} count={count} pending={pending} onClose={() => setDialog(null)} onApply={(fields) => run(() => bulkChangeStatus({ taskIds: ids, status: dialog.status, ...fields }))} /> : null}
+      {dialog?.kind === "status" ? <BulkStatusDialog status={dialog.status} count={count} pending={pending} onClose={() => setDialog(null)} onApply={(fields) => run(() => bulkChangeStatus({ taskIds: ids, status: dialog.status.key, ...fields }))} /> : null}
       {dialog?.kind === "assign" ? <BulkAssignDialog count={count} pending={pending} onClose={() => setDialog(null)} onApply={(fields) => run(() => bulkAssign({ taskIds: ids, ...fields }))} /> : null}
       {dialog?.kind === "move" ? <BulkMoveDialog count={count} pending={pending} onClose={() => setDialog(null)} onApply={(fields) => run(() => bulkMove({ taskIds: ids, ...fields }))} /> : null}
       {dialog?.kind === "group" ? (
@@ -240,44 +244,45 @@ function Shell({ title, description, children, onClose, onApply, pending, applyL
 type StatusFields = { reason: string; blockedBy: string; approverId: string; summary: string };
 
 /** The same questions the Update progress form asks for these statuses, once for every ticked task. */
-function BulkStatusDialog({ status, count, pending, onClose, onApply }: { status: TaskStatus; count: number; pending: boolean; onClose: () => void; onApply: (fields: StatusFields) => void }) {
+function BulkStatusDialog({ status, count, pending, onClose, onApply }: { status: TaskStatusDef; count: number; pending: boolean; onClose: () => void; onApply: (fields: StatusFields) => void }) {
   const { options } = useTaskFormOptions();
   const [reason, setReason] = useState("");
   const [blockedBy, setBlockedBy] = useState("");
   const [approverId, setApproverId] = useState("");
   const [summary, setSummary] = useState("");
-  const needsReason = status === "blocked" || CLOSED_WITHOUT_COMPLETION.includes(status);
-  const ready = needsReason ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? summary.trim() !== "" : true;
-  const verb = TASK_STATUS_LABELS[status].toLowerCase();
+  const needsReason = status.key === "blocked" || isClosedWithoutCompletion(status);
+  const ready = needsReason ? reason.trim() !== "" : status.key === "awaiting_approval" ? approverId !== "" : status.key === "completed" ? summary.trim() !== "" : true;
+  const verb = status.label.toLowerCase();
+  const closeVerb = status.key === "deferred" ? "defer" : status.key === "cancelled" ? "cancel" : status.key === "rejected" ? "reject" : "update";
   return (
     <Shell
-      title={`${TASK_STATUS_LABELS[status]}: ${plural(count)}`}
+      title={`${status.label}: ${plural(count)}`}
       description={
-        status === "completed"
+        status.key === "completed"
           ? "Each task is completed with the same summary. A task with open comments, or one you may not complete, is left as it is and named."
-          : status === "blocked"
+          : status.key === "blocked"
             ? "Each task is marked blocked with the same reason."
-            : status === "awaiting_approval"
+            : status.key === "awaiting_approval"
               ? "Each task is sent to the same approver. A task that person is assigned to is left as it is and named."
-              : `Each task is ${verb} with the same reason. One you may not ${status === "deferred" ? "defer" : status === "cancelled" ? "cancel" : "reject"} is left as it is and named.`
+              : `Each task is ${verb} with the same reason. One you may not ${closeVerb} is left as it is and named.`
       }
       onClose={onClose}
       onApply={() => onApply({ reason, blockedBy, approverId, summary })}
       pending={pending}
       ready={ready}
-      applyLabel={`${TASK_STATUS_LABELS[status]} ${count === 1 ? "it" : "all"}`}
+      applyLabel={`${status.label} ${count === 1 ? "it" : "all"}`}
     >
       {needsReason ? (
-        <Field id="bulk-reason" label={status === "blocked" ? "What is blocking them?" : status === "deferred" ? "Why defer them?" : status === "cancelled" ? "Why cancel them?" : "Why reject them?"} count={{ value: reason, max: LIMITS.blockedReason }}>
+        <Field id="bulk-reason" label={status.key === "blocked" ? "What is blocking them?" : status.key === "deferred" ? "Why defer them?" : status.key === "cancelled" ? "Why cancel them?" : status.key === "rejected" ? "Why reject them?" : `Why ${verb}?`} count={{ value: reason, max: LIMITS.blockedReason }}>
           <Textarea id="bulk-reason" value={reason} onChange={(event) => setReason(event.target.value)} rows={2} maxLength={LIMITS.blockedReason} autoFocus />
         </Field>
       ) : null}
-      {status === "blocked" ? (
+      {status.key === "blocked" ? (
         <Field id="bulk-blocked-by" label="Who or what unblocks them?" hint="Optional." count={{ value: blockedBy, max: LIMITS.blockedBy }}>
           <Input id="bulk-blocked-by" value={blockedBy} onChange={(event) => setBlockedBy(event.target.value)} maxLength={LIMITS.blockedBy} />
         </Field>
       ) : null}
-      {status === "awaiting_approval" ? (
+      {status.key === "awaiting_approval" ? (
         <Field id="bulk-approver" label="Who approves them?">
           <NativeSelect id="bulk-approver" value={approverId} disabled={options === null} onChange={(event) => setApproverId(event.target.value)}>
             <option value="">{options === null ? "Loading…" : "Choose an approver…"}</option>
@@ -289,7 +294,7 @@ function BulkStatusDialog({ status, count, pending, onClose, onApply }: { status
           </NativeSelect>
         </Field>
       ) : null}
-      {status === "completed" ? (
+      {status.key === "completed" ? (
         <Field id="bulk-summary" label="Completion summary" hint="Required: what was done, and why it matters." count={{ value: summary, max: LIMITS.completionSummary }}>
           <Textarea id="bulk-summary" value={summary} onChange={(event) => setSummary(event.target.value)} rows={2} maxLength={LIMITS.completionSummary} autoFocus />
         </Field>

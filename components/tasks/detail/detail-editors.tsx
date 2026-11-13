@@ -1,5 +1,8 @@
 "use client";
 
+import { useStatusCatalog } from "@/components/status-catalog";
+import { statusDef } from "@/lib/statuses";
+
 import { ChevronDown, Pencil } from "lucide-react";
 import { useState, useTransition } from "react";
 import { editTask, setAssignees } from "@/actions/tasks";
@@ -12,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { TaskPriority, TaskStatus } from "@/lib/constants";
+import type { TaskPriority } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import type { Recurrence } from "@/lib/recurrence";
 import { idsOf, sameIds } from "@/lib/tasks/assignees";
@@ -90,13 +93,14 @@ export function DescriptionEditor({ taskId, description, editable }: { taskId: s
 }
 
 /** The status badge as a menu: one click for quick statuses, the small dialog for the ones that need input. */
-export function StatusEditor({ taskId, status, allowReject, hasParent = false }: { taskId: string; status: TaskStatus; allowReject: boolean; hasParent?: boolean }) {
+export function StatusEditor({ taskId, status, allowReject, hasParent = false }: { taskId: string; status: string; allowReject: boolean; hasParent?: boolean }) {
+  const statuses = useStatusCatalog();
   const { change, pending } = useChangeStatus(taskId);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60" disabled={pending} aria-label="Change status">
         <span className="inline-flex items-center gap-0.5">
-          <StatusBadge status={status} />
+          <StatusBadge status={statusDef(statuses, status)} />
           <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
         </span>
       </DropdownMenuTrigger>

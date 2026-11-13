@@ -2,7 +2,6 @@
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { TaskStatus } from "@/lib/constants";
 import type { CreateDefaults } from "@/lib/tasks/types";
 import { CreateTaskForm } from "./create-task-form";
 import { TRANSITION_TITLES, TransitionForm } from "./transition-form";
@@ -75,7 +74,7 @@ export function UpdateProgressDialog({ taskId, onClose }: { taskId: string | nul
   );
 }
 
-export function TransitionDialog({ target, onClose }: { target: { taskId: string; status: TaskStatus } | null; onClose: () => void }) {
+export function TransitionDialog({ target, onClose }: { target: { taskId: string; status: string } | null; onClose: () => void }) {
   const state = useUpdateContext(target?.taskId ?? null);
   return (
     <Dialog open={target !== null} onOpenChange={(next) => !next && onClose()}>

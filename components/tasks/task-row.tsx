@@ -7,7 +7,9 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
 import { StatusIcon } from "@/components/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useStatusCatalog } from "@/components/status-catalog";
 import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
+import { statusDef } from "@/lib/statuses";
 import { describeAssignees } from "@/lib/tasks/assignees";
 import { taskLabel } from "@/lib/tasks/closer";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
@@ -69,6 +71,7 @@ export function TaskRow({
   trailing?: ReactNode;
   attributes?: Record<string, string>;
 }) {
+  const statuses = useStatusCatalog();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const { handlers, swallowClick } = useLongPress(() => setSheetOpen(true));
@@ -133,10 +136,10 @@ export function TaskRow({
             }}
             className="relative grid size-4 shrink-0 place-items-center rounded-full outline-none after:absolute after:-inset-2 after:rounded-full after:content-[''] hover:opacity-70 focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <StatusIcon status={task.status} />
+            <StatusIcon status={statusDef(statuses, task.status)} />
           </button>
         ) : (
-          <StatusIcon status={task.status} />
+          <StatusIcon status={statusDef(statuses, task.status)} />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5 md:flex-row md:items-baseline md:gap-3">
           <Link
@@ -187,7 +190,7 @@ export function TaskRow({
         </div>
         {reason ? <ReasonChip reason={reason} className="relative hidden sm:inline-flex" /> : null}
         {task.repeats ? <Repeat className="hidden size-3.5 shrink-0 text-muted-foreground sm:block" aria-label={task.repeats} role="img" /> : null}
-        <DueLabel due={task.dueDate} today={today} status={task.status} className="relative shrink-0" />
+        <DueLabel due={task.dueDate} today={today} status={statusDef(statuses, task.status)} className="relative shrink-0" />
         {trailing}
         <PriorityGlyph priority={task.priority} className="relative" />
         <AssigneeStack assignees={task.assignees} className="relative" />
@@ -228,7 +231,7 @@ export function TaskRow({
             <Fact label="Due">
               {task.dueDate ? (
                 <>
-                  <DueLabel due={task.dueDate} today={today} status={task.status} />
+                  <DueLabel due={task.dueDate} today={today} status={statusDef(statuses, task.status)} />
                   {task.dueTime ? ` · ${formatTime(task.dueTime)}` : ""}
                 </>
               ) : (

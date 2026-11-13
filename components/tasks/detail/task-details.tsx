@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "@/components/status-badge";
+import { statusDef, type StatusCatalog } from "@/lib/statuses";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS } from "@/lib/constants";
 import { describeRecurrence, formatTime } from "@/lib/recurrence";
 import { nameOf } from "@/lib/tasks/people";
@@ -47,8 +48,10 @@ export function TaskDetails({
   today,
   timeZone,
   now,
+  statuses,
 }: {
   detail: TaskDetail;
+  statuses: StatusCatalog;
   abilities: TaskAbilities;
   people: Person[];
   viewerId: string;
@@ -75,7 +78,7 @@ export function TaskDetails({
       <div className="grid gap-3 px-5 py-4 md:px-6">
         <DescriptionEditor key={detail.description ?? ""} taskId={detail.id} description={detail.description} editable={edit} />
         <dl className="divide-y border-t">
-          {live ? <Row label="Current status">{abilities.progress ? <StatusEditor taskId={detail.id} status={detail.status} allowReject={abilities.reject} hasParent={detail.parent !== null} /> : <StatusBadge status={detail.status} />}</Row> : null}
+          {live ? <Row label="Current status">{abilities.progress ? <StatusEditor taskId={detail.id} status={detail.status} allowReject={abilities.reject} hasParent={detail.parent !== null} /> : <StatusBadge status={statusDef(statuses, detail.status)} />}</Row> : null}
           <Row label="Assigned to">
             {edit ? (
               <AssigneesEditor key={JSON.stringify(detail.assignees)} taskId={detail.id} assignees={detail.assignees} people={people} viewerId={viewerId} />
@@ -93,7 +96,7 @@ export function TaskDetails({
               </div>
             ) : detail.dueDate ? (
               <span>
-                <DueLabel due={detail.dueDate} today={today} status={detail.status} className="text-base" />
+                <DueLabel due={detail.dueDate} today={today} status={statusDef(statuses, detail.status)} className="text-base" />
                 {detail.dueTime ? ` · ${formatTime(detail.dueTime)}` : ""}
               </span>
             ) : (

@@ -73,7 +73,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
       <>
         {top}
         <div className="grid gap-6">
-          <ActiveScopeView active={active} items={items} today={today} project={project} readOnly={stakeholder} />
+          <ActiveScopeView active={active} items={items} today={today} project={project} statuses={viewer.statuses} readOnly={stakeholder} />
           <p className="text-[13px] text-muted-foreground">
             Generated {formatAbsolute(now, viewer.timezone)} from {org.name}&apos;s task records{scope ? `, narrowed to ${scope.name}` : ""}. Open work is as of today, whatever
             the date; closed work is what was completed, rejected, deferred or cancelled on or after the Since day. Pick a project in the navigation to narrow the scope.
@@ -132,11 +132,11 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
               <DeliveredList tasks={myDelivered} today={today} />
             </Panel>
             <Panel title="My open commitments" count={myOpen.length}>
-              <OpenList tasks={myOpen} today={today} />
+              <OpenList statuses={viewer.statuses} tasks={myOpen} today={today} />
             </Panel>
             {myBlocked.length > 0 ? (
               <Panel title="My blocked tasks" count={myBlocked.length}>
-                <BlockedList tasks={myBlocked} today={today} />
+                <BlockedList statuses={viewer.statuses} tasks={myBlocked} today={today} />
               </Panel>
             ) : null}
           </>
@@ -160,11 +160,11 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
             ) : null}
 
             <Panel title="Blocked and overdue" count={report.blockedOverdue.length}>
-              <BlockedList tasks={report.blockedOverdue} today={today} />
+              <BlockedList statuses={viewer.statuses} tasks={report.blockedOverdue} today={today} />
             </Panel>
             <div id="stalled" className="min-w-0 scroll-mt-20">
               <Panel title="Stalled" count={report.stalled.length}>
-                <StalledList tasks={report.stalled} today={today} />
+                <StalledList statuses={viewer.statuses} tasks={report.stalled} today={today} />
               </Panel>
             </div>
             <div id="people" className="min-w-0 scroll-mt-20">
@@ -173,7 +173,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
               </Panel>
             </div>
             <Panel title="Open commitments" count={report.open.length} aside={<CsvLink {...csv} table="open" label="Open commitments" />}>
-              <OpenList tasks={report.open} today={today} />
+              <OpenList statuses={viewer.statuses} tasks={report.open} today={today} />
             </Panel>
             <Panel title="Delivered" count={report.delivered.length} aside={<CsvLink {...csv} table="delivered" label="Delivered" />}>
               <DeliveredList tasks={report.delivered} today={today} />
@@ -193,7 +193,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
             <HealthBoard data={report.healthBoard} today={today} />
             <div id="stalled" className="min-w-0 scroll-mt-20">
               <Panel title="Stalled" count={report.stalled.length}>
-                <StalledList tasks={report.stalled} today={today} />
+                <StalledList statuses={viewer.statuses} tasks={report.stalled} today={today} />
               </Panel>
             </div>
             {stakeholder ? null : (

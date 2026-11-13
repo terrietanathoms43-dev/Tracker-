@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { auth } from "@/lib/auth";
 import { getOrgConfig } from "@/lib/dal/org-config";
+import { statusesFor } from "@/lib/dal/statuses";
 import { listMemberships, type Membership } from "@/lib/dal/orgs";
 import { readActiveOrgCookie, tryRewriteActiveOrgCookie } from "@/lib/org-cookie";
 import type { Viewer } from "@/lib/permissions";
@@ -48,11 +49,11 @@ const resolve = cache(async (): Promise<Resolved> => {
 
   const org = memberships.find((membership) => membership.orgId === wanted) ?? memberships[0];
   if (org.orgId !== wanted) await tryRewriteActiveOrgCookie(org.orgId);
-  const config = await getOrgConfig(org.orgId);
+  const [config, statuses] = await Promise.all([getOrgConfig(org.orgId), statusesFor(org.orgId)]);
 
   return {
     status: "ok",
-    viewer: { userId: user.id, orgId: org.orgId, orgRole: org.role, timezone: safeTimeZone(user.timezone ?? org.timezone), toggles: config.permissionOverrides },
+    viewer: { userId: user.id, orgId: org.orgId, orgRole: org.role, timezone: safeTimeZone(user.timezone ?? org.timezone), toggles: config.permissionOverrides, statuses },
     user,
     org,
     orgs: memberships,

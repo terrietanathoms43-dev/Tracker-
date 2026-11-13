@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusIcon } from "@/components/status-badge";
-import { CLOSED_WITHOUT_COMPLETION, isClosedStatus, TASK_STATUS_LABELS } from "@/lib/constants";
+import { isClosedWithoutCompletion, statusDef, type StatusCatalog } from "@/lib/statuses";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf } from "@/lib/tasks/people";
 import type { EvidenceLink, TaskAbilities, TaskDetail, UpdateContext } from "@/lib/tasks/types";
@@ -21,14 +21,15 @@ function Label({ children }: { children: ReactNode }) {
 }
 
 /** The strip at the top of the card for the states that need someone: local, a proposal, blocked, awaiting approval, or closed. */
-function StatusStrip({ detail, abilities, localChain, timeZone, now }: { detail: TaskDetail; abilities: TaskAbilities; localChain: string[]; timeZone: string; now: Date }) {
+function StatusStrip({ statuses, detail, abilities, localChain, timeZone, now }: { statuses: StatusCatalog; detail: TaskDetail; abilities: TaskAbilities; localChain: string[]; timeZone: string; now: Date }) {
+  const status = statusDef(statuses, detail.status);
   if (detail.proposalStatus === "local") {
     return <LocalStrip taskId={detail.id} needsSignOff={detail.needsSignOff} chain={localChain} />;
   }
   if (detail.proposalStatus === "pending" || detail.proposalStatus === "declined") {
     return <ProposalStrip taskId={detail.id} status={detail.proposalStatus} steps={detail.approvals} canDecide={abilities.decideProposal} canResubmit={abilities.edit} version={detail.updatedAt} />;
   }
-  if (detail.status === "blocked") {
+  if (status.kind === "blocked") {
     return (
       <div className="flex flex-wrap items-start gap-x-3 gap-y-2 border-b border-status-blocked-dot/30 bg-status-blocked-bg px-5 py-3 text-status-blocked-fg md:px-6">
         <OctagonAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -43,7 +44,7 @@ function StatusStrip({ detail, abilities, localChain, timeZone, now }: { detail:
       </div>
     );
   }
-  if (detail.status === "awaiting_approval") {
+  if (status.kind === "awaiting_approval") {
     return (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-status-awaiting-dot/30 bg-status-awaiting-bg px-5 py-3 text-status-awaiting-fg md:px-6">
         <Clock className="size-4 shrink-0" aria-hidden />
@@ -55,7 +56,7 @@ function StatusStrip({ detail, abilities, localChain, timeZone, now }: { detail:
       </div>
     );
   }
-  if (detail.status === "completed") {
+  if (status.kind === "completed") {
     return (
       <div className="flex items-start gap-3 border-b border-status-completed-dot/30 bg-status-completed-bg px-5 py-3 text-base text-status-completed-fg md:px-6">
         <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -69,13 +70,13 @@ function StatusStrip({ detail, abilities, localChain, timeZone, now }: { detail:
       </div>
     );
   }
-  if (CLOSED_WITHOUT_COMPLETION.includes(detail.status)) {
+  if (isClosedWithoutCompletion(status)) {
     return (
       <div className="flex items-start gap-3 border-b bg-status-rejected-bg px-5 py-3 text-base text-status-rejected-fg md:px-6">
-        <StatusIcon status={detail.status} className="mt-0.5 text-current" />
+        <StatusIcon status={status} className="mt-0.5 text-current" />
         <p>
-          <span className="font-medium">{detail.status === "merged" ? (detail.rejectionReason ?? TASK_STATUS_LABELS.merged) : TASK_STATUS_LABELS[detail.status]}</span>
-          {detail.status !== "merged" && detail.rejectionReason ? ` · ${detail.rejectionReason}` : ""}
+          <span className="font-medium">{status.kind === "merged" ? (detail.rejectionReason ?? status.label) : status.label}</span>
+          {status.kind !== "merged" && detail.rejectionReason ? ` · ${detail.rejectionReason}` : ""}
         </p>
       </div>
     );
@@ -94,6 +95,7 @@ export function ResumeCard({
   removableLinks,
   abilities,
   updateContext,
+  statuses,
   localChain = [],
   timeZone,
   now,
@@ -104,17 +106,18 @@ export function ResumeCard({
   abilities: TaskAbilities;
   /** Present when the viewer may update progress: the inline form's context. */
   updateContext: UpdateContext | null;
+  statuses: StatusCatalog;
   /** A local task: who would sign each step if it were sent now (empty when it would be published). */
   localChain?: string[];
   timeZone: string;
   now: Date;
 }) {
-  const closed = isClosedStatus(detail.status);
+  const closed = statusDef(statuses, detail.status).closed;
   const proposal = detail.proposalStatus === "pending" || detail.proposalStatus === "declined";
   const local = detail.proposalStatus === "local";
   return (
     <section aria-label="Where this task stands" className="overflow-hidden rounded-xl border bg-card">
-      <StatusStrip detail={detail} abilities={abilities} localChain={localChain} timeZone={timeZone} now={now} />
+      <StatusStrip statuses={statuses} detail={detail} abilities={abilities} localChain={localChain} timeZone={timeZone} now={now} />
       <div className="grid gap-5 px-5 py-5 md:px-6">
         <div className="grid gap-1.5">
           <Label>Next action</Label>

@@ -1,11 +1,14 @@
-import { CLOSED_WITHOUT_COMPLETION, type TaskActivityKind, type TaskStatus } from "@/lib/constants";
+import type { TaskActivityKind } from "@/lib/constants";
+import { isClosedWithoutCompletion, statusOf, type StatusCatalog, type TaskStatusDef } from "@/lib/statuses";
 
-// Status rules (docs/PLAN.md §5, apex-ux flow D) as one pure function: given the task's current state and
-// the status asked for, the column changes and the activity rows to write. Every action that changes a
-// status goes through it, so a row menu, the Update progress form and the approver's buttons never diverge.
+// Status rules (docs/PLAN.md §5, apex-ux flow D) as one pure function: given the task's current state, the
+// workspace's statuses and the status asked for, the column changes and the activity rows to write. Every
+// action that changes a status goes through it, so a row menu, the Update progress form and the approver's
+// buttons never diverge. Behaviour is decided by the status's *kind* (lib/statuses.ts), not its key: a
+// renamed Completed still completes, and a workspace's custom closed status behaves like Rejected.
 
 export type TaskState = {
-  status: TaskStatus;
+  status: string;
   startedAt: Date | null;
   approverId: string | null;
   blockedReason: string | null;
@@ -16,7 +19,7 @@ export type TaskState = {
 };
 
 export type TransitionInput = {
-  /** blocked / rejected / deferred / cancelled: required. */
+  /** blocked / closed-without-completion statuses: required. */
   reason?: string | null;
   /** blocked: who or what could unblock it. */
   blockedBy?: string | null;
@@ -32,7 +35,7 @@ export type TransitionInput = {
 export type TransitionVia = "status" | "approve" | "send_back";
 
 export type TaskPatch = {
-  status?: TaskStatus;
+  status?: string;
   startedAt?: Date;
   completedAt?: Date | null;
   completionSummary?: string | null;
@@ -67,8 +70,8 @@ export const SUMMARY_REQUIRED = "Say what was done: a completion summary is requ
 /** What the forms and the server say when an approval comes without its note. */
 export const APPROVAL_NOTE_REQUIRED = "Add a sign-off note: what you checked, or why it passes.";
 
-/** The question a closed-without-completion status asks. */
-export const REASON_PROMPTS: Record<"blocked" | "rejected" | "deferred" | "cancelled" | "merged", string> = {
+/** The question a closed-without-completion status asks, per built-in key; customs fall back to CLOSED_REASON_PROMPT. */
+export const REASON_PROMPTS: Record<string, string> = {
   blocked: "Say what is blocking it.",
   rejected: "Give a reason for rejecting it.",
   deferred: "Say why it is deferred, and until when if you know.",
@@ -76,11 +79,23 @@ export const REASON_PROMPTS: Record<"blocked" | "rejected" | "deferred" | "cance
   merged: "Say which task it was merged into.",
 };
 
+/** What a custom closed status asks. */
+export const CLOSED_REASON_PROMPT = "Give a reason for closing it.";
+
 /** What a task that is not a sub-task hears when Merged is asked for. */
 export const MERGE_NEEDS_PARENT = "Only a sub-task can be merged: attach it to the task it duplicates first.";
 
-/** Whether a status asks for a reason (blocked, and the ways of closing a task without completing it; a merge names its parent). */
-export const asksReason = (status: TaskStatus): status is "blocked" | "rejected" | "deferred" | "cancelled" | "merged" => status === "blocked" || CLOSED_WITHOUT_COMPLETION.includes(status);
+/** Whether entering this status asks for a reason (blocked, and every way of closing without completing). */
+export const asksReason = (status: TaskStatusDef): boolean => status.kind === "blocked" || isClosedWithoutCompletion(status);
+
+/** The reason prompt for a status that asks one. */
+export const reasonPrompt = (status: TaskStatusDef): string => REASON_PROMPTS[status.key] ?? CLOSED_REASON_PROMPT;
+
+/** The task_activity kind for entering a status: built-ins keep their named kinds, customs log a plain status_changed. */
+const activityFor = (status: TaskStatusDef): TaskActivityKind => {
+  if (status.builtin && ["rejected", "deferred", "cancelled", "merged"].includes(status.key)) return status.key as TaskActivityKind;
+  return "status_changed";
+};
 
 /**
  * Plans a move from the task's status to `to`. Leaving a state undoes what it set (blocked clears the reason,
@@ -88,41 +103,45 @@ export const asksReason = (status: TaskStatus): status is "blocked" | "rejected"
  * history; asking for the current status is a no-op. Completing (approving included) is refused while a comment
  * is still open, and without its sign-off words: the summary, or the approver's note.
  */
-export function planTransition(task: TaskState, to: TaskStatus, input: TransitionInput, now: Date, via: TransitionVia = "status"): TransitionPlan {
+export function planTransition(task: TaskState, to: string, input: TransitionInput, now: Date, statuses: StatusCatalog, via: TransitionVia = "status"): TransitionPlan {
   const from = task.status;
-  if (via !== "status" && from !== "awaiting_approval") return { ok: false, error: "This task isn't waiting for approval." };
-  if (from === to && to !== "awaiting_approval") return { ok: true, patch: {}, activities: [] };
-  if (to === "completed" && task.openComments > 0) return { ok: false, error: openCommentsMessage(task.openComments) };
+  const toStatus = statusOf(statuses, to);
+  if (toStatus === undefined) return { ok: false, error: "That status doesn't exist." };
+  if (toStatus.archived) return { ok: false, error: `"${toStatus.label}" is archived and can't be picked.` };
+  const fromStatus = statusOf(statuses, from);
+  if (via !== "status" && fromStatus?.kind !== "awaiting_approval") return { ok: false, error: "This task isn't waiting for approval." };
+  if (from === to && toStatus.kind !== "awaiting_approval") return { ok: true, patch: {}, activities: [] };
+  if (toStatus.kind === "completed" && task.openComments > 0) return { ok: false, error: openCommentsMessage(task.openComments) };
 
-  if (to === "merged" && task.parentTaskId === null) return { ok: false, error: MERGE_NEEDS_PARENT };
+  if (toStatus.kind === "merged" && task.parentTaskId === null) return { ok: false, error: MERGE_NEEDS_PARENT };
   const reason = clean(input.reason);
-  if (asksReason(to) && reason === null) return { ok: false, error: REASON_PROMPTS[to] };
-  if (to === "awaiting_approval" && !input.approverId) return { ok: false, error: "Choose who approves it." };
+  if (asksReason(toStatus) && reason === null) return { ok: false, error: reasonPrompt(toStatus) };
+  if (toStatus.kind === "awaiting_approval" && !input.approverId) return { ok: false, error: "Choose who approves it." };
   const summary = clean(input.summary);
   const note = clean(input.note);
-  if (to === "completed" && via === "approve" && note === null) return { ok: false, error: APPROVAL_NOTE_REQUIRED };
-  if (to === "completed" && via === "status" && summary === null) return { ok: false, error: SUMMARY_REQUIRED };
+  if (toStatus.kind === "completed" && via === "approve" && note === null) return { ok: false, error: APPROVAL_NOTE_REQUIRED };
+  if (toStatus.kind === "completed" && via === "status" && summary === null) return { ok: false, error: SUMMARY_REQUIRED };
 
   const patch: TaskPatch = { status: to };
   const activities: ActivityDraft[] = [];
 
-  if (from === "blocked") {
+  if (fromStatus?.kind === "blocked") {
     patch.blockedReason = null;
     patch.blockedBy = null;
-    activities.push({ kind: "unblocked", before: { status: from, blockedReason: task.blockedReason }, after: { status: to } });
+    activities.push({ kind: "unblocked", before: { status: from }, after: { status: to } });
   }
-  if (from === "completed") {
+  if (fromStatus?.kind === "completed") {
     patch.completedAt = null;
     patch.completionSummary = null;
     activities.push({ kind: "reopened", before: { status: from }, after: { status: to } });
   }
-  if (CLOSED_WITHOUT_COMPLETION.includes(from)) {
+  if (fromStatus !== undefined && isClosedWithoutCompletion(fromStatus)) {
     patch.rejectionReason = null;
-    if (!CLOSED_WITHOUT_COMPLETION.includes(to) && to !== "completed") activities.push({ kind: "reopened", before: { status: from }, after: { status: to } });
+    if (!(isClosedWithoutCompletion(toStatus) || toStatus.kind === "completed")) activities.push({ kind: "reopened", before: { status: from }, after: { status: to } });
   }
-  if (to === "in_progress" && task.startedAt === null) patch.startedAt = now;
+  if (toStatus.kind === "in_progress" && task.startedAt === null) patch.startedAt = now;
 
-  switch (to) {
+  switch (toStatus.kind) {
     case "blocked":
       patch.blockedReason = reason;
       patch.blockedBy = clean(input.blockedBy);
@@ -141,12 +160,10 @@ export function planTransition(task: TaskState, to: TaskStatus, input: Transitio
       activities.push({ kind: "completed", before: { status: from }, after: { status: to }, note: summary ?? note });
       break;
     }
-    case "rejected":
-    case "deferred":
-    case "cancelled":
+    case "closed":
     case "merged":
       patch.rejectionReason = reason;
-      activities.push({ kind: to, before: { status: from }, after: { status: to }, note: reason });
+      activities.push({ kind: activityFor(toStatus), before: { status: from }, after: { status: to }, note: reason });
       break;
     default:
       if (via === "send_back") {
@@ -159,6 +176,6 @@ export function planTransition(task: TaskState, to: TaskStatus, input: Transitio
 }
 
 /** Statuses whose change needs more than a click, so the row menu opens a small dialog for them. */
-export function needsInput(to: TaskStatus): boolean {
-  return asksReason(to) || to === "awaiting_approval" || to === "completed";
+export function needsInput(status: TaskStatusDef): boolean {
+  return asksReason(status) || status.kind === "awaiting_approval" || status.kind === "completed";
 }

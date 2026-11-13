@@ -8,12 +8,13 @@ import { optionalText, requiredText } from "@/lib/sanitize";
 import { db, type Tx } from "@/db";
 import { goalLinks, goals, notifications, projects, tasks } from "@/db/schema";
 import { ERR, fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
-import { CLOSED_STATUSES, GOAL_STATUSES, type GoalStatus } from "@/lib/constants";
+import { GOAL_STATUSES, type GoalStatus } from "@/lib/constants";
 import { saveApprovalSettings } from "@/lib/dal/approvals";
 import { recordActivity } from "@/lib/dal/activity";
 import { findGoal, goalsById, linkEdgesForCycleCheck, lockGoal, ownerError, subGoalDeadlines } from "@/lib/dal/goals";
 import { assertNoOpenTasks, goalAchievedNotice } from "@/lib/dal/goal-achievement";
 import { completeGoalCloser, createGoalCloser, deleteGoalClosers, reopenGoalCloser } from "@/lib/dal/goal-closers";
+import { closedStatusKeys } from "@/lib/statuses";
 import { findProject } from "@/lib/dal/projects";
 import { createGoalOccurrence, type NextGoal } from "@/lib/dal/recurrence";
 import { parentDeadlineProblem, subGoalDeadlineProblem } from "@/lib/goals/deadlines";
@@ -195,7 +196,7 @@ export async function updateGoal(input: z.input<typeof updateSchema>): Promise<A
               eq(tasks.orgId, viewer.orgId),
               eq(tasks.goalId, goal.id),
               eq(tasks.goalCloser, true),
-              notInArray(tasks.status, [...CLOSED_STATUSES]),
+              notInArray(tasks.status, closedStatusKeys(viewer.statuses)),
               goal.targetDate === null ? isNull(tasks.dueDate) : eq(tasks.dueDate, goal.targetDate),
             ),
           )
@@ -264,8 +265,8 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
       // A goal is achieved when its tasks are done (lib/dal/goal-achievement.ts): the button is a shortcut, not a way
       // round that. What it does stand in for is the goal's last step, so the closer is completed with the goal.
       if (data.status === "completed") {
-        await assertNoOpenTasks(tx, viewer.orgId, goal);
-        await completeGoalCloser(tx, viewer.userId, closerGoal, now);
+        await assertNoOpenTasks(tx, viewer.orgId, goal, viewer.statuses);
+        await completeGoalCloser(tx, viewer.userId, closerGoal, now, viewer.statuses);
       }
       await tx
         .update(goals)
@@ -277,7 +278,7 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
         })
         .where(eq(goals.id, goal.id));
       // A goal that is no longer completed has its last step open again.
-      if (goal.status === "completed") await reopenGoalCloser(tx, viewer.userId, closerGoal, now);
+      if (goal.status === "completed") await reopenGoalCloser(tx, viewer.userId, closerGoal, now, null, viewer.statuses);
       const next = data.status === "completed" ? await spawnNextGoal(tx, viewer.userId, viewer.orgId, goal, today, now) : null;
       return { from: goal.status, next, achieved: data.status === "completed" ? { title: goal.title, people: [goal.ownerId, goal.createdBy] } : null };
     });

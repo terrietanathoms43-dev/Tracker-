@@ -1,5 +1,8 @@
 "use client";
 
+import { useStatusCatalog } from "@/components/status-catalog";
+import { statusDef } from "@/lib/statuses";
+
 import { cn } from "cn";
 import { Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -60,6 +63,7 @@ function WithdrawButton({ item }: { item: ProposalListItem }) {
 }
 
 export function ProposalRow({ item, today, now, timeZone, showProposer = true }: { item: ProposalListItem; today: string; now: Date; timeZone: string; showProposer?: boolean }) {
+  const statuses = useStatusCatalog();
   const where = [item.project?.name, item.goal?.title].filter(Boolean).join(" › ") || "Standalone task";
   const declinedStep = item.steps.find((step) => step.decision === "declined");
   return (
@@ -94,7 +98,7 @@ export function ProposalRow({ item, today, now, timeZone, showProposer = true }:
             {item.dueDate ? (
               <>
                 <span aria-hidden>·</span>
-                <DueLabel due={item.dueDate} today={today} status="not_started" />
+                <DueLabel due={item.dueDate} today={today} status={statusDef(statuses, "not_started")} />
               </>
             ) : null}
             <span aria-hidden>·</span>

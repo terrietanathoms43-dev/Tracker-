@@ -7,6 +7,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { taskLabel } from "@/lib/tasks/closer";
 import { tasksHref } from "@/lib/tasks/filters";
 import { nameOf } from "@/lib/tasks/people";
+import { statusDef, type StatusCatalog } from "@/lib/statuses";
 import type { Person, WorkloadRow } from "@/lib/tasks/types";
 import { PanelEmpty } from "./panel";
 
@@ -37,7 +38,7 @@ const assigneeFilter = (row: WorkloadRow) => tasksHref({ assignee: row.person?.i
  * The Team page's workload: each row opens (a native disclosure, so it works by touch and keyboard) to list the
  * person's open tasks, most pressing first, with a link to all of them in Tasks.
  */
-export function Workload({ rows, today }: { rows: WorkloadRow[]; today: string }) {
+export function Workload({ rows, today, statuses }: { rows: WorkloadRow[]; today: string; statuses: StatusCatalog }) {
   if (rows.length === 0) return <PanelEmpty>Nobody in the workspace does work yet.</PanelEmpty>;
   return (
     <ul className="divide-y">
@@ -72,9 +73,9 @@ export function Workload({ rows, today }: { rows: WorkloadRow[]; today: string }
                 {row.active.slice(0, TITLES_SHOWN).map((task) => (
                   <li key={task.id}>
                     <Link href={`/tasks/${task.id}`} prefetch={false} className="flex items-center gap-2.5 py-1.5 pr-4 pl-13 transition-colors hover:bg-accent/60">
-                      <StatusIcon status={task.status} className="size-3.5" />
+                      <StatusIcon status={statusDef(statuses, task.status)} className="size-3.5" />
                       <span className="min-w-0 flex-1 truncate text-[13px]">{taskLabel(task)}</span>
-                      <DueLabel due={task.dueDate} today={today} status={task.status} className="shrink-0" />
+                      <DueLabel due={task.dueDate} today={today} status={statusDef(statuses, task.status)} className="shrink-0" />
                     </Link>
                   </li>
                 ))}

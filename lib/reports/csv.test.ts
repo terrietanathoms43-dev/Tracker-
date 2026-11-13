@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_STATUSES } from "@/lib/statuses";
 import { contributionsTable, csvCell, deliveredTable, scopeTable, toCsv } from "./csv";
 import type { ReportTask } from "./data";
 import { groupActiveScope } from "./scope";
@@ -96,8 +97,8 @@ describe("tables", () => {
       goalTitle: "Intake live",
       evidence: [],
     };
-    const scope = groupActiveScope([task, stuck], { from: "2026-10-24", to: "2026-11-06" }, "2026-11-06");
-    expect(toCsv(scopeTable(scope)).split("\r\n").slice(0, 3)).toEqual([
+    const scope = groupActiveScope([task, stuck], { from: "2026-10-24", to: "2026-11-06" }, "2026-11-06", DEFAULT_STATUSES);
+    expect(toCsv(scopeTable(scope, DEFAULT_STATUSES)).split("\r\n").slice(0, 3)).toEqual([
       "Title,Project,Goal,Assignees,Status,Due date,Closed on,Added on,New this cycle,Detail",
       "Call the clinic,Lumen Health,Intake live,Jordan Dev,Blocked,2026-10-10,,2026-10-30,yes,No answer · Waiting on Front desk",
       '"Ship ""v2"", finally",,,Jordan Dev,Completed,2026-10-10,2026-10-12,2026-10-01,no,"Done.\nNotes in the doc."',

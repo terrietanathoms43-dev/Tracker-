@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { activeStatuses, isClosedWithoutCompletion, statusDef } from "@/lib/statuses";
 import { LIMITS } from "@/lib/limits";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
@@ -23,7 +23,7 @@ import { toastResult } from "@/lib/toast-result";
 // Awaiting approval asks who approves, Completed needs its summary (2026-11-07 log), Rejected, Deferred and
 // Cancelled each ask why.
 
-type Choice = "" | TaskStatus;
+type Choice = "" | string;
 
 /**
  * The signature form (docs/BRIEF.md §6): latest progress and next action, then the optional evidence, handover and
@@ -41,7 +41,7 @@ export function UpdateProgressForm({
   autoFocus?: boolean;
   progressRef?: RefObject<HTMLTextAreaElement | null>;
 }) {
-  const { task, people, abilities } = context;
+  const { task, people, abilities, statuses } = context;
   const [progress, setProgress] = useState("");
   const [nextAction, setNextAction] = useState("");
   const [status, setStatus] = useState<Choice>(task.status === "not_started" ? "in_progress" : "");
@@ -66,11 +66,13 @@ export function UpdateProgressForm({
       : current.length === 1
         ? `Keep with ${nameOf(current[0])}`
         : `Keep with ${current.map((person) => nameOf(person)).join(", ")}`;
-  const effective: TaskStatus = status === "" ? task.status : status;
-  const completing = effective === "completed" && task.status !== "completed";
-  const merging = effective === "merged" && task.status !== "merged";
-  /** Closing without completing: rejected, deferred or cancelled, each with its reason (a merge names its parent by itself). */
-  const closingWithReason = CLOSED_WITHOUT_COMPLETION.includes(effective) && effective !== "merged" && task.status !== effective;
+  const currentDef = statusDef(statuses, task.status);
+  const effectiveKey = status === "" ? task.status : status;
+  const effective = statusDef(statuses, effectiveKey);
+  const completing = effective.kind === "completed" && currentDef.kind !== "completed";
+  const merging = effective.kind === "merged" && currentDef.kind !== "merged";
+  /** Closing without completing: rejected, deferred, cancelled or a workspace's own closed status, each with its reason (a merge names its parent by itself). */
+  const closingWithReason = isClosedWithoutCompletion(effective) && effective.kind !== "merged" && task.status !== effectiveKey;
   const closing = completing || closingWithReason || merging;
   // The same rules the server applies (lib/tasks/transitions.ts, sub-tasks), shown before the save instead of after it.
   const heldByComments = completing && task.openComments > 0;
@@ -81,14 +83,14 @@ export function UpdateProgressForm({
   const summaryMissing = completing && !held && summary.trim() === "";
   // The statuses this person may move the task to: completing a task that waits for approval is approving it;
   // rejecting and cancelling are edit rights; only a sub-task can be merged.
-  const choices = TASK_STATUSES.filter((each) => {
-    if (each === "rejected" || each === "cancelled") return abilities.reject;
-    if (each === "completed" && task.status === "awaiting_approval") return abilities.approve;
-    if (each === "merged") return task.parent !== null;
+  const choices = activeStatuses(statuses).filter((each) => {
+    if (each.key === "rejected" || each.key === "cancelled") return abilities.reject;
+    if (each.kind === "completed" && currentDef.kind === "awaiting_approval") return abilities.approve;
+    if (each.kind === "merged") return task.parent !== null;
     return true;
   });
   // A blocked task that stays blocked may still get its reason brought up to date.
-  const blockedFields = effective === "blocked";
+  const blockedFields = effective.kind === "blocked";
 
   function submit() {
     startTransition(async () => {
@@ -102,7 +104,7 @@ export function UpdateProgressForm({
         evidenceUrl: showEvidence ? evidenceUrl.trim() : "",
         evidenceLabel: showEvidence ? evidenceLabel : "",
         handOverTo,
-        approverId: status === "awaiting_approval" ? approverId : "",
+        approverId: status !== "" && statusDef(statuses, status).kind === "awaiting_approval" ? approverId : "",
         summary: completing ? summary : "",
       });
       if (!result.ok) {
@@ -190,12 +192,12 @@ export function UpdateProgressForm({
           <div className="flex items-center gap-2">
             <StatusIcon status={effective} />
             <NativeSelect id={field("status")} value={status} className="min-w-0 flex-1" onChange={(event) => setStatus(event.target.value as Choice)} aria-invalid={errors.status ? true : undefined}>
-              <option value="">Keep as {TASK_STATUS_LABELS[task.status].toLowerCase()}</option>
+              <option value="">Keep as {currentDef.label.toLowerCase()}</option>
               {choices
-                .filter((each) => each !== task.status)
+                .filter((each) => each.key !== task.status)
                 .map((each) => (
-                  <option key={each} value={each}>
-                    {TASK_STATUS_LABELS[each]}
+                  <option key={each.key} value={each.key}>
+                    {each.label}
                   </option>
                 ))}
             </NativeSelect>
@@ -255,8 +257,8 @@ export function UpdateProgressForm({
       {closingWithReason ? (
         <div className="grid gap-1.5">
           <Textarea
-            aria-label={`Why is it ${TASK_STATUS_LABELS[effective].toLowerCase()}?`}
-            placeholder={`Why is it ${TASK_STATUS_LABELS[effective].toLowerCase()}? Kept in the task's history.`}
+            aria-label={`Why is it ${effective.label.toLowerCase()}?`}
+            placeholder={`Why is it ${effective.label.toLowerCase()}? Kept in the task's history.`}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             rows={2}
@@ -270,7 +272,7 @@ export function UpdateProgressForm({
         </div>
       ) : null}
 
-      {status === "awaiting_approval" ? (
+      {status !== "" && statusDef(statuses, status).kind === "awaiting_approval" ? (
         <div className="grid gap-1.5">
           <Label htmlFor={field("approver")} className="text-[13px] text-muted-foreground">
             Who approves it?

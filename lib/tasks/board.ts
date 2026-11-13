@@ -1,19 +1,22 @@
-import type { TaskStatus } from "@/lib/constants";
+import { activeStatuses, type StatusCatalog, type TaskStatusDef } from "@/lib/statuses";
 import type { TaskListItem } from "./types";
 
-// The board's columns (docs/PLAN.md §5): five statuses, left to right in the order work moves.
-// Rejected tasks never appear on the board; completed ones only for the last RECENTLY_FINISHED_DAYS days.
+// The board's columns (docs/PLAN.md §5): the workspace's pickable statuses, left to right in their configured
+// order. Closed statuses never appear — except Completed, which keeps its column for the last
+// RECENTLY_FINISHED_DAYS days; a custom open status simply gets its own column.
 
-export const BOARD_STATUSES = ["not_started", "in_progress", "awaiting_approval", "blocked", "completed"] as const satisfies readonly TaskStatus[];
-export type BoardStatus = (typeof BOARD_STATUSES)[number];
+/** The statuses the board draws a column for: every active, not-closed status, plus Completed. */
+export function boardStatuses(catalog: StatusCatalog): TaskStatusDef[] {
+  return activeStatuses(catalog).filter((status) => !status.closed || status.kind === "completed");
+}
 
-export type BoardColumns = Record<BoardStatus, TaskListItem[]>;
+export type BoardColumns = Record<string, TaskListItem[]>;
 
 /** Splits already-sorted tasks into the board's columns, keeping their order. */
-export function toBoardColumns(items: TaskListItem[]): BoardColumns {
-  const columns: BoardColumns = { not_started: [], in_progress: [], awaiting_approval: [], blocked: [], completed: [] };
+export function toBoardColumns(items: TaskListItem[], statuses: TaskStatusDef[]): BoardColumns {
+  const columns: BoardColumns = Object.fromEntries(statuses.map((status) => [status.key, []]));
   for (const item of items) {
-    if (item.status in columns) columns[item.status as BoardStatus].push(item);
+    if (item.status in columns) columns[item.status].push(item);
   }
   return columns;
 }

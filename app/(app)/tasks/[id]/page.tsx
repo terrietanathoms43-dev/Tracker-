@@ -68,6 +68,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const removableLinks = links.filter((link) => abilities.edit || (abilities.progress && link.addedBy === viewer.userId)).map((link) => link.id);
   const updateContext: UpdateContext | null = abilities.progress
     ? {
+        statuses: viewer.statuses,
         task: {
           id: detail.id,
           title: detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title,
@@ -93,7 +94,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
       <CurrentTask id={detail.id} title={detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title} actionable={abilities.progress} />
       <TaskHeader detail={detail} abilities={abilities} today={today} />
       <div className="grid gap-5">
-        <ResumeCard detail={detail} links={links} removableLinks={removableLinks} abilities={abilities} updateContext={updateContext} localChain={localChain} timeZone={viewer.timezone} now={now} />
+        <ResumeCard statuses={viewer.statuses} detail={detail} links={links} removableLinks={removableLinks} abilities={abilities} updateContext={updateContext} localChain={localChain} timeZone={viewer.timezone} now={now} />
         {subTasks !== null ? (
           <SubTasksSection task={{ id: detail.id, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} items={subTasks} today={today} canEdit={abilities.edit} readOnly={!abilities.progress} />
         ) : null}
@@ -107,6 +108,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           goals={planning.goals}
           today={today}
           timeZone={viewer.timezone}
+          statuses={viewer.statuses}
           now={now}
         />
         <TaskHistory task={{ id: detail.id, title: detail.title, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} initial={history} canComment={abilities.progress} openComments={detail.openComments} />

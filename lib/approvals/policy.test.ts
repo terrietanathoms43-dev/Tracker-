@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_STATUSES } from "@/lib/statuses";
 import type { Viewer } from "@/lib/permissions";
 import { canDecideProposal, canDecideStep, chainFor, currentStep, policyInForce } from "./policy";
 
 // Who signs off a new task, in what order (docs/PLAN.md, 2026-11-03 log).
 
-const viewer = (orgRole: Viewer["orgRole"], userId = "u"): Viewer => ({ userId, orgId: "org", orgRole, timezone: "UTC" });
+const viewer = (orgRole: Viewer["orgRole"], userId = "u"): Viewer => ({ userId, orgId: "org", orgRole, timezone: "UTC", statuses: DEFAULT_STATUSES });
 const policy = (steps: (string | null)[], bypass: string[] = [], requiresApproval = true) => ({ requiresApproval, steps: steps.map((userId) => ({ userIds: userId === null ? [] : [userId] })), bypass });
 
 describe("chainFor", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ReportTask } from "./data";
-import { addedInCycle, groupActiveScope, SCOPE_GROUPS } from "./scope";
+import { DEFAULT_STATUSES } from "@/lib/statuses";
+import { addedInCycle, groupActiveScope } from "./scope";
 
 const range = { from: "2026-10-24", to: "2026-11-06" };
 const today = "2026-11-06";
@@ -43,10 +44,11 @@ describe("groupActiveScope", () => {
       ],
       range,
       today,
+      DEFAULT_STATUSES,
     );
     expect(scope.groups.map((group) => group.status)).toEqual(["blocked", "in_progress", "not_started", "deferred", "rejected", "cancelled", "completed"]);
     expect(scope.groups.map((group) => group.label)).toEqual(["Blocked", "In progress", "Not started", "Deferred", "Rejected", "Cancelled", "Completed"]);
-    expect(SCOPE_GROUPS).toHaveLength(9);
+    expect(DEFAULT_STATUSES).toHaveLength(9);
   });
 
   it("sorts open work soonest due first (undated last) and closed work newest first, titles breaking ties", () => {
@@ -64,6 +66,7 @@ describe("groupActiveScope", () => {
       ],
       range,
       today,
+      DEFAULT_STATUSES,
     );
     expect(scope.groups[0].tasks.map((t) => t.id)).toEqual(["soon", "later", "a", "b"]);
     expect(scope.groups[1].tasks.map((t) => t.id)).toEqual(["parked late", "parked early"]);
@@ -80,6 +83,7 @@ describe("groupActiveScope", () => {
       ],
       range,
       today,
+      DEFAULT_STATUSES,
     );
     expect(scope).toMatchObject({ total: 4, notCompleted: 3, overdue: 2, blocked: 1, completed: 1, added: 2 });
     expect(scope.range).toEqual(range);
@@ -95,13 +99,14 @@ describe("groupActiveScope", () => {
       ],
       range,
       today,
+      DEFAULT_STATUSES,
     );
     expect(scope).toMatchObject({ total: 4, notCompleted: 4, overdue: 0, completed: 0 });
     expect(scope.groups.map((group) => group.status)).toEqual(["not_started", "deferred", "rejected", "cancelled"]);
   });
 
   it("is empty when nothing is in scope", () => {
-    expect(groupActiveScope([], range, today)).toEqual({ range, groups: [], total: 0, notCompleted: 0, overdue: 0, blocked: 0, completed: 0, added: 0 });
+    expect(groupActiveScope([], range, today, DEFAULT_STATUSES)).toEqual({ range, groups: [], total: 0, notCompleted: 0, overdue: 0, blocked: 0, completed: 0, added: 0 });
   });
 });
 

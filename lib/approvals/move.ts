@@ -6,7 +6,8 @@ import { chainForPlacement, startChain } from "@/lib/approvals/chain";
 import { recordActivity } from "@/lib/dal/activity";
 import { findMembership } from "@/lib/dal/orgs";
 import type { Notice } from "@/lib/notify";
-import { isClosedStatus, type ProposalStatus, type TaskStatus } from "@/lib/constants";
+import { type ProposalStatus } from "@/lib/constants";
+import { isClosedStatusKey } from "@/lib/statuses";
 import { isLive, type Viewer } from "@/lib/permissions";
 
 // Moving a live task under sign-off (docs/PLAN.md, 2026-11-07 log). A task made where no sign-off applied (no
@@ -15,7 +16,7 @@ import { isLive, type Viewer } from "@/lib/permissions";
 // off the main board, theirs to send for sign-off; a stakeholder's task goes straight to the chain, as theirs always
 // do. Completed and otherwise closed tasks just move: there is nothing left to sign off.
 
-type MovedTask = { id: string; title: string; createdBy: string; proposalStatus: ProposalStatus | null; status: TaskStatus; nextAction: string | null };
+type MovedTask = { id: string; title: string; createdBy: string; proposalStatus: ProposalStatus | null; status: string; nextAction: string | null };
 
 export type RegateOutcome = {
   /** What the task became: a local task of its maker, or a pending proposal. */
@@ -31,7 +32,7 @@ export type RegateOutcome = {
  * live (no sign-off there, the maker skips the queue, or the task is closed or not live to begin with).
  */
 export async function regateMovedTask(tx: Tx, viewer: Viewer, task: MovedTask, placement: { projectId: string | null; goalId: string | null }, now: Date): Promise<RegateOutcome | null> {
-  if (!isLive(task) || isClosedStatus(task.status)) return null;
+  if (!isLive(task) || isClosedStatusKey(viewer.statuses, task.status)) return null;
   // The chain is the maker's: the person who proposes the work is the one sign-off is about.
   const maker = await findMembership(tx, viewer.orgId, task.createdBy);
   const makerId = maker === null ? viewer.userId : task.createdBy;

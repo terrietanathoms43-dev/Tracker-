@@ -1,5 +1,6 @@
-import type { ApprovalDecision, OrgRole, ProposalStatus, TaskActivityKind, TaskPriority, TaskStatus } from "@/lib/constants";
+import type { ApprovalDecision, OrgRole, ProposalStatus, TaskActivityKind, TaskPriority } from "@/lib/constants";
 import type { Recurrence } from "@/lib/recurrence";
+import type { StatusCatalog } from "@/lib/statuses";
 
 // Shapes that cross from server to client: plain JSON only (instants as ISO strings, calendar days as
 // "YYYY-MM-DD"), so a server component can hand them straight to a client component.
@@ -16,7 +17,7 @@ export type TaskListItem = {
   title: string;
   /** Cut to a few hundred characters for the expanded row; the task page has it all. */
   description: string | null;
-  status: TaskStatus;
+  status: string; // a status key: built-in or custom_* (lib/statuses.ts)
   priority: TaskPriority;
   dueDate: string | null;
   /** "HH:MM" when a time of day matters. */
@@ -112,7 +113,7 @@ export type TaskDetail = {
   id: string;
   title: string;
   description: string | null;
-  status: TaskStatus;
+  status: string; // a status key: built-in or custom_* (lib/statuses.ts)
   priority: TaskPriority;
   dueDate: string | null;
   dueTime: string | null;
@@ -160,7 +161,7 @@ export type UpdateContext = {
   task: {
     id: string;
     title: string;
-    status: TaskStatus;
+    status: string; // a status key: built-in or custom_* (lib/statuses.ts)
     assigneeIds: string[];
     nextAction: string | null;
     blockedReason: string | null;
@@ -179,6 +180,8 @@ export type UpdateContext = {
   people: PersonOption[];
   defaultApprover: string | null;
   abilities: TaskAbilities;
+  /** The workspace's statuses, so the form offers and prompts by them. */
+  statuses: StatusCatalog;
 };
 
 /** One entry of a task's comments and history, already phrased and timed in the viewer's timezone. */

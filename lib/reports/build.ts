@@ -162,7 +162,7 @@ export async function buildActiveScope(viewer: Viewer, range: ReportRange, today
     viewer,
     rows.map((row) => row.id),
   );
-  return { scope: { project, chosen }, active: groupActiveScope(rows, range, today), items };
+  return { scope: { project, chosen }, active: groupActiveScope(rows, range, today, viewer.statuses), items };
 }
 
 /** One of the report's tables as a CSV file, reading only the rows that table needs. */
@@ -172,10 +172,10 @@ export async function buildCsv(viewer: Viewer, table: ReportTable, range: Report
     case "delivered":
       return toCsv(deliveredTable(await deliveredTasks(viewer, range, project)));
     case "open":
-      return toCsv(openTable(await openCommitments(viewer, range, today, project), today));
+      return toCsv(openTable(await openCommitments(viewer, range, today, project), today, viewer.statuses));
     case "contributions":
       return toCsv(contributionsTable(await contributionCounts(viewer, range, today, project)));
     case "scope":
-      return toCsv(scopeTable(groupActiveScope(await activeScopeTasks(viewer, range, project), range, today)));
+      return toCsv(scopeTable(groupActiveScope(await activeScopeTasks(viewer, range, project), range, today, viewer.statuses), viewer.statuses));
   }
 }

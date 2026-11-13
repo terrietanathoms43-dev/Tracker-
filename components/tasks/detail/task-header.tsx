@@ -1,5 +1,7 @@
 "use client";
 
+import { useStatusCatalog } from "@/components/status-catalog";
+
 import { cn } from "cn";
 import { ArrowLeft, ClipboardCheck, CornerDownRight, GitMerge, Link2, Lock, NotebookPen, Repeat } from "lucide-react";
 import Link from "next/link";
@@ -8,6 +10,7 @@ import { toast } from "sonner";
 import { editTask } from "@/actions/tasks";
 import { CharacterCounter } from "@/components/character-counter";
 import { PriorityGlyph } from "@/components/priority-glyph";
+import { statusDef } from "@/lib/statuses";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,6 +82,7 @@ function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boole
 
 /** What this is and who holds it, at a glance: title, status, assignee, due date and priority. */
 export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; abilities: TaskAbilities; today: string }) {
+  const statuses = useStatusCatalog();
   // A proposal belongs on the Proposals page; a local task is in its maker's lists; a stakeholder's way around is the goals.
   const proposal = detail.proposalStatus === "pending" || detail.proposalStatus === "declined";
   const local = detail.proposalStatus === "local";
@@ -135,7 +139,7 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
             {PROPOSAL_STATUS_LABELS[detail.proposalStatus!]}
           </span>
         ) : (
-          <StatusBadge status={detail.status} />
+          <StatusBadge status={statusDef(statuses, detail.status)} />
         )}
         {detail.parent !== null ? (
           <Link href={`/tasks/${detail.parent.id}`} prefetch={false} className="inline-flex h-6 min-w-0 max-w-full items-center gap-1 rounded-md border px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground" data-part-of>
@@ -160,7 +164,7 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
         )}
         {detail.dueDate ? (
           <span>
-            Due <DueLabel due={detail.dueDate} today={today} status={detail.status} />
+            Due <DueLabel due={detail.dueDate} today={today} status={statusDef(statuses, detail.status)} />
             {detail.dueTime ? ` · ${formatTime(detail.dueTime)}` : ""}
           </span>
         ) : null}

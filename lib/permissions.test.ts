@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_STATUSES } from "@/lib/statuses";
 import type { OrgRole } from "@/lib/constants";
 import {
   canApproveTask,
@@ -27,7 +28,7 @@ import {
   type Viewer,
 } from "./permissions";
 
-const viewer = (orgRole: OrgRole, userId = "u1", orgId = "org1"): Viewer => ({ userId, orgId, orgRole, timezone: "UTC" });
+const viewer = (orgRole: OrgRole, userId = "u1", orgId = "org1"): Viewer => ({ userId, orgId, orgRole, timezone: "UTC", statuses: DEFAULT_STATUSES });
 
 const task = (overrides: Partial<TaskScope> = {}): TaskScope => ({
   orgId: "org1",

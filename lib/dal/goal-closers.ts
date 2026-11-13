@@ -3,7 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { notifications, tasks } from "@/db/schema";
 import { GuardError } from "@/lib/action-result";
-import { isClosedStatus } from "@/lib/constants";
+import { isClosedStatusKey, type StatusCatalog } from "@/lib/statuses";
 import { recordActivity } from "@/lib/dal/activity";
 import { applyAssignment } from "@/lib/dal/assignments";
 import { findMembership } from "@/lib/dal/orgs";
@@ -74,7 +74,7 @@ function closersOf(tx: Tx, orgId: string, goalId: string) {
  * history line saying why, and a goal that has none (its closer was removed on 2026-11-07, before they came back)
  * gets one now. `exceptTaskId` is the task whose own status change reopened the goal: the caller writes that row.
  */
-export async function reopenGoalCloser(tx: Tx, actorId: string, goal: CloserGoal, now: Date, exceptTaskId: string | null = null): Promise<void> {
+export async function reopenGoalCloser(tx: Tx, actorId: string, goal: CloserGoal, now: Date, exceptTaskId: string | null = null, catalog: StatusCatalog): Promise<void> {
   const closers = await closersOf(tx, goal.orgId, goal.id);
   if (closers.length === 0) {
     await createGoalCloser(tx, goal, actorId, now, `Made when “${goal.title}” became active again: completing it marks the goal achieved.`);
@@ -82,7 +82,7 @@ export async function reopenGoalCloser(tx: Tx, actorId: string, goal: CloserGoal
   }
   for (const closer of closers) {
     if (closer.id === exceptTaskId || closer.status !== "completed") continue;
-    const plan = planTransition(closer, "not_started", {}, now);
+    const plan = planTransition(closer, "not_started", {}, now, catalog);
     if (!plan.ok) continue;
     await tx
       .update(tasks)
@@ -97,10 +97,10 @@ export async function reopenGoalCloser(tx: Tx, actorId: string, goal: CloserGoal
  * The goal page's Mark completed completes the goal's open closer with it, so the goal and its last step never
  * disagree. Whatever would stop the closer being completed by hand (an open comment) stops this too.
  */
-export async function completeGoalCloser(tx: Tx, actorId: string, goal: CloserGoal, now: Date): Promise<void> {
+export async function completeGoalCloser(tx: Tx, actorId: string, goal: CloserGoal, now: Date, catalog: StatusCatalog): Promise<void> {
   for (const closer of await closersOf(tx, goal.orgId, goal.id)) {
-    if (isClosedStatus(closer.status)) continue;
-    const plan = planTransition(closer, "completed", { summary: `Completed with its goal: “${goal.title}” was marked completed.` }, now);
+    if (isClosedStatusKey(catalog, closer.status)) continue;
+    const plan = planTransition(closer, "completed", { summary: `Completed with its goal: “${goal.title}” was marked completed.` }, now, catalog);
     if (!plan.ok) throw new GuardError("conflict", `“${closer.title}” is completed with the goal. ${plan.error}`);
     await tx
       .update(tasks)

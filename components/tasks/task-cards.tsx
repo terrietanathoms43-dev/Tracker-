@@ -1,5 +1,8 @@
 "use client";
 
+import { statusDef } from "@/lib/statuses";
+import { useStatusCatalog } from "@/components/status-catalog";
+
 import { cn } from "cn";
 import { ClipboardCheck, CornerDownRight, GitMerge } from "lucide-react";
 import Link from "next/link";
@@ -28,6 +31,7 @@ export function TaskCard({
    readOnly?: boolean;
    overlay?: boolean;
 }) {
+   const statuses = useStatusCatalog();
    const [sheetOpen, setSheetOpen] = useState(false);
    const { handlers, swallowClick } = useLongPress(() => setSheetOpen(true));
    return (
@@ -73,7 +77,7 @@ export function TaskCard({
                ) : null}
                {task.nextAction ? <p className="mt-1 line-clamp-1 text-[13px] text-muted-foreground">{task.nextAction}</p> : null}
                <div className="mt-2.5 flex items-center gap-2">
-                  <DueLabel due={task.dueDate} today={today} status={task.status} />
+                  <DueLabel due={task.dueDate} today={today} status={statusDef(statuses, task.status)} />
                   <PriorityGlyph priority={task.priority} className="relative" />
                   <span className="ml-auto" />
                   <AssigneeStack assignees={task.assignees} className="relative" />

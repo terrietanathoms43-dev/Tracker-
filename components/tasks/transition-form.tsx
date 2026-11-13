@@ -8,7 +8,7 @@ import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { TaskStatus } from "@/lib/constants";
+import { statusDef } from "@/lib/statuses";
 import { LIMITS } from "@/lib/limits";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
@@ -18,7 +18,7 @@ import { toastResult } from "@/lib/toast-result";
 
 // The small status-change dialog's form: exactly the fields the new status needs.
 
-export const TRANSITION_TITLES: Partial<Record<TaskStatus, string>> = {
+export const TRANSITION_TITLES: Partial<Record<string, string>> = {
    blocked: "Mark as blocked",
    awaiting_approval: "Send for approval",
    completed: "Mark as completed",
@@ -29,7 +29,7 @@ export const TRANSITION_TITLES: Partial<Record<TaskStatus, string>> = {
 };
 
 /** The question each closed-without-completion status asks, and its hint. */
-const CLOSE_PROMPTS: Record<"rejected" | "deferred" | "cancelled", { label: string; hint: string }> = {
+const CLOSE_PROMPTS: Record<string, { label: string; hint: string }> = {
    rejected: { label: "Why is it rejected?", hint: "Kept in the task's history." },
    deferred: { label: "Why is it deferred?", hint: "Until when, if you know. Kept in the task's history; the task can be reopened later." },
    cancelled: { label: "Why is it cancelled?", hint: "Kept in the task's history. A cancelled task stays for the record; delete it to remove it." },
@@ -40,8 +40,10 @@ const CLOSE_PROMPTS: Record<"rejected" | "deferred" | "cancelled", { label: stri
  * 2026-11-07 log) and optional evidence. Completing a task with open comments is refused by the server
  * (lib/tasks/transitions.ts); the dialog says so instead of offering a Save that fails.
  */
-export function TransitionForm({ context, status, onDone }: { context: UpdateContext; status: TaskStatus; onDone: () => void }) {
+export function TransitionForm({ context, status, onDone }: { context: UpdateContext; status: string; onDone: () => void }) {
    const { task, people } = context;
+   const def = statusDef(context.statuses, status);
+   const kind = def.kind;
    const [reason, setReason] = useState("");
    const [blockedBy, setBlockedBy] = useState("");
    const [approverId, setApproverId] = useState(context.defaultApprover ?? "");
@@ -50,16 +52,16 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
    const [evidenceLabel, setEvidenceLabel] = useState("");
    const [errors, setErrors] = useState<Record<string, string[] | undefined>>({});
    const [pending, startTransition] = useTransition();
-   const heldByComments = status === "completed" && task.openComments > 0;
+   const heldByComments = kind === "completed" && task.openComments > 0;
    // Sub-tasks (2026-11-08 log): a parent waits for its open sub-tasks; a merge only works on a sub-task and needs no words.
-   const heldBySubTasks = status === "completed" && task.openSubTasks > 0;
+   const heldBySubTasks = kind === "completed" && task.openSubTasks > 0;
    // A goal's "Everything completed" task is its last step (2026-11-09 log): it waits for every other task under the goal.
-   const heldByGoal = status === "completed" && task.closer !== null && task.closer.openOthers > 0;
+   const heldByGoal = kind === "completed" && task.closer !== null && task.closer.openOthers > 0;
    const held = heldByComments || heldBySubTasks || heldByGoal;
-   const merging = status === "merged";
-   const closing = status === "rejected" || status === "deferred" || status === "cancelled";
+   const merging = kind === "merged";
+   const closing = kind === "closed";
    const ready =
-      status === "blocked" || closing ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? !held && summary.trim() !== "" : merging ? task.parent !== null : true;
+      kind === "blocked" || closing ? reason.trim() !== "" : kind === "awaiting_approval" ? approverId !== "" : kind === "completed" ? !held && summary.trim() !== "" : merging ? task.parent !== null : true;
 
    return (
       <form
@@ -88,7 +90,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             }
          }}
       >
-         {status === "blocked" ? (
+         {kind === "blocked" ? (
             <>
                <Field id="transition-reason" label="What's blocking it?" error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
                   <Textarea
@@ -113,7 +115,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             </>
          ) : null}
          {closing ? (
-            <Field id="transition-reason" label={CLOSE_PROMPTS[status].label} hint={CLOSE_PROMPTS[status].hint} error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
+            <Field id="transition-reason" label={CLOSE_PROMPTS[status]?.label ?? `Why is it ${def.label.toLowerCase()}?`} hint={CLOSE_PROMPTS[status]?.hint ?? "Kept in the task's history."} error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
                <Textarea
                   id="transition-reason"
                   value={reason}
@@ -124,7 +126,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                />
             </Field>
          ) : null}
-         {status === "awaiting_approval" ? (
+         {kind === "awaiting_approval" ? (
             <Field id="transition-approver" label="Who approves it?" error={errors.approverId?.[0]}>
                <NativeSelect id="transition-approver" value={approverId} onChange={(event) => setApproverId(event.target.value)}>
                   <option value="">Choose an approver…</option>
@@ -170,7 +172,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                )}
             </p>
          ) : null}
-         {status === "completed" && !held ? (
+         {kind === "completed" && !held ? (
             <>
                {task.closer ? (
                   <p className="flex items-center gap-1.5 text-[13px] font-medium text-primary" data-closer-note>

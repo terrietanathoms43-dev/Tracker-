@@ -1,4 +1,5 @@
 import { ORG_ROLES, type OrgRole, type ProposalStatus } from "@/lib/constants";
+import type { StatusCatalog } from "@/lib/statuses";
 
 /**
  * Who may do what (docs/PLAN.md §3, 2026-11-03 log). Pure predicates over a Viewer and the scope of a resource,
@@ -14,6 +15,8 @@ export type Viewer = {
   timezone: string;
   /** Admin-set switches for this workspace (org_config); absent means every toggle is off. */
   toggles?: PermissionToggles;
+  /** The workspace's task statuses, resolved (task_statuses over the defaults). Travels with the viewer to every screen. */
+  statuses: StatusCatalog;
 };
 
 /**
