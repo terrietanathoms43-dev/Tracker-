@@ -315,10 +315,13 @@ export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<A
     if (!canDeleteGoal(viewer)) throw new GuardError("forbidden", "Only leaders and admins can delete a goal.");
     const now = new Date();
     const detach = async (tx: Tx, goal: { id: string; title: string }) => {
+      // The generated closing task belongs to the goal, not to the project's orphaned work.
+      // Keep this in the same helper for parent goals and deleted sub-goals alike.
+      await deleteGoalClosers(tx, viewer.orgId, goal.id);
       const detached = await tx
         .update(tasks)
         .set({ goalId: null, updatedAt: now })
-        .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id)))
+        .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id), eq(tasks.goalCloser, false)))
         .returning({ id: tasks.id });
       for (const task of detached) {
         await recordActivity(
@@ -337,12 +340,10 @@ export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<A
         .select({ id: goals.id, title: goals.title })
         .from(goals)
         .where(and(eq(goals.orgId, viewer.orgId), eq(goals.parentGoalId, goal.id)));
-      await deleteGoalClosers(tx, viewer.orgId, goal.id);
       let detachedTasks = await detach(tx, goal);
       let subGoalsDeleted = 0;
       if (data.deleteSubGoals) {
         for (const sub of subGoals) {
-          await deleteGoalClosers(tx, viewer.orgId, sub.id);
           detachedTasks += await detach(tx, sub);
           await tx.delete(goals).where(eq(goals.id, sub.id));
           await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/goals/${sub.id}`)));
