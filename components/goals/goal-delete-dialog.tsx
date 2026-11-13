@@ -49,7 +49,7 @@ export function GoalDeleteDialog({ goal }: { goal: { id: string; title: string; 
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete this goal?</DialogTitle>
-            <DialogDescription>&ldquo;{goal.title}&rdquo; is removed for good. Nothing under it is lost:</DialogDescription>
+            <DialogDescription>&ldquo;{goal.title}&rdquo; is removed for good. Its automatic completion task is deleted; other work is kept:</DialogDescription>
           </DialogHeader>
           <ul className="grid list-disc gap-1.5 pl-5 text-base">
             {consequences.map((line) => (
