@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, not, notInArray, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
 import { LIMITS } from "@/lib/limits";
@@ -14,7 +14,7 @@ import { recordActivity } from "@/lib/dal/activity";
 import { findGoal, goalsById, linkEdgesForCycleCheck, lockGoal, ownerError, subGoalDeadlines } from "@/lib/dal/goals";
 import { assertNoOpenTasks, goalAchievedNotice } from "@/lib/dal/goal-achievement";
 import { syncLinkedWork } from "@/lib/dal/comment-tasks";
-import { completeGoalCloser, createGoalCloser, deleteGoalClosers, reopenGoalCloser, type ChangedCloser } from "@/lib/dal/goal-closers";
+import { automaticGoalTask, completeGoalCloser, createGoalCloser, deleteGoalClosers, reopenGoalCloser, type ChangedCloser } from "@/lib/dal/goal-closers";
 import { findProject } from "@/lib/dal/projects";
 import { createGoalOccurrence, type NextGoal } from "@/lib/dal/recurrence";
 import { parentDeadlineProblem, subGoalDeadlineProblem } from "@/lib/goals/deadlines";
@@ -318,7 +318,7 @@ export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<A
       const detached = await tx
         .update(tasks)
         .set({ goalId: null, updatedAt: now })
-        .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id)))
+        .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id), not(automaticGoalTask())))
         .returning({ id: tasks.id });
       for (const task of detached) {
         await recordActivity(
