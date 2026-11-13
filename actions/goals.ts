@@ -318,7 +318,8 @@ export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<A
       const detached = await tx
         .update(tasks)
         .set({ goalId: null, updatedAt: now })
-        .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id)))
+        // The automatic closer is deleted, never detached into an orphan.
+        .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id), eq(tasks.goalCloser, false)))
         .returning({ id: tasks.id });
       for (const task of detached) {
         await recordActivity(
@@ -328,6 +329,14 @@ export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<A
           now,
         );
       }
+      // Do not let the goal's ON DELETE SET NULL rule silently orphan an automatic closer
+      // (or any task missed by this detach). Roll back the whole deletion if anything remains.
+      const [remaining] = await tx
+        .select({ id: tasks.id })
+        .from(tasks)
+        .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id)))
+        .limit(1);
+      if (remaining) throw new GuardError("conflict", "A task is still linked to this goal, so the goal was not deleted. Please try again.");
       return detached.length;
     };
     const outcome = await db.transaction(async (tx) => {
