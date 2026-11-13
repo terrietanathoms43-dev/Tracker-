@@ -130,15 +130,22 @@ export async function completeGoalCloser(tx: Tx, actorId: string, goal: CloserGo
 
 /**
  * The generated task is marked by goalCloser. An older generated row may have lost that flag during a
- * previous data change; recognise only the exact built-in title AND description as a legacy fallback.
- * A user-written task merely named "Everything completed" must be kept with the other work.
+ * previous data change; accept a legacy fallback only when the title, description AND original
+ * creation history identify it as generated. A user-written task, even with the same name, is kept.
  */
 export function automaticGoalTask(): SQL {
+  // A legacy generated task has an activity event recording its original goalCloser marker.
+  // Qualify the outer task columns to avoid the correlated-subquery shadowing bug.
+  const generatedAtCreation = sql`exists (
+    select 1 from task_activity a
+    where a.task_id = ${tasks}.id and a.org_id = ${tasks}.org_id
+      and a.kind = 'created' and a."after" ->> 'goalCloser' = 'true'
+  )`;
   // COALESCE is essential: a normal task may have a null description. Without it, NOT(predicate)
   // is null rather than true and that task would miss the detachment history.
   return sql<boolean>`coalesce(${or(
     eq(tasks.goalCloser, true),
-    and(eq(tasks.title, CLOSER_TITLE), eq(tasks.description, CLOSER_DESCRIPTION)),
+    and(eq(tasks.title, CLOSER_TITLE), eq(tasks.description, CLOSER_DESCRIPTION), generatedAtCreation),
   )}, false)`;
 }
 
