@@ -40,9 +40,10 @@ describe("correlated SQL fragments", () => {
     expect(deletion.sql).toContain('"tasks"."goal_closer"');
     expect(deletion.sql).toContain('"tasks"."title"');
     expect(deletion.sql).toContain('"tasks"."description"');
+    expect(deletion.sql).toContain("coalesce(");
     expect(deletion.params).toEqual([true, CLOSER_TITLE, CLOSER_DESCRIPTION]);
     const detachment = db.select({ id: tasks.id }).from(tasks).where(not(automaticGoalTask())).toSQL();
-    expect(detachment.sql).toContain("not (");
+    expect(detachment.sql).toContain("not coalesce(");
     expect(detachment.params).toEqual(deletion.params);
   });
 
