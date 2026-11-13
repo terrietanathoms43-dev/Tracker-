@@ -3,7 +3,7 @@ import { and, eq, ne, notInArray, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { goals, tasks } from "@/db/schema";
 import { GuardError } from "@/lib/action-result";
-import { closedStatusKeys, isClosedStatusKey, type StatusCatalog } from "@/lib/statuses";
+import { closedStatusKeys, isClosedStatusKey, statusDef, type StatusCatalog } from "@/lib/statuses";
 import { reopenGoalCloser } from "@/lib/dal/goal-closers";
 import { createGoalOccurrence, type NextGoal } from "@/lib/dal/recurrence";
 import { liveOnly } from "@/lib/dal/tasks";
@@ -110,7 +110,7 @@ async function achieve(tx: Tx, viewer: Viewer, goal: LockedGoal, now: Date): Pro
   await tx.update(goals).set({ status: "completed", completedAt: now, completedBy: viewer.userId, updatedAt: now }).where(eq(goals.id, goal.id));
   const today = dayKey(now, viewer.timezone);
   const targetDate = goal.recurrence && !(await hasLaterOccurrence(tx, goal)) ? nextAfterFinishing(goal.recurrence, goal.targetDate, goal.targetDate, today) : null;
-  const next = targetDate ? await createGoalOccurrence(tx, viewer.userId, { ...goal, recurrence: goal.recurrence ?? null }, targetDate, now) : null;
+  const next = targetDate ? await createGoalOccurrence(tx, viewer.userId, { ...goal, recurrence: goal.recurrence ?? null }, targetDate, now, viewer.statuses) : null;
   const notify = [...new Set([goal.ownerId, goal.createdBy])].filter((userId): userId is string => userId !== null);
   return { goal: { id: goal.id, title: goal.title }, achieved: true, reopened: false, next, notify };
 }
@@ -135,7 +135,7 @@ async function reopen(tx: Tx, viewer: Viewer, goal: LockedGoal, now: Date, excep
  */
 export async function applyGoalRules(tx: Tx, viewer: Viewer, task: { id: string; goalId: string | null; status: string; goalCloser: boolean }, to: string, now: Date): Promise<GoalOutcome | null> {
   if (task.goalId === null) return null;
-  const completing = to === "completed" && task.status !== "completed";
+  const completing = statusDef(viewer.statuses, to).kind === "completed" && statusDef(viewer.statuses, task.status).kind !== "completed";
   const opening = !isClosedStatusKey(viewer.statuses, to) && isClosedStatusKey(viewer.statuses, task.status);
   if (!completing && !opening) return null;
   const goal = await lockGoal(tx, viewer.orgId, task.goalId);

@@ -13,6 +13,7 @@ import { myWorkGroups } from "@/lib/dal/tasks";
 import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { isLeader, isStakeholder } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
+import type { TaskStatusDef } from "@/lib/statuses";
 import { describeDateRange, parseFilters, tasksHref } from "@/lib/tasks/filters";
 import { dayKey } from "@/lib/time";
 import { requireViewer } from "@/lib/viewer";
@@ -39,6 +40,7 @@ export default async function MyWorkPage(props: PageProps<"/my-work">) {
   const nothing = groups.local.length + groups.attention.length + groups.continueWorking.length + groups.waiting.length + groups.finished.length === 0;
   const range = describeDateRange(dates, today);
   const mine = { assignee: "me" as const };
+  const keysOf = (...kinds: TaskStatusDef["kind"][]) => viewer.statuses.filter((status) => kinds.includes(status.kind)).map((status) => status.key);
 
   return (
     <>
@@ -67,7 +69,7 @@ export default async function MyWorkPage(props: PageProps<"/my-work">) {
             items={groups.continueWorking.slice(0, CAP)}
             total={groups.continueWorking.length}
             today={today}
-            seeAllHref={tasksHref({ ...mine, status: ["in_progress", "not_started"] })}
+            seeAllHref={tasksHref({ ...mine, status: keysOf("open", "in_progress") })}
             empty="Nothing in progress. Pick something up from the task list, or create a task."
           />
           <TaskSection
@@ -76,7 +78,7 @@ export default async function MyWorkPage(props: PageProps<"/my-work">) {
             items={groups.waiting.slice(0, CAP)}
             total={groups.waiting.length}
             today={today}
-            seeAllHref={tasksHref({ ...mine, status: ["awaiting_approval", "blocked"] })}
+            seeAllHref={tasksHref({ ...mine, status: keysOf("awaiting_approval", "blocked") })}
           />
           <TaskSection
             title={range ? "Finished" : "Recently finished"}
@@ -84,7 +86,7 @@ export default async function MyWorkPage(props: PageProps<"/my-work">) {
             items={groups.finished.slice(0, CAP)}
             total={groups.finished.length}
             today={today}
-            seeAllHref={tasksHref({ ...mine, status: ["completed"], sort: "updated", dateField: dates.dateField, from: dates.from, to: dates.to })}
+            seeAllHref={tasksHref({ ...mine, status: keysOf("completed"), sort: "updated", dateField: dates.dateField, from: dates.from, to: dates.to })}
           />
         </div>
         </SelectionProvider>

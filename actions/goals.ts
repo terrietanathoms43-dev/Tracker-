@@ -14,7 +14,7 @@ import { recordActivity } from "@/lib/dal/activity";
 import { findGoal, goalsById, linkEdgesForCycleCheck, lockGoal, ownerError, subGoalDeadlines } from "@/lib/dal/goals";
 import { assertNoOpenTasks, goalAchievedNotice } from "@/lib/dal/goal-achievement";
 import { completeGoalCloser, createGoalCloser, deleteGoalClosers, reopenGoalCloser } from "@/lib/dal/goal-closers";
-import { closedStatusKeys } from "@/lib/statuses";
+import { closedStatusKeys, type StatusCatalog } from "@/lib/statuses";
 import { findProject } from "@/lib/dal/projects";
 import { createGoalOccurrence, type NextGoal } from "@/lib/dal/recurrence";
 import { parentDeadlineProblem, subGoalDeadlineProblem } from "@/lib/goals/deadlines";
@@ -228,7 +228,7 @@ const statusSchema = z.object({ goalId: id, status: z.enum(GOAL_STATUSES) });
  * project, owner, criteria and rule, target on the next scheduled day, with fresh copies of its tasks. Only the
  * latest occurrence makes one; a missed series is caught up when a work screen loads.
  */
-async function spawnNextGoal(tx: Tx, viewerId: string, orgId: string, goal: NonNullable<Awaited<ReturnType<typeof lockGoal>>>, today: string, now: Date): Promise<NextGoal | null> {
+async function spawnNextGoal(tx: Tx, viewerId: string, orgId: string, goal: NonNullable<Awaited<ReturnType<typeof lockGoal>>>, today: string, now: Date, statuses: StatusCatalog): Promise<NextGoal | null> {
   const rule: Recurrence | null = goal.recurrence ?? null;
   if (rule === null) return null;
   const seriesId = goal.seriesId ?? goal.id;
@@ -239,7 +239,7 @@ async function spawnNextGoal(tx: Tx, viewerId: string, orgId: string, goal: NonN
   if ((later?.n ?? 0) > 0) return null;
   const targetDate = nextAfterFinishing(rule, goal.targetDate, goal.targetDate, today);
   if (targetDate === null) return null;
-  return createGoalOccurrence(tx, viewerId, { ...goal, orgId, recurrence: rule }, targetDate, now);
+  return createGoalOccurrence(tx, viewerId, { ...goal, orgId, recurrence: rule }, targetDate, now, statuses);
 }
 
 /**
@@ -279,7 +279,7 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
         .where(eq(goals.id, goal.id));
       // A goal that is no longer completed has its last step open again.
       if (goal.status === "completed") await reopenGoalCloser(tx, viewer.userId, closerGoal, now, null, viewer.statuses);
-      const next = data.status === "completed" ? await spawnNextGoal(tx, viewer.userId, viewer.orgId, goal, today, now) : null;
+      const next = data.status === "completed" ? await spawnNextGoal(tx, viewer.userId, viewer.orgId, goal, today, now, viewer.statuses) : null;
       return { from: goal.status, next, achieved: data.status === "completed" ? { title: goal.title, people: [goal.ownerId, goal.createdBy] } : null };
     });
     log.info("goals.status_changed", { orgId: viewer.orgId, goalId: data.goalId, from: outcome.from, to: data.status, next: outcome.next?.id ?? null, by: viewer.userId });

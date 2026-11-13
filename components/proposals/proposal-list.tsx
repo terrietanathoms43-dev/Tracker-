@@ -1,7 +1,7 @@
 "use client";
 
 import { useStatusCatalog } from "@/components/status-catalog";
-import { statusDef } from "@/lib/statuses";
+import { reopenTarget, statusDef } from "@/lib/statuses";
 
 import { cn } from "cn";
 import { Trash2 } from "lucide-react";
@@ -98,7 +98,7 @@ export function ProposalRow({ item, today, now, timeZone, showProposer = true }:
             {item.dueDate ? (
               <>
                 <span aria-hidden>·</span>
-                <DueLabel due={item.dueDate} today={today} status={statusDef(statuses, "not_started")} />
+                <DueLabel due={item.dueDate} today={today} status={statusDef(statuses, reopenTarget(statuses))} />
               </>
             ) : null}
             <span aria-hidden>·</span>

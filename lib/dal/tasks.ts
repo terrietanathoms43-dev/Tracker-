@@ -9,7 +9,7 @@ import { listWorkers } from "@/lib/dal/orgs";
 import { pinnedProjectIds } from "@/lib/dal/projects";
 import { canDeleteTask, isStakeholder, type TaskScope, type Viewer } from "@/lib/permissions";
 import { describeRecurrence, type Recurrence } from "@/lib/recurrence";
-import { closedStatusKeys, type StatusCatalog } from "@/lib/statuses";
+import { closedStatusKeys, statusDef, type StatusCatalog } from "@/lib/statuses";
 import { boardStatuses, toBoardColumns, type BoardColumns } from "@/lib/tasks/board";
 import type { TaskFilters, TaskSort } from "@/lib/tasks/filters";
 import { FEED_KINDS, phraseFeed, type FeedKind } from "@/lib/tasks/history";
@@ -425,15 +425,16 @@ export async function attentionTasks(viewer: Viewer, today: string, limit = 50, 
     );
   const items = rows.map((row) => {
     const nobody = row.assignees.length === 0;
+    const kind = statusDef(viewer.statuses, row.status).kind;
     const reason =
       row.dueDate !== null && row.dueDate < today
         ? "Overdue"
-        : row.status === "blocked"
-          ? "Blocked"
-          : row.status === "awaiting_approval"
+        : kind === "blocked"
+          ? statusDef(viewer.statuses, row.status).label
+          : kind === "awaiting_approval"
             ? row.approverId === viewer.userId
               ? "Your approval"
-              : "Awaiting approval"
+              : statusDef(viewer.statuses, row.status).label
             : nobody
               ? "Unassigned"
               : "Due soon";
@@ -550,7 +551,7 @@ export async function myWorkRows(viewer: Viewer, options: MyWorkOptions = {}): P
     mine: row.mine,
     sortRank: row.sortRank,
     completedAt: row.completedAt,
-    sentBack: row.status === "in_progress" && row.lastStatusKind === "sent_back",
+    sentBack: statusDef(viewer.statuses, row.status).kind === "in_progress" && row.lastStatusKind === "sent_back",
   }));
 }
 
@@ -608,7 +609,8 @@ export async function openTasksForGoals(viewer: Viewer, goalIds: string[]): Prom
 type ProgressRow = { key: string; taskId: string; status: string; dueDate: string | null };
 
 /** Counts each (key, task) pair once. */
-function tallyProgress(rows: ProgressRow[], keys: string[], today: string, closed: Set<string>): Map<string, TaskProgress> {
+function tallyProgress(rows: ProgressRow[], keys: string[], today: string, statuses: StatusCatalog): Map<string, TaskProgress> {
+  const closed = new Set(closedStatusKeys(statuses));
   const out = new Map<string, TaskProgress>(keys.map((key) => [key, { completed: 0, total: 0, blocked: 0, overdue: 0 }]));
   const seen = new Set<string>();
   for (const row of rows) {
@@ -618,8 +620,8 @@ function tallyProgress(rows: ProgressRow[], keys: string[], today: string, close
     const tally = out.get(row.key);
     if (!tally) continue;
     tally.total += 1;
-    if (row.status === "completed") tally.completed += 1;
-    if (row.status === "blocked") tally.blocked += 1;
+    if (statusDef(statuses, row.status).kind === "completed") tally.completed += 1;
+    if (statusDef(statuses, row.status).kind === "blocked") tally.blocked += 1;
     if (!closed.has(row.status) && row.dueDate !== null && row.dueDate < today) tally.overdue += 1;
   }
   return out;
@@ -650,7 +652,7 @@ export async function progressForGoals(viewer: Viewer, goalIds: string[]): Promi
     const parent = parentOf.get(row.key);
     if (parent !== undefined && goalIds.includes(parent)) rows.push({ ...row, key: parent });
   }
-  return tallyProgress(rows, goalIds, todayFor(viewer), new Set(closedStatusKeys(viewer.statuses)));
+  return tallyProgress(rows, goalIds, todayFor(viewer), viewer.statuses);
 }
 
 /** Progress per project, the same shape as progressForGoals: every live task in the project. */
@@ -664,7 +666,7 @@ export async function progressForProjects(viewer: Viewer, projectIds: string[]):
     rows.filter((row): row is ProgressRow => row.key !== null),
     projectIds,
     todayFor(viewer),
-    new Set(closedStatusKeys(viewer.statuses)),
+    viewer.statuses,
   );
 }
 
@@ -714,7 +716,7 @@ export async function workload(viewer: Viewer, project = ""): Promise<WorkloadRo
   const summarise = (person: Person | null, active: TaskListItem[]): WorkloadRow => ({
     person,
     active,
-    blocked: active.filter((item) => item.status === "blocked").length,
+    blocked: active.filter((item) => statusDef(viewer.statuses, item.status).kind === "blocked").length,
     overdue: active.filter((item) => item.dueDate !== null && item.dueDate < today).length,
   });
   const out = workers.map((worker) => summarise({ id: worker.userId, name: worker.name, email: worker.email, image: worker.image }, byPerson.get(worker.userId) ?? []));

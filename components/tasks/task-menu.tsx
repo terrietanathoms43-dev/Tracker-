@@ -427,7 +427,7 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
                   <>
                     <p className="px-3 pt-3 pb-1 text-[13px] text-muted-foreground">Change status</p>
                     <div className="grid grid-cols-2 gap-1">
-                      {activeStatuses(statuses).filter((status) => status.key !== "merged" || task.parent !== null).map((status) => (
+                      {activeStatuses(statuses).filter((status) => status.kind !== "merged" || task.parent !== null).map((status) => (
                         <SheetButton key={status.key} disabled={status.key === task.status} onClick={then(() => change(task.status, status))}>
                           <StatusIcon status={status} />
                           {status.label}

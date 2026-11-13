@@ -16,6 +16,7 @@ import { ReportTiles } from "@/components/reports/report-tiles";
 import { ReportVerdict } from "@/components/reports/report-verdict";
 import { BlockedList, DeliveredList, OpenList, StalledList } from "@/components/reports/task-facts";
 import { canSeeReports, isStakeholder } from "@/lib/permissions";
+import { closedStatusNames, statusDef } from "@/lib/statuses";
 import { scopedProject } from "@/lib/project-scope-server";
 import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { buildActiveScope, buildReport } from "@/lib/reports/build";
@@ -76,7 +77,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
           <ActiveScopeView active={active} items={items} today={today} project={project} statuses={viewer.statuses} readOnly={stakeholder} />
           <p className="text-[13px] text-muted-foreground">
             Generated {formatAbsolute(now, viewer.timezone)} from {org.name}&apos;s task records{scope ? `, narrowed to ${scope.name}` : ""}. Open work is as of today, whatever
-            the date; closed work is what was completed, rejected, deferred or cancelled on or after the Since day. Pick a project in the navigation to narrow the scope.
+            the date; closed work is what was {closedStatusNames(viewer.statuses)} on or after the Since day. Pick a project in the navigation to narrow the scope.
           </p>
         </div>
       </>
@@ -95,7 +96,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
 
   const myDelivered = report.delivered.filter(isMine);
   const myOpen = report.open.filter(isMine);
-  const myBlocked = report.blockedOverdue.filter((t) => isMine(t) && t.status === "blocked");
+  const myBlocked = report.blockedOverdue.filter((t) => isMine(t) && statusDef(viewer.statuses, t.status).kind === "blocked");
   // "Am I on schedule?": what is already late, and what falls due in the next week.
   const myOverdue = myOpen.filter((t) => t.dueDate !== null && t.dueDate < today);
   /** Overdue work due before the chart's first day: it has no column, so the chart says it in words. */
@@ -145,7 +146,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
         {/* LEADER CUT: the tiles, the chart, then who's outstanding, workload, blocked duration */}
         {cut === "leader" ? (
           <>
-            <ReportTiles summary={report.summary} project={project} />
+            <ReportTiles summary={report.summary} project={project} statuses={viewer.statuses} />
 
             <RangeChart timeline={report.timeline} today={today} title="Activity widget" description="Activity, completions, blockers and what's due next on the main board." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
 
@@ -187,7 +188,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
         {/* EXEC CUT: the verdict, the chart, then what is waiting on a decision and the health board */}
         {cut === "exec" ? (
           <>
-            <ReportVerdict summary={report.summary} project={project} />
+            <ReportVerdict summary={report.summary} project={project} statuses={viewer.statuses} />
             <RangeChart timeline={report.timeline} today={today} title="Activity widget" description="Daily activity, completions, blockers and what's due next on the main board." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
             <DecisionsPanel decisions={report.decisions} now={now} today={today} timeZone={viewer.timezone} />
             <HealthBoard data={report.healthBoard} today={today} />

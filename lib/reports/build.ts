@@ -1,5 +1,6 @@
 import "server-only";
 import { GuardError } from "@/lib/action-result";
+import { statusDef } from "@/lib/statuses";
 import { activeGoalProgress, type GoalProgress } from "@/lib/dal/dashboard";
 import { canSeeReports, type Viewer } from "@/lib/permissions";
 import { contributionsTable, deliveredTable, openTable, scopeTable, toCsv } from "./csv";
@@ -125,7 +126,7 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
     summary: {
       delivered: delivered.length,
       openDueInRange: open.filter(dueInRange).length,
-      blocked: blockedOverdue.filter((task) => task.status === "blocked").length,
+      blocked: blockedOverdue.filter((task) => statusDef(viewer.statuses, task.status).kind === "blocked").length,
       overdue: blockedOverdue.filter((task) => task.dueDate !== null && task.dueDate < today).length,
       progressUpdates,
       // "All clear" has to mean it: every verdict short of on track counts, not just the worst two.
@@ -174,7 +175,7 @@ export async function buildCsv(viewer: Viewer, table: ReportTable, range: Report
     case "open":
       return toCsv(openTable(await openCommitments(viewer, range, today, project), today, viewer.statuses));
     case "contributions":
-      return toCsv(contributionsTable(await contributionCounts(viewer, range, today, project)));
+      return toCsv(contributionsTable(await contributionCounts(viewer, range, today, project), viewer.statuses));
     case "scope":
       return toCsv(scopeTable(groupActiveScope(await activeScopeTasks(viewer, range, project), range, today, viewer.statuses), viewer.statuses));
   }

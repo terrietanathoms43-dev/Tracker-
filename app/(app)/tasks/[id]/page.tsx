@@ -14,6 +14,7 @@ import { pinnedProjectIds } from "@/lib/dal/projects";
 import { activePlanning, getTask, listLinks, taskPeople, tasksForParent } from "@/lib/dal/tasks";
 import { canApproveTask, canEditTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
 import { describeRecurrence } from "@/lib/recurrence";
+import { statusDef } from "@/lib/statuses";
 import { defaultApproverFor } from "@/lib/tasks/approver";
 import { closerLabel } from "@/lib/tasks/closer";
 import { nameOf } from "@/lib/tasks/people";
@@ -80,7 +81,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           openComments: detail.openComments,
           repeats: detail.recurrence ? describeRecurrence(detail.recurrence, detail.dueDate) : null,
           parent: detail.parent,
-          openSubTasks: subTasks === null ? 0 : subTasks.filter((item) => !["completed", "rejected", "deferred", "cancelled", "merged"].includes(item.status)).length,
+          openSubTasks: subTasks === null ? 0 : subTasks.filter((item) => !statusDef(viewer.statuses, item.status).closed).length,
           closer: detail.goalCloser ? { goalTitle: detail.goal?.title ?? null, openOthers: detail.closerWaitsFor } : null,
         },
         people,

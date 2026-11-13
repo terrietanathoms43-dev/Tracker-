@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { editTask } from "@/actions/tasks";
 import { CharacterCounter } from "@/components/character-counter";
 import { PriorityGlyph } from "@/components/priority-glyph";
-import { statusDef } from "@/lib/statuses";
+import { isClosedWithoutCompletion, statusDef } from "@/lib/statuses";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,7 @@ import { FOCUS_UPDATE_EVENT } from "../task-actions";
 
 /** The title, editable in place for people who may edit: Enter saves, Escape cancels. */
 function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boolean }) {
+  const statuses = useStatusCatalog();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(detail.title);
   const [pending, startTransition] = useTransition();
@@ -66,7 +67,7 @@ function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boole
       </div>
     );
   }
-  const title = <span className={cn((detail.status === "rejected" || detail.status === "cancelled" || detail.status === "merged") && "text-muted-foreground line-through", pending && "opacity-60")}>{value}</span>;
+  const title = <span className={cn(isClosedWithoutCompletion(statusDef(statuses, detail.status)) && detail.status !== "deferred" && "text-muted-foreground line-through", pending && "opacity-60")}>{value}</span>;
   return (
     <h1 className="text-xl leading-snug font-semibold tracking-tight md:text-2xl">
       {editable ? (

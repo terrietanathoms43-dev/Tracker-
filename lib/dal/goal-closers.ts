@@ -3,7 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { notifications, tasks } from "@/db/schema";
 import { GuardError } from "@/lib/action-result";
-import { isClosedStatusKey, type StatusCatalog } from "@/lib/statuses";
+import { isClosedStatusKey, reopenTarget, type StatusCatalog } from "@/lib/statuses";
 import { recordActivity } from "@/lib/dal/activity";
 import { applyAssignment } from "@/lib/dal/assignments";
 import { findMembership } from "@/lib/dal/orgs";
@@ -82,7 +82,7 @@ export async function reopenGoalCloser(tx: Tx, actorId: string, goal: CloserGoal
   }
   for (const closer of closers) {
     if (closer.id === exceptTaskId || closer.status !== "completed") continue;
-    const plan = planTransition(closer, "not_started", {}, now, catalog);
+    const plan = planTransition(closer, reopenTarget(catalog), {}, now, catalog);
     if (!plan.ok) continue;
     await tx
       .update(tasks)

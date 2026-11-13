@@ -8,7 +8,7 @@ import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { statusDef } from "@/lib/statuses";
+import { defaultLabelOf, statusDef, transitionTitle } from "@/lib/statuses";
 import { LIMITS } from "@/lib/limits";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
@@ -18,22 +18,14 @@ import { toastResult } from "@/lib/toast-result";
 
 // The small status-change dialog's form: exactly the fields the new status needs.
 
-export const TRANSITION_TITLES: Partial<Record<string, string>> = {
-   blocked: "Mark as blocked",
-   awaiting_approval: "Send for approval",
-   completed: "Mark as completed",
-   rejected: "Reject this task",
-   deferred: "Defer this task",
-   cancelled: "Cancel this task",
-   merged: "Merge into its parent",
-};
-
-/** The question each closed-without-completion status asks, and its hint. */
+/** The question each built-in closed status asks while it keeps its name; a renamed or custom closed status goes by its label. */
 const CLOSE_PROMPTS: Record<string, { label: string; hint: string }> = {
    rejected: { label: "Why is it rejected?", hint: "Kept in the task's history." },
    deferred: { label: "Why is it deferred?", hint: "Until when, if you know. Kept in the task's history; the task can be reopened later." },
    cancelled: { label: "Why is it cancelled?", hint: "Kept in the task's history. A cancelled task stays for the record; delete it to remove it." },
 };
+
+const closePrompt = (def: ReturnType<typeof statusDef>) => (def.builtin && def.label === defaultLabelOf(def.key) ? CLOSE_PROMPTS[def.key] : undefined);
 
 /**
  * Exactly the fields a status asks for (apex-ux flow D): a reason, an approver, or the completion summary (required,
@@ -115,7 +107,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             </>
          ) : null}
          {closing ? (
-            <Field id="transition-reason" label={CLOSE_PROMPTS[status]?.label ?? `Why is it ${def.label.toLowerCase()}?`} hint={CLOSE_PROMPTS[status]?.hint ?? "Kept in the task's history."} error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
+            <Field id="transition-reason" label={closePrompt(def)?.label ?? `Why is it ${def.label.toLowerCase()}?`} hint={closePrompt(def)?.hint ?? "Kept in the task's history."} error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
                <Textarea
                   id="transition-reason"
                   value={reason}
@@ -217,8 +209,8 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             <Button type="button" variant="ghost" onClick={onDone}>
                Cancel
             </Button>
-            <Button type="submit" variant={status === "rejected" ? "destructive" : "default"} disabled={pending || !ready}>
-               {pending ? "Saving…" : (TRANSITION_TITLES[status] ?? "Save")}
+            <Button type="submit" variant={def.key === "rejected" ? "destructive" : "default"} disabled={pending || !ready}>
+               {pending ? "Saving…" : transitionTitle(def)}
             </Button>
          </div>
       </form>

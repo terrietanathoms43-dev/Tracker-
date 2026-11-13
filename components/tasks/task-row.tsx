@@ -9,7 +9,7 @@ import { StatusIcon } from "@/components/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useStatusCatalog } from "@/components/status-catalog";
 import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
-import { statusDef } from "@/lib/statuses";
+import { isClosedWithoutCompletion, statusDef } from "@/lib/statuses";
 import { describeAssignees } from "@/lib/tasks/assignees";
 import { taskLabel } from "@/lib/tasks/closer";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
@@ -76,7 +76,7 @@ export function TaskRow({
   const [open, setOpen] = useState(false);
   const { handlers, swallowClick } = useLongPress(() => setSheetOpen(true));
   const { openTransition } = useTaskActions();
-  const canOpenCompletion = !readOnly && (task.proposal === null || task.proposal === "approved") && (task.status === "not_started" || task.status === "in_progress");
+  const canOpenCompletion = !readOnly && (task.proposal === null || task.proposal === "approved") && (statusDef(statuses, task.status).kind === "open" || statusDef(statuses, task.status).kind === "in_progress");
   // Ticking rows (docs/PLAN.md, 2026-11-04 log): only where the page put a selection around its lists.
   const selection = useTaskSelection();
   const selectable = selection !== null && !readOnly;
@@ -88,7 +88,7 @@ export function TaskRow({
   const reason = showReason && task.reason !== "Overdue" ? task.reason : undefined;
   const detailsId = `task-${task.id}-details`;
   const where = [task.project?.name, task.goal?.title].filter(Boolean).join(" › ");
-  const closedWithoutCompleting = task.status === "rejected" || task.status === "cancelled" || task.status === "merged";
+  const closedWithoutCompleting = isClosedWithoutCompletion(statusDef(statuses, task.status)) && task.status !== "deferred";
   // What a screen reader hears for the row's controls: a goal's closer with its goal, never the bare title.
   const label = taskLabel(task);
 

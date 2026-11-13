@@ -187,3 +187,66 @@ export const TONE_CLASSES: Record<StatusTone, { badge: string; dot: string }> = 
 };
 
 export const iconFor = (icon: string): LucideIcon => STATUS_ICONS[icon] ?? Circle;
+
+/** The first key holding a kind — the special kinds have exactly one bearer each (a built-in). */
+export const keyOfKind = (catalog: StatusCatalog, kind: StatusKind): string | undefined => catalog.find((status) => status.kind === kind)?.key;
+
+/** The label of the status holding a kind, for metric names that should follow a rename ("Stuck now" for a renamed Blocked). */
+export const labelOfKind = (catalog: StatusCatalog, kind: StatusKind): string => catalog.find((status) => status.kind === kind)?.label ?? kind;
+
+/** Where a reopened task lands: the first pickable open status. */
+export const reopenTarget = (catalog: StatusCatalog): string => activeStatuses(catalog).find((status) => status.kind === "open")?.key ?? "not_started";
+
+/**
+ * Closing someone else's work is an edit right: Rejected, Cancelled and every custom closed status ask for
+ * it; Deferred and Merged stay progress rights. The distinction lives on keys because all of them share the
+ * "closed" kind — every permission path (mayMove, the status menus, the update form) uses this one helper.
+ */
+export const requiresEditToEnter = (status: TaskStatusDef): boolean => status.key === "rejected" || status.key === "cancelled" || (!status.builtin && status.closed);
+
+/** The built-in's factory label — wording that names the status only holds while it kept its name. */
+export const defaultLabelOf = (key: string): string | undefined => DEFAULT_STATUSES.find((status) => status.key === key)?.label;
+
+/** The title a status-change dialog gives the move; renamed and custom statuses go by their own label. */
+export function transitionTitle(status: TaskStatusDef): string {
+  if (status.kind === "awaiting_approval") return "Send for approval";
+  if (status.kind === "merged") return "Merge into its parent";
+  if (status.builtin && status.label === defaultLabelOf(status.key)) {
+    const titled: Record<string, string> = {
+      blocked: "Mark as blocked",
+      completed: "Mark as completed",
+      rejected: "Reject this task",
+      deferred: "Defer this task",
+      cancelled: "Cancel this task",
+    };
+    const title = titled[status.key];
+    if (title !== undefined) return title;
+  }
+  return `Mark as ${status.label}`;
+}
+
+/** The toast a status change lands with; unchanged built-ins keep their factory words. */
+export function statusToast(status: TaskStatusDef): string {
+  if (status.kind === "awaiting_approval") return "Sent for approval.";
+  if (status.kind === "merged") return "Merged into its parent.";
+  if (status.builtin && status.label === defaultLabelOf(status.key)) {
+    const toasted: Record<string, string> = {
+      completed: "Marked completed.",
+      blocked: "Marked blocked.",
+      rejected: "Task rejected.",
+      deferred: "Task deferred.",
+      cancelled: "Task cancelled.",
+    };
+    const toast = toasted[status.key];
+    if (toast !== undefined) return toast;
+  }
+  return status.closed && status.kind !== "completed" ? `Task ${status.label}.` : `Marked ${status.label}.`;
+}
+
+/** "completed, rejected, deferred or cancelled" — the closed statuses' own words, for report copy. */
+export function closedStatusNames(catalog: StatusCatalog): string {
+  const names = catalog.filter((status) => status.closed && status.kind !== "merged").map((status) => status.label.toLowerCase());
+  if (names.length === 0) return "closed";
+  if (names.length === 1) return names[0];
+  return `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+}

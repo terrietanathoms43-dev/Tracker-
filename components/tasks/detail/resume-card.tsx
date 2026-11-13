@@ -35,7 +35,7 @@ function StatusStrip({ statuses, detail, abilities, localChain, timeZone, now }:
         <OctagonAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1 basis-48 text-base">
           <p>
-            <span className="font-medium">Blocked</span>
+            <span className="font-medium">{status.label}</span>
             {detail.blockedReason ? ` · ${detail.blockedReason}` : ""}
           </p>
           {detail.blockedBy ? <p className="mt-0.5 text-[13px] opacity-80">Who or what unblocks it: {detail.blockedBy}</p> : null}
@@ -49,7 +49,7 @@ function StatusStrip({ statuses, detail, abilities, localChain, timeZone, now }:
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-status-awaiting-dot/30 bg-status-awaiting-bg px-5 py-3 text-status-awaiting-fg md:px-6">
         <Clock className="size-4 shrink-0" aria-hidden />
         <p className="min-w-0 flex-1 basis-48 text-base">
-          <span className="font-medium">Awaiting approval</span>
+          <span className="font-medium">{status.label}</span>
           {detail.approver ? ` from ${nameOf(detail.approver)}` : ""}
         </p>
         {abilities.approve ? <ApprovalActions taskId={detail.id} openComments={detail.openComments} /> : null}
@@ -62,7 +62,8 @@ function StatusStrip({ statuses, detail, abilities, localChain, timeZone, now }:
         <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
         <div className="min-w-0">
           <p className="font-medium">
-            Completed{detail.completedAt ? " " : ""}
+            {status.label}
+            {detail.completedAt ? " " : ""}
             {detail.completedAt ? <RelativeTime date={new Date(detail.completedAt)} timeZone={timeZone} now={now} /> : null}
           </p>
           {detail.completionSummary ? <p className="mt-0.5 whitespace-pre-line opacity-90">{detail.completionSummary}</p> : null}

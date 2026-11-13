@@ -9,6 +9,7 @@ import { createGoalCloser } from "@/lib/dal/goal-closers";
 import { liveOnly } from "@/lib/dal/tasks";
 import type { Viewer } from "@/lib/permissions";
 import { describeRecurrence, missedOccurrences, type Recurrence } from "@/lib/recurrence";
+import { isClosedWithoutCompletion, type StatusCatalog } from "@/lib/statuses";
 import { calendarDaysBetween, dayKey } from "@/lib/time";
 
 // Repeating tasks and goals, on the server (docs/PLAN.md, 2026-11-03 and 2026-11-04 logs). An occurrence is made
@@ -102,7 +103,7 @@ type SourceGoal = {
  * people). Its "Everything completed" task is copied like the rest, due on the new target, and a goal that had none
  * to copy gets a fresh one: every occurrence ends with that step.
  */
-export async function createGoalOccurrence(tx: Tx, actorId: string, goal: SourceGoal, targetDate: string, now: Date): Promise<NextGoal> {
+export async function createGoalOccurrence(tx: Tx, actorId: string, goal: SourceGoal, targetDate: string, now: Date, catalog: StatusCatalog): Promise<NextGoal> {
   const shift = goal.targetDate ? calendarDaysBetween(goal.targetDate, targetDate) : 0;
   const [created] = await tx
     .insert(goals)
@@ -126,7 +127,7 @@ export async function createGoalOccurrence(tx: Tx, actorId: string, goal: Source
   const copies = await tx
     .select({ id: tasks.id, title: tasks.title, description: tasks.description, priority: tasks.priority, dueDate: tasks.dueDate, dueTime: tasks.dueTime, createdBy: tasks.createdBy, goalCloser: tasks.goalCloser })
     .from(tasks)
-    .where(and(eq(tasks.orgId, goal.orgId), eq(tasks.goalId, goal.id), liveOnly, notInArray(tasks.status, ["rejected", "cancelled"])));
+    .where(and(eq(tasks.orgId, goal.orgId), eq(tasks.goalId, goal.id), liveOnly, notInArray(tasks.status, catalog.filter((status) => isClosedWithoutCompletion(status) && status.key !== "deferred").map((status) => status.key))));
   for (const source of copies) {
     const [task] = await tx
       .insert(tasks)
@@ -230,7 +231,7 @@ async function catchUpGoals(tx: Tx, viewer: Viewer, today: string): Promise<numb
     const owed = missedOccurrences(rule, anchorBySeries.get(series) ?? latest.targetDate!, latest.targetDate!, today, MAX_PER_SERIES);
     let source = latest;
     for (const targetDate of owed) {
-      const next = await createGoalOccurrence(tx, viewer.userId, source, targetDate, new Date());
+      const next = await createGoalOccurrence(tx, viewer.userId, source, targetDate, new Date(), viewer.statuses);
       // The newest copy is what the next one copies, so the tasks stay in step with their goal.
       source = { ...source, id: next.id, targetDate };
       made += 1;

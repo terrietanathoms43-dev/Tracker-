@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { activeStatuses, isClosedWithoutCompletion, statusDef } from "@/lib/statuses";
+import { activeStatuses, isClosedWithoutCompletion, keyOfKind, requiresEditToEnter, statusDef } from "@/lib/statuses";
 import { LIMITS } from "@/lib/limits";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
@@ -44,9 +44,9 @@ export function UpdateProgressForm({
   const { task, people, abilities, statuses } = context;
   const [progress, setProgress] = useState("");
   const [nextAction, setNextAction] = useState("");
-  const [status, setStatus] = useState<Choice>(task.status === "not_started" ? "in_progress" : "");
-  const [reason, setReason] = useState(task.status === "blocked" ? (task.blockedReason ?? "") : "");
-  const [blockedBy, setBlockedBy] = useState(task.status === "blocked" ? (task.blockedBy ?? "") : "");
+  const [status, setStatus] = useState<Choice>(statusDef(statuses, task.status).kind === "open" ? (keyOfKind(statuses, "in_progress") ?? "in_progress") : "");
+  const [reason, setReason] = useState(statusDef(statuses, task.status).kind === "blocked" ? (task.blockedReason ?? "") : "");
+  const [blockedBy, setBlockedBy] = useState(statusDef(statuses, task.status).kind === "blocked" ? (task.blockedBy ?? "") : "");
   const [showEvidence, setShowEvidence] = useState(false);
   const [evidenceUrl, setEvidenceUrl] = useState("");
   const [evidenceLabel, setEvidenceLabel] = useState("");
@@ -84,7 +84,7 @@ export function UpdateProgressForm({
   // The statuses this person may move the task to: completing a task that waits for approval is approving it;
   // rejecting and cancelling are edit rights; only a sub-task can be merged.
   const choices = activeStatuses(statuses).filter((each) => {
-    if (each.key === "rejected" || each.key === "cancelled") return abilities.reject;
+    if (requiresEditToEnter(each)) return abilities.reject;
     if (each.kind === "completed" && currentDef.kind === "awaiting_approval") return abilities.approve;
     if (each.kind === "merged") return task.parent !== null;
     return true;

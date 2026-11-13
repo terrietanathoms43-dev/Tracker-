@@ -67,14 +67,14 @@ export function groupActiveScope(tasks: ReportTask[], range: ReportRange, today:
     }))
     .sort((a, b) => groupRank(statusDef(catalog, a.status)) - groupRank(statusDef(catalog, b.status)));
   const inScope = groups.flatMap((group) => group.tasks);
-  const notCompleted = inScope.filter((task) => task.status !== "completed");
+  const notCompleted = inScope.filter((task) => statusDef(catalog, task.status).kind !== "completed");
   return {
     range,
     groups: groups.filter((group) => group.tasks.length > 0),
     total: inScope.length,
     notCompleted: notCompleted.length,
     overdue: notCompleted.filter((task) => isOpenStatus(catalog, task.status) && task.dueDate !== null && task.dueDate < today).length,
-    blocked: notCompleted.filter((task) => task.status === "blocked").length,
+    blocked: notCompleted.filter((task) => statusDef(catalog, task.status).kind === "blocked").length,
     completed: inScope.length - notCompleted.length,
     added: inScope.filter((task) => addedInCycle(task, range)).length,
   };

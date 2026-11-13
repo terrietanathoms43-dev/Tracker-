@@ -1,4 +1,5 @@
-import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, type TaskActivityKind, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { TASK_PRIORITY_LABELS, type TaskActivityKind, type TaskPriority } from "@/lib/constants";
+import { statusLabel, type StatusCatalog } from "@/lib/statuses";
 import { calendarDaysBetween, dayKey, formatAbsolute, formatDay } from "@/lib/time";
 import { joinNames, listNames, type AssignmentSnapshot } from "./assignees";
 import type { ActivityFeedItem, HistoryItem } from "./types";
@@ -31,7 +32,7 @@ export type HistoryRow = {
 };
 
 const text = (value: unknown) => (typeof value === "string" && value !== "" ? value : null);
-const statusLabel = (value: unknown) => (typeof value === "string" && value in TASK_STATUS_LABELS ? TASK_STATUS_LABELS[value as TaskStatus] : null);
+const storedLabel = (statuses: StatusCatalog, value: unknown) => (typeof value === "string" && value !== "" ? statusLabel(statuses, value) : null);
 const priorityLabel = (value: unknown) => (typeof value === "string" && value in TASK_PRIORITY_LABELS ? TASK_PRIORITY_LABELS[value as TaskPriority] : null);
 const dayOrNone = (value: unknown, today: string) => (typeof value === "string" && value !== "" ? formatDay(value, today) : "No date");
 
@@ -75,7 +76,7 @@ function editedPhrase(before: Record<string, unknown>, after: Record<string, unk
   }
 }
 
-function activityPhrase(row: HistoryRow, today: string): { phrase: string; change: HistoryItem["change"] } {
+function activityPhrase(row: HistoryRow, today: string, statuses: StatusCatalog): { phrase: string; change: HistoryItem["change"] } {
   const before = row.before ?? {};
   const after = row.after ?? {};
   switch (row.kind) {
@@ -84,7 +85,7 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
     case "edited":
       return editedPhrase(before, after);
     case "status_changed":
-      return { phrase: "changed the status", change: { before: statusLabel(before.status), after: statusLabel(after.status) } };
+      return { phrase: "changed the status", change: { before: storedLabel(statuses, before.status), after: storedLabel(statuses, after.status) } };
     case "assigned":
       return assignedPhrase(row, before, after);
     case "handed_over": {
@@ -120,7 +121,7 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
     case "completed":
       return { phrase: "completed it", change: null };
     case "reopened":
-      return { phrase: "reopened it", change: { before: statusLabel(before.status), after: statusLabel(after.status) } };
+      return { phrase: "reopened it", change: { before: storedLabel(statuses, before.status), after: storedLabel(statuses, after.status) } };
     case "comment_resolved":
       return { phrase: "resolved a comment", change: null };
     case "comment_reopened":
@@ -147,7 +148,7 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
 }
 
 /** "posted an update", "blocked it", before → after: one entry of a task's history, timed in `timeZone`. */
-export function phraseHistory(row: HistoryRow, timeZone: string, now: Date): HistoryItem {
+export function phraseHistory(row: HistoryRow, timeZone: string, now: Date, statuses: StatusCatalog): HistoryItem {
   const at = new Date(row.created_at);
   const day = dayKey(at, timeZone);
   const today = dayKey(now, timeZone);
@@ -159,7 +160,7 @@ export function phraseHistory(row: HistoryRow, timeZone: string, now: Date): His
         ? "Yesterday"
         : new Intl.DateTimeFormat("en", { timeZone, weekday: "short", month: "short", day: "numeric", ...(day.slice(0, 4) !== today.slice(0, 4) ? { year: "numeric" } : {}) }).format(at);
   const { phrase, change } =
-    row.type === "progress" ? { phrase: "posted an update", change: null } : row.type === "comment" ? { phrase: "commented", change: null } : activityPhrase(row, today);
+    row.type === "progress" ? { phrase: "posted an update", change: null } : row.type === "comment" ? { phrase: "commented", change: null } : activityPhrase(row, today, statuses);
 
   return {
     id: row.id,

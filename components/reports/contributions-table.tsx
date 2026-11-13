@@ -4,9 +4,11 @@ import { cn } from "cn";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { useState } from "react";
 import { PanelEmpty } from "@/components/dashboard/panel";
+import { useStatusCatalog } from "@/components/status-catalog";
 import { UserAvatar } from "@/components/user-avatar";
 import type { ContributionRow } from "@/lib/reports/data";
 import { gradeColor, gradeShare, nextSort, sortRows, type SortDirection } from "@/lib/reports/grade";
+import { labelOfKind } from "@/lib/statuses";
 import { nameOf } from "@/lib/tasks/people";
 
 // People, negative first (docs/PLAN.md, 2026-11-01 log): what is overdue or blocked on each person now, whether
@@ -15,14 +17,6 @@ import { nameOf } from "@/lib/tasks/people";
 // avatar circle (the name on hover and for screen readers). Counts, not a ranking.
 
 type Key = "person" | "overdue" | "blocked" | "open" | "completed" | "deltaCompleted";
-
-const COLUMNS: { key: Exclude<Key, "person">; short: string; long: string }[] = [
-  { key: "overdue", short: "Overdue", long: "Overdue" },
-  { key: "blocked", short: "Blocked", long: "Blocked" },
-  { key: "open", short: "Open", long: "Open now" },
-  { key: "completed", short: "Done", long: "Completed" },
-  { key: "deltaCompleted", short: "Δ Prior", long: "Change vs prior" },
-];
 
 const valueOf = (row: ContributionRow, key: Key): number | string => (key === "person" ? nameOf(row.person, row.person.email ?? "") : (row[key] ?? 0));
 
@@ -53,6 +47,14 @@ function Cell({ row, column, maxCompleted }: { row: ContributionRow; column: Exc
 }
 
 export function ContributionsTable({ rows }: { rows: ContributionRow[] }) {
+  const statuses = useStatusCatalog();
+  const COLUMNS: { key: Exclude<Key, "person">; short: string; long: string }[] = [
+    { key: "overdue", short: "Overdue", long: "Overdue" },
+    { key: "blocked", short: labelOfKind(statuses, "blocked"), long: labelOfKind(statuses, "blocked") },
+    { key: "open", short: "Open", long: "Open now" },
+    { key: "completed", short: "Done", long: labelOfKind(statuses, "completed") },
+    { key: "deltaCompleted", short: "Δ Prior", long: "Change vs prior" },
+  ];
   // Worst first by default: the rows arrive ordered overdue → blocked → idle → name, and "overdue, high to low" keeps that.
   const [sort, setSort] = useState<{ key: Key; direction: SortDirection }>({ key: "overdue", direction: "desc" });
   if (rows.length === 0) return <PanelEmpty>Nobody in the workspace does work yet.</PanelEmpty>;

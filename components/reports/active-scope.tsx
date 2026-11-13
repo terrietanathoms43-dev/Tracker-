@@ -2,7 +2,7 @@ import { cn } from "cn";
 import { Panel, PanelEmpty } from "@/components/dashboard/panel";
 import { CsvLink } from "@/components/reports/report-controls";
 import { TaskRow } from "@/components/tasks/task-row";
-import { isClosedWithoutCompletion, statusDef, type StatusCatalog } from "@/lib/statuses";
+import { closedStatusNames, isClosedWithoutCompletion, statusDef, type StatusCatalog } from "@/lib/statuses";
 import type { ReportTask } from "@/lib/reports/data";
 import type { ReportProject } from "@/lib/reports/params";
 import { addedInCycle, type ActiveScope } from "@/lib/reports/scope";
@@ -73,7 +73,7 @@ export function ActiveScopeView({
     <>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
         <p className="max-w-3xl text-sm text-muted-foreground" data-scope-intro>
-          Every task still open, plus everything closed on or after <strong className="font-medium text-foreground">{since}</strong> (completed, or rejected, deferred or cancelled): the work this
+          Every task still open, plus everything closed on or after <strong className="font-medium text-foreground">{since}</strong> ({closedStatusNames(statuses)}): the work this
           report cycle was to get through. To start from the day of the last report, choose Custom above and set Since to that day.
         </p>
         <CsvLink range={active.range} table="scope" project={project} label="Active scope" />

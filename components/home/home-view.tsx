@@ -59,7 +59,7 @@ export async function HomeView({ viewer, user, org, tabsConfig, scope }: { viewe
       buildReport(viewer, parseReportRange({}, today), today, project),
       activeGoalProgress(viewer, GOALS_SHOWN + 2, project),
     ]);
-    return <StakeholderHome title={title} description={description} proposals={proposals} lateGoals={lateGoals} summary={report.summary} goals={goals} now={now} today={today} timeZone={timeZone} scope={scope} />;
+    return <StakeholderHome title={title} description={description} proposals={proposals} lateGoals={lateGoals} summary={report.summary} goals={goals} now={now} today={today} timeZone={timeZone} scope={scope} statuses={viewer.statuses} />;
   }
 
   const leader = isLeader(viewer);
@@ -90,7 +90,7 @@ export async function HomeView({ viewer, user, org, tabsConfig, scope }: { viewe
         </div>
       ) : null}
       {leaderData ? (
-        <LeaderHome data={leaderData} days={DEFAULT_PERIOD} resume={resume} local={local} goals={goals} today={today} now={now} timeZone={timeZone} />
+        <LeaderHome data={leaderData} days={DEFAULT_PERIOD} resume={resume} local={local} goals={goals} today={today} now={now} timeZone={timeZone} statuses={viewer.statuses} />
       ) : (
         <MemberHome resume={resume} local={local} goals={goals} feed={memberFeed} today={today} now={now} timeZone={timeZone} />
       )}

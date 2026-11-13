@@ -8,10 +8,11 @@ import { z } from "zod";
 import { db, type Tx } from "@/db";
 import { organizationMembers, taskActivity, taskAssignees, tasks, users } from "@/db/schema";
 import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
-import { CLOSED_STATUSES, ORG_COOKIE, ORG_ROLE_LABELS, ORG_ROLES } from "@/lib/constants";
+import { ORG_COOKIE, ORG_ROLE_LABELS, ORG_ROLES } from "@/lib/constants";
 import { findMembership, lockAdminIds } from "@/lib/dal/orgs";
 import { requireOrgAdmin } from "@/lib/guards";
 import { log } from "@/lib/log";
+import { closedStatusKeys } from "@/lib/statuses";
 import { requireViewerContext } from "@/lib/viewer";
 
 // Members of a workspace: change a role, remove someone, leave. Every path keeps at least one admin, and
@@ -24,7 +25,7 @@ const LAST_ADMIN = "A workspace needs at least one admin. Make someone else an a
  * records each task change in its history (kind "assigned", before → after, with the note), so everyone sees the
  * work is free to pick up. Closed tasks and all past updates keep their name.
  */
-async function unassignOpenTasks(tx: Tx, orgId: string, userId: string, actorId: string, note: string): Promise<number> {
+async function unassignOpenTasks(tx: Tx, orgId: string, userId: string, actorId: string, note: string, closedStatuses: string[]): Promise<number> {
   const now = new Date();
   const [person] = await tx.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, userId));
   const name = person?.name ?? person?.email ?? "Someone";
@@ -32,7 +33,7 @@ async function unassignOpenTasks(tx: Tx, orgId: string, userId: string, actorId:
     .select({ id: tasks.id })
     .from(taskAssignees)
     .innerJoin(tasks, eq(tasks.id, taskAssignees.taskId))
-    .where(and(eq(taskAssignees.userId, userId), eq(tasks.orgId, orgId), notInArray(tasks.status, [...CLOSED_STATUSES])));
+    .where(and(eq(taskAssignees.userId, userId), eq(tasks.orgId, orgId), notInArray(tasks.status, closedStatuses)));
   const ids = open.map((row) => row.id);
   if (ids.length > 0) {
     await tx.delete(taskAssignees).where(and(eq(taskAssignees.userId, userId), inArray(taskAssignees.taskId, ids)));
@@ -82,7 +83,7 @@ export async function removeMember(input: z.input<typeof removeSchema>): Promise
       const admins = await lockAdminIds(tx, viewer.orgId);
       if (!admins.includes(viewer.userId)) throw new GuardError("forbidden");
       if ((await findMembership(tx, viewer.orgId, userId)) === null) throw new GuardError("not_found");
-      const count = await unassignOpenTasks(tx, viewer.orgId, userId, viewer.userId, "Removed from the workspace");
+      const count = await unassignOpenTasks(tx, viewer.orgId, userId, viewer.userId, "Removed from the workspace", closedStatusKeys(viewer.statuses));
       await tx.delete(organizationMembers).where(and(eq(organizationMembers.orgId, viewer.orgId), eq(organizationMembers.userId, userId)));
       return count;
     });
@@ -102,7 +103,7 @@ export async function leaveWorkspace(): Promise<ActionResult> {
     const outcome = await db.transaction(async (tx) => {
       const admins = await lockAdminIds(tx, viewer.orgId);
       if (admins.includes(viewer.userId) && admins.length <= 1) return "last-admin";
-      await unassignOpenTasks(tx, viewer.orgId, viewer.userId, viewer.userId, "Left the workspace");
+      await unassignOpenTasks(tx, viewer.orgId, viewer.userId, viewer.userId, "Left the workspace", closedStatusKeys(viewer.statuses));
       await tx
         .delete(organizationMembers)
         .where(and(eq(organizationMembers.orgId, viewer.orgId), eq(organizationMembers.userId, viewer.userId)));

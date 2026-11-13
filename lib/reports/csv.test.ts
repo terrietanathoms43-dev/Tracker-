@@ -77,7 +77,7 @@ describe("tables", () => {
   });
 
   it("contributions: counts as numbers", () => {
-    const rows = contributionsTable([{ person: { id: "u1", name: "Sam Dev", email: "sam@trackwise.test", image: null }, overdue: 1, blocked: 0, open: 4, completed: 2, deltaCompleted: -1 }]);
+    const rows = contributionsTable([{ person: { id: "u1", name: "Sam Dev", email: "sam@trackwise.test", image: null }, overdue: 1, blocked: 0, open: 4, completed: 2, deltaCompleted: -1 }], DEFAULT_STATUSES);
     expect(toCsv(rows)).toBe("Person,Email,Overdue,Blocked,Open,Completed,Change vs prior\r\nSam Dev,sam@trackwise.test,1,0,4,2,-1\r\n");
   });
 

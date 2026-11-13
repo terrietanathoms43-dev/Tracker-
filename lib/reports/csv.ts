@@ -1,4 +1,4 @@
-import { isClosedWithoutCompletion, statusLabel, type StatusCatalog } from "@/lib/statuses";
+import { isClosedWithoutCompletion, labelOfKind, statusLabel, type StatusCatalog } from "@/lib/statuses";
 import { nameOf } from "@/lib/tasks/people";
 import { formatDue } from "@/lib/time";
 import type { ContributionRow, ReportTask } from "./data";
@@ -55,9 +55,9 @@ export function openTable(tasks: ReportTask[], today: string, catalog: StatusCat
   ];
 }
 
-export function contributionsTable(rows: ContributionRow[]): CsvCell[][] {
+export function contributionsTable(rows: ContributionRow[], catalog: StatusCatalog): CsvCell[][] {
   return [
-    ["Person", "Email", "Overdue", "Blocked", "Open", "Completed", "Change vs prior"],
+    ["Person", "Email", "Overdue", labelOfKind(catalog, "blocked"), "Open", labelOfKind(catalog, "completed"), "Change vs prior"],
     ...rows.map((row) => [nameOf(row.person, ""), row.person.email, row.overdue, row.blocked, row.open, row.completed, row.deltaCompleted ?? 0]),
   ];
 }

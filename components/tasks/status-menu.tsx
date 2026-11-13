@@ -6,7 +6,7 @@ import { changeStatus } from "@/actions/tasks";
 import { StatusIcon } from "@/components/status-badge";
 import { useStatusCatalog } from "@/components/status-catalog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { activeStatuses, type TaskStatusDef } from "@/lib/statuses";
+import { activeStatuses, requiresEditToEnter, type TaskStatusDef } from "@/lib/statuses";
 import { needsInput } from "@/lib/tasks/transitions";
 import { toastResult } from "@/lib/toast-result";
 import { useTaskActions } from "./task-actions";
@@ -31,7 +31,7 @@ export function StatusMenuItems({ current, onPick, allowReject = true, hasParent
   return (
     <>
       {activeStatuses(catalog)
-        .filter((status) => (allowReject || (status.key !== "rejected" && status.key !== "cancelled") || status.key === current) && (status.key !== "merged" || hasParent || status.key === current))
+        .filter((status) => (allowReject || !requiresEditToEnter(status) || status.key === current) && (status.kind !== "merged" || hasParent || status.key === current))
         .map((status) => (
           <DropdownMenuItem key={status.key} onSelect={() => onPick(status)} className="gap-2">
             <StatusIcon status={status} />

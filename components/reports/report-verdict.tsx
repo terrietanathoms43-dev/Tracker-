@@ -3,6 +3,7 @@ import { CheckCircle2, OctagonAlert } from "lucide-react";
 import Link from "next/link";
 import type { ReportSummary } from "@/lib/reports/build";
 import type { ReportProject } from "@/lib/reports/params";
+import { keyOfKind, labelOfKind, type StatusCatalog } from "@/lib/statuses";
 import { tasksHref } from "@/lib/tasks/filters";
 
 // The first thing the Executive view says (docs/PLAN.md, 2026-11-01 log): is anything wrong, and how much. One
@@ -31,15 +32,15 @@ function verdictSentence(summary: ReportSummary): { ok: boolean; text: string } 
 }
 
 /** The one line the page leads with, then the counts behind it. "Am I cool, or should I be doing something?" */
-export function ReportVerdict({ summary, project, anchorBase = "" }: { summary: ReportSummary; project: ReportProject; /** Where "#health" and "#stalled" live when the strip is shown away from the report ("/reports"). */ anchorBase?: string }) {
+export function ReportVerdict({ summary, project, statuses, anchorBase = "" }: { summary: ReportSummary; project: ReportProject; statuses: StatusCatalog; /** Where "#health" and "#stalled" live when the strip is shown away from the report ("/reports"). */ anchorBase?: string }) {
   const verdict = verdictSentence(summary);
   const tiles: Tile[] = [
     { label: "Off track", value: summary.problems, href: `${anchorBase}#health`, tone: "problem" },
-    { label: "Blocked now", value: summary.blocked, href: tasksHref({ status: ["blocked"], project }), tone: "problem" },
+    { label: `${labelOfKind(statuses, "blocked")} now`, value: summary.blocked, href: tasksHref({ status: [keyOfKind(statuses, "blocked") ?? "blocked"], project }), tone: "problem" },
     { label: "Overdue now", value: summary.overdue, href: tasksHref({ due: "overdue", project }), tone: "problem" },
     { label: "Stalled", value: summary.stalled, href: `${anchorBase}#stalled`, tone: "problem" },
     { label: "Decisions waiting", value: summary.decisions, href: "#decisions", tone: "waiting" },
-    { label: "Delivered in range", value: summary.delivered, href: tasksHref({ status: ["completed"], sort: "updated", project }), tone: "plain" },
+    { label: "Delivered in range", value: summary.delivered, href: tasksHref({ status: [keyOfKind(statuses, "completed") ?? "completed"], sort: "updated", project }), tone: "plain" },
   ];
   return (
     <section aria-label="At a glance" className="grid gap-3">

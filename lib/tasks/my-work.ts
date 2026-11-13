@@ -54,20 +54,21 @@ export function smartCompare(today: string) {
 }
 
 /** Why a task needs the viewer now, or null when it doesn't. */
-export function attentionReason(row: MyWorkRow, viewerId: string, today: string, closed: ReadonlySet<string>): AttentionReason | null {
+export function attentionReason(row: MyWorkRow, viewerId: string, today: string, statuses: StatusCatalog): AttentionReason | null {
   const { item } = row;
+  const status = statusDef(statuses, item.status);
   if (item.proposal === "local") return null;
-  if (item.status === "awaiting_approval" && row.approverId === viewerId) return "Your approval";
-  if (!row.mine || closed.has(item.status)) return null;
+  if (status.kind === "awaiting_approval" && row.approverId === viewerId) return "Your approval";
+  if (!row.mine || status.closed) return null;
   // A proposal of mine that was declined is mine to change and send again; one still waiting is on its signers.
   if (item.proposal === "declined") return "Declined";
   if (item.proposal === "pending") return null;
   if (row.sentBack) return "Sent back";
   // My own task waiting for someone else's approval is theirs to act on, whatever its date.
-  if (item.status === "awaiting_approval") return null;
+  if (status.kind === "awaiting_approval") return null;
   const days = daysUntilDue(item, today);
   // Blocked work with a far-off (or no) date waits on others; blocked work that is due now is still mine to chase.
-  if (item.status === "blocked") return days !== null && days <= DUE_SOON_DAYS ? "Blocked" : null;
+  if (status.kind === "blocked") return days !== null && days <= DUE_SOON_DAYS ? "Blocked" : null;
   if (days !== null && days < 0) return "Overdue";
   if (days !== null && days <= DUE_SOON_DAYS) return "Due soon";
   return null;
@@ -81,7 +82,7 @@ export function groupMyWork(rows: MyWorkRow[], viewerId: string, today: string, 
   const finished: MyWorkRow[] = [];
   for (const row of sorted) {
     const { mine } = row;
-    const reason = attentionReason(row, viewerId, today, closed);
+    const reason = attentionReason(row, viewerId, today, statuses);
     // A local task is the viewer's whoever it is assigned to: only its maker ever sees it.
     if (row.item.proposal === "local") groups.local.push(row.item);
     else if (reason !== null) groups.attention.push({ ...row.item, reason });
