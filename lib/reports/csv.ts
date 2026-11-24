@@ -1,4 +1,4 @@
-import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS } from "@/lib/constants";
+import { CLOSED_WITH_REASON, TASK_STATUS_LABELS } from "@/lib/constants";
 import { nameOf } from "@/lib/tasks/people";
 import { formatDue } from "@/lib/time";
 import type { ContributionRow, ReportTask } from "./data";
@@ -65,7 +65,7 @@ export function contributionsTable(rows: ContributionRow[]): CsvCell[][] {
 /** What a scope row says in one column: the blocker (and who unblocks it), why it was closed without completing, the completion summary, or the next action. */
 const scopeDetail = (task: ReportTask): string | null => {
   if (task.status === "completed") return task.completionSummary;
-  if (CLOSED_WITHOUT_COMPLETION.includes(task.status)) return task.rejectionReason;
+  if (CLOSED_WITH_REASON.includes(task.status)) return task.rejectionReason;
   if (task.status === "blocked") return [task.blockedReason, task.blockedBy ? `Waiting on ${task.blockedBy}` : null].filter((part) => part !== null).join(" · ") || null;
   return task.nextAction;
 };

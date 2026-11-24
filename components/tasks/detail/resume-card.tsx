@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusIcon } from "@/components/status-badge";
-import { CLOSED_WITHOUT_COMPLETION, isClosedStatus, TASK_STATUS_LABELS } from "@/lib/constants";
+import { CLOSED_WITH_REASON, isClosedStatus, TASK_STATUS_LABELS } from "@/lib/constants";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf } from "@/lib/tasks/people";
 import type { EvidenceLink, TaskAbilities, TaskDetail, UpdateContext } from "@/lib/tasks/types";
@@ -69,7 +69,7 @@ function StatusStrip({ detail, abilities, localChain, timeZone, now }: { detail:
       </div>
     );
   }
-  if (CLOSED_WITHOUT_COMPLETION.includes(detail.status)) {
+  if (CLOSED_WITH_REASON.includes(detail.status)) {
     return (
       <div className="flex items-start gap-3 border-b bg-status-rejected-bg px-5 py-3 text-base text-status-rejected-fg md:px-6">
         <StatusIcon status={detail.status} className="mt-0.5 text-current" />

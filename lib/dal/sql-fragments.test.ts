@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { tasks } from "@/db/schema";
-import { CLOSED_STATUSES, CLOSED_WITHOUT_COMPLETION } from "@/lib/constants";
+import { CLOSED_STATUSES, COMPLETED_STATUSES, INCOMPLETE_STATUSES } from "@/lib/constants";
 import { assigneesJson, commentsWaitingSql, countsTowardsProgress, fromCommentJson, goalTitleSql, groupNameSql, groupSizeSql, needsSignOffSql, openCommentsSql, otherOpenGoalTasksSql, selectList, taskLabelSql } from "@/lib/dal/tasks";
 
 // A correlated subquery must name the outer table. Drizzle renders `${tasks.id}` as a bare "id" in a select from one
@@ -39,12 +39,12 @@ describe("correlated SQL fragments", () => {
     expect(sql).not.toMatch(/= "group_id"/);
   });
 
-  it("progress leaves out every status that closes a task without completing it, not only rejected", () => {
+  it("progress leaves out the statuses that close a task without completing it, and counts a merged sub-task as done", () => {
     const { sql, params } = db.select({ id: tasks.id }).from(tasks).where(countsTowardsProgress).toSQL();
     expect(sql).toContain('"tasks"."status" not in');
-    expect(params).toEqual(["rejected", "deferred", "cancelled", "merged"]);
-    // The closed set every "open" test uses is those four and completed: none of them is ever overdue.
-    expect([...CLOSED_STATUSES].sort()).toEqual([...CLOSED_WITHOUT_COMPLETION, "completed"].sort());
+    expect(params).toEqual(["rejected", "cancelled"]);
+    // The closed set every "open" test uses is those two and the two completed ones: none of them is ever overdue.
+    expect([...CLOSED_STATUSES].sort()).toEqual([...INCOMPLETE_STATUSES, ...COMPLETED_STATUSES].sort());
   });
 
   it("the list row carries its group and the comment it was made from", () => {

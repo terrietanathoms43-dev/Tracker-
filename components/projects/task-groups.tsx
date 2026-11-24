@@ -12,7 +12,7 @@ const OPEN_STATUSES: TaskStatus[] = ["not_started", "in_progress", "awaiting_app
 
 const isClosed = (task: TaskListItem) => CLOSED_STATUSES.includes(task.status);
 
-/** Closed tasks (completed, rejected, deferred, cancelled) behind a native disclosure: there for the record, out of the way of open work. */
+/** Closed tasks (completed, merged, rejected, cancelled) behind a native disclosure: there for the record, out of the way of open work. */
 export function ClosedTasks({ items, today, readOnly = false }: { items: TaskListItem[]; today: string; readOnly?: boolean }) {
   if (items.length === 0) return null;
   return (

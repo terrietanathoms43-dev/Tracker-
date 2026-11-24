@@ -2,7 +2,7 @@ import { TASK_STATUS_LABELS, type TaskStatus } from "@/lib/constants";
 
 // A task made from a comment (docs/PLAN.md, 2026-11-11 log): a link, not a sub-task. The comment cannot be resolved
 // by hand while a live task made from it is open; it resolves itself when the last of them is closed (completed,
-// rejected, deferred, cancelled or merged), and opens again when one is reopened, which puts the task it is on back
+// rejected, cancelled or merged), and opens again when one is reopened, which puts the task it is on back
 // to In progress when that one was completed. The task the comment is on waits for its open comments as it always
 // did, so it waits for those tasks too. These are the words the server and the screens share for it.
 

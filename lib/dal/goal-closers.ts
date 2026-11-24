@@ -57,6 +57,7 @@ function closersOf(tx: Tx, orgId: string, goalId: string) {
       id: tasks.id,
       title: tasks.title,
       status: tasks.status,
+      dueDate: tasks.dueDate,
       startedAt: tasks.startedAt,
       approverId: tasks.approverId,
       blockedReason: tasks.blockedReason,

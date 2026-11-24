@@ -15,7 +15,7 @@ import { TaskList } from "../task-list";
 
 export function SubTasksSection({ task, items, today, canEdit, readOnly }: { task: { id: string; projectId: string | null; goalId: string | null }; items: TaskListItem[]; today: string; canEdit: boolean; readOnly: boolean }) {
   const [attaching, setAttaching] = useState(false);
-  const open = items.filter((item) => item.status !== "completed" && item.status !== "merged" && item.status !== "cancelled" && item.status !== "rejected" && item.status !== "deferred").length;
+  const open = items.filter((item) => item.status !== "completed" && item.status !== "merged" && item.status !== "cancelled" && item.status !== "rejected").length;
   return (
     <section id="sub-tasks" aria-labelledby="sub-tasks-heading" className="scroll-mt-20 rounded-xl border bg-card" data-sub-tasks>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3 md:px-6">
