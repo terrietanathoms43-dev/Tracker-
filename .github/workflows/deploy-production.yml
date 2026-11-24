@@ -1,0 +1,85 @@
+# Production is deployed by hand: Actions > Deploy production > Run workflow, with the branch left on main.
+# It runs the quality checks on main and, when they pass, runs deploy.sh in the server's production checkout,
+# which pulls the latest main, builds and restarts the app (docs/RUNBOOK.md, "Releases"). A push to main does
+# not deploy; a push to staging does (quality.yml, which holds the same checks and the same three deploy
+# steps: change them together).
+name: Deploy production
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    name: Typecheck, lint, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Build-only placeholders: the build never connects, and tests use no database.
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+      BETTER_AUTH_SECRET: ci-only-secret-not-used-in-production
+      BETTER_AUTH_URL: http://localhost:3015
+    steps:
+      - name: Only from main
+        if: github.ref_name != 'main'
+        run: |
+          echo "::error::Production is deployed from main. Run the workflow again with the branch set to main."
+          exit 1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: npm run build
+
+  # The job asks the server for one word, `production`. The deploy key can run nothing but the server's deploy
+  # gate, which knows the directories, puts node on PATH, lets one deploy run at a time and runs that
+  # checkout's deploy.sh. Four secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY and VPS_HOST_KEY, as repository secrets
+  # or on the `production` and `staging` environments. Schema changes stay a deliberate step (docs/RUNBOOK.md).
+  deploy:
+    name: Deploy production
+    needs: checks
+    runs-on: ubuntu-latest
+    # Long enough to wait for a staging deploy to finish first, then build.
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
+    steps:
+      - name: Check the deploy secrets are set
+        run: |
+          missing=""
+          for name in VPS_HOST VPS_USER VPS_SSH_KEY VPS_HOST_KEY; do
+            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Not set:$missing. Add under Settings > Secrets and variables > Actions (docs/RUNBOOK.md, Staging)."
+            exit 1
+          fi
+      - name: Install the deploy key and trust the server
+        # `tr` drops the carriage returns a secret pasted from Windows can carry; ssh refuses a key that has them.
+        # VPS_HOST_KEY is a known_hosts line ("<address> ssh-ed25519 AAAA…"); the bare key without its address
+        # is given the address here.
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          case "$VPS_HOST_KEY" in
+            ssh-* | ecdsa-*) VPS_HOST_KEY="$VPS_HOST $VPS_HOST_KEY" ;;
+          esac
+          printf '%s\n' "$VPS_HOST_KEY" | tr -d '\r' >> ~/.ssh/known_hosts
+      - name: Pull, build and restart under pm2
+        # Exit 255 here is SSH itself: "Permission denied" is VPS_SSH_KEY, "Host key verification failed" is
+        # VPS_HOST_KEY. Any other failure is deploy.sh's own output above it.
+        run: >-
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes
+          -o ServerAliveInterval=30 "$VPS_USER@$VPS_HOST" production
