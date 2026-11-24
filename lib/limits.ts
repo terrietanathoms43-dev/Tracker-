@@ -11,6 +11,8 @@ export const LIMITS = {
   progressNote: 4_000,
   comment: 4_000,
   blockedReason: 500,
+  /** Why a task's due date is changing (2026-11-24 log), and the note an admin declines the change with. */
+  dueChangeReason: 500,
   blockedBy: 200,
   completionSummary: 2_000,
   /** The note an approver sends a task back with. */

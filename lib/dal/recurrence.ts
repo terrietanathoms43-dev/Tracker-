@@ -127,7 +127,7 @@ export async function createGoalOccurrence(tx: Tx, actorId: string, goal: Source
     .select({ id: tasks.id, title: tasks.title, description: tasks.description, priority: tasks.priority, dueDate: tasks.dueDate, dueTime: tasks.dueTime, createdBy: tasks.createdBy, goalCloser: tasks.goalCloser })
     .from(tasks)
     // Work that was dropped does not come round again: rejected, cancelled, and a duplicate merged into another task.
-    // A deferred task does: it was put off, not dropped.
+    // Everything else comes round again, whatever its due date was moved to.
     .where(and(eq(tasks.orgId, goal.orgId), eq(tasks.goalId, goal.id), liveOnly, notInArray(tasks.status, ["rejected", "cancelled", "merged"])));
   for (const source of copies) {
     const [task] = await tx

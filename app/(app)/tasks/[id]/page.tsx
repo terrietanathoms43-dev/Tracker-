@@ -14,10 +14,11 @@ import { chainForPlacement } from "@/lib/approvals/chain";
 import { canDecideProposal, describeStepPeople } from "@/lib/approvals/policy";
 import { isClosedStatus } from "@/lib/constants";
 import { draftsForTask } from "@/lib/dal/drafts";
+import { pendingDueChangeForTask } from "@/lib/dal/due-changes";
 import { listHistory } from "@/lib/dal/history";
 import { pinnedProjectIds } from "@/lib/dal/projects";
 import { activePlanning, getTask, listLinks, taskPeople, tasksForGroup, tasksForParent } from "@/lib/dal/tasks";
-import { canApproveTask, canEditTask, canGroupTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
+import { canApproveTask, canEditTask, canGroupTask, canReadTask, canRejectTask, canUpdateProgress, isAdmin, isWorker } from "@/lib/permissions";
 import { describeRecurrence } from "@/lib/recurrence";
 import { defaultApproverFor } from "@/lib/tasks/approver";
 import { closerLabel } from "@/lib/tasks/closer";
@@ -43,7 +44,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const viewer = await requireViewer();
   const worker = isWorker(viewer);
   // One round trip; nothing is rendered unless the viewer may read the task (a foreign id is simply not found).
-  const [found, links, history, people, planning, pinnedProjects, drafts] = await Promise.all([
+  const [found, links, history, people, planning, pinnedProjects, drafts, dueChange] = await Promise.all([
     getTask(viewer, id),
     listLinks(viewer, id),
     listHistory(viewer, id, null),
@@ -51,6 +52,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
     activePlanning(viewer),
     pinnedProjectIds(viewer),
     draftsForTask(viewer, id),
+    pendingDueChangeForTask(viewer, id),
   ]);
   if (found === null || !canReadTask(viewer, found.scope)) notFound();
   const { detail, scope } = found;
@@ -89,7 +91,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           fromComment: detail.fromComment === null ? null : { resolved: detail.fromComment.resolved, taskTitle: detail.fromComment.task?.title ?? null, taskStatus: detail.fromComment.task?.status ?? null, otherOpen: detail.fromComment.otherOpen },
           repeats: detail.recurrence ? describeRecurrence(detail.recurrence, detail.dueDate) : null,
           parent: detail.parent,
-          openSubTasks: subTasks === null ? 0 : subTasks.filter((item) => !["completed", "rejected", "deferred", "cancelled", "merged"].includes(item.status)).length,
+          openSubTasks: subTasks === null ? 0 : subTasks.filter((item) => !isClosedStatus(item.status)).length,
           closer: detail.goalCloser ? { goalTitle: detail.goal?.title ?? null, openOthers: detail.closerWaitsFor } : null,
         },
         people,
@@ -117,6 +119,8 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           abilities={abilities}
           people={people.map(({ id: personId, name, email, image }) => ({ id: personId, name, email, image }))}
           viewerId={viewer.userId}
+          dueChange={dueChange}
+          viewerIsAdmin={isAdmin(viewer)}
           projects={planning.projects}
           pinnedProjects={pinnedProjects}
           goals={planning.goals}

@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, ilike, inArray, ne, notInArray, or, sql, type 
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, type Tx } from "@/db";
 import { goals, projects, taskActivity, taskLinks, tasks, users } from "@/db/schema";
-import { CLOSED_STATUSES, CLOSED_WITHOUT_COMPLETION, DUE_SOON_DAYS, isClosedStatus, RECENTLY_FINISHED_DAYS, type ProposalStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { CLOSED_STATUSES, COMPLETED_STATUSES, INCOMPLETE_STATUSES, DUE_SOON_DAYS, isClosedStatus, RECENTLY_FINISHED_DAYS, type ProposalStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { assignmentOf } from "@/lib/dal/assignments";
 import { listWorkers } from "@/lib/dal/orgs";
 import { pinnedProjectIds } from "@/lib/dal/projects";
@@ -725,7 +725,7 @@ function tallyProgress(rows: ProgressRow[], keys: string[], today: string): Map<
     const tally = out.get(row.key);
     if (!tally) continue;
     tally.total += 1;
-    if (row.status === "completed") tally.completed += 1;
+    if (COMPLETED_STATUSES.includes(row.status)) tally.completed += 1;
     if (row.status === "blocked") tally.blocked += 1;
     if (!CLOSED_STATUSES.includes(row.status) && row.dueDate !== null && row.dueDate < today) tally.overdue += 1;
   }
@@ -733,13 +733,13 @@ function tallyProgress(rows: ProgressRow[], keys: string[], today: string): Map<
 }
 
 /**
- * What progress is counted over: every status but the ones that close a task without completing it (rejected,
- * deferred, cancelled, merged). Such a task will never be completed, so it is in neither the done nor the total:
- * a goal with three tasks done and one cancelled is three of three, not three of four, and is not "behind pace"
- * because of it (2026-11-11 log; until then only rejected ones were left out). The reports' own pace counts the
- * same way (`countsTowardsPace` in lib/reports/data.ts).
+ * What progress is counted over: every status but the two that close a task without completing it (rejected,
+ * cancelled). Such a task will never be completed, so it is in neither the done nor the total: a goal with three
+ * tasks done and one cancelled is three of three, not three of four, and is not "behind pace" because of it
+ * (2026-11-11 log). A merged sub-task is completed work (2026-11-24 log, the task model): it is in the total and in
+ * the done. The reports' own pace counts the same way (`countsTowardsPace` in lib/reports/data.ts).
  */
-export const countsTowardsProgress = notInArray(tasks.status, [...CLOSED_WITHOUT_COMPLETION]);
+export const countsTowardsProgress = notInArray(tasks.status, [...INCOMPLETE_STATUSES]);
 
 /**
  * Progress per goal (completed / total, plus blocked and overdue), counting the live tasks linked to the goal and

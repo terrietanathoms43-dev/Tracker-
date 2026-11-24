@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CLOSED_WITHOUT_COMPLETION, isClosedStatus, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { CLOSED_WITH_REASON, isClosedStatus, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { closingResolvesMessage, reopeningMessage } from "@/lib/tasks/comment-tasks";
@@ -21,7 +21,7 @@ import { toastResult } from "@/lib/toast-result";
 
 // Update progress: the form behind the product's signature action. One Status control, with the same statuses
 // every list, board and report uses (docs/PLAN.md, 2026-11-03 log): picking Blocked asks what blocks it,
-// Awaiting approval asks who approves, Completed needs its summary (2026-11-07 log), Rejected, Deferred and
+// Awaiting approval asks who approves, Completed needs its summary (2026-11-07 log), Rejected and
 // Cancelled each ask why.
 
 type Choice = "" | TaskStatus;
@@ -70,8 +70,8 @@ export function UpdateProgressForm({
   const effective: TaskStatus = status === "" ? task.status : status;
   const completing = effective === "completed" && task.status !== "completed";
   const merging = effective === "merged" && task.status !== "merged";
-  /** Closing without completing: rejected, deferred or cancelled, each with its reason (a merge names its parent by itself). */
-  const closingWithReason = CLOSED_WITHOUT_COMPLETION.includes(effective) && effective !== "merged" && task.status !== effective;
+  /** Closing without completing: rejected or cancelled, each with its reason (a merge names its parent by itself). */
+  const closingWithReason = CLOSED_WITH_REASON.includes(effective) && effective !== "merged" && task.status !== effective;
   const closing = completing || closingWithReason || merging;
   // The same rules the server applies (lib/tasks/transitions.ts, sub-tasks), shown before the save instead of after it.
   const heldByComments = completing && task.openComments > 0;

@@ -36,7 +36,6 @@ describe("groupActiveScope", () => {
         done("done", "2026-11-02"),
         task("new", { status: "not_started" }),
         task("dropped", { status: "rejected", rejectionReason: "Out of scope", closedDay: "2026-11-01" }),
-        task("parked", { status: "deferred", rejectionReason: "After the launch", closedDay: "2026-11-03" }),
         task("stuck", { status: "blocked" }),
         task("moving", { status: "in_progress" }),
         task("gone", { status: "cancelled", rejectionReason: "Superseded", closedDay: "2026-11-04" }),
@@ -44,9 +43,9 @@ describe("groupActiveScope", () => {
       range,
       today,
     );
-    expect(scope.groups.map((group) => group.status)).toEqual(["blocked", "in_progress", "not_started", "deferred", "rejected", "cancelled", "completed"]);
-    expect(scope.groups.map((group) => group.label)).toEqual(["Blocked", "In progress", "Not started", "Deferred", "Rejected", "Cancelled", "Completed"]);
-    expect(SCOPE_GROUPS).toHaveLength(9);
+    expect(scope.groups.map((group) => group.status)).toEqual(["blocked", "in_progress", "not_started", "rejected", "cancelled", "completed"]);
+    expect(scope.groups.map((group) => group.label)).toEqual(["Blocked", "In progress", "Not started", "Rejected", "Cancelled", "Completed"]);
+    expect(SCOPE_GROUPS).toHaveLength(8);
   });
 
   it("sorts open work soonest due first (undated last) and closed work newest first, titles breaking ties", () => {
@@ -59,14 +58,14 @@ describe("groupActiveScope", () => {
         done("old", "2026-10-25"),
         done("fresh", "2026-11-05"),
         done("also fresh", "2026-11-05"),
-        task("parked early", { status: "deferred", closedDay: "2026-10-26" }),
-        task("parked late", { status: "deferred", closedDay: "2026-11-02" }),
+        task("dropped early", { status: "cancelled", closedDay: "2026-10-26" }),
+        task("dropped late", { status: "cancelled", closedDay: "2026-11-02" }),
       ],
       range,
       today,
     );
     expect(scope.groups[0].tasks.map((t) => t.id)).toEqual(["soon", "later", "a", "b"]);
-    expect(scope.groups[1].tasks.map((t) => t.id)).toEqual(["parked late", "parked early"]);
+    expect(scope.groups[1].tasks.map((t) => t.id)).toEqual(["dropped late", "dropped early"]);
     expect(scope.groups[2].tasks.map((t) => t.id)).toEqual(["also fresh", "fresh", "old"]);
   });
 
@@ -85,19 +84,19 @@ describe("groupActiveScope", () => {
     expect(scope.range).toEqual(range);
   });
 
-  it("keeps rejected, deferred and cancelled tasks as not completed, and never counts them overdue", () => {
+  it("keeps rejected and cancelled tasks as not completed, counts a merged sub-task as completed, and never counts a closed task overdue", () => {
     const scope = groupActiveScope(
       [
         task("no", { status: "rejected", dueDate: "2026-10-01", closedDay: "2026-10-30" }),
-        task("later", { status: "deferred", dueDate: "2026-10-01", closedDay: "2026-10-30" }),
         task("never", { status: "cancelled", dueDate: "2026-10-01", closedDay: "2026-10-30" }),
+        task("folded", { status: "merged", dueDate: "2026-10-01", closedDay: "2026-10-30" }),
         task("yes", { status: "not_started" }),
       ],
       range,
       today,
     );
-    expect(scope).toMatchObject({ total: 4, notCompleted: 4, overdue: 0, completed: 0 });
-    expect(scope.groups.map((group) => group.status)).toEqual(["not_started", "deferred", "rejected", "cancelled"]);
+    expect(scope).toMatchObject({ total: 4, notCompleted: 3, overdue: 0, completed: 1 });
+    expect(scope.groups.map((group) => group.status)).toEqual(["not_started", "rejected", "cancelled", "merged"]);
   });
 
   it("is empty when nothing is in scope", () => {

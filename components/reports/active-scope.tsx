@@ -3,7 +3,7 @@ import { Panel, PanelEmpty } from "@/components/dashboard/panel";
 import { CsvLink } from "@/components/reports/report-controls";
 import { TaskGroupBlock } from "@/components/tasks/task-group";
 import { TaskRow } from "@/components/tasks/task-row";
-import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS } from "@/lib/constants";
+import { CLOSED_WITH_REASON, TASK_STATUS_LABELS } from "@/lib/constants";
 import type { ReportTask } from "@/lib/reports/data";
 import type { ReportProject } from "@/lib/reports/params";
 import { addedInCycle, type ActiveScope } from "@/lib/reports/scope";
@@ -34,7 +34,7 @@ function Tile({ label, value, note, problem = false }: { label: string; value: n
 function detailOf(task: ReportTask): string | null {
   if (task.status === "completed") return task.completionSummary;
   if (task.status === "blocked") return [task.blockedReason ?? "Blocked", task.blockedBy ? `Waiting on ${task.blockedBy}` : null].filter((part) => part !== null).join(" · ");
-  if (CLOSED_WITHOUT_COMPLETION.includes(task.status)) return task.rejectionReason ? `${TASK_STATUS_LABELS[task.status]}: ${task.rejectionReason}` : null;
+  if (CLOSED_WITH_REASON.includes(task.status)) return task.rejectionReason ? `${TASK_STATUS_LABELS[task.status]}: ${task.rejectionReason}` : null;
   return null;
 }
 
@@ -72,7 +72,7 @@ export function ActiveScopeView({
     <>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
         <p className="max-w-3xl text-sm text-muted-foreground" data-scope-intro>
-          Every task still open, plus everything closed on or after <strong className="font-medium text-foreground">{since}</strong> (completed, or rejected, deferred or cancelled): the work this
+          Every task still open, plus everything closed on or after <strong className="font-medium text-foreground">{since}</strong> (completed, merged, rejected or cancelled): the work this
           report cycle was to get through. For a daily read choose Daily above; to start from the day of the last report, choose Custom and set Since to that day.
         </p>
         <CsvLink range={active.range} table="scope" project={project} label="Active scope" />
@@ -93,7 +93,7 @@ export function ActiveScopeView({
         </div>
       ) : (
         active.groups.map((group) => {
-          const closed = group.status === "completed" || CLOSED_WITHOUT_COMPLETION.includes(group.status);
+          const closed = group.status === "completed" || CLOSED_WITH_REASON.includes(group.status);
           const scopeOf = new Map(group.tasks.map((task) => [task.id, task]));
           // The standard row, with what the report adds to it.
           const row = (item: TaskListItem, inGroup: boolean) => {

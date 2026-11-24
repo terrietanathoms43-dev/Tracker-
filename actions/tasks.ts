@@ -8,7 +8,7 @@ import { cappedText, optionalLink, optionalText, requiredLink, requiredText } fr
 import { db, type Tx } from "@/db";
 import { notifications, taskLinks, taskUpdates, tasks, users } from "@/db/schema";
 import { fail, GuardError, guardMessage, ok, runAction, type ActionResult } from "@/lib/action-result";
-import { CLOSED_WITHOUT_COMPLETION, isClosedStatus, TASK_PRIORITIES, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { CLOSED_WITH_REASON, isClosedStatus, TASK_PRIORITIES, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
 import { assignedNotice, chainForPlacement, startChain } from "@/lib/approvals/chain";
 import { describeRegate, regateMovedTask } from "@/lib/approvals/move";
 import { submitLocalTask } from "@/lib/approvals/submit";
@@ -297,7 +297,7 @@ export async function detachTask(input: z.input<typeof detachSchema>): Promise<A
       const reopen = task.status === "merged";
       await tx
         .update(tasks)
-        .set({ parentTaskId: null, ...(reopen ? { status: "not_started", rejectionReason: null } : {}), updatedAt: now })
+        .set({ parentTaskId: null, ...(reopen ? { status: "not_started" as const, rejectionReason: null, closedAt: null, dueDateAtClose: null } : {}), updatedAt: now })
         .where(eq(tasks.id, task.id));
       const drafts: ActivityDraft[] = [{ kind: "detached", before: { parentId: task.parentTaskId, parentTitle: parent?.title ?? null }, after: { parentId: null } }];
       if (reopen) drafts.push({ kind: "reopened", before: { status: "merged" }, after: { status: "not_started" }, note: "Detached, so it is a task of its own again." });
@@ -474,7 +474,6 @@ const editSchema = z.discriminatedUnion("field", [
   z.object({ taskId: id, field: z.literal("title"), value: requiredText(1, LIMITS.taskTitle, "A task needs a title.") }),
   z.object({ taskId: id, field: z.literal("description"), value: cappedText(LIMITS.taskDescription) }),
   z.object({ taskId: id, field: z.literal("priority"), value: z.enum(TASK_PRIORITIES) }),
-  z.object({ taskId: id, field: z.literal("dueDate"), value: day }),
   z.object({ taskId: id, field: z.literal("dueTime"), value: clock }),
   z.object({ taskId: id, field: z.literal("projectId"), value: z.string().max(64) }),
   z.object({ taskId: id, field: z.literal("goalId"), value: z.string().max(64) }),
@@ -485,7 +484,6 @@ const EDIT_TOASTS: Record<z.infer<typeof editSchema>["field"], string> = {
   title: "Title saved.",
   description: "Description saved.",
   priority: "Priority changed.",
-  dueDate: "Due date changed.",
   dueTime: "Due time changed.",
   projectId: "Project changed.",
   goalId: "Goal changed.",
@@ -494,7 +492,8 @@ const EDIT_TOASTS: Record<z.infer<typeof editSchema>["field"], string> = {
 
 /**
  * One field at a time, from the task page's inline editors; each change leaves one audit row. Picking a goal puts
- * the task in that goal's project; picking a project the goal isn't in takes the goal off.
+ * the task in that goal's project; picking a project the goal isn't in takes the goal off. The due date is not one
+ * of these fields (2026-11-24 log): it changes with a reason and an admin's approval, in actions/due-changes.ts.
  */
 export async function editTask(input: z.input<typeof editSchema>): Promise<ActionResult> {
   return runAction("tasks.edit", editSchema, input, async (data) => {
@@ -549,10 +548,7 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
         if (before === value) return false;
         patch = { [data.field]: value };
         if (data.field === "priority") draft = { kind: "priority_changed", before: { priority: before }, after: { priority: value } };
-        else if (data.field === "dueDate") {
-          if (value === null && task.recurrence) throw new GuardError("forbidden", "This task repeats, so it needs a due date. Stop the repeat first.");
-          draft = { kind: "due_changed", before: { dueDate: before }, after: { dueDate: value } };
-        } else draft = { kind: "edited", before: { [data.field]: short(before) }, after: { [data.field]: short(value) } };
+        else draft = { kind: "edited", before: { [data.field]: short(before) }, after: { [data.field]: short(value) } };
       }
 
       await tx
@@ -599,7 +595,6 @@ const STATUS_TOASTS: Partial<Record<TaskStatus, string>> = {
   blocked: "Marked blocked.",
   awaiting_approval: "Sent for approval.",
   rejected: "Task rejected.",
-  deferred: "Task deferred.",
   cancelled: "Task cancelled.",
 };
 
@@ -675,7 +670,7 @@ const progressSchema = z
   })
   .superRefine((value, ctx) => {
     const status = value.status === "" ? null : value.status;
-    const closing = status === "completed" || (status !== null && CLOSED_WITHOUT_COMPLETION.includes(status));
+    const closing = status === "completed" || (status !== null && CLOSED_WITH_REASON.includes(status));
     if (!closing && value.nextAction === "") ctx.addIssue({ code: "custom", path: ["nextAction"], message: "Say what happens next." });
     if (status !== null && asksReason(status) && value.reason === "") ctx.addIssue({ code: "custom", path: ["reason"], message: REASON_PROMPTS[status] });
     if (status === "awaiting_approval" && value.approverId === "") ctx.addIssue({ code: "custom", path: ["approverId"], message: "Choose who approves it." });

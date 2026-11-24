@@ -1,11 +1,15 @@
-import { CLOSED_WITHOUT_COMPLETION, type TaskActivityKind, type TaskStatus } from "@/lib/constants";
+import { CLOSED_WITH_REASON, isClosedStatus, type TaskActivityKind, type TaskStatus } from "@/lib/constants";
 
 // Status rules (docs/PLAN.md §5, apex-ux flow D) as one pure function: given the task's current state and
 // the status asked for, the column changes and the activity rows to write. Every action that changes a
 // status goes through it, so a row menu, the Update progress form and the approver's buttons never diverge.
+// Closing a task (completed, merged, rejected, cancelled) also writes its closure snapshot: when it closed and the
+// due date it had then (2026-11-24 log); a reopen clears it.
 
 export type TaskState = {
   status: TaskStatus;
+  /** The due date now: a closing transition keeps it as the date the task was closed against. */
+  dueDate: string | null;
   startedAt: Date | null;
   approverId: string | null;
   blockedReason: string | null;
@@ -18,7 +22,7 @@ export type TaskState = {
 };
 
 export type TransitionInput = {
-  /** blocked / rejected / deferred / cancelled: required. */
+  /** blocked / rejected / cancelled: required. */
   reason?: string | null;
   /** blocked: who or what could unblock it. */
   blockedBy?: string | null;
@@ -37,6 +41,9 @@ export type TaskPatch = {
   status?: TaskStatus;
   startedAt?: Date;
   completedAt?: Date | null;
+  /** The closure snapshot: set by any closing move, cleared by a reopen. */
+  closedAt?: Date | null;
+  dueDateAtClose?: string | null;
   completionSummary?: string | null;
   blockedReason?: string | null;
   blockedBy?: string | null;
@@ -78,10 +85,9 @@ export const SUMMARY_REQUIRED = "Say what was done: a completion summary is requ
 export const APPROVAL_NOTE_REQUIRED = "Add a sign-off note: what you checked, or why it passes.";
 
 /** The question a closed-without-completion status asks. */
-export const REASON_PROMPTS: Record<"blocked" | "rejected" | "deferred" | "cancelled" | "merged", string> = {
+export const REASON_PROMPTS: Record<"blocked" | "rejected" | "cancelled" | "merged", string> = {
   blocked: "Say what is blocking it.",
   rejected: "Give a reason for rejecting it.",
-  deferred: "Say why it is deferred, and until when if you know.",
   cancelled: "Give a reason for cancelling it.",
   merged: "Say which task it was merged into.",
 };
@@ -90,7 +96,7 @@ export const REASON_PROMPTS: Record<"blocked" | "rejected" | "deferred" | "cance
 export const MERGE_NEEDS_PARENT = "Only a sub-task can be merged: attach it to the task it duplicates first.";
 
 /** Whether a status asks for a reason (blocked, and the ways of closing a task without completing it; a merge names its parent). */
-export const asksReason = (status: TaskStatus): status is "blocked" | "rejected" | "deferred" | "cancelled" | "merged" => status === "blocked" || CLOSED_WITHOUT_COMPLETION.includes(status);
+export const asksReason = (status: TaskStatus): status is "blocked" | "rejected" | "cancelled" | "merged" => status === "blocked" || CLOSED_WITH_REASON.includes(status);
 
 /**
  * Plans a move from the task's status to `to`. Leaving a state undoes what it set (blocked clears the reason,
@@ -126,11 +132,20 @@ export function planTransition(task: TaskState, to: TaskStatus, input: Transitio
     patch.completionSummary = null;
     activities.push({ kind: "reopened", before: { status: from }, after: { status: to } });
   }
-  if (CLOSED_WITHOUT_COMPLETION.includes(from)) {
+  if (CLOSED_WITH_REASON.includes(from)) {
     patch.rejectionReason = null;
-    if (!CLOSED_WITHOUT_COMPLETION.includes(to) && to !== "completed") activities.push({ kind: "reopened", before: { status: from }, after: { status: to } });
+    if (!CLOSED_WITH_REASON.includes(to) && to !== "completed") activities.push({ kind: "reopened", before: { status: from }, after: { status: to } });
   }
   if (to === "in_progress" && task.startedAt === null) patch.startedAt = now;
+  // The closure snapshot: a task that closes (or changes the way it is closed) is closed now, against the due date
+  // it has now; one that is opened again has none.
+  if (isClosedStatus(to)) {
+    patch.closedAt = now;
+    patch.dueDateAtClose = task.dueDate;
+  } else if (isClosedStatus(from)) {
+    patch.closedAt = null;
+    patch.dueDateAtClose = null;
+  }
 
   switch (to) {
     case "blocked":
@@ -152,7 +167,6 @@ export function planTransition(task: TaskState, to: TaskStatus, input: Transitio
       break;
     }
     case "rejected":
-    case "deferred":
     case "cancelled":
     case "merged":
       patch.rejectionReason = reason;

@@ -258,7 +258,7 @@ export type ActivityFeedItem = {
   at: string;
 };
 
-/** Completed out of total (tasks closed without completing, rejected, deferred, cancelled or merged, don't count), with the problems inside it. */
+/** Completed (a merged sub-task included) out of total (rejected and cancelled tasks are in neither), with the problems inside it. */
 export type TaskProgress = { completed: number; total: number; blocked: number; overdue: number };
 
 export type TaskCounts = { active: number; completed: number; overdue: number; blocked: number; awaiting: number };

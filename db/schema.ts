@@ -23,10 +23,12 @@ import {
   PROPOSAL_STATUSES,
   TASK_ACTIVITY_KINDS,
   TASK_PRIORITIES,
-  TASK_STATUSES,
+  TASK_STATUS_DB_VALUES,
   TASK_UPDATE_KINDS,
+  type TaskStatus,
 } from "@/lib/constants";
 import type { Recurrence } from "@/lib/recurrence";
+import type { DueChangeKind, DueChangeStatus } from "@/lib/tasks/due-change";
 
 // The whole Trackwise schema (docs/PLAN.md §4), applied with `npm run db:push`. The 2026-11-03 overhaul (the
 // rigid workspace → projects → goals → tasks funnel, proposals, repeats, goal links) was applied with
@@ -49,7 +51,8 @@ export const orgRoleEnum = pgEnum("org_role", ORG_ROLES);
 export const goalStatusEnum = pgEnum("goal_status", GOAL_STATUSES);
 export const projectStatusEnum = pgEnum("project_status", PROJECT_STATUSES);
 export const taskPriorityEnum = pgEnum("task_priority", TASK_PRIORITIES);
-export const taskStatusEnum = pgEnum("task_status", TASK_STATUSES);
+/** The enum keeps `deferred` (Postgres cannot drop a value); the column is typed to the statuses the app uses. */
+export const taskStatusEnum = pgEnum("task_status", TASK_STATUS_DB_VALUES);
 export const taskUpdateKindEnum = pgEnum("task_update_kind", TASK_UPDATE_KINDS);
 export const taskActivityKindEnum = pgEnum("task_activity_kind", TASK_ACTIVITY_KINDS);
 export const proposalStatusEnum = pgEnum("proposal_status", PROPOSAL_STATUSES);
@@ -469,7 +472,8 @@ export const tasks = pgTable(
       .references(() => users.id),
     approverId: text("approver_id").references(() => users.id, { onDelete: "set null" }),
     priority: taskPriorityEnum("priority").notNull().default("normal"),
-    status: taskStatusEnum("status").notNull().default("not_started"),
+    status: taskStatusEnum("status").$type<TaskStatus>().notNull().default("not_started"),
+    /** Changed only through an approved due-date change (task_due_changes, 2026-11-24 log) once the task exists. */
     dueDate: day("due_date"),
     /** "HH:MM" in the workspace's day, when a time matters ("every day at 8:00 AM"). */
     dueTime: text("due_time"),
@@ -483,10 +487,18 @@ export const tasks = pgTable(
     proposalStatus: proposalStatusEnum("proposal_status"),
     startedAt: tstz("started_at"),
     completedAt: tstz("completed_at"),
+    /**
+     * The closure snapshot (2026-11-24 log): when the task was closed (completed, merged, rejected or cancelled) and
+     * the due date it had at that moment (null = closed without one). Both are written by the closing transition and
+     * cleared by a reopen; a due date changed while the task stays closed never touches them, so the Activity widget
+     * keeps saying whether it was closed early, on time or late.
+     */
+    closedAt: tstz("closed_at"),
+    dueDateAtClose: day("due_date_at_close"),
     blockedReason: text("blocked_reason"),
     /** Who or what could unblock it (free text). */
     blockedBy: text("blocked_by"),
-    /** Why it was closed without being completed: rejected, deferred or cancelled (2026-11-07 log). */
+    /** Why it was closed without a completion summary: rejected or cancelled, or the parent a merged sub-task went into. */
     rejectionReason: text("rejection_reason"),
     /** Denormalised from the newest progress update so lists never join history. */
     latestProgress: text("latest_progress"),
@@ -617,6 +629,39 @@ export const taskActivity = pgTable(
   (t) => [index("task_activity_task_idx").on(t.taskId, t.createdAt.desc()), index("task_activity_org_idx").on(t.orgId, t.createdAt.desc())],
 );
 
+/**
+ * A due-date change someone asked for (2026-11-24 log): every change to an existing task's due date carries a reason
+ * and takes effect only when an admin approves it (an admin's own change is approved as it is made). `kind` is what
+ * the change does (lib/tasks/due-change.ts: scheduled, deferred, brought forward, removed, changed); `from_date` is
+ * the due date the request was made against, and a request whose task has moved on since is refused. One request
+ * per task waits at a time.
+ */
+export const taskDueChanges = pgTable(
+  "task_due_changes",
+  {
+    id: id(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    requestedBy: text("requested_by")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind").$type<DueChangeKind>().notNull(),
+    fromDate: day("from_date"),
+    toDate: day("to_date"),
+    reason: text("reason").notNull(),
+    status: text("status").$type<DueChangeStatus>().notNull().default("pending"),
+    decidedBy: text("decided_by").references(() => users.id, { onDelete: "set null" }),
+    decidedAt: tstz("decided_at"),
+    decisionNote: text("decision_note"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("task_due_changes_task_idx").on(t.taskId, t.status), index("task_due_changes_org_idx").on(t.orgId, t.status)],
+);
+
 // --- notifications ----------------------------------------------------------------
 
 export const notifications = pgTable(
@@ -670,5 +715,6 @@ export type TaskApproval = typeof taskApprovals.$inferSelect;
 export type TaskUpdate = typeof taskUpdates.$inferSelect;
 export type TaskLink = typeof taskLinks.$inferSelect;
 export type TaskActivity = typeof taskActivity.$inferSelect;
+export type TaskDueChange = typeof taskDueChanges.$inferSelect;
 export type NotificationRow = typeof notifications.$inferSelect;
 export type NotificationPreferences = typeof notificationPreferences.$inferSelect;

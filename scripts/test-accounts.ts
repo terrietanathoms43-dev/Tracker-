@@ -392,6 +392,9 @@ function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: Tas
     proposalStatus: spec.proposal?.status ?? null,
     startedAt,
     completedAt: spec.completed ? at(spec.completed.daysAgo, 1) : null,
+    // The closure snapshot (2026-11-24 log): when it closed and the due date it had then, as a closing transition writes it.
+    closedAt: spec.completed ? at(spec.completed.daysAgo, 1) : spec.rejection ? at(spec.rejection.daysAgo, 1) : null,
+    dueDateAtClose: (spec.completed || spec.rejection) && spec.dueInDays !== null ? due(spec.dueInDays) : null,
     blockedReason: spec.blocked?.reason ?? null,
     blockedBy: spec.blocked?.by ?? null,
     rejectionReason: spec.rejection?.reason ?? null,

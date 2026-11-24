@@ -24,15 +24,13 @@ export const TRANSITION_TITLES: Partial<Record<TaskStatus, string>> = {
    awaiting_approval: "Send for approval",
    completed: "Mark as completed",
    rejected: "Reject this task",
-   deferred: "Defer this task",
    cancelled: "Cancel this task",
    merged: "Merge into its parent",
 };
 
 /** The question each closed-without-completion status asks, and its hint. */
-const CLOSE_PROMPTS: Record<"rejected" | "deferred" | "cancelled", { label: string; hint: string }> = {
+const CLOSE_PROMPTS: Record<"rejected" | "cancelled", { label: string; hint: string }> = {
    rejected: { label: "Why is it rejected?", hint: "Kept in the task's history." },
-   deferred: { label: "Why is it deferred?", hint: "Until when, if you know. Kept in the task's history; the task can be reopened later." },
    cancelled: { label: "Why is it cancelled?", hint: "Kept in the task's history. A cancelled task stays for the record; delete it to remove it." },
 };
 
@@ -58,7 +56,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
    const heldByGoal = status === "completed" && task.closer !== null && task.closer.openOthers > 0;
    const held = heldByComments || heldBySubTasks || heldByGoal;
    const merging = status === "merged";
-   const closing = status === "rejected" || status === "deferred" || status === "cancelled";
+   const closing = status === "rejected" || status === "cancelled";
    // Made from a comment (2026-11-11 log): closing it in any way resolves that comment, said before the save.
    const closesComment = task.fromComment !== null && isClosedStatus(status) && !isClosedStatus(task.status) && !held ? closingResolvesMessage(task.fromComment) : null;
    const ready =

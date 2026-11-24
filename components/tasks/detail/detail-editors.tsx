@@ -228,18 +228,5 @@ export function GoalEditor({ taskId, value, goals, projects, projectId }: { task
   );
 }
 
-/** The due date as a native date input, with a way to clear it. */
-export function DueEditor({ taskId, due }: { taskId: string; due: string | null }) {
-  const [pending, startTransition] = useTransition();
-  const save = (value: string) => startTransition(async () => void toastResult(await editTask({ taskId, field: "dueDate", value })));
-  return (
-    <div className="flex items-center gap-2">
-      <Input type="date" aria-label="Due date" className="w-full max-w-44" value={due ?? ""} disabled={pending} onChange={(event) => save(event.target.value)} />
-      {due ? (
-        <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" disabled={pending} onClick={() => save("")}>
-          Clear
-        </Button>
-      ) : null}
-    </div>
-  );
-}
+// The due date has its own control (components/tasks/detail/due-change.tsx): it changes with a reason and an admin's
+// approval (2026-11-24 log), not as a field saved the moment it is picked.

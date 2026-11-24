@@ -1,6 +1,7 @@
 import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, type TaskActivityKind, type TaskPriority, type TaskStatus } from "@/lib/constants";
 import { calendarDaysBetween, dayKey, formatAbsolute, formatDay } from "@/lib/time";
 import { joinNames, listNames, type AssignmentSnapshot } from "./assignees";
+import { DUE_CHANGE_LABELS, type DueChangeKind } from "./due-change";
 import type { ActivityFeedItem, HistoryItem } from "./types";
 
 // Task events in plain words: one function for a task's own history, one for the Home and Members feeds.
@@ -33,9 +34,17 @@ export type HistoryRow = {
 };
 
 const text = (value: unknown) => (typeof value === "string" && value !== "" ? value : null);
-const statusLabel = (value: unknown) => (typeof value === "string" && value in TASK_STATUS_LABELS ? TASK_STATUS_LABELS[value as TaskStatus] : null);
+/** Deferred was a status until 2026-11-24: history rows from then still name it. */
+const statusLabel = (value: unknown) => (typeof value === "string" && value in TASK_STATUS_LABELS ? TASK_STATUS_LABELS[value as TaskStatus] : value === "deferred" ? "Deferred" : null);
 const priorityLabel = (value: unknown) => (typeof value === "string" && value in TASK_PRIORITY_LABELS ? TASK_PRIORITY_LABELS[value as TaskPriority] : null);
 const dayOrNone = (value: unknown, today: string) => (typeof value === "string" && value !== "" ? formatDay(value, today) : "No date");
+
+/** The dates of a due-date change row, before → after. */
+const dueChange = (before: Record<string, unknown>, after: Record<string, unknown>, today: string) => ({ before: dayOrNone(before.dueDate, today), after: dayOrNone(after.dueDate, today) });
+/** "approved a date change: " in front of what the change did, on the row an admin wrote for someone else's request. */
+const approvedPrefix = (after: Record<string, unknown>) => (after.approved === true ? "approved a date change: " : "");
+/** " (Deferred)": what a requested or declined change would have been. */
+const dueChangeName = (kind: unknown) => (typeof kind === "string" && kind in DUE_CHANGE_LABELS ? ` (${DUE_CHANGE_LABELS[kind as DueChangeKind].toLowerCase()})` : "");
 
 /** The names on one side of an assignment row written since assignment became a set; null for a legacy row. */
 function assignmentNames(side: Record<string, unknown>): string[] | null {
@@ -93,8 +102,20 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
       const to = assignmentNames(after);
       return { phrase: `handed it over to ${to ? joinNames(to) || "someone" : (row.after_assignee ?? "someone")}`, change: null };
     }
+    // Due-date changes (2026-11-24 log): named for what they do, with the reason as the row's note. A row an admin
+    // wrote for someone else's request says it was approved.
     case "due_changed":
-      return { phrase: "changed the due date", change: { before: dayOrNone(before.dueDate, today), after: dayOrNone(after.dueDate, today) } };
+      return { phrase: `${approvedPrefix(after)}changed the due date`, change: dueChange(before, after, today) };
+    case "scheduled":
+      return { phrase: `${approvedPrefix(after)}scheduled it`, change: dueChange(before, after, today) };
+    case "brought_forward":
+      return { phrase: `${approvedPrefix(after)}brought the deadline forward`, change: dueChange(before, after, today) };
+    case "due_removed":
+      return { phrase: `${approvedPrefix(after)}removed the due date`, change: dueChange(before, after, today) };
+    case "due_change_requested":
+      return { phrase: `asked for a date change${dueChangeName(after.change)}`, change: dueChange(before, after, today) };
+    case "due_change_declined":
+      return { phrase: after.withdrawn === true ? "withdrew the date change" : `declined the date change${dueChangeName(after.change)}`, change: dueChange(before, after, today) };
     case "priority_changed":
       return { phrase: "changed the priority", change: { before: priorityLabel(before.priority), after: priorityLabel(after.priority) } };
     case "blocked":
@@ -109,8 +130,9 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
       return { phrase: "sent it back", change: null };
     case "rejected":
       return { phrase: "rejected it", change: null };
+    // A deadline moved later to a future date. Until 2026-11-24 Deferred was a status: those rows carry no dates.
     case "deferred":
-      return { phrase: "deferred it", change: null };
+      return { phrase: `${approvedPrefix(after)}deferred it`, change: "dueDate" in after ? dueChange(before, after, today) : null };
     case "cancelled":
       return { phrase: "cancelled it", change: null };
     case "merged":
