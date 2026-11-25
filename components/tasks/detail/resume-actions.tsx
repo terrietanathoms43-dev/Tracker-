@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LIMITS } from "@/lib/limits";
+import { incompletePoliciesMessage } from "@/lib/tasks/policy-checklist";
 import { openCommentsMessage } from "@/lib/tasks/transitions";
 import { toastResult } from "@/lib/toast-result";
 
@@ -91,10 +92,13 @@ function NoteDialog({
  * log: the note stands as the completion summary); Send back returns it with a note on what must change.
  * Approving is held while comments are open (the same rule as completing), and the button says why.
  */
-export function ApprovalActions({ taskId, openComments = 0, commentsWaitingOnTasks = 0 }: { taskId: string; openComments?: number; commentsWaitingOnTasks?: number }) {
+export function ApprovalActions({ taskId, openComments = 0, commentsWaitingOnTasks = 0, incompletePolicies = 0 }: { taskId: string; openComments?: number; commentsWaitingOnTasks?: number; incompletePolicies?: number }) {
   const [dialog, setDialog] = useState<"approve" | "send_back" | null>(null);
   const [pending, startTransition] = useTransition();
-  const held = openComments > 0;
+  const heldByComments = openComments > 0;
+  const heldByPolicies = incompletePolicies > 0;
+  const held = heldByComments || heldByPolicies;
+  const holdMessage = heldByComments ? openCommentsMessage(openComments, commentsWaitingOnTasks) : incompletePoliciesMessage(incompletePolicies);
 
   const approve = (note: string) =>
     startTransition(async () => {
@@ -126,7 +130,7 @@ export function ApprovalActions({ taskId, openComments = 0, commentsWaitingOnTas
               {approveButton}
             </span>
           </TooltipTrigger>
-          <TooltipContent>{openCommentsMessage(openComments, commentsWaitingOnTasks)}</TooltipContent>
+          <TooltipContent>{holdMessage}</TooltipContent>
         </Tooltip>
       ) : (
         approveButton

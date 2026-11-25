@@ -9,6 +9,7 @@ import { listWorkers } from "@/lib/dal/orgs";
 import { pinnedProjectIds } from "@/lib/dal/projects";
 import { canDeleteTask, canReadTask, canUpdateProgress, isStakeholder, type TaskScope, type Viewer } from "@/lib/permissions";
 import { describeRecurrence, type Recurrence } from "@/lib/recurrence";
+import type { TaskPolicyItem } from "@/lib/tasks/policy-checklist";
 import { BOARD_STATUSES, toBoardColumns, type BoardColumns } from "@/lib/tasks/board";
 import type { TaskFilters, TaskSort } from "@/lib/tasks/filters";
 import { FEED_KINDS, phraseFeed, type FeedKind } from "@/lib/tasks/history";
@@ -565,6 +566,7 @@ export type ApprovalStagingTask = {
   openComments: number;
   /** Of those, the ones waiting for a task made from them (2026-11-11 log). */
   commentsWaitingOnTasks: number;
+  policyChecklist: TaskPolicyItem[];
 };
 
 /**
@@ -582,6 +584,7 @@ export async function approvalStagingTasks(viewer: Viewer, project = ""): Promis
       updatedAt: tasks.updatedAt,
       latestProgress: tasks.latestProgress,
       completionSummary: tasks.completionSummary,
+      policyChecklist: tasks.policyChecklist,
       nextAction: tasks.nextAction,
       approverId: tasks.approverId,
       projectId: projects.id,
@@ -615,6 +618,7 @@ export async function approvalStagingTasks(viewer: Viewer, project = ""): Promis
     evidence: row.evidence,
     openComments: row.openComments,
     commentsWaitingOnTasks: row.commentsWaiting,
+    policyChecklist: row.policyChecklist ?? [],
   }));
 }
 
@@ -969,6 +973,7 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     latestProgress: t.latestProgress,
     nextAction: t.nextAction,
     completionSummary: t.completionSummary,
+    policyChecklist: t.policyChecklist ?? [],
     openComments: row.openComments,
     commentsWaitingOnTasks: row.commentsWaiting,
     lastUpdate: row.lastUpdate ? { author: row.lastUpdate.author, at: new Date(row.lastUpdate.at).toISOString() } : null,
@@ -983,6 +988,7 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
       id: tasks.id,
       title: tasks.title,
       status: tasks.status,
+      policyChecklist: tasks.policyChecklist,
       createdBy: tasks.createdBy,
       approverId: tasks.approverId,
       proposalStatus: tasks.proposalStatus,

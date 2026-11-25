@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { isClosedStatus, type TaskStatus } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
+import { incompletePolicyCount, incompletePoliciesMessage } from "@/lib/tasks/policy-checklist";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { closingResolvesMessage } from "@/lib/tasks/comment-tasks";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
@@ -54,13 +55,25 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
    const heldBySubTasks = status === "completed" && task.openSubTasks > 0;
    // A goal's "Everything completed" task is its last step (2026-11-09 log): it waits for every other task under the goal.
    const heldByGoal = status === "completed" && task.closer !== null && task.closer.openOthers > 0;
-   const held = heldByComments || heldBySubTasks || heldByGoal;
+   const missingPolicies = incompletePolicyCount(task.policyChecklist);
+   const heldByPolicies = (status === "awaiting_approval" || status === "completed") && missingPolicies > 0;
+   const heldByStart = status === "awaiting_approval" && task.startedAt === null;
+   const heldByStage = status === "completed" && task.status !== "awaiting_approval";
+   const held = heldByComments || heldBySubTasks || heldByGoal || heldByPolicies || heldByStart || heldByStage;
    const merging = status === "merged";
    const closing = status === "rejected" || status === "cancelled";
    // Made from a comment (2026-11-11 log): closing it in any way resolves that comment, said before the save.
    const closesComment = task.fromComment !== null && isClosedStatus(status) && !isClosedStatus(task.status) && !held ? closingResolvesMessage(task.fromComment) : null;
    const ready =
-      status === "blocked" || closing ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? !held && summary.trim() !== "" : merging ? task.parent !== null : true;
+      status === "blocked" || closing
+         ? reason.trim() !== ""
+         : status === "awaiting_approval"
+           ? approverId !== "" && !heldByPolicies && !heldByStart
+           : status === "completed"
+             ? !held && summary.trim() !== ""
+             : merging
+               ? task.parent !== null
+               : true;
 
    return (
       <form
@@ -125,6 +138,9 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                />
             </Field>
          ) : null}
+         {heldByStart ? <p className="rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" role="status">Move this task to In progress before sending it for approval.</p> : null}
+         {heldByPolicies ? <p className="rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">{incompletePoliciesMessage(missingPolicies)}</p> : null}
+         {heldByStage ? <p className="rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" role="status">Send this task for approval before completing it.</p> : null}
          {status === "awaiting_approval" ? (
             <Field id="transition-approver" label="Who approves it?" error={errors.approverId?.[0]}>
                <NativeSelect id="transition-approver" value={approverId} onChange={(event) => setApproverId(event.target.value)}>

@@ -1,4 +1,5 @@
 import { CLOSED_WITH_REASON, isClosedStatus, type TaskActivityKind, type TaskStatus } from "@/lib/constants";
+import { incompletePolicyCount, incompletePoliciesMessage, resetPolicyChecklist, type TaskPolicyItem } from "@/lib/tasks/policy-checklist";
 
 // Status rules (docs/PLAN.md §5, apex-ux flow D) as one pure function: given the task's current state and
 // the status asked for, the column changes and the activity rows to write. Every action that changes a
@@ -19,6 +20,8 @@ export type TaskState = {
   commentsWaitingOnTasks?: number;
   /** The task it is attached to (sub-tasks, 2026-11-08 log): only such a task can be merged. */
   parentTaskId: string | null;
+  /** Required task-specific policy checks, completed by the assignee before approval. */
+  policyChecklist?: TaskPolicyItem[];
 };
 
 export type TransitionInput = {
@@ -49,6 +52,7 @@ export type TaskPatch = {
   blockedBy?: string | null;
   rejectionReason?: string | null;
   approverId?: string | null;
+  policyChecklist?: TaskPolicyItem[];
 };
 
 /** One task_activity row before it has an id, an actor or a time. */
@@ -108,6 +112,16 @@ export function planTransition(task: TaskState, to: TaskStatus, input: Transitio
   const from = task.status;
   if (via !== "status" && from !== "awaiting_approval") return { ok: false, error: "This task isn't waiting for approval." };
   if (from === to && to !== "awaiting_approval") return { ok: true, patch: {}, activities: [] };
+  if (to === "awaiting_approval") {
+    if (task.startedAt === null) return { ok: false, error: "Move this task to In progress before sending it for approval." };
+    const remaining = incompletePolicyCount(task.policyChecklist ?? []);
+    if (remaining > 0) return { ok: false, error: incompletePoliciesMessage(remaining) };
+  }
+  if (to === "completed" && via !== "approve") return { ok: false, error: "Send this task for approval before completing it." };
+  if (to === "completed") {
+    const remaining = incompletePolicyCount(task.policyChecklist ?? []);
+    if (remaining > 0) return { ok: false, error: incompletePoliciesMessage(remaining) };
+  }
   if (to === "completed" && task.openComments > 0) return { ok: false, error: openCommentsMessage(task.openComments, task.commentsWaitingOnTasks ?? 0) };
 
   if (to === "merged" && task.parentTaskId === null) return { ok: false, error: MERGE_NEEDS_PARENT };
@@ -132,6 +146,8 @@ export function planTransition(task: TaskState, to: TaskStatus, input: Transitio
     patch.completionSummary = null;
     activities.push({ kind: "reopened", before: { status: from }, after: { status: to } });
   }
+  if (isClosedStatus(from) && !isClosedStatus(to)) patch.policyChecklist = resetPolicyChecklist(task.policyChecklist ?? []);
+  if (from === "awaiting_approval" && via === "send_back") patch.policyChecklist = resetPolicyChecklist(task.policyChecklist ?? []);
   if (CLOSED_WITH_REASON.includes(from)) {
     patch.rejectionReason = null;
     if (!CLOSED_WITH_REASON.includes(to) && to !== "completed") activities.push({ kind: "reopened", before: { status: from }, after: { status: to } });
