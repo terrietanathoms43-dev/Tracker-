@@ -318,5 +318,7 @@ describe("reusable workflow policy foundation", () => {
     expect(incompletePolicyCount(signed)).toBe(0);
     expect(planTransition(task({ policyChecklist: signed }), "awaiting_approval", { approverId: "reviewer" }, now, STATUSES).ok).toBe(true);
     expect(incompletePolicyCount(resetPolicyChecklist(signed))).toBe(2);
+    expect(planTransition(task({ policyChecklist: signed }), "completed", { summary: "Done" }, now, STATUSES).ok).toBe(false);
+    expect(planTransition(task({ status: "awaiting_approval", policyChecklist: signed }), "completed", { note: "Reviewed" }, now, STATUSES, "approve").ok).toBe(true);
   });
 });

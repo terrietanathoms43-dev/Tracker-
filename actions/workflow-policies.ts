@@ -8,7 +8,7 @@ import { goals, projects, workflowPolicies, workflowPolicyAttachments } from "@/
 import { GuardError, ok, runAction } from "@/lib/action-result";
 import { canEditTask, canManagePlanning, isAdmin } from "@/lib/permissions";
 import { lockTask } from "@/lib/dal/tasks";
-import { attachTaskPolicies, materializePolicies } from "@/lib/dal/workflow-policies";
+import { attachTaskPolicies, materializePolicies, materializeScopePolicies } from "@/lib/dal/workflow-policies";
 import { statusDef } from "@/lib/statuses";
 import { requireViewer } from "@/lib/viewer";
 
@@ -32,7 +32,10 @@ export async function createWorkflowPolicy(input: z.input<typeof createSchema>) 
     await validateScope(viewer, data.scope);
     await db.transaction(async (tx) => {
       const [policy] = await tx.insert(workflowPolicies).values({ orgId: viewer.orgId, ownerKind: data.scope.kind, ownerId: data.scope.id, name: data.name, templates: data.labels.map((label) => ({ id: crypto.randomUUID(), label })), createdBy: viewer.userId }).returning({ id: workflowPolicies.id });
-      if (data.automatic) await tx.insert(workflowPolicyAttachments).values({ orgId: viewer.orgId, policyId: policy.id, scopeKind: data.scope.kind, scopeId: data.scope.id, createdBy: viewer.userId }).onConflictDoNothing();
+      if (data.automatic) {
+        await tx.insert(workflowPolicyAttachments).values({ orgId: viewer.orgId, policyId: policy.id, scopeKind: data.scope.kind, scopeId: data.scope.id, createdBy: viewer.userId }).onConflictDoNothing();
+        await materializeScopePolicies(tx, viewer, data.scope, new Date());
+      }
     });
     refresh();
     return ok(undefined, "Policy created.");
@@ -46,9 +49,10 @@ export async function attachWorkflowPolicy(input: z.input<typeof attachSchema>) 
       const [policy] = await tx.select({ id: workflowPolicies.id }).from(workflowPolicies).where(and(eq(workflowPolicies.orgId, viewer.orgId), eq(workflowPolicies.id, data.policyId)));
       if (!policy) throw new GuardError("not_found");
       await tx.insert(workflowPolicyAttachments).values({ orgId: viewer.orgId, policyId: policy.id, scopeKind: data.scope.kind, scopeId: data.scope.id, createdBy: viewer.userId }).onConflictDoNothing();
+      await materializeScopePolicies(tx, viewer, data.scope, new Date());
     });
     refresh();
-    return ok(undefined, "Policy attached to new tasks.");
+    return ok(undefined, "Policy attached to current open and future tasks.");
   });
 }
 const applySchema = z.object({ taskId: id, policyIds: z.array(id).max(30) });

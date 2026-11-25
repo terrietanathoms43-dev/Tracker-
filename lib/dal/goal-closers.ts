@@ -1,6 +1,5 @@
-import { syncPolicyChildren, deletePolicyChildren } from "@/lib/dal/workflow-policies";
-import { materializePolicies } from "@/lib/dal/workflow-policies";
 import "server-only";
+import { syncPolicyChildren, deletePolicyChildren, materializePolicies } from "@/lib/dal/workflow-policies";
 import { and, asc, eq } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { notifications, tasks } from "@/db/schema";
@@ -107,6 +106,7 @@ export async function reopenGoalCloser(tx: Tx, actorId: string, goal: CloserGoal
       .set({ ...plan.patch, updatedAt: now })
       .where(eq(tasks.id, closer.id));
     if (plan.patch.policyChecklist) await syncPolicyChildren(tx, goal.orgId, closer.id, plan.patch.policyChecklist, actorId, now);
+    await materializePolicies(tx, goal.orgId, closer.id, actorId, now);
     const note = `Open again with its goal: “${goal.title}” is active again.`;
     await recordActivity(tx, { orgId: goal.orgId, taskId: closer.id, actorId }, plan.activities.map((activity) => (activity.kind === "reopened" ? { ...activity, note } : activity)), now);
     changed.push({ id: closer.id, title: closer.title, status: closer.status, sourceCommentId: closer.sourceCommentId, proposalStatus: closer.proposalStatus, to: reopenTarget(catalog) });

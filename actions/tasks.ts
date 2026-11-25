@@ -261,6 +261,7 @@ async function attachUnder(tx: Tx, viewer: Viewer, child: Locked, parent: Locked
   // A sub-task goes where its parent goes, so it leaves a group of its own (2026-11-11 log).
   await leaveGroup(tx, { orgId: viewer.orgId, actorId: viewer.userId }, child.task, now, { note: "It became a sub-task, which goes where its parent goes." });
   await tx.update(tasks).set({ parentTaskId: parent.task.id, projectId: parent.task.projectId, goalId: parent.task.goalId, updatedAt: now }).where(eq(tasks.id, child.task.id));
+  if (!isClosedStatusKey(viewer.statuses, child.task.status)) await materializePolicies(tx, viewer.orgId, child.task.id, viewer.userId, now);
   await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, parent.task.id));
   await recordActivity(tx, { orgId: viewer.orgId, taskId: child.task.id, actorId: viewer.userId }, [{ kind: "attached", before: { parentId: child.task.parentTaskId }, after: { parentId: parent.task.id, parentTitle: parent.task.title } }], now);
   if (parent.task.goalId !== null && parent.task.goalId !== child.task.goalId && !isClosedStatusKey(viewer.statuses, child.task.status)) await reopenGoalForNewWork(tx, viewer, parent.task.goalId, now);
@@ -306,6 +307,7 @@ export async function detachTask(input: z.input<typeof detachSchema>): Promise<A
         .update(tasks)
         .set({ parentTaskId: null, ...(reopen ? { status: reopenedTo, rejectionReason: null, closedAt: null, dueDateAtClose: null } : {}), updatedAt: now })
         .where(eq(tasks.id, task.id));
+      if (!isClosedStatusKey(viewer.statuses, task.status) || reopen) await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
       const drafts: ActivityDraft[] = [{ kind: "detached", before: { parentId: task.parentTaskId, parentTitle: parent?.title ?? null }, after: { parentId: null } }];
       if (reopen) drafts.push({ kind: "reopened", before: { status: task.status }, after: { status: reopenedTo }, note: "Detached, so it is a task of its own again." });
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
@@ -635,7 +637,10 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       if (goal?.achieved) notices.push(...goalAchievedNotice(viewer, goal.goal, goal.notify));
       const evidence = toDef.kind === "completed" ? await insertLink(tx, task.id, viewer.userId, data.evidenceUrl, data.evidenceLabel, now) : [];
       await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
-      if (plan.patch.policyChecklist) await syncPolicyChildren(tx, viewer.orgId, task.id, plan.patch.policyChecklist, viewer.userId, now);
+      if (plan.patch.policyChecklist) {
+        await syncPolicyChildren(tx, viewer.orgId, task.id, plan.patch.policyChecklist, viewer.userId, now);
+        await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
+      }
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [...plan.activities, ...evidence], now);
       notices.push(...(await noticesFor(tx, viewer, noticeTask(task), assignment, plan.activities, data.approverId || task.approverId, data.note || null)));
       const nextDue = toDef.kind === "completed" ? await spawnNextOccurrence(tx, viewer, task, assignment, now) : null;
@@ -774,6 +779,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         .update(tasks)
         .set({ ...patch, latestProgress: data.progress, nextAction: data.nextAction || null, updatedAt: now })
         .where(eq(tasks.id, task.id));
+      if (patch.policyChecklist) await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
       const nextDue = target !== null && statusDef(viewer.statuses, target).kind === "completed" ? await spawnNextOccurrence(tx, viewer, task, after, now) : null;
       // The comment it was made from (lib/dal/comment-tasks.ts).
@@ -1153,7 +1159,10 @@ export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>):
       if (plan.activities.length === 0) return [];
       const goal = await applyGoalRules(tx, viewer, task, data.status, now);
       await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
-      if (plan.patch.policyChecklist) await syncPolicyChildren(tx, viewer.orgId, task.id, plan.patch.policyChecklist, viewer.userId, now);
+      if (plan.patch.policyChecklist) {
+        await syncPolicyChildren(tx, viewer.orgId, task.id, plan.patch.policyChecklist, viewer.userId, now);
+        await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
+      }
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, stampMerge(plan.activities, task, rules.parentTitle), now);
       const sent = await noticesFor(tx, viewer, noticeTask(task), assignment, plan.activities, data.approverId || task.approverId, null);
       if (toDef.kind === "completed") await spawnNextOccurrence(tx, viewer, task, assignment, now);

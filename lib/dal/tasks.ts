@@ -216,6 +216,7 @@ const listColumns = {
   proposalStatus: tasks.proposalStatus,
   needsSignOff: needsSignOffSql,
   goalCloser: tasks.goalCloser,
+  workflowPolicyId: tasks.workflowPolicyId,
   goalId: goals.id,
   goalTitle: goals.title,
   projectId: projects.id,
@@ -246,6 +247,7 @@ type ListRow = {
   proposalStatus: ProposalStatus | null;
   needsSignOff: boolean;
   goalCloser: boolean;
+  workflowPolicyId?: string | null;
   goalId: string | null;
   goalTitle: string | null;
   projectId: string | null;
@@ -290,7 +292,7 @@ export function toListItem(row: ListRow, viewer: Viewer): TaskListItem {
     needsSignOff: row.needsSignOff,
     goalCloser: isCloser(row),
     // A goal's closer goes with its goal, never on its own.
-    canDelete: !isCloser(row) && canDeleteTask(viewer, { createdBy: row.createdBy, proposalStatus: row.proposalStatus }),
+    canDelete: !isCloser(row) && canDeleteTask(viewer, { createdBy: row.createdBy, proposalStatus: row.proposalStatus, generatedPolicyChild: Boolean(row.workflowPolicyId) }),
     assignees: row.assignees,
   };
 }

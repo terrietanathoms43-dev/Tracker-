@@ -65,7 +65,13 @@ export function addPolicySnapshots(
   makeId: () => string = () => crypto.randomUUID(),
 ): TaskPolicyItem[] {
   const applied = new Set(existing.flatMap((item) => item.policyId ? [item.policyId] : []));
-  const result = [...existing];
+  const result = existing.map((item) => {
+    const application = applications.find(({ policy }) => policy.id === item.policyId);
+    if (!application) return item;
+    const policySources = [...(item.policySources ?? [])];
+    for (const source of application.sources) if (!policySources.some((entry) => entry.kind === source.kind && entry.id === source.id)) policySources.push(source);
+    return { ...item, policySources };
+  });
   for (const { policy, sources } of applications) {
     if (applied.has(policy.id)) continue;
     applied.add(policy.id);

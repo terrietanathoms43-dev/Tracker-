@@ -1,11 +1,12 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, notInArray, sql } from "drizzle-orm";
 import { db, type Db, type Tx } from "@/db";
 import { goals, tasks, workflowPolicies, workflowPolicyAttachments } from "@/db/schema";
 import { GuardError } from "@/lib/action-result";
 import { recordActivity } from "@/lib/dal/activity";
 import { applyAssignment, assignmentOf } from "@/lib/dal/assignments";
-import { isLive } from "@/lib/permissions";
+import { isLive, type Viewer } from "@/lib/permissions";
+import { backToWorkTarget, closedStatusKeys, statusDef } from "@/lib/statuses";
 import { addPolicySnapshots, resolvePolicyApplications, type PolicyPlacement } from "@/lib/tasks/workflow-policies";
 import type { TaskPolicyItem } from "@/lib/tasks/policy-checklist";
 
@@ -86,4 +87,23 @@ export async function syncPolicyChildren(tx: Tx, orgId: string, parentId: string
 export async function deletePolicyChildren(tx: Tx, orgId: string, parentId: string) {
   const children = await tx.select({ id: tasks.id, policy: tasks.workflowPolicyId }).from(tasks).where(and(eq(tasks.orgId, orgId), eq(tasks.parentTaskId, parentId)));
   for (const child of children) if (child.policy) await tx.delete(tasks).where(and(eq(tasks.orgId, orgId), eq(tasks.id, child.id)));
+}
+
+/** Apply newly attached automatic policies to open tasks; historical closed tasks are untouched. */
+export async function materializeScopePolicies(tx: Tx, viewer: Viewer, scope: { kind: "workspace" | "project" | "goal"; id: string }, now: Date) {
+  const placement = scope.kind === "project" ? eq(tasks.projectId, scope.id) : scope.kind === "goal"
+    ? sql`${tasks.goalId} in (select g.id from goals g where g.org_id = ${viewer.orgId} and (g.id = ${scope.id} or g.parent_goal_id = ${scope.id}))`
+    : undefined;
+  const rows = await tx.select({ id: tasks.id, status: tasks.status, policyChecklist: tasks.policyChecklist }).from(tasks)
+    .where(and(eq(tasks.orgId, viewer.orgId), isNull(tasks.workflowPolicyId), notInArray(tasks.status, closedStatusKeys(viewer.statuses)), placement))
+    .orderBy(asc(tasks.id)).for("update");
+  for (const row of rows) {
+    await materializePolicies(tx, viewer.orgId, row.id, viewer.userId, now);
+    if (statusDef(viewer.statuses, row.status).kind !== "awaiting_approval") continue;
+    const [after] = await tx.select({ checklist: tasks.policyChecklist }).from(tasks).where(eq(tasks.id, row.id));
+    if (!after || after.checklist.length <= row.policyChecklist.length) continue;
+    const status = backToWorkTarget(viewer.statuses);
+    await tx.update(tasks).set({ status, approverId: null, updatedAt: now }).where(eq(tasks.id, row.id));
+    await recordActivity(tx, { orgId: viewer.orgId, taskId: row.id, actorId: viewer.userId }, [{ kind: "sent_back", before: { status: row.status }, after: { status }, note: "A newly attached mandatory policy must be checked and signed before review." }], now);
+  }
 }

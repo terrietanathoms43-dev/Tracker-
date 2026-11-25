@@ -139,8 +139,8 @@ export function canManageTaskGroup(viewer: Viewer, group: OrgScoped & { createdB
 }
 
 /** Sending a local task for sign-off, or publishing it where no sign-off applies any more: its maker alone. */
-export function canSendLocalTask(viewer: Viewer, task: Pick<TaskScope, "orgId" | "createdBy" | "proposalStatus">): boolean {
-  return inOrg(viewer, task) && isLocal(task) && task.createdBy === viewer.userId;
+export function canSendLocalTask(viewer: Viewer, task: Pick<TaskScope, "orgId" | "createdBy" | "proposalStatus" | "generatedPolicyChild">): boolean {
+  return !task.generatedPolicyChild && inOrg(viewer, task) && isLocal(task) && task.createdBy === viewer.userId;
 }
 
 // --- projects and goals ---------------------------------------------------------

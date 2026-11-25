@@ -18,7 +18,7 @@ export function WorkflowPolicyControls({ scope, policies, attached }: { scope: S
   const [pending, startTransition] = useTransition();
   return <section className="grid min-w-0 gap-3 rounded-lg border bg-card p-4">
     <h3 className="font-semibold">Workflow policies</h3>
-    <p className="text-sm text-muted-foreground">Automatic attachments apply to new tasks here. Existing tasks can synchronize explicitly.</p>
+    <p className="text-sm text-muted-foreground">Automatic attachments apply to current open and future tasks here. Completed task history stays unchanged.</p>
     {policies.filter((p) => attached.includes(p.id)).map((p) => <p key={p.id} className="text-sm">{p.name} · automatic</p>)}
     <details><summary className="cursor-pointer text-sm font-medium">Create reusable policy</summary>
       <div className="mt-3 grid gap-2">
