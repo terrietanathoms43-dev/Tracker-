@@ -48,7 +48,7 @@ export function ReportVerdict({ summary, project, statuses, anchorBase = "" }: {
         role="status"
         className={cn(
           "flex items-center gap-3 rounded-lg border px-5 py-4 text-lg font-semibold md:text-xl",
-          verdict.ok ? "border-status-completed-dot/30 bg-status-completed-bg text-status-completed-fg" : "border-status-blocked-dot/30 bg-status-blocked-bg text-status-blocked-fg",
+          verdict.ok ? "border-status-green-dot/30 bg-status-green-bg text-status-green-fg" : "border-status-red-dot/30 bg-status-red-bg text-status-red-fg",
         )}
       >
         {verdict.ok ? <CheckCircle2 className="size-6 shrink-0" aria-hidden /> : <OctagonAlert className="size-6 shrink-0" aria-hidden />}
@@ -65,13 +65,13 @@ export function ReportVerdict({ summary, project, statuses, anchorBase = "" }: {
                 href={href}
                 className={cn(
                   "block rounded-lg border px-4 py-3 transition-colors break-inside-avoid",
-                  problem && "border-status-blocked-dot/30 bg-status-blocked-bg hover:bg-status-blocked-bg/70",
-                  waiting && "border-status-awaiting-dot/30 bg-status-awaiting-bg hover:bg-status-awaiting-bg/70",
+                  problem && "border-status-red-dot/30 bg-status-red-bg hover:bg-status-red-bg/70",
+                  waiting && "border-status-amber-dot/30 bg-status-amber-bg hover:bg-status-amber-bg/70",
                   !tinted && "bg-card hover:bg-accent/60",
                 )}
               >
-                <p className={cn("truncate text-[13px]", problem ? "text-status-blocked-fg" : waiting ? "text-status-awaiting-fg" : "text-muted-foreground")}>{label}</p>
-                <p className={cn("mt-1 text-2xl font-semibold", problem && "text-status-blocked-fg", waiting && "text-status-awaiting-fg")}>{value}</p>
+                <p className={cn("truncate text-[13px]", problem ? "text-status-red-fg" : waiting ? "text-status-amber-fg" : "text-muted-foreground")}>{label}</p>
+                <p className={cn("mt-1 text-2xl font-semibold", problem && "text-status-red-fg", waiting && "text-status-amber-fg")}>{value}</p>
               </Link>
             </li>
           );

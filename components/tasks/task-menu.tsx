@@ -35,7 +35,7 @@ import {
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useStatusCatalog } from "@/components/status-catalog";
 import { idsOf } from "@/lib/tasks/assignees";
-import { activeStatuses, statusDef } from "@/lib/statuses";
+import { menuStatuses, statusDef } from "@/lib/statuses";
 import type { TaskFormOptions, TaskListItem } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneePicker } from "./assignee-picker";
@@ -427,7 +427,7 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
                   <>
                     <p className="px-3 pt-3 pb-1 text-[13px] text-muted-foreground">Change status</p>
                     <div className="grid grid-cols-2 gap-1">
-                      {activeStatuses(statuses).filter((status) => status.kind !== "merged" || task.parent !== null).map((status) => (
+                      {menuStatuses(statuses, task.status).filter((status) => status.kind !== "merged" || task.parent !== null).map((status) => (
                         <SheetButton key={status.key} disabled={status.key === task.status} onClick={then(() => change(task.status, status))}>
                           <StatusIcon status={status} />
                           {status.label}

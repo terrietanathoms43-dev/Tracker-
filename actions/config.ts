@@ -1,17 +1,19 @@
 "use server";
 
 import { refresh } from "next/cache";
+import { and, count, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { fail, ok, runAction, type ActionResult } from "@/lib/action-result";
+import { tasks } from "@/db/schema";
+import { fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
 import { getOrgConfig, saveOrgConfig } from "@/lib/dal/org-config";
-import { saveStatusRow, statusRowsFor, statusesFor } from "@/lib/dal/statuses";
+import { deleteStatusRow, saveStatusRow, statusRowsFor, statusesFor } from "@/lib/dal/statuses";
 import { ORG_ROLES } from "@/lib/constants";
 import { requireOrgAdmin } from "@/lib/guards";
 import { HOME_TAB_KEYS, tabsForRole } from "@/lib/home-tabs";
 import { log } from "@/lib/log";
 import { encryptSecret } from "@/lib/secrets";
-import { newStatusKey, STATUS_ICONS, STATUS_TONES, statusOf } from "@/lib/statuses";
+import { archiveLocked, closedLocked, newStatusKey, STATUS_ICONS, STATUS_TONES, statusOf } from "@/lib/statuses";
 
 // The admin panel on Settings → Workspace: the AI provider and key, the workspace's default /home tab order,
 // and the permission switches. Admins only (requireOrgAdmin); the API key is stored encrypted (lib/secrets.ts)
@@ -90,23 +92,22 @@ const statusSchema = z.object({
 });
 
 /**
- * Creates or edits one status. Built-ins keep their key and behaviour (a rename is label-only); a new status
- * is minted a `custom_*` key and lands at the end. Completed and Merged are structurally closed — their flag
- * is not accepted off.
+ * Creates or edits one status. Built-ins keep their key (a rename is label-only); a new status is minted a
+ * `custom_*` key and lands at the end. A built-in whose open/closed is part of what it is (closedLocked) keeps
+ * its flag, and no two statuses share a name.
  */
 export async function saveTaskStatus(input: z.input<typeof statusSchema>): Promise<ActionResult> {
   return runAction("config.status_save", statusSchema, input, async (data) => {
     const { viewer } = await requireOrgAdmin();
     const catalog = await statusesFor(viewer.orgId);
     const creating = data.key === "";
-    if (!creating) {
-      const existing = statusOf(catalog, data.key);
-      if (existing === undefined) return fail("That status doesn't exist.");
-      if (existing.archived) return fail("Restore the status before editing it.");
-    }
-    const key = creating ? newStatusKey() : data.key;
-    const def = statusOf(catalog, key);
-    if (def !== undefined && (def.kind === "completed" || def.kind === "merged") && !data.closed) return fail(`"${def.label}" is how a task finishes — it can't be an open status.`);
+    const def = creating ? undefined : statusOf(catalog, data.key);
+    if (!creating && def === undefined) return fail("That status doesn't exist.");
+    if (def?.archived) return fail("Restore the status before editing it.");
+    if (def !== undefined && closedLocked(def) && data.closed !== def.closed) return fail(def.closed ? `"${def.label}" is how a task finishes — it always closes the task.` : `"${def.label}" is work still going on — it can't close the task.`);
+    const clash = catalog.find((status) => status.key !== def?.key && status.label.trim().toLowerCase() === data.label.toLowerCase());
+    if (clash !== undefined) return fail(`There is already a status called "${clash.label}"${clash.archived ? " (archived — restore it instead)" : ""}.`, { label: ["Pick a name no other status has."] });
+    const key = def?.key ?? newStatusKey();
     const position = def?.position ?? Math.max(0, ...catalog.map((status) => status.position + 1));
     await db.transaction(async (tx) =>
       saveStatusRow(viewer.orgId, { key, label: data.label, icon: data.icon, tone: data.tone, closed: data.closed, position, archivedAt: null }, viewer.userId, tx),
@@ -132,13 +133,39 @@ export async function setStatusArchived(input: z.input<typeof archiveSchema>): P
     const catalog = await statusesFor(viewer.orgId);
     const def = statusOf(catalog, data.key);
     if (def === undefined) return fail("That status doesn't exist.");
-    if (data.archived && catalog.filter((status) => !status.archived).length === 1) return fail("The workspace needs one status left to pick.");
+    if (data.archived && archiveLocked(def)) return fail(`"${def.label}" can't be archived: ${def.kind === "completed" ? "it is how tasks and goals finish" : "every new task starts in it"}.`);
     await db.transaction(async (tx) =>
       saveStatusRow(viewer.orgId, { key: def.key, label: def.label, icon: def.icon, tone: def.tone, closed: def.closed, position: def.position, archivedAt: data.archived ? new Date() : null }, viewer.userId, tx),
     );
     log.info("config.status_archive", { orgId: viewer.orgId, key: data.key, archived: data.archived, by: viewer.userId });
     refresh();
     return ok(undefined, data.archived ? `"${def.label}" archived — existing tasks keep it.` : `"${def.label}" restored.`);
+  });
+}
+
+const deleteSchema = z.object({ key: z.string().regex(/^[a-z0-9_]{1,64}$/) });
+
+/**
+ * Deletes a custom status that no task carries — the only way a status ever goes away. Built-ins and
+ * anything still in use can only be archived; history lines that named it read "a removed status" after.
+ */
+export async function deleteTaskStatus(input: z.input<typeof deleteSchema>): Promise<ActionResult> {
+  return runAction("config.status_delete", deleteSchema, input, async (data) => {
+    const { viewer } = await requireOrgAdmin();
+    const catalog = await statusesFor(viewer.orgId);
+    const def = statusOf(catalog, data.key);
+    if (def === undefined) return fail("That status doesn't exist.");
+    if (def.builtin) return fail(`"${def.label}" comes with every workspace — it can only be archived.`);
+    await db.transaction(async (tx) => {
+      const used = () => tx.select({ n: count() }).from(tasks).where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.status, data.key))).then((r) => r[0].n);
+      const n = await used();
+      if (n > 0) throw new GuardError("conflict", `${n} ${n === 1 ? "task still has" : "tasks still have"} it — archive it instead.`);
+      await deleteStatusRow(viewer.orgId, data.key, tx);
+      if ((await used()) > 0) throw new GuardError("conflict", "A task just took this status — archive it instead.");
+    });
+    log.info("config.status_deleted", { orgId: viewer.orgId, key: data.key, by: viewer.userId });
+    refresh();
+    return ok(undefined, `"${def.label}" deleted.`);
   });
 }
 

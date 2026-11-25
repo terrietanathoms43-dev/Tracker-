@@ -1,5 +1,5 @@
 import type { TaskActivityKind } from "@/lib/constants";
-import { isClosedWithoutCompletion, statusOf, type StatusCatalog, type TaskStatusDef } from "@/lib/statuses";
+import { factoryWorded, isClosedWithoutCompletion, statusOf, type StatusCatalog, type TaskStatusDef } from "@/lib/statuses";
 
 // Status rules (docs/PLAN.md §5, apex-ux flow D) as one pure function: given the task's current state, the
 // workspace's statuses and the status asked for, the column changes and the activity rows to write. Every
@@ -88,8 +88,8 @@ export const MERGE_NEEDS_PARENT = "Only a sub-task can be merged: attach it to t
 /** Whether entering this status asks for a reason (blocked, and every way of closing without completing). */
 export const asksReason = (status: TaskStatusDef): boolean => status.kind === "blocked" || isClosedWithoutCompletion(status);
 
-/** The reason prompt for a status that asks one. */
-export const reasonPrompt = (status: TaskStatusDef): string => REASON_PROMPTS[status.key] ?? CLOSED_REASON_PROMPT;
+/** The reason prompt for a status that asks one; a renamed closed status goes by the generic words, which name no status. */
+export const reasonPrompt = (status: TaskStatusDef): string => ((status.kind === "blocked" || factoryWorded(status)) && REASON_PROMPTS[status.key]) || CLOSED_REASON_PROMPT;
 
 /** The task_activity kind for entering a status: built-ins keep their named kinds, customs log a plain status_changed. */
 const activityFor = (status: TaskStatusDef): TaskActivityKind => {

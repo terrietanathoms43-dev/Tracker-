@@ -9,7 +9,7 @@ import { createGoalCloser } from "@/lib/dal/goal-closers";
 import { liveOnly } from "@/lib/dal/tasks";
 import type { Viewer } from "@/lib/permissions";
 import { describeRecurrence, missedOccurrences, type Recurrence } from "@/lib/recurrence";
-import { isClosedWithoutCompletion, type StatusCatalog } from "@/lib/statuses";
+import { endedWithoutCompletion, type StatusCatalog } from "@/lib/statuses";
 import { calendarDaysBetween, dayKey } from "@/lib/time";
 
 // Repeating tasks and goals, on the server (docs/PLAN.md, 2026-11-03 and 2026-11-04 logs). An occurrence is made
@@ -127,7 +127,7 @@ export async function createGoalOccurrence(tx: Tx, actorId: string, goal: Source
   const copies = await tx
     .select({ id: tasks.id, title: tasks.title, description: tasks.description, priority: tasks.priority, dueDate: tasks.dueDate, dueTime: tasks.dueTime, createdBy: tasks.createdBy, goalCloser: tasks.goalCloser })
     .from(tasks)
-    .where(and(eq(tasks.orgId, goal.orgId), eq(tasks.goalId, goal.id), liveOnly, notInArray(tasks.status, catalog.filter((status) => isClosedWithoutCompletion(status) && status.key !== "deferred").map((status) => status.key))));
+    .where(and(eq(tasks.orgId, goal.orgId), eq(tasks.goalId, goal.id), liveOnly, notInArray(tasks.status, catalog.filter(endedWithoutCompletion).map((status) => status.key))));
   for (const source of copies) {
     const [task] = await tx
       .insert(tasks)

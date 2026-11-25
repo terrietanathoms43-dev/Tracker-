@@ -52,18 +52,18 @@ const KIND_LABEL: Record<TimelineTaskKind, string> = {
   due: "Due",
 };
 const KIND_BADGE: Record<TimelineTaskKind, string> = {
-  completed: "bg-status-completed-bg text-status-completed-fg",
-  blocked: "bg-status-blocked-bg text-status-blocked-fg",
-  overdue: "bg-status-blocked-dot text-white",
-  due: "bg-status-in-progress-bg text-status-in-progress-fg",
+  completed: "bg-status-green-bg text-status-green-fg",
+  blocked: "bg-status-red-bg text-status-red-fg",
+  overdue: "bg-status-red-dot text-white",
+  due: "bg-status-blue-bg text-status-blue-fg",
 };
 
 /** A goal deadline pin wears the goal's health, so an at-risk or delayed deadline is red before anyone hovers. */
 const PIN_TONE: Record<HealthStatus, { fill: string; stroke: string }> = {
-  delayed: { fill: "fill-status-blocked-dot", stroke: "stroke-status-blocked-dot" },
-  at_risk: { fill: "fill-status-blocked-dot", stroke: "stroke-status-blocked-dot" },
-  needs_attention: { fill: "fill-status-awaiting-dot", stroke: "stroke-status-awaiting-dot" },
-  on_track: { fill: "fill-status-completed-dot", stroke: "stroke-status-completed-dot" },
+  delayed: { fill: "fill-status-red-dot", stroke: "stroke-status-red-dot" },
+  at_risk: { fill: "fill-status-red-dot", stroke: "stroke-status-red-dot" },
+  needs_attention: { fill: "fill-status-amber-dot", stroke: "stroke-status-amber-dot" },
+  on_track: { fill: "fill-status-green-dot", stroke: "stroke-status-green-dot" },
 };
 
 /** The worst health among the goals due on one day: that is the colour the day's pin takes. */
@@ -78,17 +78,17 @@ function topSegmentPath(x: number, y: number, width: number, height: number): st
 }
 
 function KindIcon({ kind, className }: { kind: TimelineTaskKind; className?: string }) {
-  if (kind === "completed") return <CheckCircle2 className={cn("size-3.5 shrink-0 text-status-completed-dot", className)} aria-hidden />;
-  if (kind === "blocked") return <OctagonAlert className={cn("size-3.5 shrink-0 text-status-blocked-dot", className)} aria-hidden />;
-  if (kind === "overdue") return <CalendarX2 className={cn("size-3.5 shrink-0 text-status-blocked-fg", className)} aria-hidden />;
-  return <CalendarClock className={cn("size-3.5 shrink-0 text-status-in-progress-dot", className)} aria-hidden />;
+  if (kind === "completed") return <CheckCircle2 className={cn("size-3.5 shrink-0 text-status-green-dot", className)} aria-hidden />;
+  if (kind === "blocked") return <OctagonAlert className={cn("size-3.5 shrink-0 text-status-red-dot", className)} aria-hidden />;
+  if (kind === "overdue") return <CalendarX2 className={cn("size-3.5 shrink-0 text-status-red-fg", className)} aria-hidden />;
+  return <CalendarClock className={cn("size-3.5 shrink-0 text-status-blue-dot", className)} aria-hidden />;
 }
 
 /** A swatch for the legend, drawn the way the bar draws that kind. */
 function Swatch({ kind, hatchId }: { kind: TimelineTaskKind; hatchId: string }) {
-  if (kind === "due") return <span className="inline-block size-3 rounded-[3px] border-[1.5px] border-status-in-progress-dot" aria-hidden />;
-  if (kind === "overdue") return <span className="inline-block size-3 rounded-[3px] bg-status-blocked-dot ring-1 ring-status-blocked-fg" aria-hidden />;
-  if (kind === "completed") return <span className="inline-block size-3 rounded-[3px] bg-status-completed-dot" aria-hidden />;
+  if (kind === "due") return <span className="inline-block size-3 rounded-[3px] border-[1.5px] border-status-blue-dot" aria-hidden />;
+  if (kind === "overdue") return <span className="inline-block size-3 rounded-[3px] bg-status-red-dot ring-1 ring-status-red-fg" aria-hidden />;
+  if (kind === "completed") return <span className="inline-block size-3 rounded-[3px] bg-status-green-dot" aria-hidden />;
   return (
     <svg width="12" height="12" className="shrink-0 rounded-[3px]" aria-hidden>
       <rect width="12" height="12" fill={`url(#${hatchId})`} />
@@ -116,13 +116,13 @@ function PaceStrip({ pace, today }: { pace: Pace; today: string }) {
             ? `Ahead of pace: ${pct(pace.share)} done, ${pct(expected)} expected by today`
             : `On pace: ${pct(pace.share)} done, ${pct(expected)} expected by today`;
   const Icon = tone === "behind" ? OctagonAlert : tone === "good" ? CheckCircle2 : CalendarClock;
-  const track = tone === "behind" ? "bg-status-blocked-bg" : tone === "good" ? "bg-status-completed-bg" : "bg-muted";
-  const fill = tone === "behind" ? "bg-status-blocked-dot" : tone === "good" ? "bg-status-completed-dot" : "bg-primary";
+  const track = tone === "behind" ? "bg-status-red-bg" : tone === "good" ? "bg-status-green-bg" : "bg-muted";
+  const fill = tone === "behind" ? "bg-status-red-dot" : tone === "good" ? "bg-status-green-dot" : "bg-primary";
   const markerLeft = `clamp(10px, ${expected * 100}%, calc(100% - 10px))`;
   return (
     <div className="mb-4 rounded-lg border bg-muted/30 px-3 pt-2.5 pb-2" data-testid="pace-strip" data-verdict={pace.verdict}>
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[13px]">
-        <p className={cn("flex items-center gap-1.5 font-medium", tone === "behind" ? "text-status-blocked-fg" : tone === "good" ? "text-status-completed-fg" : "text-foreground")}>
+        <p className={cn("flex items-center gap-1.5 font-medium", tone === "behind" ? "text-status-red-fg" : tone === "good" ? "text-status-green-fg" : "text-foreground")}>
           <Icon className="size-4 shrink-0" aria-hidden />
           {sentence}
         </p>
@@ -303,7 +303,7 @@ export function RangeChart({
           </h2>
           {description ? <p className="text-[13px] text-muted-foreground">{description}</p> : null}
           <p className="text-[12px] text-muted-foreground">
-            {overdueNote ? <span className="font-semibold text-status-blocked-fg">{overdueNote} · </span> : null}
+            {overdueNote ? <span className="font-semibold text-status-red-fg">{overdueNote} · </span> : null}
             {summary} · to {TIMELINE_LOOKAHEAD_DAYS} days ahead
           </p>
         </div>
@@ -331,8 +331,8 @@ export function RangeChart({
           {totals.goals > 0 ? (
             <li className="flex items-center gap-1.5">
               <span className="flex -space-x-1" aria-hidden>
-                <span className="size-2.5 rounded-full bg-status-blocked-dot ring-1 ring-card" />
-                <span className="size-2.5 rounded-full bg-status-completed-dot ring-1 ring-card" />
+                <span className="size-2.5 rounded-full bg-status-red-dot ring-1 ring-card" />
+                <span className="size-2.5 rounded-full bg-status-green-dot ring-1 ring-card" />
               </span>
               Goal deadline (red when at risk or delayed)
             </li>
@@ -387,8 +387,8 @@ export function RangeChart({
         >
           <defs>
             <pattern id={hatchId} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-              <rect width="4" height="4" fill="var(--status-blocked-bg)" />
-              <line x1="0" y1="0" x2="0" y2="4" stroke="var(--status-blocked-dot)" strokeWidth="2" />
+              <rect width="4" height="4" fill="var(--status-red-bg)" />
+              <line x1="0" y1="0" x2="0" y2="4" stroke="var(--status-red-dot)" strokeWidth="2" />
             </pattern>
           </defs>
 
@@ -474,8 +474,8 @@ export function RangeChart({
                 {/* An overdue day screams: a red wash down the column and a mark above its bar. */}
                 {day.tasks.some((task) => task.kind === "overdue") ? (
                   <>
-                    <rect x={x0} y={PAD_TOP - 4} width={slot} height={PLOT + 4} className="pointer-events-none fill-status-blocked-dot" fillOpacity="0.14" data-overdue-day />
-                    <text x={x0 + slot / 2} y={baseline - day.tasks.length * unit - 6} textAnchor="middle" className="pointer-events-none fill-status-blocked-fg text-[13px] font-bold select-none">
+                    <rect x={x0} y={PAD_TOP - 4} width={slot} height={PLOT + 4} className="pointer-events-none fill-status-red-dot" fillOpacity="0.14" data-overdue-day />
+                    <text x={x0 + slot / 2} y={baseline - day.tasks.length * unit - 6} textAnchor="middle" className="pointer-events-none fill-status-red-fg text-[13px] font-bold select-none">
                       !
                     </text>
                   </>
@@ -498,8 +498,8 @@ export function RangeChart({
                   const isTop = position === day.tasks.length - 1;
                   const key = `${day.date}:${task.id}:${task.kind}`;
                   const hovered = hoverTask === key;
-                  const fill = task.kind === "completed" ? "var(--status-completed-dot)" : task.kind === "blocked" ? `url(#${hatchId})` : task.kind === "overdue" ? "var(--status-blocked-dot)" : "var(--card)";
-                  const stroke = task.kind === "due" ? "var(--status-in-progress-dot)" : task.kind === "overdue" ? "var(--status-blocked-fg)" : hovered ? "var(--foreground)" : "none";
+                  const fill = task.kind === "completed" ? "var(--status-green-dot)" : task.kind === "blocked" ? `url(#${hatchId})` : task.kind === "overdue" ? "var(--status-red-dot)" : "var(--card)";
+                  const stroke = task.kind === "due" ? "var(--status-blue-dot)" : task.kind === "overdue" ? "var(--status-red-fg)" : hovered ? "var(--foreground)" : "none";
                   const common = {
                     fill,
                     stroke,
@@ -558,17 +558,17 @@ export function RangeChart({
                 </span>
               ) : null}
               {current.tasks.some((task) => task.kind === "overdue") ? (
-                <span className="rounded-sm bg-status-blocked-dot px-1.5 py-0.5 font-semibold text-white">{current.tasks.filter((task) => task.kind === "overdue").length} overdue</span>
+                <span className="rounded-sm bg-status-red-dot px-1.5 py-0.5 font-semibold text-white">{current.tasks.filter((task) => task.kind === "overdue").length} overdue</span>
               ) : null}
-              <span className="font-medium text-status-completed-fg">{current.tasks.filter((task) => task.kind === "completed").length} completed</span>
-              {current.tasks.some((task) => task.kind === "blocked") ? <span className="font-medium text-status-blocked-fg">{current.tasks.filter((task) => task.kind === "blocked").length} blocked</span> : null}
-              {current.tasks.some((task) => task.kind === "due") ? <span className="font-medium text-status-in-progress-fg">{current.tasks.filter((task) => task.kind === "due").length} due</span> : null}
+              <span className="font-medium text-status-green-fg">{current.tasks.filter((task) => task.kind === "completed").length} completed</span>
+              {current.tasks.some((task) => task.kind === "blocked") ? <span className="font-medium text-status-red-fg">{current.tasks.filter((task) => task.kind === "blocked").length} blocked</span> : null}
+              {current.tasks.some((task) => task.kind === "due") ? <span className="font-medium text-status-blue-fg">{current.tasks.filter((task) => task.kind === "due").length} due</span> : null}
             </div>
           </div>
 
           {current.goalDeadlines.length > 0 ? (
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
-              <span className="flex items-center gap-1 text-[11px] font-semibold text-status-awaiting-fg">
+              <span className="flex items-center gap-1 text-[11px] font-semibold text-status-amber-fg">
                 <Flag className="size-3" aria-hidden /> Goal deadline:
               </span>
               {current.goalDeadlines.map((goal) => (
@@ -578,10 +578,10 @@ export function RangeChart({
                   className={cn(
                     "rounded-md border px-2 py-0.5 text-xs font-medium hover:underline",
                     goal.health === "delayed" || goal.health === "at_risk"
-                      ? "border-status-blocked-dot/40 bg-status-blocked-bg text-status-blocked-fg"
+                      ? "border-status-red-dot/40 bg-status-red-bg text-status-red-fg"
                       : goal.health === "needs_attention"
-                        ? "border-status-awaiting-dot/40 bg-status-awaiting-bg text-status-awaiting-fg"
-                        : "border-status-completed-dot/40 bg-status-completed-bg text-status-completed-fg",
+                        ? "border-status-amber-dot/40 bg-status-amber-bg text-status-amber-fg"
+                        : "border-status-green-dot/40 bg-status-green-bg text-status-green-fg",
                   )}
                 >
                   {goal.title} · {HEALTH_LABELS[goal.health]}

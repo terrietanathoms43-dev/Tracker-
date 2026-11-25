@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { activeStatuses, isClosedWithoutCompletion, keyOfKind, requiresEditToEnter, statusDef } from "@/lib/statuses";
+import { activeStatuses, backToWorkTarget, isClosedWithoutCompletion, requiresEditToEnter, statusDef, statusWord } from "@/lib/statuses";
 import { LIMITS } from "@/lib/limits";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
@@ -44,7 +44,7 @@ export function UpdateProgressForm({
   const { task, people, abilities, statuses } = context;
   const [progress, setProgress] = useState("");
   const [nextAction, setNextAction] = useState("");
-  const [status, setStatus] = useState<Choice>(statusDef(statuses, task.status).kind === "open" ? (keyOfKind(statuses, "in_progress") ?? "in_progress") : "");
+  const [status, setStatus] = useState<Choice>(task.status === "not_started" ? backToWorkTarget(statuses) : "");
   const [reason, setReason] = useState(statusDef(statuses, task.status).kind === "blocked" ? (task.blockedReason ?? "") : "");
   const [blockedBy, setBlockedBy] = useState(statusDef(statuses, task.status).kind === "blocked" ? (task.blockedBy ?? "") : "");
   const [showEvidence, setShowEvidence] = useState(false);
@@ -192,7 +192,7 @@ export function UpdateProgressForm({
           <div className="flex items-center gap-2">
             <StatusIcon status={effective} />
             <NativeSelect id={field("status")} value={status} className="min-w-0 flex-1" onChange={(event) => setStatus(event.target.value as Choice)} aria-invalid={errors.status ? true : undefined}>
-              <option value="">Keep as {currentDef.label.toLowerCase()}</option>
+              <option value="">Keep as {statusWord(currentDef)}</option>
               {choices
                 .filter((each) => each.key !== task.status)
                 .map((each) => (
@@ -222,7 +222,7 @@ export function UpdateProgressForm({
       </div>
 
       {blockedFields ? (
-        <div className="grid items-start gap-3 rounded-md border border-status-blocked-dot/30 bg-status-blocked-bg/60 p-3 sm:grid-cols-2">
+        <div className="grid items-start gap-3 rounded-md border border-status-red-dot/30 bg-status-red-bg/60 p-3 sm:grid-cols-2">
           <div className="grid gap-1.5">
             <Input
               aria-label="What's blocking it?"
@@ -257,8 +257,8 @@ export function UpdateProgressForm({
       {closingWithReason ? (
         <div className="grid gap-1.5">
           <Textarea
-            aria-label={`Why is it ${effective.label.toLowerCase()}?`}
-            placeholder={`Why is it ${effective.label.toLowerCase()}? Kept in the task's history.`}
+            aria-label={`Why is it ${statusWord(effective)}?`}
+            placeholder={`Why is it ${statusWord(effective)}? Kept in the task's history.`}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             rows={2}
@@ -293,13 +293,13 @@ export function UpdateProgressForm({
       ) : null}
 
       {heldByComments ? (
-        <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+        <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status">
           <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>{openCommentsMessage(task.openComments)} Resolve them under Comments and history, or keep the task open for now.</span>
         </p>
       ) : null}
       {heldBySubTasks && !heldByComments ? (
-        <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+        <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status">
           <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>
             Finish the {task.openSubTasks} open {task.openSubTasks === 1 ? "sub-task" : "sub-tasks"} first, or merge them: this task waits for them.
@@ -307,7 +307,7 @@ export function UpdateProgressForm({
         </p>
       ) : null}
       {heldByGoal && !heldByComments && !heldBySubTasks && task.closer ? (
-        <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status" data-closer-hold>
+        <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status" data-closer-hold>
           <Flag className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>{closerHeldMessage(task.closer.openOthers, task.closer.goalTitle)}</span>
         </p>

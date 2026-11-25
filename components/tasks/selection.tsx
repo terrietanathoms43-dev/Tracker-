@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-result";
 import { useStatusCatalog } from "@/components/status-catalog";
-import { activeStatuses, isClosedWithoutCompletion, type TaskStatusDef } from "@/lib/statuses";
+import { activeStatuses, isClosedWithoutCompletion, statusWord, type TaskStatusDef } from "@/lib/statuses";
 import { asksReason, needsInput } from "@/lib/tasks/transitions";
 import { LIMITS } from "@/lib/limits";
 import { nameOf } from "@/lib/tasks/people";
@@ -252,7 +252,7 @@ function BulkStatusDialog({ status, count, pending, onClose, onApply }: { status
   const [summary, setSummary] = useState("");
   const needsReason = asksReason(status);
   const ready = needsReason ? reason.trim() !== "" : status.kind === "awaiting_approval" ? approverId !== "" : status.kind === "completed" ? summary.trim() !== "" : true;
-  const verb = status.label.toLowerCase();
+  const verb = statusWord(status);
   const closeVerb = status.closed ? "close" : "update";
   return (
     <Shell

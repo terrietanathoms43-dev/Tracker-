@@ -7,8 +7,8 @@ import type { TaskListItem } from "@/lib/tasks/types";
 
 // The Tasks section of a project or goal page: open work first, finished work folded away underneath.
 
-/** Open statuses in the workspace's configured order, so a project page reads left to right like the board. */
-const openStatuses = (statuses: StatusCatalog) => statuses.filter((status) => !status.closed && !status.archived);
+/** Open statuses in the workspace's configured order, so a project page reads like the board; an archived one only while tasks still have it. */
+const openStatuses = (statuses: StatusCatalog, open: TaskListItem[]) => statuses.filter((status) => !status.closed && (!status.archived || open.some((task) => task.status === status.key)));
 
 const isClosed = (statuses: StatusCatalog, task: TaskListItem) => statusDef(statuses, task.status).closed;
 
@@ -70,7 +70,7 @@ export function PlanningTasks({
           {open.length === 0 ? (
             <p className="rounded-lg border border-dashed bg-card px-4 py-4 text-base text-muted-foreground">Nothing open right now.</p>
           ) : groupByStatus ? (
-            openStatuses(statuses).map((status) => (
+            openStatuses(statuses, open).map((status) => (
               <TaskSection key={status.key} title={status.label} items={open.filter((task) => task.status === status.key)} today={today} reasonless readOnly={readOnly} />
             ))
           ) : (

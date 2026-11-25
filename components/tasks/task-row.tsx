@@ -9,7 +9,7 @@ import { StatusIcon } from "@/components/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useStatusCatalog } from "@/components/status-catalog";
 import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
-import { isClosedWithoutCompletion, statusDef } from "@/lib/statuses";
+import { endedWithoutCompletion, statusDef } from "@/lib/statuses";
 import { describeAssignees } from "@/lib/tasks/assignees";
 import { taskLabel } from "@/lib/tasks/closer";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
@@ -88,13 +88,13 @@ export function TaskRow({
   const reason = showReason && task.reason !== "Overdue" ? task.reason : undefined;
   const detailsId = `task-${task.id}-details`;
   const where = [task.project?.name, task.goal?.title].filter(Boolean).join(" › ");
-  const closedWithoutCompleting = isClosedWithoutCompletion(statusDef(statuses, task.status)) && task.status !== "deferred";
+  const closedWithoutCompleting = endedWithoutCompletion(statusDef(statuses, task.status));
   // What a screen reader hears for the row's controls: a goal's closer with its goal, never the bare title.
   const label = taskLabel(task);
 
   return (
     <li
-      className={cn("group relative", selected && "bg-sidebar-accent/50", task.proposal === "pending" && "bg-status-awaiting-bg/40", task.proposal === "declined" && "bg-status-blocked-bg/30", local && "bg-muted/40")}
+      className={cn("group relative", selected && "bg-sidebar-accent/50", task.proposal === "pending" && "bg-status-amber-bg/40", task.proposal === "declined" && "bg-status-red-bg/30", local && "bg-muted/40")}
       {...handlers}
       data-task-row={task.id}
       data-expanded={open || undefined}
@@ -119,9 +119,9 @@ export function TaskRow({
         ) : null}
         {nested ? <CornerDownRight className="-ml-1 size-3.5 shrink-0 text-muted-foreground" aria-label="Sub-task of the task above" role="img" /> : null}
         {task.proposal === "pending" ? (
-          <ClipboardCheck className="size-4 shrink-0 text-status-awaiting-fg" aria-label="Waiting for sign-off" role="img" />
+          <ClipboardCheck className="size-4 shrink-0 text-status-amber-fg" aria-label="Waiting for sign-off" role="img" />
         ) : task.proposal === "declined" ? (
-          <XCircle className="size-4 shrink-0 text-status-blocked-fg" aria-label="Declined" role="img" />
+          <XCircle className="size-4 shrink-0 text-status-red-fg" aria-label="Declined" role="img" />
         ) : local ? (
           <Lock className="size-4 shrink-0 text-muted-foreground" aria-label="Local: only you can see it" role="img" />
         ) : canOpenCompletion ? (
@@ -174,12 +174,12 @@ export function TaskRow({
                   Local
                 </span>
               ) : task.proposal === "pending" ? (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-awaiting-bg px-1.5 py-0.5 text-[11px] font-medium text-status-awaiting-fg" data-proposal-chip>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-amber-bg px-1.5 py-0.5 text-[11px] font-medium text-status-amber-fg" data-proposal-chip>
                   <ClipboardCheck className="size-3" aria-hidden />
                   Waiting for sign-off
                 </span>
               ) : task.proposal === "declined" ? (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-blocked-bg px-1.5 py-0.5 text-[11px] font-medium text-status-blocked-fg" data-proposal-chip>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-red-bg px-1.5 py-0.5 text-[11px] font-medium text-status-red-fg" data-proposal-chip>
                   <XCircle className="size-3" aria-hidden />
                   Declined
                 </span>

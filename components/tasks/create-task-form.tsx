@@ -94,7 +94,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
       }}
     >
       {proposes ? (
-        <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg">
+        <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg">
           <ClipboardCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
           This is a proposal: a leader or admin signs it off before it becomes a live task. You can follow it under Proposals.
         </p>

@@ -47,7 +47,7 @@ import { defaultApproverFor } from "@/lib/tasks/approver";
 import { sameIds } from "@/lib/tasks/assignees";
 import { closerDeleteMessage, closerLabel, closerRepeatMessage, closerStaysMessage } from "@/lib/tasks/closer";
 import { parseFilters } from "@/lib/tasks/filters";
-import { isClosedStatusKey, reopenTarget, requiresEditToEnter, statusDef, statusLabel, statusOf, statusToast, type StatusCatalog, type TaskStatusDef } from "@/lib/statuses";
+import { isClosedStatusKey, reopenTarget, requiresEditToEnter, statusDef, statusLabel, statusOf, statusToast, statusWord, type StatusCatalog, type TaskStatusDef } from "@/lib/statuses";
 import { asksReason, MERGE_NEEDS_PARENT, planTransition, reasonPrompt, SUMMARY_REQUIRED, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
 import type { HistoryPage, TaskFormOptions, TaskListItem, TaskPage, UpdateContext } from "@/lib/tasks/types";
 import { dayKey, formatDay } from "@/lib/time";
@@ -135,14 +135,15 @@ async function noticesFor(
   const out: Notice[] = [];
   for (const activity of activities) {
     const reason = typeof activity.note === "string" ? activity.note : null;
+    const entered = statusLabel(viewer.statuses, typeof activity.after?.status === "string" ? activity.after.status : activity.kind);
     if (activity.kind === "approval_requested" && approverId) out.push({ ...base, recipients: [approverId], kind: "approval_requested", title: `Approval needed: ${task.title}` });
     if (activity.kind === "approved" && assignees.length > 0) out.push({ ...base, recipients: assignees, kind: "approval_decided", title: `Approved: ${task.title}`, body: note });
     if (activity.kind === "sent_back" && assignees.length > 0) out.push({ ...base, recipients: assignees, kind: "approval_decided", title: `Sent back: ${task.title}`, body: note });
     // A rejection is a decision on someone's work (apex-ux flow D): it travels as an approval decision.
-    if (activity.kind === "rejected" && assignees.length > 0) out.push({ ...base, recipients: assignees, kind: "approval_decided", title: `Rejected: ${task.title}`, body: reason });
+    if (activity.kind === "rejected" && assignees.length > 0) out.push({ ...base, recipients: assignees, kind: "approval_decided", title: `${entered}: ${task.title}`, body: reason });
     if (activity.kind === "blocked") {
       const leaders = await leaderIds(tx, viewer.orgId);
-      if (leaders.length > 0) out.push({ ...base, recipients: leaders, kind: "blocked", title: `Blocked: ${task.title}`, body: reason });
+      if (leaders.length > 0) out.push({ ...base, recipients: leaders, kind: "blocked", title: `${entered}: ${task.title}`, body: reason });
     }
   }
   return out;
@@ -636,7 +637,7 @@ function progressFieldErrors(statuses: StatusCatalog, data: z.infer<typeof progr
   const errors: Record<string, string[] | undefined> = {};
   const closing = target !== null && (target.closed || asksReason(target));
   if (!closing && data.nextAction === "") errors.nextAction = ["Say what happens next."];
-  if (target !== null && asksReason(target) && data.reason === "") errors.reason = [reasonPrompt(target)];
+  if (target !== null && asksReason(target) && target.kind !== "merged" && data.reason === "") errors.reason = [reasonPrompt(target)];
   if (target?.kind === "awaiting_approval" && data.approverId === "") errors.approverId = ["Choose who approves it."];
   if (target?.kind === "completed" && data.summary === "") errors.summary = [SUMMARY_REQUIRED];
   return Object.keys(errors).length > 0 ? errors : null;
@@ -676,7 +677,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         const toDef = statusDef(viewer.statuses, target);
         const via: TransitionVia = currentDef.kind === "awaiting_approval" && toDef.kind === "completed" ? "approve" : "status";
         if (!mayMove(viewer, scope, currentDef, toDef, via)) {
-          throw new GuardError("forbidden", requiresEditToEnter(toDef) ? `Only people who may edit this task can mark it ${toDef.label.toLowerCase()}.` : "Only the approver can complete a task that is waiting for approval.");
+          throw new GuardError("forbidden", requiresEditToEnter(toDef) ? `Only people who may edit this task can mark it ${statusWord(toDef)}.` : "Only the approver can complete a task that is waiting for approval.");
         }
         if (toDef.kind === "awaiting_approval") {
           await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
@@ -1059,7 +1060,7 @@ export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>):
     log.info("tasks.bulk_status", { orgId: viewer.orgId, to: data.status, done: outcome.done, failed: outcome.failed.length, by: viewer.userId });
     await dispatch(notices);
     refresh();
-    return bulkResult(outcome, `marked ${statusLabel(viewer.statuses, data.status).toLowerCase()}`);
+    return bulkResult(outcome, `marked ${statusWord(statusDef(viewer.statuses, data.status))}`);
   });
 }
 

@@ -1,5 +1,5 @@
 import "server-only";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { cache } from "react";
 import { db, type Db, type Tx } from "@/db";
 import { tasks, taskStatuses } from "@/db/schema";
@@ -38,6 +38,11 @@ export const statusUsageFor = cache(async (orgId: string): Promise<Record<string
     .groupBy(tasks.status);
   return Object.fromEntries(rows.map((row) => [row.status, row.count]));
 });
+
+/** Deletes the row for one status key — only ever called for a custom status no task carries. */
+export async function deleteStatusRow(orgId: string, key: string, tx: Tx): Promise<void> {
+  await tx.delete(taskStatuses).where(and(eq(taskStatuses.orgId, orgId), eq(taskStatuses.key, key)));
+}
 
 /** Inserts or updates the row for one status key in this workspace. */
 export async function saveStatusRow(orgId: string, row: Omit<StatusRow, "archivedAt"> & { archivedAt?: Date | null }, by: string, tx: Tx): Promise<void> {

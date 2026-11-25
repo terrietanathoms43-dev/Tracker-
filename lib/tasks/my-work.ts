@@ -1,5 +1,5 @@
 import { DUE_SOON_DAYS, type TaskPriority } from "@/lib/constants";
-import { closedStatusKeys, statusDef, type StatusCatalog } from "@/lib/statuses";
+import { statusDef, type StatusCatalog } from "@/lib/statuses";
 import { calendarDaysBetween } from "@/lib/time";
 import type { TaskListItem } from "./types";
 
@@ -32,7 +32,6 @@ export const ATTENTION_REASONS = ["Your approval", "Declined", "Sent back", "Blo
 export type AttentionReason = (typeof ATTENTION_REASONS)[number];
 
 const PRIORITY_RANK: Record<TaskPriority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
-
 
 function daysUntilDue(item: TaskListItem, today: string): number | null {
   return item.dueDate ? calendarDaysBetween(today, item.dueDate) : null;
@@ -77,19 +76,19 @@ export function attentionReason(row: MyWorkRow, viewerId: string, today: string,
 /** Sorts the viewer's tasks into the four My Work groups; attention items carry their reason chip. */
 export function groupMyWork(rows: MyWorkRow[], viewerId: string, today: string, statuses: StatusCatalog): MyWorkGroups {
   const sorted = [...rows].sort(smartCompare(today));
-  const closed = new Set(closedStatusKeys(statuses));
   const groups: MyWorkGroups = { local: [], attention: [], continueWorking: [], waiting: [], finished: [] };
   const finished: MyWorkRow[] = [];
   for (const row of sorted) {
     const { mine } = row;
+    const status = statusDef(statuses, row.item.status);
     const reason = attentionReason(row, viewerId, today, statuses);
     // A local task is the viewer's whoever it is assigned to: only its maker ever sees it.
     if (row.item.proposal === "local") groups.local.push(row.item);
     else if (reason !== null) groups.attention.push({ ...row.item, reason });
     else if (mine && row.item.proposal === "pending") groups.waiting.push(row.item);
-    else if (mine && (statusDef(statuses, row.item.status).kind === "awaiting_approval" || statusDef(statuses, row.item.status).kind === "blocked")) groups.waiting.push(row.item);
-    else if (mine && !closed.has(row.item.status)) groups.continueWorking.push(row.item);
-    else if (mine && statusDef(statuses, row.item.status).kind === "completed") finished.push(row);
+    else if (mine && (status.kind === "awaiting_approval" || status.kind === "blocked")) groups.waiting.push(row.item);
+    else if (mine && !status.closed) groups.continueWorking.push(row.item);
+    else if (mine && status.kind === "completed") finished.push(row);
   }
   groups.finished = finished.sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0)).map((row) => row.item);
   return groups;

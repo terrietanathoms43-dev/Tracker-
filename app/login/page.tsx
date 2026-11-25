@@ -58,7 +58,7 @@ async function LoginForms({ searchParams }: Pick<PageProps<"/login">, "searchPar
   return (
     <div className="grid gap-5">
       {error ? (
-        <p role="alert" className="rounded-md border border-status-blocked-dot/30 bg-status-blocked-bg px-3 py-2.5 text-base text-status-blocked-fg">
+        <p role="alert" className="rounded-md border border-status-red-dot/30 bg-status-red-bg px-3 py-2.5 text-base text-status-red-fg">
           {error}
         </p>
       ) : null}

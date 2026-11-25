@@ -10,7 +10,7 @@ export function DueLabel({ due, today, status, className }: { due: string | null
   if (!due) return null;
   const { text, overdue } = formatDue(due, today);
   return (
-    <span className={cn("text-[13px] whitespace-nowrap tabular-nums", overdue && !status.closed ? "font-medium text-status-blocked-fg" : "text-muted-foreground", className)}>
+    <span className={cn("text-[13px] whitespace-nowrap tabular-nums", overdue && !status.closed ? "font-medium text-status-red-fg" : "text-muted-foreground", className)}>
       {status.closed ? formatDay(due, today) : text}
     </span>
   );

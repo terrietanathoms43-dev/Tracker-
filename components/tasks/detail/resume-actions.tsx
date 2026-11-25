@@ -4,11 +4,13 @@ import { Check, Undo2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import { changeStatus } from "@/actions/tasks";
 import { Field } from "@/components/field";
+import { useStatusCatalog } from "@/components/status-catalog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LIMITS } from "@/lib/limits";
+import { backToWorkTarget } from "@/lib/statuses";
 import { openCommentsMessage } from "@/lib/tasks/transitions";
 import { toastResult } from "@/lib/toast-result";
 
@@ -94,6 +96,7 @@ function NoteDialog({
 export function ApprovalActions({ taskId, openComments = 0 }: { taskId: string; openComments?: number }) {
   const [dialog, setDialog] = useState<"approve" | "send_back" | null>(null);
   const [pending, startTransition] = useTransition();
+  const statuses = useStatusCatalog();
   const held = openComments > 0;
 
   const approve = (note: string) =>
@@ -102,7 +105,7 @@ export function ApprovalActions({ taskId, openComments = 0 }: { taskId: string; 
     });
   const sendBack = (note: string) =>
     startTransition(async () => {
-      if (toastResult(await changeStatus({ taskId, status: "in_progress", via: "send_back", note }))) setDialog(null);
+      if (toastResult(await changeStatus({ taskId, status: backToWorkTarget(statuses), via: "send_back", note }))) setDialog(null);
     });
 
   const approveButton = (
@@ -164,13 +167,14 @@ export function ApprovalActions({ taskId, openComments = 0 }: { taskId: string; 
 /** Clears a blocker: the task goes back to In progress and the history records who unblocked it. */
 export function UnblockButton({ taskId }: { taskId: string }) {
   const [pending, startTransition] = useTransition();
+  const statuses = useStatusCatalog();
   return (
     <Button
       size="sm"
       variant="outline"
       className="w-full bg-background sm:w-auto"
       disabled={pending}
-      onClick={() => startTransition(async () => void toastResult(await changeStatus({ taskId, status: "in_progress" })))}
+      onClick={() => startTransition(async () => void toastResult(await changeStatus({ taskId, status: backToWorkTarget(statuses) })))}
     >
       {pending ? "Saving…" : "Mark unblocked"}
     </Button>

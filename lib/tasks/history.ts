@@ -1,5 +1,5 @@
 import { TASK_PRIORITY_LABELS, type TaskActivityKind, type TaskPriority } from "@/lib/constants";
-import { statusLabel, type StatusCatalog } from "@/lib/statuses";
+import { factoryWorded, statusLabel, statusOf, type StatusCatalog } from "@/lib/statuses";
 import { calendarDaysBetween, dayKey, formatAbsolute, formatDay } from "@/lib/time";
 import { joinNames, listNames, type AssignmentSnapshot } from "./assignees";
 import type { ActivityFeedItem, HistoryItem } from "./types";
@@ -33,6 +33,26 @@ export type HistoryRow = {
 
 const text = (value: unknown) => (typeof value === "string" && value !== "" ? value : null);
 const storedLabel = (statuses: StatusCatalog, value: unknown) => (typeof value === "string" && value !== "" ? statusLabel(statuses, value) : null);
+
+type NamedKind = "blocked" | "rejected" | "deferred" | "cancelled" | "completed";
+
+/** The verbs for the statuses with their own history kinds, while each keeps its factory name. */
+const NAMED_VERBS: Record<NamedKind, { phrase: string; verb: string }> = {
+  blocked: { phrase: "marked it blocked", verb: "flagged a blocker on" },
+  rejected: { phrase: "rejected it", verb: "rejected" },
+  deferred: { phrase: "deferred it", verb: "deferred" },
+  cancelled: { phrase: "cancelled it", verb: "cancelled" },
+  completed: { phrase: "completed it", verb: "completed" },
+};
+
+/** The status a named activity entered — the row's own `after.status`, else the built-in the kind is named for. */
+const enteredStatus = (statuses: StatusCatalog, kind: NamedKind, after: Record<string, unknown> | null) => statusOf(statuses, text(after?.status) ?? kind);
+
+/** "completed it", or "marked it Complete JA" once the workspace renamed Completed: history speaks the workspace's words. */
+function namedPhrase(statuses: StatusCatalog, kind: NamedKind, after: Record<string, unknown>): string {
+  const status = enteredStatus(statuses, kind, after);
+  return status === undefined || factoryWorded(status) ? NAMED_VERBS[kind].phrase : `marked it ${status.label}`;
+}
 const priorityLabel = (value: unknown) => (typeof value === "string" && value in TASK_PRIORITY_LABELS ? TASK_PRIORITY_LABELS[value as TaskPriority] : null);
 const dayOrNone = (value: unknown, today: string) => (typeof value === "string" && value !== "" ? formatDay(value, today) : "No date");
 
@@ -96,8 +116,10 @@ function activityPhrase(row: HistoryRow, today: string, statuses: StatusCatalog)
       return { phrase: "changed the due date", change: { before: dayOrNone(before.dueDate, today), after: dayOrNone(after.dueDate, today) } };
     case "priority_changed":
       return { phrase: "changed the priority", change: { before: priorityLabel(before.priority), after: priorityLabel(after.priority) } };
-    case "blocked":
-      return { phrase: text(after.blockedBy) ? `marked it blocked (waiting on ${text(after.blockedBy)})` : "marked it blocked", change: null };
+    case "blocked": {
+      const phrase = namedPhrase(statuses, "blocked", after);
+      return { phrase: text(after.blockedBy) ? `${phrase} (waiting on ${text(after.blockedBy)})` : phrase, change: null };
+    }
     case "unblocked":
       return { phrase: "unblocked it", change: null };
     case "approval_requested":
@@ -107,11 +129,9 @@ function activityPhrase(row: HistoryRow, today: string, statuses: StatusCatalog)
     case "sent_back":
       return { phrase: "sent it back", change: null };
     case "rejected":
-      return { phrase: "rejected it", change: null };
     case "deferred":
-      return { phrase: "deferred it", change: null };
     case "cancelled":
-      return { phrase: "cancelled it", change: null };
+      return { phrase: namedPhrase(statuses, row.kind, after), change: null };
     case "merged":
       return { phrase: text(after.parentTitle) ? `merged it into ${text(after.parentTitle)}` : "merged it into its parent", change: null };
     case "attached":
@@ -119,7 +139,7 @@ function activityPhrase(row: HistoryRow, today: string, statuses: StatusCatalog)
     case "detached":
       return { phrase: text(before.parentTitle) ? `detached it from ${text(before.parentTitle)}` : "detached it from its parent", change: null };
     case "completed":
-      return { phrase: "completed it", change: null };
+      return { phrase: namedPhrase(statuses, "completed", after), change: null };
     case "reopened":
       return { phrase: "reopened it", change: { before: storedLabel(statuses, before.status), after: storedLabel(statuses, after.status) } };
     case "comment_resolved":
@@ -185,13 +205,10 @@ export function phraseHistory(row: HistoryRow, timeZone: string, now: Date, stat
 export const FEED_KINDS = ["completed", "blocked", "unblocked", "approved", "sent_back", "rejected", "due_changed", "reopened", "proposal_approved", "proposal_declined"] as const satisfies readonly TaskActivityKind[];
 export type FeedKind = (typeof FEED_KINDS)[number];
 
-const FEED_VERBS: Record<FeedKind, string> = {
-  completed: "completed",
-  blocked: "flagged a blocker on",
+const FEED_VERBS: Record<Exclude<FeedKind, NamedKind>, string> = {
   unblocked: "unblocked",
   approved: "approved",
   sent_back: "sent back",
-  rejected: "rejected",
   due_changed: "changed the due date of",
   reopened: "reopened",
   proposal_approved: "approved the proposal",
@@ -211,9 +228,16 @@ export type FeedRow = {
   actor: { id: string; name: string | null; email: string | null; image: string | null };
 };
 
+/** The feed's verb: "completed", or "marked Complete JA" once the workspace renamed the status. */
+function feedVerb(row: FeedRow, statuses: StatusCatalog): string {
+  if (row.kind !== "completed" && row.kind !== "blocked" && row.kind !== "rejected") return FEED_VERBS[row.kind];
+  const status = enteredStatus(statuses, row.kind, row.after);
+  return status === undefined || factoryWorded(status) ? NAMED_VERBS[row.kind].verb : `marked ${status.label}:`;
+}
+
 /** "Jordan Dev completed Fix nightly backup", with the reason or the date change as the note. */
-export function phraseFeed(row: FeedRow, today: string): ActivityFeedItem {
-  const verb = FEED_VERBS[row.kind];
+export function phraseFeed(row: FeedRow, today: string, statuses: StatusCatalog): ActivityFeedItem {
+  const verb = feedVerb(row, statuses);
   const actorName = row.actor.name ?? row.actor.email ?? "Someone";
   const note =
     row.kind === "due_changed"

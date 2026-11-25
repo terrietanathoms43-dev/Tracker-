@@ -106,22 +106,22 @@ function Entry({ task, item, canResolve }: { task: HistoryTask; item: HistoryIte
               </p>
             ) : null}
             {item.blocker ? (
-              <p className="text-status-blocked-fg">
+              <p className="text-status-red-fg">
                 <span className="font-medium">Blocked:</span> {item.blocker}
               </p>
             ) : null}
           </div>
         ) : comment ? (
-          <div className={cn("mt-1 rounded-md border", resolved ? "border-dashed bg-muted/30" : "border-status-awaiting-dot/40 bg-status-awaiting-bg/40")}>
+          <div className={cn("mt-1 rounded-md border", resolved ? "border-dashed bg-muted/30" : "border-status-amber-dot/40 bg-status-amber-bg/40")}>
             <p className={cn("px-3 py-2 text-base whitespace-pre-line", resolved && "text-muted-foreground")}>{item.body}</p>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-inherit px-3 py-1.5 text-[13px]">
               {resolved ? (
                 <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                  <CheckCircle2 className="size-3.5 text-status-completed-dot" aria-hidden />
+                  <CheckCircle2 className="size-3.5 text-status-green-dot" aria-hidden />
                   Resolved by {item.resolved!.by}
                 </span>
               ) : (
-                <span className="font-medium text-status-awaiting-fg">Open comment</span>
+                <span className="font-medium text-status-amber-fg">Open comment</span>
               )}
               {canResolve ? (
                 <span className="flex items-center gap-1">
@@ -161,7 +161,7 @@ export function TaskHistory({ task, initial, canComment, openComments }: { task:
           Comments and history
         </h2>
         {openComments > 0 ? (
-          <span className="rounded-md bg-status-awaiting-bg px-2 py-0.5 text-[13px] font-medium text-status-awaiting-fg tabular-nums">
+          <span className="rounded-md bg-status-amber-bg px-2 py-0.5 text-[13px] font-medium text-status-amber-fg tabular-nums">
             {openComments === 1 ? "1 open comment" : `${openComments} open comments`}
           </span>
         ) : null}

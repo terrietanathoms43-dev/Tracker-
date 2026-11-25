@@ -20,9 +20,9 @@ import { formatDay } from "@/lib/time";
 function Tile({ label, value, note, problem = false }: { label: string; value: number; note: string; problem?: boolean }) {
   const tinted = problem && value > 0;
   return (
-    <li data-scope-tile={label} data-value={value} className={cn("rounded-lg border p-4 break-inside-avoid", tinted ? "border-status-blocked-dot/30 bg-status-blocked-bg" : "bg-card")}>
-      <div className={cn("text-[12px] font-medium", tinted ? "text-status-blocked-fg" : "text-muted-foreground")}>{label}</div>
-      <div className={cn("mt-1 text-2xl font-bold tracking-tight", tinted && "text-status-blocked-fg")}>{value}</div>
+    <li data-scope-tile={label} data-value={value} className={cn("rounded-lg border p-4 break-inside-avoid", tinted ? "border-status-red-dot/30 bg-status-red-bg" : "bg-card")}>
+      <div className={cn("text-[12px] font-medium", tinted ? "text-status-red-fg" : "text-muted-foreground")}>{label}</div>
+      <div className={cn("mt-1 text-2xl font-bold tracking-tight", tinted && "text-status-red-fg")}>{value}</div>
       <div className="mt-0.5 text-[11px] text-muted-foreground">{note}</div>
     </li>
   );
@@ -46,7 +46,7 @@ function Note({ statuses, task }: { statuses: StatusCatalog; task: ReportTask })
       <span className="truncate" data-scope-place>
         {place}
       </span>
-      {detail ? <span className={cn("min-w-0", statusDef(statuses, task.status).kind === "blocked" ? "text-status-blocked-fg" : undefined)}>{detail}</span> : null}
+      {detail ? <span className={cn("min-w-0", statusDef(statuses, task.status).kind === "blocked" ? "text-status-red-fg" : undefined)}>{detail}</span> : null}
     </span>
   );
 }

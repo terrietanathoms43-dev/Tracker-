@@ -104,9 +104,9 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const weekEnd = addDays(today, 7);
   const myDueSoon = myOpen.filter((t) => t.dueDate !== null && t.dueDate >= today && t.dueDate <= weekEnd);
   const tile = (label: string, value: number, note: string, problem = false) => (
-    <div className={problem && value > 0 ? "rounded-lg border border-status-blocked-dot/30 bg-status-blocked-bg p-4" : "rounded-lg border bg-card p-4"}>
-      <div className={problem && value > 0 ? "text-[12px] font-medium text-status-blocked-fg" : "text-[12px] font-medium text-muted-foreground"}>{label}</div>
-      <div className={problem && value > 0 ? "mt-1 text-2xl font-bold tracking-tight text-status-blocked-fg" : "mt-1 text-2xl font-bold tracking-tight"}>{value}</div>
+    <div className={problem && value > 0 ? "rounded-lg border border-status-red-dot/30 bg-status-red-bg p-4" : "rounded-lg border bg-card p-4"}>
+      <div className={problem && value > 0 ? "text-[12px] font-medium text-status-red-fg" : "text-[12px] font-medium text-muted-foreground"}>{label}</div>
+      <div className={problem && value > 0 ? "mt-1 text-2xl font-bold tracking-tight text-status-red-fg" : "mt-1 text-2xl font-bold tracking-tight"}>{value}</div>
       <div className="mt-0.5 text-[11px] text-muted-foreground">{note}</div>
     </div>
   );
@@ -151,9 +151,9 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
             <RangeChart timeline={report.timeline} today={today} title="Activity widget" description="Activity, completions, blockers and what's due next on the main board." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
 
             {report.blockedDuration.currentlyBlocked > 0 ? (
-              <div className="flex items-center gap-3 rounded-lg border border-status-awaiting-dot/30 bg-status-awaiting-bg p-4">
-                <Clock className="size-5 shrink-0 text-status-awaiting-fg" aria-hidden />
-                <div className="text-sm text-status-awaiting-fg">
+              <div className="flex items-center gap-3 rounded-lg border border-status-amber-dot/30 bg-status-amber-bg p-4">
+                <Clock className="size-5 shrink-0 text-status-amber-fg" aria-hidden />
+                <div className="text-sm text-status-amber-fg">
                   <span className="font-semibold">Blocked work duration:</span> tasks currently blocked have sat stuck for an average of{" "}
                   <strong>{report.blockedDuration.averageDays} days</strong> (max {report.blockedDuration.maxDays} days).
                 </div>

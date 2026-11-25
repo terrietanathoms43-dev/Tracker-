@@ -23,11 +23,11 @@ const valueOf = (row: ContributionRow, key: Key): number | string => (key === "p
 function Cell({ row, column, maxCompleted }: { row: ContributionRow; column: Exclude<Key, "person">; maxCompleted: number }) {
   const value = row[column] ?? 0;
   if (column === "overdue" || column === "blocked") {
-    return value > 0 ? <span className="font-semibold text-status-blocked-fg">{value}</span> : <span className="text-muted-foreground">0</span>;
+    return value > 0 ? <span className="font-semibold text-status-red-fg">{value}</span> : <span className="text-muted-foreground">0</span>;
   }
   if (column === "open") {
     return value === 0 ? (
-      <span className="inline-flex items-center rounded-md bg-status-awaiting-bg px-1.5 py-0.5 text-[12px] font-medium text-status-awaiting-fg" title="Nothing open: this person has no task assigned">
+      <span className="inline-flex items-center rounded-md bg-status-amber-bg px-1.5 py-0.5 text-[12px] font-medium text-status-amber-fg" title="Nothing open: this person has no task assigned">
         Idle
       </span>
     ) : (
@@ -41,8 +41,8 @@ function Cell({ row, column, maxCompleted }: { row: ContributionRow; column: Exc
       </span>
     );
   }
-  if (value > 0) return <span className="font-semibold text-status-completed-fg">+{value}</span>;
-  if (value < 0) return <span className="font-semibold text-status-blocked-fg">{value}</span>;
+  if (value > 0) return <span className="font-semibold text-status-green-fg">+{value}</span>;
+  if (value < 0) return <span className="font-semibold text-status-red-fg">{value}</span>;
   return <span className="text-muted-foreground">0</span>;
 }
 

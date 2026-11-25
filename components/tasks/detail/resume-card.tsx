@@ -1,9 +1,10 @@
+import { cn } from "cn";
 import { CheckCircle2, Clock, Flag, MessageSquareWarning, OctagonAlert } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusIcon } from "@/components/status-badge";
-import { isClosedWithoutCompletion, statusDef, type StatusCatalog } from "@/lib/statuses";
+import { isClosedWithoutCompletion, statusDef, TONE_CLASSES, type StatusCatalog } from "@/lib/statuses";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf } from "@/lib/tasks/people";
 import type { EvidenceLink, TaskAbilities, TaskDetail, UpdateContext } from "@/lib/tasks/types";
@@ -31,7 +32,7 @@ function StatusStrip({ statuses, detail, abilities, localChain, timeZone, now }:
   }
   if (status.kind === "blocked") {
     return (
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-2 border-b border-status-blocked-dot/30 bg-status-blocked-bg px-5 py-3 text-status-blocked-fg md:px-6">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2 border-b border-status-red-dot/30 bg-status-red-bg px-5 py-3 text-status-red-fg md:px-6">
         <OctagonAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1 basis-48 text-base">
           <p>
@@ -46,7 +47,7 @@ function StatusStrip({ statuses, detail, abilities, localChain, timeZone, now }:
   }
   if (status.kind === "awaiting_approval") {
     return (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-status-awaiting-dot/30 bg-status-awaiting-bg px-5 py-3 text-status-awaiting-fg md:px-6">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-status-amber-dot/30 bg-status-amber-bg px-5 py-3 text-status-amber-fg md:px-6">
         <Clock className="size-4 shrink-0" aria-hidden />
         <p className="min-w-0 flex-1 basis-48 text-base">
           <span className="font-medium">{status.label}</span>
@@ -58,7 +59,7 @@ function StatusStrip({ statuses, detail, abilities, localChain, timeZone, now }:
   }
   if (status.kind === "completed") {
     return (
-      <div className="flex items-start gap-3 border-b border-status-completed-dot/30 bg-status-completed-bg px-5 py-3 text-base text-status-completed-fg md:px-6">
+      <div className="flex items-start gap-3 border-b border-status-green-dot/30 bg-status-green-bg px-5 py-3 text-base text-status-green-fg md:px-6">
         <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
         <div className="min-w-0">
           <p className="font-medium">
@@ -73,7 +74,7 @@ function StatusStrip({ statuses, detail, abilities, localChain, timeZone, now }:
   }
   if (isClosedWithoutCompletion(status)) {
     return (
-      <div className="flex items-start gap-3 border-b bg-status-rejected-bg px-5 py-3 text-base text-status-rejected-fg md:px-6">
+      <div className={cn("flex items-start gap-3 border-b px-5 py-3 text-base md:px-6", TONE_CLASSES[status.tone].badge)}>
         <StatusIcon status={status} className="mt-0.5 text-current" />
         <p>
           <span className="font-medium">{status.kind === "merged" ? (detail.rejectionReason ?? status.label) : status.label}</span>
@@ -155,7 +156,7 @@ export function ResumeCard({
           </div>
         ) : null}
         {!closed && detail.openComments > 0 ? (
-          <a href="#history-heading" className="flex items-center gap-2 rounded-md text-[13px] text-status-awaiting-fg underline-offset-4 hover:underline">
+          <a href="#history-heading" className="flex items-center gap-2 rounded-md text-[13px] text-status-amber-fg underline-offset-4 hover:underline">
             <MessageSquareWarning className="size-4 shrink-0" aria-hidden />
             {detail.openComments === 1 ? "1 open comment" : `${detail.openComments} open comments`} to resolve before this task can be completed
           </a>

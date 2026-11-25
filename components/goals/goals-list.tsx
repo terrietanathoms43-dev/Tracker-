@@ -19,8 +19,8 @@ function GoalBlock({ goal, tasks, today, showProject, nested = false, readOnly }
   const shown = tasks.slice(0, TASKS_SHOWN);
   const more = tasks.length - shown.length;
   return (
-    <div className={cn("overflow-hidden rounded-lg border bg-card", late && "border-status-blocked-dot/50", nested && "border-dashed")} data-goal-block={goal.id} data-past-target={late || undefined}>
-      <div className={cn("px-4 py-3", late && "bg-status-blocked-bg/40")}>
+    <div className={cn("overflow-hidden rounded-lg border bg-card", late && "border-status-red-dot/50", nested && "border-dashed")} data-goal-block={goal.id} data-past-target={late || undefined}>
+      <div className={cn("px-4 py-3", late && "bg-status-red-bg/40")}>
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <div className="min-w-0 flex-1 basis-64">
             <div className="flex flex-wrap items-center gap-2">
@@ -29,7 +29,7 @@ function GoalBlock({ goal, tasks, today, showProject, nested = false, readOnly }
                 {goal.title}
               </Link>
               <GoalStatusBadge status={goal.status} />
-              {goal.requiresApproval ? <ShieldCheck className="size-3.5 text-status-awaiting-fg" aria-label="New tasks need sign-off" role="img" /> : null}
+              {goal.requiresApproval ? <ShieldCheck className="size-3.5 text-status-amber-fg" aria-label="New tasks need sign-off" role="img" /> : null}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
               {showProject ? (
@@ -60,7 +60,7 @@ function GoalBlock({ goal, tasks, today, showProject, nested = false, readOnly }
                 </>
               ) : null}
             </div>
-            {late ? <p className="mt-1.5 text-[13px] font-medium text-status-blocked-fg">Past its target and not marked completed. Mark it completed or move the date.</p> : null}
+            {late ? <p className="mt-1.5 text-[13px] font-medium text-status-red-fg">Past its target and not marked completed. Mark it completed or move the date.</p> : null}
           </div>
           <ProgressBar {...goal.progress} className="w-full sm:w-56" />
         </div>

@@ -18,7 +18,7 @@ const SUB = `Walkthrough sub-task ${stamp}`;
 async function twoTasks() {
   return query(
     `select t.id, t.title, t.project_id, t.goal_id from tasks t
-      where t.org_id = (${org}) and t.proposal_status is null and t.status = 'not_started' and t.parent_task_id is null and t.project_id is not null
+      where t.org_id = (${org}) and t.proposal_status is null and t.status = 'not_started' and t.parent_task_id is null and t.project_id is not null and not t.goal_closer
         and not exists (select 1 from tasks c where c.parent_task_id = t.id)
       order by t.created_at limit 2`,
   );
@@ -102,7 +102,7 @@ try {
 
   // --- 5. group two ticked tasks under a third from the selection bar ----------------------------------------------------------
   const rows = await query(
-    `select t.id, t.title from tasks t where t.org_id = (${org}) and t.proposal_status is null and t.status = 'not_started' and t.parent_task_id is null
+    `select t.id, t.title from tasks t where t.org_id = (${org}) and t.proposal_status is null and t.status = 'not_started' and t.parent_task_id is null and not t.goal_closer
         and not exists (select 1 from tasks c where c.parent_task_id = t.id) and t.id <> $1 order by t.created_at limit 3`,
     [parent.id],
   );

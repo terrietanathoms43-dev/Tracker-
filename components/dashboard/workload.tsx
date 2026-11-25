@@ -25,7 +25,7 @@ function PersonMark({ person }: { person: Person | null }) {
 function TroubleCounts({ row, className }: { row: WorkloadRow; className?: string }) {
   if (row.blocked + row.overdue === 0) return null;
   return (
-    <span className={cn("flex flex-wrap gap-x-2 text-xs font-medium text-status-blocked-fg tabular-nums", className)}>
+    <span className={cn("flex flex-wrap gap-x-2 text-xs font-medium text-status-red-fg tabular-nums", className)}>
       {row.blocked > 0 ? <span>{row.blocked} blocked</span> : null}
       {row.overdue > 0 ? <span>{row.overdue} overdue</span> : null}
     </span>

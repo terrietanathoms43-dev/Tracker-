@@ -32,11 +32,11 @@ export function CountTiles({ counts, days, statuses }: { counts: TaskCounts; day
               href={href}
               className={cn(
                 "block rounded-lg border px-4 py-3 transition-colors",
-                tinted ? "border-status-blocked-dot/30 bg-status-blocked-bg hover:bg-status-blocked-bg/70" : "bg-card hover:bg-accent/60",
+                tinted ? "border-status-red-dot/30 bg-status-red-bg hover:bg-status-red-bg/70" : "bg-card hover:bg-accent/60",
               )}
             >
-              <p className={cn("truncate text-[13px]", tinted ? "text-status-blocked-fg" : "text-muted-foreground")}>{label}</p>
-              <p className={cn("mt-1 text-2xl font-semibold tabular-nums", tinted && "text-status-blocked-fg")}>{value}</p>
+              <p className={cn("truncate text-[13px]", tinted ? "text-status-red-fg" : "text-muted-foreground")}>{label}</p>
+              <p className={cn("mt-1 text-2xl font-semibold tabular-nums", tinted && "text-status-red-fg")}>{value}</p>
             </Link>
           </li>
         );

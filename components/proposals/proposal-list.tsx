@@ -78,9 +78,9 @@ export function ProposalRow({ item, today, now, timeZone, showProposer = true }:
             <span
               className={cn(
                 "rounded-md px-1.5 py-0.5 text-[11px] font-medium",
-                item.status === "pending" && "bg-status-awaiting-bg text-status-awaiting-fg",
-                item.status === "approved" && "bg-status-completed-bg text-status-completed-fg",
-                item.status === "declined" && "bg-status-blocked-bg text-status-blocked-fg",
+                item.status === "pending" && "bg-status-amber-bg text-status-amber-fg",
+                item.status === "approved" && "bg-status-green-bg text-status-green-fg",
+                item.status === "declined" && "bg-status-red-bg text-status-red-fg",
               )}
             >
               {PROPOSAL_STATUS_LABELS[item.status]}
@@ -106,7 +106,7 @@ export function ProposalRow({ item, today, now, timeZone, showProposer = true }:
           </p>
           {item.description ? <p className="mt-1.5 line-clamp-2 max-w-prose text-[13px] text-muted-foreground">{item.description}</p> : null}
           {item.status === "declined" && declinedStep?.note ? (
-            <p className="mt-1.5 text-[13px] text-status-blocked-fg">
+            <p className="mt-1.5 text-[13px] text-status-red-fg">
               Declined{declinedStep.decidedBy ? ` by ${nameOf(declinedStep.decidedBy)}` : ""}: {declinedStep.note}
             </p>
           ) : null}

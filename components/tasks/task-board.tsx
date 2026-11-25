@@ -29,7 +29,7 @@ export function TaskBoard({
    statuses?: TaskStatusDef[];
 }) {
    const catalog = useStatusCatalog();
-   const shown = statuses ?? boardStatuses(catalog);
+   const offered = statuses ?? boardStatuses(catalog);
    const [live, setLive] = useState<BoardColumns>(columns);
    const [server, setServer] = useState(columns);
    const { openTransition } = useTaskActions();
@@ -40,6 +40,7 @@ export function TaskBoard({
       setServer(columns);
       setLive(columns);
    }
+   const shown = offered.filter((status) => !status.archived || (columns[status.key]?.length ?? 0) > 0);
 
    function move({ activeContainer, activeIndex, overContainer, overIndex }: KanbanMoveEvent) {
       if (activeContainer === overContainer) return;
@@ -47,6 +48,7 @@ export function TaskBoard({
       if (task === undefined) return;
       const toKey = overContainer;
       const to = statusDef(catalog, toKey);
+      if (to.archived) return;
       if (needsInput(to)) {
          // The card stays put; the dialog collects what the status needs and saves through the same action.
          openTransition(task.id, toKey);
@@ -87,6 +89,7 @@ export function TaskBoard({
                            <span className="text-[13px] text-muted-foreground tabular-nums" aria-label={`${items.length} tasks`}>
                               {items.length}
                            </span>
+                           {status.archived ? <span className="ml-auto text-[12px] text-muted-foreground">Archived</span> : null}
                         </div>
                         {items.length === 0 ? (
                            <p className="rounded-lg border border-dashed px-3 py-4 text-center text-[13px] text-muted-foreground">

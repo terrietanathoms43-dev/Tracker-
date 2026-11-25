@@ -136,7 +136,7 @@ export function BlockedList({ statuses, tasks, today }: { statuses: StatusCatalo
           today={today}
           detail={
             statusDef(statuses, task.status).kind === "blocked" ? (
-              <p className="mt-1 text-sm text-status-blocked-fg">
+              <p className="mt-1 text-sm text-status-red-fg">
                 {task.blockedReason ?? "Blocked"}
                 {task.blockedBy ? <span className="text-muted-foreground"> · Waiting on {task.blockedBy}</span> : null}
               </p>
@@ -165,7 +165,7 @@ export function StalledList({ statuses, tasks, today }: { statuses: StatusCatalo
           task={task}
           today={today}
           detail={
-            <p className="mt-1 text-sm text-status-awaiting-fg">
+            <p className="mt-1 text-sm text-status-amber-fg">
               No change for {quietDays(task)} days
               {task.nextAction ? <span className="text-muted-foreground"> · Next: {task.nextAction}</span> : null}
             </p>

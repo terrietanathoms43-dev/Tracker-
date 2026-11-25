@@ -8,7 +8,7 @@ import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { defaultLabelOf, statusDef, transitionTitle } from "@/lib/statuses";
+import { factoryWorded, requiresEditToEnter, statusDef, statusWord, transitionTitle } from "@/lib/statuses";
 import { LIMITS } from "@/lib/limits";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
@@ -25,7 +25,7 @@ const CLOSE_PROMPTS: Record<string, { label: string; hint: string }> = {
    cancelled: { label: "Why is it cancelled?", hint: "Kept in the task's history. A cancelled task stays for the record; delete it to remove it." },
 };
 
-const closePrompt = (def: ReturnType<typeof statusDef>) => (def.builtin && def.label === defaultLabelOf(def.key) ? CLOSE_PROMPTS[def.key] : undefined);
+const closePrompt = (def: ReturnType<typeof statusDef>) => (factoryWorded(def) ? CLOSE_PROMPTS[def.key] : undefined);
 
 /**
  * Exactly the fields a status asks for (apex-ux flow D): a reason, an approver, or the completion summary (required,
@@ -107,7 +107,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             </>
          ) : null}
          {closing ? (
-            <Field id="transition-reason" label={closePrompt(def)?.label ?? `Why is it ${def.label.toLowerCase()}?`} hint={closePrompt(def)?.hint ?? "Kept in the task's history."} error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
+            <Field id="transition-reason" label={closePrompt(def)?.label ?? `Why is it ${statusWord(def)}?`} hint={closePrompt(def)?.hint ?? "Kept in the task's history."} error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
                <Textarea
                   id="transition-reason"
                   value={reason}
@@ -134,13 +134,13 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             </Field>
          ) : null}
          {heldByComments ? (
-            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+            <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status">
                <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
                <span>{openCommentsMessage(task.openComments)} They are under Comments and history on the task page.</span>
             </p>
          ) : null}
          {heldBySubTasks && !heldByComments ? (
-            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+            <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status">
                <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
                <span>
                   Finish the {task.openSubTasks} open {task.openSubTasks === 1 ? "sub-task" : "sub-tasks"} first, or merge them: this task waits for them.
@@ -148,7 +148,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             </p>
          ) : null}
          {heldByGoal && !heldByComments && !heldBySubTasks && task.closer ? (
-            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status" data-closer-hold>
+            <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status" data-closer-hold>
                <Flag className="mt-0.5 size-4 shrink-0" aria-hidden />
                <span>{closerHeldMessage(task.closer.openOthers, task.closer.goalTitle)}</span>
             </p>
@@ -209,7 +209,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             <Button type="button" variant="ghost" onClick={onDone}>
                Cancel
             </Button>
-            <Button type="submit" variant={def.key === "rejected" ? "destructive" : "default"} disabled={pending || !ready}>
+            <Button type="submit" variant={requiresEditToEnter(def) ? "destructive" : "default"} disabled={pending || !ready}>
                {pending ? "Saving…" : transitionTitle(def)}
             </Button>
          </div>

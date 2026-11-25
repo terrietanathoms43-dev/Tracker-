@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, isNotNull, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { goals, projects, taskActivity, taskAssignees, tasks, taskUpdates } from "@/db/schema";
@@ -176,15 +176,14 @@ export type ReportProjectOption = {
 const isOpen = (catalog: StatusCatalog) => notInArray(tasks.status, closedStatusKeys(catalog));
 /** Counts for the pace: everything but what was closed without being completed (rejected, deferred, cancelled). */
 const countsTowardsPace = (catalog: StatusCatalog) => notInArray(tasks.status, closedWithoutCompletionKeys(catalog));
-/** `'rejected', 'deferred', 'cancelled'` for raw fragments. */
-const closedWithoutCompletionList = (catalog: StatusCatalog) => sql.raw(closedWithoutCompletionKeys(catalog).map((status) => `'${status}'`).join(", "));
 /**
  * When a task was closed: completed_at for a completed task; for one closed without completing, the time of the
- * history row that closed it (its latest, so a task closed, reopened and closed again counts from the last time).
+ * history row that moved it into its status (its latest, so a task closed, reopened and closed again counts from
+ * the last time). Every transition records `after.status`, built-in kinds and a custom status's status_changed alike.
  */
 const closedAtSql = (catalog: StatusCatalog) => sql<Date | null>`(case
   when ${tasks.status} = 'completed' then ${tasks.completedAt}
-  when ${tasks.status} in (${closedWithoutCompletionList(catalog)}) then (select max(a.created_at) from task_activity a where a.task_id = ${tasks}.id and (a.kind in (${closedWithoutCompletionList(catalog)}) or (a.kind = 'status_changed' and a.after->>'status' = ${tasks.status})))
+  when ${inArray(tasks.status, closedWithoutCompletionKeys(catalog))} then (select max(a.created_at) from task_activity a where a.task_id = ${tasks}.id and a.after->>'status' = ${tasks.status})
   else null end)`;
 
 /** The tasks the report is about: everything, or one project's (an undefined condition is dropped by `and`). */

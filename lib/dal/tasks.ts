@@ -39,8 +39,8 @@ import { dayKey } from "@/lib/time";
 // be narrowed to one project (the navigation's project picker, docs/PLAN.md 2026-11-03 log). Assignment is a set of
 // people (task_assignees): every row carries it as JSON, so no list joins people.
 
-/** `'completed', 'rejected', …` for raw SQL fragments that cannot take a parameter list (keys are `[a-z0-9_]+`). */
-const closedList = (catalog: StatusCatalog) => sql.raw(closedStatusKeys(catalog).map((status) => `'${status}'`).join(", "));
+/** The workspace's closed keys as bound parameters, for raw SQL fragments: `$1, $2, …` (Completed and Merged keep it non-empty). */
+const closedList = (catalog: StatusCatalog) => sql.join(closedStatusKeys(catalog).map((status) => sql`${status}`), sql`, `);
 const creatorUser = alias(users, "creator_user");
 const approverUser = alias(users, "approver_user");
 const parentGoal = alias(goals, "parent_goal");
@@ -775,6 +775,7 @@ export async function recentActivity(viewer: Viewer, limit: number, since?: Date
         actor: { id: row.actorId, name: row.actorName, email: row.actorEmail, image: row.actorImage },
       },
       today,
+      viewer.statuses,
     ),
   );
 }

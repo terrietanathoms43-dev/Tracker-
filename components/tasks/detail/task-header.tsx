@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { editTask } from "@/actions/tasks";
 import { CharacterCounter } from "@/components/character-counter";
 import { PriorityGlyph } from "@/components/priority-glyph";
-import { isClosedWithoutCompletion, statusDef } from "@/lib/statuses";
+import { endedWithoutCompletion, statusDef } from "@/lib/statuses";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,7 +67,7 @@ function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boole
       </div>
     );
   }
-  const title = <span className={cn(isClosedWithoutCompletion(statusDef(statuses, detail.status)) && detail.status !== "deferred" && "text-muted-foreground line-through", pending && "opacity-60")}>{value}</span>;
+  const title = <span className={cn(endedWithoutCompletion(statusDef(statuses, detail.status)) && "text-muted-foreground line-through", pending && "opacity-60")}>{value}</span>;
   return (
     <h1 className="text-xl leading-snug font-semibold tracking-tight md:text-2xl">
       {editable ? (
@@ -135,7 +135,7 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
             {PROPOSAL_STATUS_LABELS.local} · only you can see it
           </span>
         ) : proposal ? (
-          <span className="inline-flex h-6 items-center gap-1.5 rounded-md bg-status-awaiting-bg px-2 text-[13px] font-medium whitespace-nowrap text-status-awaiting-fg">
+          <span className="inline-flex h-6 items-center gap-1.5 rounded-md bg-status-amber-bg px-2 text-[13px] font-medium whitespace-nowrap text-status-amber-fg">
             <ClipboardCheck className="size-3.5" aria-hidden />
             {PROPOSAL_STATUS_LABELS[detail.proposalStatus!]}
           </span>
