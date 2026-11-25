@@ -15,7 +15,7 @@ import { boardTasks, listTasks, localTasks, taskFormOptions } from "@/lib/dal/ta
 import type { HomeTabConfig } from "@/lib/home-tabs";
 import { isLeader, type Viewer } from "@/lib/permissions";
 import type { ScopedProject } from "@/lib/project-scope-server";
-import { BOARD_STATUSES } from "@/lib/tasks/board";
+import { boardStatuses } from "@/lib/tasks/board";
 import { filtersToParams, isFiltered, tasksHref, type TaskFilters, type TaskView } from "@/lib/tasks/filters";
 import { dayKey } from "@/lib/time";
 
@@ -40,7 +40,7 @@ export async function TasksView({ viewer, filters, view, tabsConfig, scope }: { 
       <PageHeader title="Tasks" description={scope ? `In ${scope.name}` : undefined} />
       <QuickAddTask today={today} defaults={scope && scope.status === "active" ? { projectId: scope.id } : {}} />
       <ViewTabs active={view} query={query.toString()} config={tabsConfig} />
-      <TaskToolbar filters={filters} view={view} people={options.people} goals={options.goals} today={today} />
+      <TaskToolbar filters={filters} view={view} people={options.people} goals={options.goals} today={today} statuses={viewer.statuses} />
       <LastFilters current={query.toString()} view={view} />
       {local.length > 0 ? (
         <div className="mb-6">
@@ -80,7 +80,7 @@ export async function TasksView({ viewer, filters, view, tabsConfig, scope }: { 
           </div>
         </SelectionProvider>
       ) : columns ? (
-        <TaskBoard columns={columns} today={today} statuses={filters.status.length > 0 ? BOARD_STATUSES.filter((status) => filters.status.includes(status)) : BOARD_STATUSES} />
+        <TaskBoard columns={columns} today={today} statuses={(() => { const board = boardStatuses(viewer.statuses); return filters.status.length > 0 ? board.filter((status) => filters.status.includes(status.key)) : board; })()} />
       ) : null}
     </>
   );

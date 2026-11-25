@@ -2,6 +2,7 @@ import { cn } from "cn";
 import Link from "next/link";
 import type { ReportSummary } from "@/lib/reports/build";
 import type { ReportProject } from "@/lib/reports/params";
+import { keyOfKind, labelOfKind, type StatusCatalog } from "@/lib/statuses";
 import { tasksHref } from "@/lib/tasks/filters";
 
 // The Workload view's headline counts, negative first (docs/PLAN.md, 2026-11-01 log): what is overdue, blocked or
@@ -10,13 +11,13 @@ import { tasksHref } from "@/lib/tasks/filters";
 
 type Tile = { label: string; value: number; href: string; tone: "problem" | "waiting" | "plain" };
 
-export function ReportTiles({ summary, project }: { summary: ReportSummary; project: ReportProject }) {
+export function ReportTiles({ summary, project, statuses }: { summary: ReportSummary; project: ReportProject; statuses: StatusCatalog }) {
   const tiles: Tile[] = [
     { label: "Overdue now", value: summary.overdue, href: tasksHref({ due: "overdue", project }), tone: "problem" },
-    { label: "Blocked now", value: summary.blocked, href: tasksHref({ status: ["blocked"], project }), tone: "problem" },
+    { label: `${labelOfKind(statuses, "blocked")} now`, value: summary.blocked, href: tasksHref({ status: [keyOfKind(statuses, "blocked") ?? "blocked"], project }), tone: "problem" },
     { label: "Stalled", value: summary.stalled, href: "#stalled", tone: "problem" },
     { label: "Idle people", value: summary.idlePeople, href: "#people", tone: "waiting" },
-    { label: "Delivered in range", value: summary.delivered, href: tasksHref({ status: ["completed"], sort: "updated", project }), tone: "plain" },
+    { label: "Delivered in range", value: summary.delivered, href: tasksHref({ status: [keyOfKind(statuses, "completed") ?? "completed"], sort: "updated", project }), tone: "plain" },
   ];
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="The report in numbers">
@@ -30,13 +31,13 @@ export function ReportTiles({ summary, project }: { summary: ReportSummary; proj
               href={href}
               className={cn(
                 "block rounded-lg border px-4 py-3 transition-colors break-inside-avoid",
-                problem && "border-status-blocked-dot/30 bg-status-blocked-bg hover:bg-status-blocked-bg/70",
-                waiting && "border-status-awaiting-dot/30 bg-status-awaiting-bg hover:bg-status-awaiting-bg/70",
+                problem && "border-status-red-dot/30 bg-status-red-bg hover:bg-status-red-bg/70",
+                waiting && "border-status-amber-dot/30 bg-status-amber-bg hover:bg-status-amber-bg/70",
                 !tinted && "bg-card hover:bg-accent/60",
               )}
             >
-              <p className={cn("truncate text-[13px]", problem ? "text-status-blocked-fg" : waiting ? "text-status-awaiting-fg" : "text-muted-foreground")}>{label}</p>
-              <p className={cn("mt-1 text-2xl font-semibold", problem && "text-status-blocked-fg", waiting && "text-status-awaiting-fg")}>{value}</p>
+              <p className={cn("truncate text-[13px]", problem ? "text-status-red-fg" : waiting ? "text-status-amber-fg" : "text-muted-foreground")}>{label}</p>
+              <p className={cn("mt-1 text-2xl font-semibold", problem && "text-status-red-fg", waiting && "text-status-amber-fg")}>{value}</p>
             </Link>
           </li>
         );

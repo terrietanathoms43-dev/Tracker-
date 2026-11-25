@@ -8,8 +8,9 @@ import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { isClosedStatus, type TaskStatus } from "@/lib/constants";
+import { factoryWorded, requiresEditToEnter, statusDef, statusWord, transitionTitle } from "@/lib/statuses";
 import { LIMITS } from "@/lib/limits";
+import { incompletePolicyCount, incompletePoliciesMessage } from "@/lib/tasks/policy-checklist";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
 import { closingResolvesMessage } from "@/lib/tasks/comment-tasks";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
@@ -19,30 +20,23 @@ import { toastResult } from "@/lib/toast-result";
 
 // The small status-change dialog's form: exactly the fields the new status needs.
 
-export const TRANSITION_TITLES: Partial<Record<TaskStatus, string>> = {
-   blocked: "Mark as blocked",
-   awaiting_approval: "Send for approval",
-   completed: "Mark as completed",
-   rejected: "Reject this task",
-   deferred: "Defer this task",
-   cancelled: "Cancel this task",
-   merged: "Merge into its parent",
-};
-
-/** The question each closed-without-completion status asks, and its hint. */
-const CLOSE_PROMPTS: Record<"rejected" | "deferred" | "cancelled", { label: string; hint: string }> = {
+/** The question each built-in closed status asks while it keeps its name; a renamed or custom closed status goes by its label. */
+const CLOSE_PROMPTS: Record<string, { label: string; hint: string }> = {
    rejected: { label: "Why is it rejected?", hint: "Kept in the task's history." },
-   deferred: { label: "Why is it deferred?", hint: "Until when, if you know. Kept in the task's history; the task can be reopened later." },
    cancelled: { label: "Why is it cancelled?", hint: "Kept in the task's history. A cancelled task stays for the record; delete it to remove it." },
 };
+
+const closePrompt = (def: ReturnType<typeof statusDef>) => (factoryWorded(def) ? CLOSE_PROMPTS[def.key] : undefined);
 
 /**
  * Exactly the fields a status asks for (apex-ux flow D): a reason, an approver, or the completion summary (required,
  * 2026-11-07 log) and optional evidence. Completing a task with open comments is refused by the server
  * (lib/tasks/transitions.ts); the dialog says so instead of offering a Save that fails.
  */
-export function TransitionForm({ context, status, onDone }: { context: UpdateContext; status: TaskStatus; onDone: () => void }) {
+export function TransitionForm({ context, status, onDone }: { context: UpdateContext; status: string; onDone: () => void }) {
    const { task, people } = context;
+   const def = statusDef(context.statuses, status);
+   const kind = def.kind;
    const [reason, setReason] = useState("");
    const [blockedBy, setBlockedBy] = useState("");
    const [approverId, setApproverId] = useState(context.defaultApprover ?? "");
@@ -51,18 +45,29 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
    const [evidenceLabel, setEvidenceLabel] = useState("");
    const [errors, setErrors] = useState<Record<string, string[] | undefined>>({});
    const [pending, startTransition] = useTransition();
-   const heldByComments = status === "completed" && task.openComments > 0;
+   const heldByComments = kind === "completed" && task.openComments > 0;
    // Sub-tasks (2026-11-08 log): a parent waits for its open sub-tasks; a merge only works on a sub-task and needs no words.
-   const heldBySubTasks = status === "completed" && task.openSubTasks > 0;
+   const heldBySubTasks = kind === "completed" && task.openSubTasks > 0;
    // A goal's "Everything completed" task is its last step (2026-11-09 log): it waits for every other task under the goal.
-   const heldByGoal = status === "completed" && task.closer !== null && task.closer.openOthers > 0;
-   const held = heldByComments || heldBySubTasks || heldByGoal;
-   const merging = status === "merged";
-   const closing = status === "rejected" || status === "deferred" || status === "cancelled";
+   const heldByGoal = kind === "completed" && task.closer !== null && task.closer.openOthers > 0;
+   const missingPolicies = incompletePolicyCount(task.policyChecklist);
+   const heldByPolicies = (kind === "awaiting_approval" || kind === "completed") && missingPolicies > 0;
+   const heldByStart = (kind === "awaiting_approval" || kind === "completed") && task.startedAt === null;
+   const held = heldByComments || heldBySubTasks || heldByGoal || heldByPolicies || heldByStart;
+   const merging = kind === "merged";
+   const closing = kind === "closed";
    // Made from a comment (2026-11-11 log): closing it in any way resolves that comment, said before the save.
-   const closesComment = task.fromComment !== null && isClosedStatus(status) && !isClosedStatus(task.status) && !held ? closingResolvesMessage(task.fromComment) : null;
+   const closesComment = task.fromComment !== null && def.closed && !statusDef(context.statuses, task.status).closed && !held ? closingResolvesMessage(task.fromComment) : null;
    const ready =
-      status === "blocked" || closing ? reason.trim() !== "" : status === "awaiting_approval" ? approverId !== "" : status === "completed" ? !held && summary.trim() !== "" : merging ? task.parent !== null : true;
+      kind === "blocked" || closing
+         ? reason.trim() !== ""
+         : kind === "awaiting_approval"
+           ? approverId !== "" && !heldByPolicies && !heldByStart
+           : kind === "completed"
+             ? !held && summary.trim() !== ""
+             : merging
+               ? task.parent !== null
+               : true;
 
    return (
       <form
@@ -91,7 +96,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             }
          }}
       >
-         {status === "blocked" ? (
+         {kind === "blocked" ? (
             <>
                <Field id="transition-reason" label="What's blocking it?" error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
                   <Textarea
@@ -116,7 +121,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             </>
          ) : null}
          {closing ? (
-            <Field id="transition-reason" label={CLOSE_PROMPTS[status].label} hint={CLOSE_PROMPTS[status].hint} error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
+            <Field id="transition-reason" label={closePrompt(def)?.label ?? `Why is it ${statusWord(def)}?`} hint={closePrompt(def)?.hint ?? "Kept in the task's history."} error={errors.reason?.[0]} count={{ value: reason, max: LIMITS.blockedReason }}>
                <Textarea
                   id="transition-reason"
                   value={reason}
@@ -127,13 +132,13 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                />
             </Field>
          ) : null}
-         {status === "awaiting_approval" ? (
+         {heldByStart ? <p className="rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" role="status">Move this task to In progress before {kind === "completed" ? "completing it" : "sending it for approval"}.</p> : null}
+         {heldByPolicies ? <p className="rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status">{incompletePoliciesMessage(missingPolicies)}</p> : null}
+         {kind === "awaiting_approval" ? (
             <Field id="transition-approver" label="Who approves it?" error={errors.approverId?.[0]}>
                <NativeSelect id="transition-approver" value={approverId} onChange={(event) => setApproverId(event.target.value)}>
                   <option value="">Choose an approver…</option>
-                  {people
-                     .filter((person) => !task.assigneeIds.includes(person.id))
-                     .map((person) => (
+                  {people.map((person) => (
                         <option key={person.id} value={person.id}>
                            {nameOf(person)}
                            {roleSuffix(person.role)}
@@ -143,7 +148,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             </Field>
          ) : null}
          {heldByComments ? (
-            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+            <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status">
                <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
                <span>
                   {openCommentsMessage(task.openComments, task.commentsWaitingOnTasks)} {task.openComments === 1 ? "It is" : "They are"} under Comments and history on the task page.
@@ -157,7 +162,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             </p>
          ) : null}
          {heldBySubTasks && !heldByComments ? (
-            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+            <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status">
                <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
                <span>
                   Finish the {task.openSubTasks} open {task.openSubTasks === 1 ? "sub-task" : "sub-tasks"} first, or merge them: this task waits for them.
@@ -165,7 +170,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             </p>
          ) : null}
          {heldByGoal && !heldByComments && !heldBySubTasks && task.closer ? (
-            <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status" data-closer-hold>
+            <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status" data-closer-hold>
                <Flag className="mt-0.5 size-4 shrink-0" aria-hidden />
                <span>{closerHeldMessage(task.closer.openOthers, task.closer.goalTitle)}</span>
             </p>
@@ -181,7 +186,7 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                )}
             </p>
          ) : null}
-         {status === "completed" && !held ? (
+         {kind === "completed" && !held ? (
             <>
                {task.closer ? (
                   <p className="flex items-center gap-1.5 text-[13px] font-medium text-primary" data-closer-note>
@@ -226,8 +231,8 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
             <Button type="button" variant="ghost" onClick={onDone}>
                Cancel
             </Button>
-            <Button type="submit" variant={status === "rejected" ? "destructive" : "default"} disabled={pending || !ready}>
-               {pending ? "Saving…" : (TRANSITION_TITLES[status] ?? "Save")}
+            <Button type="submit" variant={requiresEditToEnter(def) ? "destructive" : "default"} disabled={pending || !ready}>
+               {pending ? "Saving…" : transitionTitle(def)}
             </Button>
          </div>
       </form>

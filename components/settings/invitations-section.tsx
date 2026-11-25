@@ -62,7 +62,7 @@ function InvitationRow({ invite, link, onLink }: { invite: InvitationRowData; li
         <p className="truncate text-sm font-medium">{invite.email}</p>
         <p className="truncate text-[13px] text-muted-foreground">
           {meta} ·{" "}
-          {invite.expired ? <span className="font-medium text-status-blocked-fg">Expired</span> : <>Expires {invite.expires}</>}
+          {invite.expired ? <span className="font-medium text-status-red-fg">Expired</span> : <>Expires {invite.expires}</>}
         </p>
       </div>
       {invite.canManage ? (

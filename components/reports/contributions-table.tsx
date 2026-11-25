@@ -4,9 +4,11 @@ import { cn } from "cn";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { useState } from "react";
 import { PanelEmpty } from "@/components/dashboard/panel";
+import { useStatusCatalog } from "@/components/status-catalog";
 import { UserAvatar } from "@/components/user-avatar";
 import type { ContributionRow } from "@/lib/reports/data";
 import { gradeColor, gradeShare, nextSort, sortRows, type SortDirection } from "@/lib/reports/grade";
+import { labelOfKind } from "@/lib/statuses";
 import { nameOf } from "@/lib/tasks/people";
 
 // People, negative first (docs/PLAN.md, 2026-11-01 log): what is overdue or blocked on each person now, whether
@@ -16,24 +18,16 @@ import { nameOf } from "@/lib/tasks/people";
 
 type Key = "person" | "overdue" | "blocked" | "open" | "completed" | "deltaCompleted";
 
-const COLUMNS: { key: Exclude<Key, "person">; short: string; long: string }[] = [
-  { key: "overdue", short: "Overdue", long: "Overdue" },
-  { key: "blocked", short: "Blocked", long: "Blocked" },
-  { key: "open", short: "Open", long: "Open now" },
-  { key: "completed", short: "Done", long: "Completed" },
-  { key: "deltaCompleted", short: "Δ Prior", long: "Change vs prior" },
-];
-
 const valueOf = (row: ContributionRow, key: Key): number | string => (key === "person" ? nameOf(row.person, row.person.email ?? "") : (row[key] ?? 0));
 
 function Cell({ row, column, maxCompleted }: { row: ContributionRow; column: Exclude<Key, "person">; maxCompleted: number }) {
   const value = row[column] ?? 0;
   if (column === "overdue" || column === "blocked") {
-    return value > 0 ? <span className="font-semibold text-status-blocked-fg">{value}</span> : <span className="text-muted-foreground">0</span>;
+    return value > 0 ? <span className="font-semibold text-status-red-fg">{value}</span> : <span className="text-muted-foreground">0</span>;
   }
   if (column === "open") {
     return value === 0 ? (
-      <span className="inline-flex items-center rounded-md bg-status-awaiting-bg px-1.5 py-0.5 text-[12px] font-medium text-status-awaiting-fg" title="Nothing open: this person has no task assigned">
+      <span className="inline-flex items-center rounded-md bg-status-amber-bg px-1.5 py-0.5 text-[12px] font-medium text-status-amber-fg" title="Nothing open: this person has no task assigned">
         Idle
       </span>
     ) : (
@@ -47,12 +41,20 @@ function Cell({ row, column, maxCompleted }: { row: ContributionRow; column: Exc
       </span>
     );
   }
-  if (value > 0) return <span className="font-semibold text-status-completed-fg">+{value}</span>;
-  if (value < 0) return <span className="font-semibold text-status-blocked-fg">{value}</span>;
+  if (value > 0) return <span className="font-semibold text-status-green-fg">+{value}</span>;
+  if (value < 0) return <span className="font-semibold text-status-red-fg">{value}</span>;
   return <span className="text-muted-foreground">0</span>;
 }
 
 export function ContributionsTable({ rows }: { rows: ContributionRow[] }) {
+  const statuses = useStatusCatalog();
+  const COLUMNS: { key: Exclude<Key, "person">; short: string; long: string }[] = [
+    { key: "overdue", short: "Overdue", long: "Overdue" },
+    { key: "blocked", short: labelOfKind(statuses, "blocked"), long: labelOfKind(statuses, "blocked") },
+    { key: "open", short: "Open", long: "Open now" },
+    { key: "completed", short: "Done", long: labelOfKind(statuses, "completed") },
+    { key: "deltaCompleted", short: "Δ Prior", long: "Change vs prior" },
+  ];
   // Worst first by default: the rows arrive ordered overdue → blocked → idle → name, and "overdue, high to low" keeps that.
   const [sort, setSort] = useState<{ key: Key; direction: SortDirection }>({ key: "overdue", direction: "desc" });
   if (rows.length === 0) return <PanelEmpty>Nobody in the workspace does work yet.</PanelEmpty>;

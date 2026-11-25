@@ -15,6 +15,7 @@
     "db:copy": "tsx scripts/db-copy.ts",
     "db:migrate-hierarchy": "tsx scripts/migrate-hierarchy.ts",
     "db:backfill-closers": "tsx scripts/backfill-goal-closers.ts",
+    "db:migrate-task-model": "tsx scripts/migrate-task-model.ts",
     "test:seed": "tsx scripts/test-accounts.ts seed",
     "test:status": "tsx scripts/test-accounts.ts status",
     "test:tidy": "tsx scripts/test-accounts.ts tidy",

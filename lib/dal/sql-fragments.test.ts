@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { tasks } from "@/db/schema";
-import { CLOSED_STATUSES, CLOSED_WITHOUT_COMPLETION } from "@/lib/constants";
+import { closedStatusKeys, DEFAULT_STATUSES, doneStatusKeys, incompleteStatusKeys } from "@/lib/statuses";
 import { assigneesJson, commentsWaitingSql, countsTowardsProgress, fromCommentJson, goalTitleSql, groupNameSql, groupSizeSql, needsSignOffSql, openCommentsSql, otherOpenGoalTasksSql, selectList, taskLabelSql } from "@/lib/dal/tasks";
 
 // A correlated subquery must name the outer table. Drizzle renders `${tasks.id}` as a bare "id" in a select from one
@@ -23,7 +23,7 @@ describe("correlated SQL fragments", () => {
   });
 
   it("a closer's fragments read the outer task's goal: its name, and the other open tasks it waits for", () => {
-    const { sql } = db.select({ goal: goalTitleSql, waitsFor: otherOpenGoalTasksSql, label: taskLabelSql }).from(tasks).toSQL();
+    const { sql } = db.select({ goal: goalTitleSql, waitsFor: otherOpenGoalTasksSql(DEFAULT_STATUSES), label: taskLabelSql }).from(tasks).toSQL();
     expect(sql).toContain('g.id = "tasks".goal_id');
     // The count leaves the task itself out and stays inside its workspace, its goal and that goal's sub-goals.
     expect(sql).toContain('o.org_id = "tasks".org_id and o.id <> "tasks".id');
@@ -39,12 +39,12 @@ describe("correlated SQL fragments", () => {
     expect(sql).not.toMatch(/= "group_id"/);
   });
 
-  it("progress leaves out every status that closes a task without completing it, not only rejected", () => {
-    const { sql, params } = db.select({ id: tasks.id }).from(tasks).where(countsTowardsProgress).toSQL();
+  it("progress leaves out the statuses that close a task without completing it, and counts a merged sub-task as done", () => {
+    const { sql, params } = db.select({ id: tasks.id }).from(tasks).where(countsTowardsProgress(DEFAULT_STATUSES)).toSQL();
     expect(sql).toContain('"tasks"."status" not in');
-    expect(params).toEqual(["rejected", "deferred", "cancelled", "merged"]);
-    // The closed set every "open" test uses is those four and completed: none of them is ever overdue.
-    expect([...CLOSED_STATUSES].sort()).toEqual([...CLOSED_WITHOUT_COMPLETION, "completed"].sort());
+    expect(params).toEqual(["rejected", "cancelled"]);
+    // The closed set every "open" test uses is those two and the two completed ones: none of them is ever overdue.
+    expect([...closedStatusKeys(DEFAULT_STATUSES)].sort()).toEqual([...incompleteStatusKeys(DEFAULT_STATUSES), ...doneStatusKeys(DEFAULT_STATUSES)].sort());
   });
 
   it("the list row carries its group and the comment it was made from", () => {
@@ -55,7 +55,7 @@ describe("correlated SQL fragments", () => {
   });
 
   it("the comment-task fragments name the outer task: the comments waiting on it, the comment it came from (2026-11-11 log)", () => {
-    const { sql } = db.select({ waiting: commentsWaitingSql, from: fromCommentJson }).from(tasks).toSQL();
+    const { sql } = db.select({ waiting: commentsWaitingSql(DEFAULT_STATUSES), from: fromCommentJson(DEFAULT_STATUSES) }).from(tasks).toSQL();
     // Open comments of this task that have an open live task made from them.
     expect(sql).toContain('u.task_id = "tasks".id');
     expect(sql).toContain("lt.source_comment_id = u.id");

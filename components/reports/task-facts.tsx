@@ -5,7 +5,7 @@ import { PanelEmpty } from "@/components/dashboard/panel";
 import { StatusIcon } from "@/components/status-badge";
 import { AssigneeStack } from "@/components/tasks/assignee-stack";
 import { DueLabel } from "@/components/tasks/due-label";
-import { TASK_STATUS_LABELS } from "@/lib/constants";
+import { statusDef, type StatusCatalog } from "@/lib/statuses";
 import type { ReportTask } from "@/lib/reports/data";
 import { describeAssignees } from "@/lib/tasks/assignees";
 import { formatDay } from "@/lib/time";
@@ -87,31 +87,33 @@ export function DeliveredList({ tasks, today }: { tasks: ReportTask[]; today: st
 }
 
 /** One open task: status, title, the people on it and the status in words, the due date, and one line of detail. */
-function OpenRow({ task, today, detail }: { task: ReportTask; today: string; detail: ReactNode }) {
+function OpenRow({ statuses, task, today, detail }: { statuses: StatusCatalog; task: ReportTask; today: string; detail: ReactNode }) {
+  const status = statusDef(statuses, task.status);
   return (
     <li className="flex items-start gap-3 px-4 py-2.5 break-inside-avoid">
-      <StatusIcon status={task.status} className="mt-0.5" />
+      <StatusIcon status={status} className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <TaskTitle task={task} />
         <p className="mt-0.5 flex items-center gap-2 text-[13px] text-muted-foreground">
           <Contributors task={task} />
-          <span>{TASK_STATUS_LABELS[task.status]}</span>
+          <span>{status.label}</span>
         </p>
         {detail}
       </div>
-      <DueLabel due={task.dueDate} today={today} status={task.status} className="mt-0.5 shrink-0" />
+      <DueLabel due={task.dueDate} today={today} status={status} className="mt-0.5 shrink-0" />
     </li>
   );
 }
 
 /** Open commitments: open work due in the range or overdue, soonest first, with the next action. */
-export function OpenList({ tasks, today }: { tasks: ReportTask[]; today: string }) {
+export function OpenList({ statuses, tasks, today }: { statuses: StatusCatalog; tasks: ReportTask[]; today: string }) {
   if (tasks.length === 0) return <PanelEmpty>No open work is due in this range, and nothing is overdue.</PanelEmpty>;
   return (
     <ul className="divide-y">
       {tasks.map((task) => (
         <OpenRow
           key={task.id}
+          statuses={statuses}
           task={task}
           today={today}
           detail={task.nextAction ? <p className="mt-1 text-sm text-muted-foreground">Next: {task.nextAction}</p> : null}
@@ -122,18 +124,19 @@ export function OpenList({ tasks, today }: { tasks: ReportTask[]; today: string 
 }
 
 /** Blocked and overdue: the reason and who or what unblocks it; overdue work shows its next action instead. */
-export function BlockedList({ tasks, today }: { tasks: ReportTask[]; today: string }) {
+export function BlockedList({ statuses, tasks, today }: { statuses: StatusCatalog; tasks: ReportTask[]; today: string }) {
   if (tasks.length === 0) return <PanelEmpty>Nothing is blocked or overdue.</PanelEmpty>;
   return (
     <ul className="divide-y">
       {tasks.map((task) => (
         <OpenRow
           key={task.id}
+          statuses={statuses}
           task={task}
           today={today}
           detail={
-            task.status === "blocked" ? (
-              <p className="mt-1 text-sm text-status-blocked-fg">
+            statusDef(statuses, task.status).kind === "blocked" ? (
+              <p className="mt-1 text-sm text-status-red-fg">
                 {task.blockedReason ?? "Blocked"}
                 {task.blockedBy ? <span className="text-muted-foreground"> · Waiting on {task.blockedBy}</span> : null}
               </p>
@@ -151,17 +154,18 @@ export function BlockedList({ tasks, today }: { tasks: ReportTask[]; today: stri
 const quietDays = (task: ReportTask) => Math.max(0, Math.floor((Date.now() - Date.parse(task.updatedAt)) / 86_400_000));
 
 /** Stalled: in progress but untouched for a week or more, the quietest first, with how long it has sat. */
-export function StalledList({ tasks, today }: { tasks: ReportTask[]; today: string }) {
+export function StalledList({ statuses, tasks, today }: { statuses: StatusCatalog; tasks: ReportTask[]; today: string }) {
   if (tasks.length === 0) return <PanelEmpty>Nothing in progress has gone quiet.</PanelEmpty>;
   return (
     <ul className="divide-y">
       {tasks.map((task) => (
         <OpenRow
           key={task.id}
+          statuses={statuses}
           task={task}
           today={today}
           detail={
-            <p className="mt-1 text-sm text-status-awaiting-fg">
+            <p className="mt-1 text-sm text-status-amber-fg">
               No change for {quietDays(task)} days
               {task.nextAction ? <span className="text-muted-foreground"> · Next: {task.nextAction}</span> : null}
             </p>

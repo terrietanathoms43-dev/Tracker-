@@ -1,5 +1,7 @@
 "use client";
 
+import { useStatusCatalog } from "@/components/status-catalog";
+
 import { cn } from "cn";
 import { ClipboardCheck, CornerDownRight, GitMerge, Group, Link2, Lock, NotebookPen, Repeat } from "lucide-react";
 import Link from "next/link";
@@ -9,6 +11,7 @@ import { editTask } from "@/actions/tasks";
 import { BackLink } from "@/components/back-link";
 import { CharacterCounter } from "@/components/character-counter";
 import { PriorityGlyph } from "@/components/priority-glyph";
+import { endedWithoutCompletion, statusDef } from "@/lib/statuses";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +33,7 @@ import { FOCUS_UPDATE_EVENT } from "../task-actions";
 
 /** The title, editable in place for people who may edit: Enter saves, Escape cancels. */
 function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boolean }) {
+  const statuses = useStatusCatalog();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(detail.title);
   const [pending, startTransition] = useTransition();
@@ -66,7 +70,7 @@ function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boole
       </div>
     );
   }
-  const title = <span className={cn((detail.status === "rejected" || detail.status === "cancelled" || detail.status === "merged") && "text-muted-foreground line-through", pending && "opacity-60")}>{value}</span>;
+  const title = <span className={cn(endedWithoutCompletion(statusDef(statuses, detail.status)) && "text-muted-foreground line-through", pending && "opacity-60")}>{value}</span>;
   return (
     <h1 className="text-xl leading-snug font-semibold tracking-tight md:text-2xl">
       {editable ? (
@@ -82,6 +86,7 @@ function TitleEditor({ detail, editable }: { detail: TaskDetail; editable: boole
 
 /** What this is and who holds it, at a glance: title, status, assignee, due date and priority. */
 export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; abilities: TaskAbilities; today: string }) {
+  const statuses = useStatusCatalog();
   // Where the arrow leads when there is no screen to go back to (a new tab, an emailed link): a proposal belongs on
   // the Proposals page; a local task is in its maker's lists; a stakeholder's way around is the goals.
   const proposal = detail.proposalStatus === "pending" || detail.proposalStatus === "declined";
@@ -131,12 +136,12 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
             {PROPOSAL_STATUS_LABELS.local} · only you can see it
           </span>
         ) : proposal ? (
-          <span className="inline-flex h-6 items-center gap-1.5 rounded-md bg-status-awaiting-bg px-2 text-[13px] font-medium whitespace-nowrap text-status-awaiting-fg">
+          <span className="inline-flex h-6 items-center gap-1.5 rounded-md bg-status-amber-bg px-2 text-[13px] font-medium whitespace-nowrap text-status-amber-fg">
             <ClipboardCheck className="size-3.5" aria-hidden />
             {PROPOSAL_STATUS_LABELS[detail.proposalStatus!]}
           </span>
         ) : (
-          <StatusBadge status={detail.status} />
+          <StatusBadge status={statusDef(statuses, detail.status)} />
         )}
         {detail.parent !== null ? (
           <Link href={`/tasks/${detail.parent.id}`} prefetch={false} className="inline-flex h-6 min-w-0 max-w-full items-center gap-1 rounded-md border px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground" data-part-of>
@@ -168,7 +173,7 @@ export function TaskHeader({ detail, abilities, today }: { detail: TaskDetail; a
         )}
         {detail.dueDate ? (
           <span>
-            Due <DueLabel due={detail.dueDate} today={today} status={detail.status} />
+            Due <DueLabel due={detail.dueDate} today={today} status={statusDef(statuses, detail.status)} />
             {detail.dueTime ? ` · ${formatTime(detail.dueTime)}` : ""}
           </span>
         ) : null}

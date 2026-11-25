@@ -7,7 +7,7 @@ export function InviteBanner() {
    return (
       <Link
          href="/members"
-         className="flex items-center gap-3 rounded-lg border border-status-in-progress-dot/30 bg-status-in-progress-bg px-4 py-3 text-sm text-status-in-progress-fg transition-colors hover:bg-status-in-progress-bg/70"
+         className="flex items-center gap-3 rounded-lg border border-status-blue-dot/30 bg-status-blue-bg px-4 py-3 text-sm text-status-blue-fg transition-colors hover:bg-status-blue-bg/70"
       >
          <UserPlus className="size-4 shrink-0" aria-hidden />
          <span className="flex-1">

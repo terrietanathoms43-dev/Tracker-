@@ -52,7 +52,7 @@ export async function listHistory(viewer: Viewer, taskId: string, cursor: string
     order by h.created_at desc, h.id desc
     limit ${HISTORY_PAGE + 1}`);
   const rows = result.rows;
-  const items = rows.slice(0, HISTORY_PAGE).map((row) => phraseHistory(row, viewer.timezone, now));
+  const items = rows.slice(0, HISTORY_PAGE).map((row) => phraseHistory(row, viewer.timezone, now, viewer.statuses));
   return { items, nextCursor: rows.length > HISTORY_PAGE ? items[items.length - 1].id : null };
 }
 

@@ -3,7 +3,7 @@ import { Panel, PanelEmpty } from "@/components/dashboard/panel";
 import { CsvLink } from "@/components/reports/report-controls";
 import { TaskGroupBlock } from "@/components/tasks/task-group";
 import { TaskRow } from "@/components/tasks/task-row";
-import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS } from "@/lib/constants";
+import { closedStatusNames, isClosedWithoutCompletion, statusDef, type StatusCatalog } from "@/lib/statuses";
 import type { ReportTask } from "@/lib/reports/data";
 import type { ReportProject } from "@/lib/reports/params";
 import { addedInCycle, type ActiveScope } from "@/lib/reports/scope";
@@ -22,32 +22,33 @@ import { formatDay } from "@/lib/time";
 function Tile({ label, value, note, problem = false }: { label: string; value: number; note: string; problem?: boolean }) {
   const tinted = problem && value > 0;
   return (
-    <li data-scope-tile={label} data-value={value} className={cn("rounded-lg border p-4 break-inside-avoid", tinted ? "border-status-blocked-dot/30 bg-status-blocked-bg" : "bg-card")}>
-      <div className={cn("text-[12px] font-medium", tinted ? "text-status-blocked-fg" : "text-muted-foreground")}>{label}</div>
-      <div className={cn("mt-1 text-2xl font-bold tracking-tight", tinted && "text-status-blocked-fg")}>{value}</div>
+    <li data-scope-tile={label} data-value={value} className={cn("rounded-lg border p-4 break-inside-avoid", tinted ? "border-status-red-dot/30 bg-status-red-bg" : "bg-card")}>
+      <div className={cn("text-[12px] font-medium", tinted ? "text-status-red-fg" : "text-muted-foreground")}>{label}</div>
+      <div className={cn("mt-1 text-2xl font-bold tracking-tight", tinted && "text-status-red-fg")}>{value}</div>
       <div className="mt-0.5 text-[11px] text-muted-foreground">{note}</div>
     </li>
   );
 }
 
 /** One line of detail: the blocker, why it was closed without completing, or the completion summary (the next action is on the row already). */
-function detailOf(task: ReportTask): string | null {
-  if (task.status === "completed") return task.completionSummary;
-  if (task.status === "blocked") return [task.blockedReason ?? "Blocked", task.blockedBy ? `Waiting on ${task.blockedBy}` : null].filter((part) => part !== null).join(" · ");
-  if (CLOSED_WITHOUT_COMPLETION.includes(task.status)) return task.rejectionReason ? `${TASK_STATUS_LABELS[task.status]}: ${task.rejectionReason}` : null;
+function detailOf(statuses: StatusCatalog, task: ReportTask): string | null {
+  const status = statusDef(statuses, task.status);
+  if (status.kind === "completed" || status.kind === "merged") return task.completionSummary;
+  if (status.kind === "blocked") return [task.blockedReason ?? status.label, task.blockedBy ? `Waiting on ${task.blockedBy}` : null].filter((part) => part !== null).join(" · ");
+  if (isClosedWithoutCompletion(status)) return task.rejectionReason ? `${status.label}: ${task.rejectionReason}` : null;
   return null;
 }
 
 /** The report's own words on a row: where it sits, then the detail. */
-function Note({ task }: { task: ReportTask }) {
+function Note({ statuses, task }: { statuses: StatusCatalog; task: ReportTask }) {
   const place = task.project ? (task.goalTitle ? `${task.project.name} · ${task.goalTitle}` : task.project.name) : "No project";
-  const detail = detailOf(task);
+  const detail = detailOf(statuses, task);
   return (
     <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
       <span className="truncate" data-scope-place>
         {place}
       </span>
-      {detail ? <span className={cn("min-w-0", task.status === "blocked" ? "text-status-blocked-fg" : undefined)}>{detail}</span> : null}
+      {detail ? <span className={cn("min-w-0", statusDef(statuses, task.status).kind === "blocked" ? "text-status-red-fg" : undefined)}>{detail}</span> : null}
     </span>
   );
 }
@@ -57,9 +58,11 @@ export function ActiveScopeView({
   items,
   today,
   project,
+  statuses,
   readOnly = false,
 }: {
   active: ActiveScope;
+  statuses: StatusCatalog;
   /** The standard list row for every task in scope, by id (lib/reports/build.ts). */
   items: Map<string, TaskListItem>;
   today: string;
@@ -72,7 +75,7 @@ export function ActiveScopeView({
     <>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
         <p className="max-w-3xl text-sm text-muted-foreground" data-scope-intro>
-          Every task still open, plus everything closed on or after <strong className="font-medium text-foreground">{since}</strong> (completed, or rejected, deferred or cancelled): the work this
+          Every task still open, plus everything closed on or after <strong className="font-medium text-foreground">{since}</strong> ({closedStatusNames(statuses)}): the work this
           report cycle was to get through. For a daily read choose Daily above; to start from the day of the last report, choose Custom and set Since to that day.
         </p>
         <CsvLink range={active.range} table="scope" project={project} label="Active scope" />
@@ -93,7 +96,7 @@ export function ActiveScopeView({
         </div>
       ) : (
         active.groups.map((group) => {
-          const closed = group.status === "completed" || CLOSED_WITHOUT_COMPLETION.includes(group.status);
+          const closed = statusDef(statuses, group.status).closed;
           const scopeOf = new Map(group.tasks.map((task) => [task.id, task]));
           // The standard row, with what the report adds to it.
           const row = (item: TaskListItem, inGroup: boolean) => {
@@ -116,7 +119,7 @@ export function ActiveScopeView({
                     </span>
                   ) : null
                 }
-                note={<Note task={task} />}
+                note={<Note statuses={statuses} task={task} />}
                 trailing={
                   closed && task.closedDay ? (
                     <span className="relative hidden shrink-0 text-[13px] whitespace-nowrap text-muted-foreground sm:inline" data-scope-closed>

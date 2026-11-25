@@ -1,6 +1,8 @@
-import { TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, type TaskActivityKind, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { TASK_PRIORITY_LABELS, type TaskActivityKind, type TaskPriority } from "@/lib/constants";
+import { factoryWorded, statusLabel, statusOf, type StatusCatalog } from "@/lib/statuses";
 import { calendarDaysBetween, dayKey, formatAbsolute, formatDay } from "@/lib/time";
 import { joinNames, listNames, type AssignmentSnapshot } from "./assignees";
+import { DUE_CHANGE_LABELS, type DueChangeKind } from "./due-change";
 import type { ActivityFeedItem, HistoryItem } from "./types";
 
 // Task events in plain words: one function for a task's own history, one for the Home and Members feeds.
@@ -22,7 +24,7 @@ export type HistoryRow = {
   resolved_at: Date | string | null;
   resolved_by_name: string | null;
   /** Comments: the live tasks made from it, oldest first (null when there are none, and on every other row). */
-  linked?: { id: string; title: string; status: TaskStatus }[] | null;
+  linked?: { id: string; title: string; status: string }[] | null;
   actor_id: string;
   actor_name: string | null;
   actor_email: string | null;
@@ -33,9 +35,40 @@ export type HistoryRow = {
 };
 
 const text = (value: unknown) => (typeof value === "string" && value !== "" ? value : null);
-const statusLabel = (value: unknown) => (typeof value === "string" && value in TASK_STATUS_LABELS ? TASK_STATUS_LABELS[value as TaskStatus] : null);
+const storedLabel = (statuses: StatusCatalog, value: unknown) => {
+  if (typeof value !== "string" || value === "") return null;
+  // Deferred was a status until 2026-11-24: history rows from then still name it.
+  if (value === "deferred") return "Deferred";
+  return statusLabel(statuses, value);
+};
+
+type NamedKind = "blocked" | "rejected" | "cancelled" | "completed";
+
+/** The verbs for the statuses with their own history kinds, while each keeps its factory name. */
+const NAMED_VERBS: Record<NamedKind, { phrase: string; verb: string }> = {
+  blocked: { phrase: "marked it blocked", verb: "flagged a blocker on" },
+  rejected: { phrase: "rejected it", verb: "rejected" },
+  cancelled: { phrase: "cancelled it", verb: "cancelled" },
+  completed: { phrase: "completed it", verb: "completed" },
+};
+
+/** The status a named activity entered — the row's own `after.status`, else the built-in the kind is named for. */
+const enteredStatus = (statuses: StatusCatalog, kind: NamedKind, after: Record<string, unknown> | null) => statusOf(statuses, text(after?.status) ?? kind);
+
+/** "completed it", or "marked it Complete JA" once the workspace renamed Completed: history speaks the workspace's words. */
+function namedPhrase(statuses: StatusCatalog, kind: NamedKind, after: Record<string, unknown>): string {
+  const status = enteredStatus(statuses, kind, after);
+  return status === undefined || factoryWorded(status) ? NAMED_VERBS[kind].phrase : `marked it ${status.label}`;
+}
 const priorityLabel = (value: unknown) => (typeof value === "string" && value in TASK_PRIORITY_LABELS ? TASK_PRIORITY_LABELS[value as TaskPriority] : null);
 const dayOrNone = (value: unknown, today: string) => (typeof value === "string" && value !== "" ? formatDay(value, today) : "No date");
+
+/** The dates of a due-date change row, before → after. */
+const dueChange = (before: Record<string, unknown>, after: Record<string, unknown>, today: string) => ({ before: dayOrNone(before.dueDate, today), after: dayOrNone(after.dueDate, today) });
+/** "approved a date change: " in front of what the change did, on the row an admin wrote for someone else's request. */
+const approvedPrefix = (after: Record<string, unknown>) => (after.approved === true ? "approved a date change: " : "");
+/** " (Deferred)": what a requested or declined change would have been. */
+const dueChangeName = (kind: unknown) => (typeof kind === "string" && kind in DUE_CHANGE_LABELS ? ` (${DUE_CHANGE_LABELS[kind as DueChangeKind].toLowerCase()})` : "");
 
 /** The names on one side of an assignment row written since assignment became a set; null for a legacy row. */
 function assignmentNames(side: Record<string, unknown>): string[] | null {
@@ -77,7 +110,7 @@ function editedPhrase(before: Record<string, unknown>, after: Record<string, unk
   }
 }
 
-function activityPhrase(row: HistoryRow, today: string): { phrase: string; change: HistoryItem["change"] } {
+function activityPhrase(row: HistoryRow, today: string, statuses: StatusCatalog): { phrase: string; change: HistoryItem["change"] } {
   const before = row.before ?? {};
   const after = row.after ?? {};
   switch (row.kind) {
@@ -86,19 +119,33 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
     case "edited":
       return editedPhrase(before, after);
     case "status_changed":
-      return { phrase: "changed the status", change: { before: statusLabel(before.status), after: statusLabel(after.status) } };
+      return { phrase: "changed the status", change: { before: storedLabel(statuses, before.status), after: storedLabel(statuses, after.status) } };
     case "assigned":
       return assignedPhrase(row, before, after);
     case "handed_over": {
       const to = assignmentNames(after);
       return { phrase: `handed it over to ${to ? joinNames(to) || "someone" : (row.after_assignee ?? "someone")}`, change: null };
     }
+    // Due-date changes (2026-11-24 log): named for what they do, with the reason as the row's note. A row an admin
+    // wrote for someone else's request says it was approved.
     case "due_changed":
-      return { phrase: "changed the due date", change: { before: dayOrNone(before.dueDate, today), after: dayOrNone(after.dueDate, today) } };
+      return { phrase: `${approvedPrefix(after)}changed the due date`, change: dueChange(before, after, today) };
+    case "scheduled":
+      return { phrase: `${approvedPrefix(after)}scheduled it`, change: dueChange(before, after, today) };
+    case "brought_forward":
+      return { phrase: `${approvedPrefix(after)}brought the deadline forward`, change: dueChange(before, after, today) };
+    case "due_removed":
+      return { phrase: `${approvedPrefix(after)}removed the due date`, change: dueChange(before, after, today) };
+    case "due_change_requested":
+      return { phrase: `asked for a date change${dueChangeName(after.change)}`, change: dueChange(before, after, today) };
+    case "due_change_declined":
+      return { phrase: after.withdrawn === true ? "withdrew the date change" : `declined the date change${dueChangeName(after.change)}`, change: dueChange(before, after, today) };
     case "priority_changed":
       return { phrase: "changed the priority", change: { before: priorityLabel(before.priority), after: priorityLabel(after.priority) } };
-    case "blocked":
-      return { phrase: text(after.blockedBy) ? `marked it blocked (waiting on ${text(after.blockedBy)})` : "marked it blocked", change: null };
+    case "blocked": {
+      const phrase = namedPhrase(statuses, "blocked", after);
+      return { phrase: text(after.blockedBy) ? `${phrase} (waiting on ${text(after.blockedBy)})` : phrase, change: null };
+    }
     case "unblocked":
       return { phrase: "unblocked it", change: null };
     case "approval_requested":
@@ -108,11 +155,12 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
     case "sent_back":
       return { phrase: "sent it back", change: null };
     case "rejected":
-      return { phrase: "rejected it", change: null };
+      return { phrase: namedPhrase(statuses, row.kind, after), change: null };
+    // A deadline moved later to a future date. Until 2026-11-24 Deferred was a status: those rows carry no dates.
     case "deferred":
-      return { phrase: "deferred it", change: null };
+      return { phrase: `${approvedPrefix(after)}deferred it`, change: "dueDate" in after ? dueChange(before, after, today) : null };
     case "cancelled":
-      return { phrase: "cancelled it", change: null };
+      return { phrase: namedPhrase(statuses, row.kind, after), change: null };
     case "merged":
       return { phrase: text(after.parentTitle) ? `merged it into ${text(after.parentTitle)}` : "merged it into its parent", change: null };
     case "attached":
@@ -129,9 +177,9 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
     case "ungrouped":
       return { phrase: text(before.groupName) ? `took it out of the group ${text(before.groupName)}` : "took it out of its group", change: null };
     case "completed":
-      return { phrase: "completed it", change: null };
+      return { phrase: namedPhrase(statuses, "completed", after), change: null };
     case "reopened":
-      return { phrase: "reopened it", change: { before: statusLabel(before.status), after: statusLabel(after.status) } };
+      return { phrase: "reopened it", change: { before: storedLabel(statuses, before.status), after: storedLabel(statuses, after.status) } };
     // A comment resolved or opened again by the task made from it (2026-11-11 log): the note names that task.
     case "comment_resolved":
       return { phrase: text(after.byTaskId) ? "resolved a comment by closing the task made from it" : "resolved a comment", change: null };
@@ -159,7 +207,7 @@ function activityPhrase(row: HistoryRow, today: string): { phrase: string; chang
 }
 
 /** "posted an update", "blocked it", before → after: one entry of a task's history, timed in `timeZone`. */
-export function phraseHistory(row: HistoryRow, timeZone: string, now: Date): HistoryItem {
+export function phraseHistory(row: HistoryRow, timeZone: string, now: Date, statuses: StatusCatalog): HistoryItem {
   const at = new Date(row.created_at);
   const day = dayKey(at, timeZone);
   const today = dayKey(now, timeZone);
@@ -171,7 +219,7 @@ export function phraseHistory(row: HistoryRow, timeZone: string, now: Date): His
         ? "Yesterday"
         : new Intl.DateTimeFormat("en", { timeZone, weekday: "short", month: "short", day: "numeric", ...(day.slice(0, 4) !== today.slice(0, 4) ? { year: "numeric" } : {}) }).format(at);
   const { phrase, change } =
-    row.type === "progress" ? { phrase: "posted an update", change: null } : row.type === "comment" ? { phrase: "commented", change: null } : activityPhrase(row, today);
+    row.type === "progress" ? { phrase: "posted an update", change: null } : row.type === "comment" ? { phrase: "commented", change: null } : activityPhrase(row, today, statuses);
 
   return {
     id: row.id,
@@ -197,13 +245,10 @@ export function phraseHistory(row: HistoryRow, timeZone: string, now: Date): His
 export const FEED_KINDS = ["completed", "blocked", "unblocked", "approved", "sent_back", "rejected", "due_changed", "reopened", "proposal_approved", "proposal_declined"] as const satisfies readonly TaskActivityKind[];
 export type FeedKind = (typeof FEED_KINDS)[number];
 
-const FEED_VERBS: Record<FeedKind, string> = {
-  completed: "completed",
-  blocked: "flagged a blocker on",
+const FEED_VERBS: Record<Exclude<FeedKind, NamedKind>, string> = {
   unblocked: "unblocked",
   approved: "approved",
   sent_back: "sent back",
-  rejected: "rejected",
   due_changed: "changed the due date of",
   reopened: "reopened",
   proposal_approved: "approved the proposal",
@@ -223,9 +268,16 @@ export type FeedRow = {
   actor: { id: string; name: string | null; email: string | null; image: string | null };
 };
 
+/** The feed's verb: "completed", or "marked Complete JA" once the workspace renamed the status. */
+function feedVerb(row: FeedRow, statuses: StatusCatalog): string {
+  if (row.kind !== "completed" && row.kind !== "blocked" && row.kind !== "rejected") return FEED_VERBS[row.kind];
+  const status = enteredStatus(statuses, row.kind, row.after);
+  return status === undefined || factoryWorded(status) ? NAMED_VERBS[row.kind].verb : `marked ${status.label}:`;
+}
+
 /** "Jordan Dev completed Fix nightly backup", with the reason or the date change as the note. */
-export function phraseFeed(row: FeedRow, today: string): ActivityFeedItem {
-  const verb = FEED_VERBS[row.kind];
+export function phraseFeed(row: FeedRow, today: string, statuses: StatusCatalog): ActivityFeedItem {
+  const verb = feedVerb(row, statuses);
   const actorName = row.actor.name ?? row.actor.email ?? "Someone";
   const note =
     row.kind === "due_changed"

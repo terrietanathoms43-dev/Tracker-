@@ -1,8 +1,8 @@
-import { TASK_STATUS_LABELS, type TaskStatus } from "@/lib/constants";
+import type { StatusKind } from "@/lib/statuses";
 
 // A task made from a comment (docs/PLAN.md, 2026-11-11 log): a link, not a sub-task. The comment cannot be resolved
 // by hand while a live task made from it is open; it resolves itself when the last of them is closed (completed,
-// rejected, deferred, cancelled or merged), and opens again when one is reopened, which puts the task it is on back
+// rejected, cancelled or merged), and opens again when one is reopened, which puts the task it is on back
 // to In progress when that one was completed. The task the comment is on waits for its open comments as it always
 // did, so it waits for those tasks too. These are the words the server and the screens share for it.
 
@@ -26,8 +26,8 @@ export function commentWaitsMessage(titles: string[]): string {
 }
 
 /** The line the history keeps on the comment's task when the comment resolves itself (the history quotes a note, so it does not open with a quote of its own). */
-export function resolvedByTaskNote(title: string, status: TaskStatus): string {
-  return `The task made from it, “${title}”, was ${TASK_STATUS_LABELS[status].toLowerCase()}.`;
+export function resolvedByTaskNote(title: string, statusLabel: string): string {
+  return `The task made from it, “${title}”, was ${statusLabel.toLowerCase()}.`;
 }
 
 /** The line the history keeps when a reopened task opens its comment again. */
@@ -56,7 +56,7 @@ export function titleFromComment(body: string, max: number): string {
 }
 
 /** What a made task's forms know about the comment it came from (UpdateContext). `taskTitle` is null when the viewer may not read the task the comment is on. */
-export type FromCommentContext = { resolved: boolean; taskTitle: string | null; taskStatus: TaskStatus | null; otherOpen: number };
+export type FromCommentContext = { resolved: boolean; taskTitle: string | null; taskKind: StatusKind | null; otherOpen: number };
 
 /** What closing a made task (any closed status) does to its comment, said before the save; null when it does nothing. */
 export function closingResolvesMessage(from: FromCommentContext): string | null {
@@ -69,6 +69,6 @@ export function closingResolvesMessage(from: FromCommentContext): string | null 
 /** What reopening a closed made task does, said before the save; null when its comment is open anyway. */
 export function reopeningMessage(from: FromCommentContext): string | null {
   if (!from.resolved) return null;
-  const parent = from.taskStatus === "completed" && from.taskTitle !== null ? `, and “${from.taskTitle}”, which is completed, goes back to In progress` : from.taskStatus === "completed" ? ", and the task it is on goes back to In progress" : "";
+  const parent = from.taskKind === "completed" && from.taskTitle !== null ? `, and “${from.taskTitle}”, which is completed, goes back to In progress` : from.taskKind === "completed" ? ", and the task it is on goes back to In progress" : "";
   return `Reopening this task opens the comment it was made from${on(from.taskTitle)} again${parent}.`;
 }

@@ -11,9 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
-import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS, TASK_STATUSES, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
-import { BOARD_STATUSES } from "@/lib/tasks/board";
+import { statusLabel, type StatusCatalog } from "@/lib/statuses";
+import { boardStatuses } from "@/lib/tasks/board";
 import {
   activeFilterChips,
   DATE_FIELD_LABELS,
@@ -126,7 +127,7 @@ export function DateRangeFilter({ filters, today, onApply, className }: { filter
 }
 
 /** Search, filters and sort for /home's list and board. Every change is a URL change, so a view can be shared. */
-export function TaskToolbar({ filters, view, people, goals, today }: { filters: TaskFilters; view: TaskView; people: Person[]; goals: GoalOption[]; today: string }) {
+export function TaskToolbar({ filters, view, people, goals, today, statuses: catalog }: { filters: TaskFilters; view: TaskView; people: Person[]; goals: GoalOption[]; today: string; statuses: StatusCatalog }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [q, setQ] = useState(filters.q);
@@ -160,13 +161,13 @@ export function TaskToolbar({ filters, view, people, goals, today }: { filters: 
     setQ(filters.q);
   }, [filters.q]);
 
-  const statuses: readonly TaskStatus[] = view === "board" ? BOARD_STATUSES : TASK_STATUSES;
+  const statuses = view === "board" ? boardStatuses(catalog) : catalog;
   // Without a status filter the chips show what the list really shows: open work, plus closed work when
   // "Show closed" is on. The first click takes one status off that set; selecting everything back normalises to
   // the empty "all" form.
-  const shown = visibleStatuses(filters, statuses);
-  const toggleStatus = (status: TaskStatus) => {
-    const next = shown.includes(status) ? shown.filter((each) => each !== status) : [...shown, status];
+  const shown = visibleStatuses(filters, statuses, catalog);
+  const toggleStatus = (status: string) => {
+    const next = shown.some((each) => each.key === status) ? shown.filter((each) => each.key !== status).map((each) => each.key) : [...shown.map((each) => each.key), status];
     apply({ status: next.length === statuses.length ? [] : next });
   };
   const names: FilterNames = { people, goals };
@@ -217,20 +218,20 @@ export function TaskToolbar({ filters, view, people, goals, today }: { filters: 
       <div className={cn("gap-3", open ? "grid" : "hidden md:grid")}>
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Status">
           {statuses.map((status) => {
-            const on = shown.includes(status);
+            const on = shown.some((each) => each.key === status.key);
             return (
               <button
-                key={status}
+                key={status.key}
                 type="button"
                 aria-pressed={on}
-                onClick={() => toggleStatus(status)}
+                onClick={() => toggleStatus(status.key)}
                 className={cn(
                   "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   on ? "border-foreground/20 bg-accent text-foreground" : "text-muted-foreground line-through decoration-muted-foreground/60 hover:bg-accent hover:text-foreground",
                 )}
               >
                 <StatusIcon status={status} className={cn("size-3.5", !on && "opacity-50")} />
-                {TASK_STATUS_LABELS[status]}
+                {status.label}
               </button>
             );
           })}
@@ -295,7 +296,7 @@ export function TaskToolbar({ filters, view, people, goals, today }: { filters: 
           <span className="font-medium text-primary">Filtered:</span>
           {filters.status.length > 0 ? (
             <button type="button" onClick={() => apply({ status: [] })} className="inline-flex h-6 items-center gap-1 rounded-md border border-primary/30 bg-background px-2 text-foreground transition-colors hover:bg-accent">
-              {filters.status.length === 1 ? TASK_STATUS_LABELS[filters.status[0]] : `${filters.status.length} statuses`}
+              {filters.status.length === 1 ? statusLabel(catalog, filters.status[0]) : `${filters.status.length} statuses`}
               <X className="size-3 text-muted-foreground" aria-hidden />
               <span className="sr-only">Remove status filter</span>
             </button>

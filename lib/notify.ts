@@ -38,6 +38,8 @@ const PREFERENCE: Record<NotificationKind, keyof Preferences | null> = {
   comment_resolved: "emailComment",
   goal_achieved: null,
   reopened: null,
+  due_change_requested: "emailApproval",
+  due_change_decided: "emailApproval",
 };
 
 /** Writes the in-app rows now and sends the emails after the response, each according to the recipient's preferences. */

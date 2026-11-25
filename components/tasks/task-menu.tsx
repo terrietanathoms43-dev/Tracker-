@@ -34,8 +34,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { TASK_STATUS_LABELS, TASK_STATUSES } from "@/lib/constants";
+import { useStatusCatalog } from "@/components/status-catalog";
 import { idsOf } from "@/lib/tasks/assignees";
+import { menuStatuses, statusDef } from "@/lib/statuses";
 import type { TaskFormOptions, TaskListItem } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneePicker } from "./assignee-picker";
@@ -200,6 +201,7 @@ const ATTACH_ITEMS: { key: MenuDialog & string; label: string; icon: typeof User
 
 /** The "⋯" menu for a row or a board card. */
 export function TaskMenu({ task, className }: { task: TaskListItem; className?: string }) {
+  const statuses = useStatusCatalog();
   const { openUpdate } = useTaskActions();
   const { change } = useChangeStatus(task.id);
   const [options, setOptions] = useState<TaskFormOptions | null>(null);
@@ -254,7 +256,7 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
               </DropdownMenuItem>
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className="gap-2">
-                  <StatusIcon status={task.status} />
+                  <StatusIcon status={statusDef(statuses, task.status)} />
                   Change status
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-48">
@@ -390,6 +392,7 @@ function SheetButton({ children, onClick, disabled }: { children: ReactNode; onC
 
 /** The same actions as TaskMenu, as a bottom sheet with 44px targets, for touch screens. */
 export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly = false }: { task: TaskListItem; open: boolean; onOpenChange: (open: boolean) => void; readOnly?: boolean }) {
+  const statuses = useStatusCatalog();
   const router = useRouter();
   const { openUpdate } = useTaskActions();
   const { change } = useChangeStatus(task.id);
@@ -406,7 +409,7 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
         <SheetContent side="bottom" className="rounded-t-xl pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           <SheetHeader>
             <SheetTitle className="truncate pr-6">{task.title}</SheetTitle>
-            <SheetDescription>{task.proposal === "local" ? "Local task: only you can see it" : TASK_STATUS_LABELS[task.status]}</SheetDescription>
+            <SheetDescription>{task.proposal === "local" ? "Local task: only you can see it" : statusDef(statuses, task.status).label}</SheetDescription>
           </SheetHeader>
           <div className="grid gap-1 px-4">
             {!readOnly && task.proposal === "local" ? (
@@ -461,10 +464,10 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
                   <>
                     <p className="px-3 pt-3 pb-1 text-[13px] text-muted-foreground">Change status</p>
                     <div className="grid grid-cols-2 gap-1">
-                      {TASK_STATUSES.filter((status) => status !== "merged" || task.parent !== null).map((status) => (
-                        <SheetButton key={status} disabled={status === task.status} onClick={then(() => change(task.status, status))}>
+                      {menuStatuses(statuses, task.status).filter((status) => status.kind !== "merged" || task.parent !== null).map((status) => (
+                        <SheetButton key={status.key} disabled={status.key === task.status} onClick={then(() => change(task.status, status))}>
                           <StatusIcon status={status} />
-                          {TASK_STATUS_LABELS[status]}
+                          {status.label}
                         </SheetButton>
                       ))}
                     </div>

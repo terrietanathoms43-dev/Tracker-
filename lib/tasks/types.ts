@@ -1,6 +1,8 @@
-import type { ApprovalDecision, OrgRole, ProposalStatus, TaskActivityKind, TaskPriority, TaskStatus } from "@/lib/constants";
+import type { ApprovalDecision, OrgRole, ProposalStatus, TaskActivityKind, TaskPriority } from "@/lib/constants";
 import type { Recurrence } from "@/lib/recurrence";
+import type { StatusCatalog } from "@/lib/statuses";
 import type { FromCommentContext } from "./comment-tasks";
+import type { TaskPolicyItem } from "./policy-checklist";
 
 // Shapes that cross from server to client: plain JSON only (instants as ISO strings, calendar days as
 // "YYYY-MM-DD"), so a server component can hand them straight to a client component.
@@ -15,7 +17,7 @@ export type Assignees = Person[];
 export type TaskGroupRef = { id: string; name: string | null; size: number };
 
 /** A task named beside something else (a task made from a comment, the task a comment sits on): enough for a link and a status mark. */
-export type TaskRef = { id: string; title: string; status: TaskStatus };
+export type TaskRef = { id: string; title: string; status: string };
 
 /** One row of any task list, board column or My Work group. The row expands to show the longer fields. */
 export type TaskListItem = {
@@ -23,7 +25,7 @@ export type TaskListItem = {
   title: string;
   /** Cut to a few hundred characters for the expanded row; the task page has it all. */
   description: string | null;
-  status: TaskStatus;
+  status: string; // a status key: built-in or custom_* (lib/statuses.ts)
   priority: TaskPriority;
   dueDate: string | null;
   /** "HH:MM" when a time of day matters. */
@@ -132,7 +134,7 @@ export type TaskDetail = {
   id: string;
   title: string;
   description: string | null;
-  status: TaskStatus;
+  status: string; // a status key: built-in or custom_* (lib/statuses.ts)
   priority: TaskPriority;
   dueDate: string | null;
   dueTime: string | null;
@@ -174,6 +176,7 @@ export type TaskDetail = {
   latestProgress: string | null;
   nextAction: string | null;
   completionSummary: string | null;
+  policyChecklist: TaskPolicyItem[];
   /** Comments nobody has marked resolved yet; while there are any, the task can't be completed. */
   openComments: number;
   /** Of those, the ones waiting for a task made from them: they resolve themselves when that task is closed. */
@@ -190,8 +193,10 @@ export type UpdateContext = {
   task: {
     id: string;
     title: string;
-    status: TaskStatus;
+    status: string; // a status key: built-in or custom_* (lib/statuses.ts)
     assigneeIds: string[];
+    policyChecklist: TaskPolicyItem[];
+    startedAt: string | null;
     nextAction: string | null;
     blockedReason: string | null;
     blockedBy: string | null;
@@ -213,6 +218,8 @@ export type UpdateContext = {
   people: PersonOption[];
   defaultApprover: string | null;
   abilities: TaskAbilities;
+  /** The workspace's statuses, so the form offers and prompts by them. */
+  statuses: StatusCatalog;
 };
 
 /** One entry of a task's comments and history, already phrased and timed in the viewer's timezone. */
@@ -258,7 +265,7 @@ export type ActivityFeedItem = {
   at: string;
 };
 
-/** Completed out of total (tasks closed without completing, rejected, deferred, cancelled or merged, don't count), with the problems inside it. */
+/** Completed (a merged sub-task included) out of total (rejected and cancelled tasks are in neither), with the problems inside it. */
 export type TaskProgress = { completed: number; total: number; blocked: number; overdue: number };
 
 export type TaskCounts = { active: number; completed: number; overdue: number; blocked: number; awaiting: number };

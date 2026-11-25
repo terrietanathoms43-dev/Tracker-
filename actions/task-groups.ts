@@ -65,7 +65,7 @@ export async function groupTasks(input: z.input<typeof groupSchema>): Promise<Ac
       const outcome: Outcome = { done: 0, failed: [] };
       const joining: Locked[] = [];
       for (const taskId of ids) {
-        const locked = await lockTask(tx, viewer.orgId, taskId);
+        const locked = await lockTask(tx, viewer.orgId, taskId, viewer.statuses);
         if (locked === null) {
           outcome.failed.push({ id: taskId, title: "A task", error: "it doesn't exist, or you can't see it" });
           continue;
@@ -146,7 +146,7 @@ export async function ungroupTask(input: z.input<typeof ungroupSchema>): Promise
     const now = new Date();
     const scope = { orgId: viewer.orgId, actorId: viewer.userId };
     const gone = await db.transaction(async (tx) => {
-      const locked = await lockTask(tx, viewer.orgId, data.taskId);
+      const locked = await lockTask(tx, viewer.orgId, data.taskId, viewer.statuses);
       if (locked === null) throw new GuardError("not_found");
       const { task } = locked;
       if (!canGroupTask(viewer, locked.scope)) throw new GuardError("forbidden", GROUP_REFUSALS.edit);
@@ -169,7 +169,7 @@ async function lockGroup(tx: Tx, viewer: Viewer, groupId: string) {
   const members: Locked[] = [];
   const scopes: TaskScope[] = [];
   for (const member of await groupMembers(tx, viewer.orgId, groupId)) {
-    const locked = await lockTask(tx, viewer.orgId, member.id);
+    const locked = await lockTask(tx, viewer.orgId, member.id, viewer.statuses);
     if (locked === null) continue;
     members.push(locked);
     scopes.push(locked.scope);

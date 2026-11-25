@@ -1,4 +1,5 @@
 import { config } from "dotenv";
+import { DEFAULT_STATUSES } from "@/lib/statuses";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Viewer } from "@/lib/permissions";
@@ -35,7 +36,7 @@ describe.skipIf(!enabled)("workspace isolation (database)", () => {
   let sam: Viewer;
   let jordanId: string;
 
-  const viewer = (userId: string, orgId: string, orgRole: Viewer["orgRole"], timezone: string): Viewer => ({ userId, orgId, orgRole, timezone });
+  const viewer = (userId: string, orgId: string, orgRole: Viewer["orgRole"], timezone: string): Viewer => ({ userId, orgId, orgRole, timezone, statuses: DEFAULT_STATUSES });
   const userId = async (email: string) => (await one<{ id: string }>("select id from users where email = $1", [email])).id;
   const today = (who: Viewer) => dayKey(new Date(), who.timezone);
   const everything = { ...DEFAULT_FILTERS, closed: true };

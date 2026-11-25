@@ -20,7 +20,7 @@ export function GoalStatusBadge({ status, className }: { status: GoalStatus; cla
   const completed = status === "completed";
   const Icon = completed ? CheckCircle2 : CirclePause;
   return (
-    <span className={cn(BADGE, completed ? "bg-status-completed-bg text-status-completed-fg" : "bg-status-not-started-bg text-status-not-started-fg", className)}>
+    <span className={cn(BADGE, completed ? "bg-status-green-bg text-status-green-fg" : "bg-status-slate-bg text-status-slate-fg", className)}>
       <Icon className="size-3.5" aria-hidden />
       {GOAL_STATUS_LABELS[status]}
     </span>
@@ -73,7 +73,7 @@ export const isPastTarget = (goal: { status: GoalStatus; targetDate: string | nu
 export function TargetLabel({ day, today, active, className }: { day: string; today: string; active: boolean; className?: string }) {
   const late = active && day < today;
   return (
-    <span className={cn("whitespace-nowrap tabular-nums", late && "font-medium text-status-blocked-fg", className)}>
+    <span className={cn("whitespace-nowrap tabular-nums", late && "font-medium text-status-red-fg", className)}>
       {late ? "Target passed" : "Target"} {formatDay(day, today)}
     </span>
   );
@@ -86,7 +86,7 @@ export function TargetLabel({ day, today, active, className }: { day: string; to
 export function GoalCard({ goal, today, showProject = false }: { goal: GoalListItem; today: string; showProject?: boolean }) {
   const late = isPastTarget(goal, today);
   return (
-    <li className={cn("relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/40", late && "border-status-blocked-dot/50 bg-status-blocked-bg/30")} data-goal-card={goal.id} data-past-target={late || undefined}>
+    <li className={cn("relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/40", late && "border-status-red-dot/50 bg-status-red-bg/30")} data-goal-card={goal.id} data-past-target={late || undefined}>
       <div className="flex items-start justify-between gap-3">
         <Link
           href={`/goals/${goal.id}`}
@@ -122,9 +122,9 @@ export function GoalCard({ goal, today, showProject = false }: { goal: GoalListI
             <SubGoalCount count={goal.subGoals} />
           </>
         ) : null}
-        {goal.requiresApproval ? <ShieldCheck className="size-3.5 text-status-awaiting-fg" aria-label="New tasks need sign-off" role="img" /> : null}
+        {goal.requiresApproval ? <ShieldCheck className="size-3.5 text-status-amber-fg" aria-label="New tasks need sign-off" role="img" /> : null}
       </div>
-      {late ? <p className="mt-2 text-[13px] font-medium text-status-blocked-fg">Past its target and not marked completed.</p> : null}
+      {late ? <p className="mt-2 text-[13px] font-medium text-status-red-fg">Past its target and not marked completed.</p> : null}
       <ProgressBar {...goal.progress} className="mt-auto pt-4" />
     </li>
   );

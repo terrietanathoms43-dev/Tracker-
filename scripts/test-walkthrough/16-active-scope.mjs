@@ -19,18 +19,17 @@ const shiftDay = (day, days) => {
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 };
-const GROUPS = ["blocked", "awaiting_approval", "in_progress", "not_started", "deferred", "rejected", "cancelled", "merged", "completed"];
+const GROUPS = ["blocked", "awaiting_approval", "in_progress", "not_started", "rejected", "cancelled", "merged", "completed"];
 const INTRO = "the work this report cycle was to get through";
 const CSV_HEADER = "Title,Project,Goal,Assignees,Status,Due date,Closed on,Added on,New this cycle,Detail";
-/** The closed statuses, and the ones closed without completing (lib/constants.ts). */
-const CLOSED = "('completed', 'rejected', 'deferred', 'cancelled', 'merged')";
-const CLOSED_WITHOUT_COMPLETION = "('rejected', 'deferred', 'cancelled', 'merged')";
+/** The closed statuses (lib/constants.ts); a merged sub-task counts as completed (2026-11-24 log). */
+const CLOSED = "('completed', 'rejected', 'cancelled', 'merged')";
 
 /**
  * What the page should show since a day (and for a project): the rule of lib/reports/data.ts `activeScopeTasks`
  * and lib/reports/scope.ts written in SQL again, so the page is checked against the database rather than itself:
- * every open task, plus every task closed (completed_at, or the history row that rejected, deferred or cancelled
- * it) on or after the Since day. `today` is for what counts as overdue.
+ * every open task, plus every task closed (its closure snapshot `closed_at`, else completed_at, else the history
+ * row that put it in the status it is in) on or after the Since day. `today` is for what counts as overdue.
  */
 async function expected(since, today, projectId = null) {
   const rows = await query(
@@ -41,15 +40,14 @@ async function expected(since, today, projectId = null) {
       where t.org_id = (${org}) and (t.proposal_status is null or t.proposal_status = 'approved')
         and ($3::text is null or t.project_id = $3::text)
         and (t.status not in ${CLOSED}
-             or (case when t.status = 'completed' then t.completed_at
-                      else (select max(a.created_at) from task_activity a where a.task_id = t.id and a.kind in ${CLOSED_WITHOUT_COMPLETION}) end)
+             or coalesce(t.closed_at, t.completed_at, (select max(a.created_at) from task_activity a where a.task_id = t.id and a.after->>'status' = t.status::text))
                 >= ($1::date::timestamp at time zone '${TZ}'))
       group by t.status`,
     [since, today, projectId],
   );
   const byStatus = Object.fromEntries(rows.map((row) => [row.status, row.n]));
   const sum = (key) => rows.reduce((acc, row) => acc + row[key], 0);
-  const completed = byStatus.completed ?? 0;
+  const completed = (byStatus.completed ?? 0) + (byStatus.merged ?? 0);
   return {
     total: sum("n"),
     notCompleted: sum("n") - completed,

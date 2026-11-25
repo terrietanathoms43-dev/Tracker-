@@ -12,13 +12,14 @@ import { CurrentTask } from "@/components/tasks/task-actions";
 import { db } from "@/db";
 import { chainForPlacement } from "@/lib/approvals/chain";
 import { canDecideProposal, describeStepPeople } from "@/lib/approvals/policy";
-import { isClosedStatus } from "@/lib/constants";
 import { draftsForTask } from "@/lib/dal/drafts";
+import { pendingDueChangeForTask } from "@/lib/dal/due-changes";
 import { listHistory } from "@/lib/dal/history";
 import { pinnedProjectIds } from "@/lib/dal/projects";
 import { activePlanning, getTask, listLinks, taskPeople, tasksForGroup, tasksForParent } from "@/lib/dal/tasks";
-import { canApproveTask, canEditTask, canGroupTask, canReadTask, canRejectTask, canUpdateProgress, isWorker } from "@/lib/permissions";
+import { canApproveTask, canEditTask, canGroupTask, canReadTask, canRejectTask, canUpdateProgress, isAdmin, isWorker } from "@/lib/permissions";
 import { describeRecurrence } from "@/lib/recurrence";
+import { statusDef } from "@/lib/statuses";
 import { defaultApproverFor } from "@/lib/tasks/approver";
 import { closerLabel } from "@/lib/tasks/closer";
 import { nameOf } from "@/lib/tasks/people";
@@ -43,7 +44,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const viewer = await requireViewer();
   const worker = isWorker(viewer);
   // One round trip; nothing is rendered unless the viewer may read the task (a foreign id is simply not found).
-  const [found, links, history, people, planning, pinnedProjects, drafts] = await Promise.all([
+  const [found, links, history, people, planning, pinnedProjects, drafts, dueChange] = await Promise.all([
     getTask(viewer, id),
     listLinks(viewer, id),
     listHistory(viewer, id, null),
@@ -51,6 +52,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
     activePlanning(viewer),
     pinnedProjectIds(viewer),
     draftsForTask(viewer, id),
+    pendingDueChangeForTask(viewer, id),
   ]);
   if (found === null || !canReadTask(viewer, found.scope)) notFound();
   const { detail, scope } = found;
@@ -76,20 +78,23 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const removableLinks = links.filter((link) => abilities.edit || (abilities.progress && link.addedBy === viewer.userId)).map((link) => link.id);
   const updateContext: UpdateContext | null = abilities.progress
     ? {
+        statuses: viewer.statuses,
         task: {
           id: detail.id,
           title: detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title,
           status: detail.status,
           assigneeIds: scope.assigneeIds,
+          policyChecklist: detail.policyChecklist,
+          startedAt: detail.startedAt,
           nextAction: detail.nextAction,
           blockedReason: detail.blockedReason,
           blockedBy: detail.blockedBy,
           openComments: detail.openComments,
           commentsWaitingOnTasks: detail.commentsWaitingOnTasks,
-          fromComment: detail.fromComment === null ? null : { resolved: detail.fromComment.resolved, taskTitle: detail.fromComment.task?.title ?? null, taskStatus: detail.fromComment.task?.status ?? null, otherOpen: detail.fromComment.otherOpen },
+          fromComment: detail.fromComment === null ? null : { resolved: detail.fromComment.resolved, taskTitle: detail.fromComment.task?.title ?? null, taskKind: detail.fromComment.task === null ? null : statusDef(viewer.statuses, detail.fromComment.task.status).kind, otherOpen: detail.fromComment.otherOpen },
           repeats: detail.recurrence ? describeRecurrence(detail.recurrence, detail.dueDate) : null,
           parent: detail.parent,
-          openSubTasks: subTasks === null ? 0 : subTasks.filter((item) => !["completed", "rejected", "deferred", "cancelled", "merged"].includes(item.status)).length,
+          openSubTasks: subTasks === null ? 0 : subTasks.filter((item) => !statusDef(viewer.statuses, item.status).closed).length,
           closer: detail.goalCloser ? { goalTitle: detail.goal?.title ?? null, openOthers: detail.closerWaitsFor } : null,
         },
         people,
@@ -103,8 +108,8 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
       <CurrentTask id={detail.id} title={detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title} actionable={abilities.progress} />
       <TaskHeader detail={detail} abilities={abilities} today={today} />
       <div className="grid gap-5">
-        {detail.fromComment !== null ? <UpstreamCard fromComment={detail.fromComment} closed={isClosedStatus(detail.status)} /> : null}
-        <ResumeCard detail={detail} links={links} removableLinks={removableLinks} abilities={abilities} updateContext={updateContext} localChain={localChain} timeZone={viewer.timezone} now={now} />
+        {detail.fromComment !== null ? <UpstreamCard fromComment={detail.fromComment} closed={statusDef(viewer.statuses, detail.status).closed} /> : null}
+        <ResumeCard statuses={viewer.statuses} detail={detail} links={links} removableLinks={removableLinks} abilities={abilities} updateContext={updateContext} localChain={localChain} timeZone={viewer.timezone} now={now} />
         {subTasks !== null ? (
           <SubTasksSection task={{ id: detail.id, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} items={subTasks} today={today} canEdit={abilities.edit} readOnly={!abilities.progress} />
         ) : null}
@@ -117,11 +122,14 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           abilities={abilities}
           people={people.map(({ id: personId, name, email, image }) => ({ id: personId, name, email, image }))}
           viewerId={viewer.userId}
+          dueChange={dueChange}
+          viewerIsAdmin={isAdmin(viewer)}
           projects={planning.projects}
           pinnedProjects={pinnedProjects}
           goals={planning.goals}
           today={today}
           timeZone={viewer.timezone}
+          statuses={viewer.statuses}
           now={now}
         />
         <TaskDrafts drafts={drafts.map((draft) => ({ ...draft, updated: formatRelative(new Date(draft.updatedAt), now, viewer.timezone) }))} />

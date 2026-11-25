@@ -40,7 +40,7 @@ export function ProgressBar({
             </>
           )}
         </p>
-        {trouble.length > 0 ? <p className="font-medium text-status-blocked-fg tabular-nums">{trouble.join(" · ")}</p> : null}
+        {trouble.length > 0 ? <p className="font-medium text-status-red-fg tabular-nums">{trouble.join(" · ")}</p> : null}
       </div>
       <div className={cn("overflow-hidden rounded-full bg-muted", large ? "mt-2 h-2.5" : "mt-1.5 h-1.5")} aria-hidden>
         <div className="h-full rounded-full bg-highlight transition-[width]" style={{ width: `${width}%` }} />

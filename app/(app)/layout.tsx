@@ -18,6 +18,7 @@ import {
   TopBarSkeleton,
 } from "@/components/shell/shell-sections";
 import { FloatingNotepad } from "@/components/draft/floating-notepad";
+import { StatusBoundary } from "@/components/status-boundary";
 import { TaskActionsProvider } from "@/components/tasks/task-actions";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -73,7 +74,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </header>
 
           <main className="flex-1 pb-24 md:pb-10">
-            <div className="mx-auto w-full max-w-[1200px] px-4 pt-6 md:px-6 md:pt-8 md:sidebar-collapsed:pl-14">{children}</div>
+            <div className="mx-auto w-full max-w-[1200px] px-4 pt-6 md:px-6 md:pt-8 md:sidebar-collapsed:pl-14">
+              <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+                <StatusBoundary>{children}</StatusBoundary>
+              </Suspense>
+            </div>
           </main>
 
           <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 backdrop-blur md:hidden">

@@ -8,7 +8,8 @@ import { loadHistory, setCommentResolved } from "@/actions/tasks";
 import { StatusIcon } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
-import { isClosedStatus, TASK_STATUS_LABELS } from "@/lib/constants";
+import { useStatusCatalog } from "@/components/status-catalog";
+import { statusDef } from "@/lib/statuses";
 import { LIMITS } from "@/lib/limits";
 import { commentWaitsMessage, titleFromComment, waitsForLabel } from "@/lib/tasks/comment-tasks";
 import { nameOf } from "@/lib/tasks/people";
@@ -77,27 +78,30 @@ function ResolveButton({ taskId, item }: { taskId: string; item: HistoryItem }) 
 
 /** One task made from a comment, as a chip beside "Make a task": its status, its title (a link) and its status in words. */
 function MadeTaskChip({ made }: { made: HistoryItem["tasks"][number] }) {
+  const statuses = useStatusCatalog();
+  const def = statusDef(statuses, made.status);
   return (
     <Link
       href={`/tasks/${made.id}`}
       prefetch={false}
       className="inline-flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-md border bg-background px-2 text-[12px] font-medium hover:bg-accent sm:max-w-64"
-      title={`Made from this comment: ${made.title} (${TASK_STATUS_LABELS[made.status]})`}
+      title={`Made from this comment: ${made.title} (${def.label})`}
       data-comment-task={made.id}
     >
-      <StatusIcon status={made.status} />
-      <span className={cn("min-w-0 truncate", isClosedStatus(made.status) && made.status !== "completed" && "text-muted-foreground line-through")}>{made.title}</span>
-      <span className="shrink-0 font-normal text-muted-foreground">· {TASK_STATUS_LABELS[made.status]}</span>
+      <StatusIcon status={def} />
+      <span className={cn("min-w-0 truncate", def.closed && def.kind !== "completed" && "text-muted-foreground line-through")}>{made.title}</span>
+      <span className="shrink-0 font-normal text-muted-foreground">· {def.label}</span>
     </Link>
   );
 }
 
 function Entry({ task, item, canResolve }: { task: HistoryTask; item: HistoryItem; canResolve: boolean }) {
+  const statuses = useStatusCatalog();
   const taskId = task.id;
   const comment = item.type === "comment";
   const resolved = comment && item.resolved !== null;
   // Open tasks made from the comment: it cannot be resolved by hand until they are closed.
-  const waitingFor = comment && !resolved ? item.tasks.filter((made) => !isClosedStatus(made.status)) : [];
+  const waitingFor = comment && !resolved ? item.tasks.filter((made) => !statusDef(statuses, made.status).closed) : [];
   return (
     <li className="flex gap-3 py-2.5">
       <UserAvatar name={item.actor.name} email={item.actor.email} image={item.actor.image} size="sm" className="mt-0.5" />
@@ -126,7 +130,7 @@ function Entry({ task, item, canResolve }: { task: HistoryTask; item: HistoryIte
               </p>
             ) : null}
             {item.blocker ? (
-              <p className="text-status-blocked-fg">
+              <p className="text-status-red-fg">
                 <span className="font-medium">Blocked:</span> {item.blocker}
               </p>
             ) : null}
@@ -134,7 +138,7 @@ function Entry({ task, item, canResolve }: { task: HistoryTask; item: HistoryIte
         ) : comment ? (
           <div
             id={`comment-${item.id}`}
-            className={cn("mt-1 scroll-mt-24 rounded-md border", resolved ? "border-dashed bg-muted/30" : "border-status-awaiting-dot/40 bg-status-awaiting-bg/40")}
+            className={cn("mt-1 scroll-mt-24 rounded-md border", resolved ? "border-dashed bg-muted/30" : "border-status-amber-dot/40 bg-status-amber-bg/40")}
             data-comment={item.id}
             data-comment-state={resolved ? "resolved" : waitingFor.length > 0 ? "waiting" : "open"}
           >
@@ -142,12 +146,12 @@ function Entry({ task, item, canResolve }: { task: HistoryTask; item: HistoryIte
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-inherit px-3 py-1.5 text-[13px]">
               {resolved ? (
                 <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                  <CheckCircle2 className="size-3.5 text-status-completed-dot" aria-hidden />
+                  <CheckCircle2 className="size-3.5 text-status-green-dot" aria-hidden />
                   Resolved by {item.resolved!.by}
-                  {item.tasks.length > 0 && item.tasks.every((made) => isClosedStatus(made.status)) ? ` · ${item.tasks.length === 1 ? "its task was" : "its tasks were"} closed` : ""}
+                  {item.tasks.length > 0 && item.tasks.every((made) => statusDef(statuses, made.status).closed) ? ` · ${item.tasks.length === 1 ? "its task was" : "its tasks were"} closed` : ""}
                 </span>
               ) : (
-                <span className="font-medium text-status-awaiting-fg">Open comment</span>
+                <span className="font-medium text-status-amber-fg">Open comment</span>
               )}
               {item.tasks.length > 0 || canResolve || waitingFor.length > 0 ? (
                 <span className="flex min-w-0 flex-wrap items-center justify-end gap-1">
@@ -156,7 +160,7 @@ function Entry({ task, item, canResolve }: { task: HistoryTask; item: HistoryIte
                   ))}
                   {canResolve && !resolved ? <MakeTaskButton task={task} item={item} /> : null}
                   {waitingFor.length > 0 ? (
-                    <span className="inline-flex h-7 min-w-0 items-center gap-1.5 px-1.5 font-medium text-status-awaiting-fg" title={commentWaitsMessage(waitingFor.map((made) => made.title))} data-comment-waits>
+                    <span className="inline-flex h-7 min-w-0 items-center gap-1.5 px-1.5 font-medium text-status-amber-fg" title={commentWaitsMessage(waitingFor.map((made) => made.title))} data-comment-waits>
                       <Hourglass className="size-3.5 shrink-0" aria-hidden />
                       <span className="truncate">{waitsForLabel(waitingFor.map((made) => made.title))}</span>
                     </span>
@@ -197,7 +201,7 @@ export function TaskHistory({ task, initial, canComment, openComments }: { task:
           Comments and history
         </h2>
         {openComments > 0 ? (
-          <span className="rounded-md bg-status-awaiting-bg px-2 py-0.5 text-[13px] font-medium text-status-awaiting-fg tabular-nums">
+          <span className="rounded-md bg-status-amber-bg px-2 py-0.5 text-[13px] font-medium text-status-amber-fg tabular-nums">
             {openComments === 1 ? "1 open comment" : `${openComments} open comments`}
           </span>
         ) : null}

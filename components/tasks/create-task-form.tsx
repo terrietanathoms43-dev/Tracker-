@@ -18,6 +18,7 @@ import type { Recurrence } from "@/lib/recurrence";
 import { fromCommentHint } from "@/lib/tasks/comment-tasks";
 import { titleFromText } from "@/lib/tasks/title-from";
 import type { CreateDefaults } from "@/lib/tasks/types";
+import { DEPLOYMENT_POLICY_PRESET } from "@/lib/tasks/policy-checklist";
 import { AssigneePicker } from "./assignee-picker";
 import { RecurrencePicker } from "./recurrence-picker";
 import { loadTaskFormOptions, useTaskFormOptions } from "./use-task-form-options";
@@ -48,6 +49,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
   const [recurrence, setRecurrence] = useState<Recurrence | null>(null);
   const [nextAction, setNextAction] = useState("");
   const [description, setDescription] = useState(defaults.description ?? "");
+  const [policyText, setPolicyText] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [pending, startTransition] = useTransition();
 
@@ -75,7 +77,8 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
       // The default assignee is "me", which only the options can name: a quick Enter waits for them.
       const ready = options ?? (await loadTaskFormOptions()).options;
       const assigneeIds = assignment ?? me(ready);
-      const result = await createTask({ title, assigneeIds, projectId, goalId, parentId: defaults.parentId ?? "", sourceCommentId: fromComment?.id ?? "", priority, dueDate, dueTime, recurrence, nextAction, description });
+      const policyItems = policyText.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+      const result = await createTask({ title, assigneeIds, projectId, goalId, parentId: defaults.parentId ?? "", sourceCommentId: fromComment?.id ?? "", priority, dueDate, dueTime, recurrence, nextAction, description, policyItems });
       if (!result.ok) {
         setErrors(result.fieldErrors ?? { description: [result.error] });
         return;
@@ -110,7 +113,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
         </p>
       ) : null}
       {proposes ? (
-        <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg">
+        <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg">
           <ClipboardCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
           This is a proposal: a leader or admin signs it off before it becomes a live task. You can follow it under Proposals.
         </p>
@@ -206,6 +209,23 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
       <Field id="task-next" label="First next action" hint="Optional: the very next step, so whoever picks it up knows where to start." count={{ value: nextAction, max: LIMITS.nextAction }}>
         <Input id="task-next" value={nextAction} onChange={(event) => setNextAction(event.target.value)} placeholder="e.g. Reproduce it on staging" maxLength={LIMITS.nextAction} />
       </Field>
+      {!subTask ? (
+        <div className="grid gap-2">
+          <Field id="task-policy-checklist" label="Policy checks" hint="Optional. Add one requirement per line. Every check must be met before the task can be sent for approval." error={error("policyItems")}>
+            <Textarea
+              id="task-policy-checklist"
+              value={policyText}
+              onChange={(event) => setPolicyText(event.target.value)}
+              placeholder="Add task-specific requirements…"
+              rows={3}
+              maxLength={4000}
+            />
+          </Field>
+          <Button type="button" variant="outline" className="w-fit" onClick={() => setPolicyText(DEPLOYMENT_POLICY_PRESET.join("\n"))}>
+            Use deployment checklist
+          </Button>
+        </div>
+      ) : null}
       <div className="flex items-center justify-end gap-2 pt-1">
         {onCancel ? (
           <Button type="button" variant="ghost" onClick={onCancel}>

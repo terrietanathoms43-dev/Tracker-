@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import { DEFAULT_STATUSES } from "@/lib/statuses";
 import { PermissionToggleForm } from "@/components/settings/permission-toggle-form";
 import { ORG_ROLES, type OrgRole } from "@/lib/constants";
 import {
@@ -23,7 +24,7 @@ import { Section } from "./section";
 
 const ROLE_LABELS: Record<OrgRole, string> = { member: "Member", leader: "Leader", admin: "Admin", stakeholder: "Stakeholder" };
 
-const viewer = (role: OrgRole, toggles: PermissionToggles): Viewer => ({ userId: "me", orgId: "x", orgRole: role, timezone: "UTC", toggles });
+const viewer = (role: OrgRole, toggles: PermissionToggles): Viewer => ({ userId: "me", orgId: "x", orgRole: role, timezone: "UTC", toggles, statuses: DEFAULT_STATUSES });
 const task = (createdBy: string): TaskScope => ({ orgId: "x", assigneeIds: [], createdBy, approverId: null, proposalStatus: null });
 
 const CAPABILITIES: { label: string; check: (viewer: Viewer) => boolean }[] = [

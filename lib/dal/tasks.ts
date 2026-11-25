@@ -3,13 +3,15 @@ import { and, asc, desc, eq, gte, ilike, inArray, ne, notInArray, or, sql, type 
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, type Tx } from "@/db";
 import { goals, projects, taskActivity, taskLinks, tasks, users } from "@/db/schema";
-import { CLOSED_STATUSES, CLOSED_WITHOUT_COMPLETION, DUE_SOON_DAYS, isClosedStatus, RECENTLY_FINISHED_DAYS, type ProposalStatus, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { DUE_SOON_DAYS, RECENTLY_FINISHED_DAYS, type ProposalStatus, type TaskPriority } from "@/lib/constants";
 import { assignmentOf } from "@/lib/dal/assignments";
 import { listWorkers } from "@/lib/dal/orgs";
 import { pinnedProjectIds } from "@/lib/dal/projects";
 import { canDeleteTask, canReadTask, canUpdateProgress, isStakeholder, type TaskScope, type Viewer } from "@/lib/permissions";
 import { describeRecurrence, type Recurrence } from "@/lib/recurrence";
-import { BOARD_STATUSES, toBoardColumns, type BoardColumns } from "@/lib/tasks/board";
+import { closedStatusKeys, incompleteStatusKeys, isClosedStatusKey, statusDef, type StatusCatalog } from "@/lib/statuses";
+import type { TaskPolicyItem } from "@/lib/tasks/policy-checklist";
+import { boardStatuses, toBoardColumns, type BoardColumns } from "@/lib/tasks/board";
 import type { TaskFilters, TaskSort } from "@/lib/tasks/filters";
 import { FEED_KINDS, phraseFeed, type FeedKind } from "@/lib/tasks/history";
 import { groupMyWork, resumeOrder, type MyWorkGroups, type MyWorkRow } from "@/lib/tasks/my-work";
@@ -39,9 +41,8 @@ import { dayKey } from "@/lib/time";
 // be narrowed to one project (the navigation's project picker, docs/PLAN.md 2026-11-03 log). Assignment is a set of
 // people (task_assignees): every row carries it as JSON, so no list joins people.
 
-const CLOSED = [...CLOSED_STATUSES];
-/** `'completed', 'rejected', …` for raw SQL fragments that cannot take a parameter list. */
-const closedList = sql.raw(CLOSED.map((status) => `'${status}'`).join(", "));
+/** The workspace's closed keys as bound parameters, for raw SQL fragments: `$1, $2, …` (Completed and Merged keep it non-empty). */
+const closedList = (catalog: StatusCatalog) => sql.join(closedStatusKeys(catalog).map((status) => sql`${status}`), sql`, `);
 const creatorUser = alias(users, "creator_user");
 const approverUser = alias(users, "approver_user");
 const parentGoal = alias(goals, "parent_goal");
@@ -80,7 +81,7 @@ export const needsSignOffSql = sql<boolean>`(case
 export const projectCondition = (project: string): SQL | undefined => (project === "" ? undefined : eq(tasks.projectId, project));
 
 const todayFor = (viewer: Viewer) => dayKey(new Date(), viewer.timezone);
-const isOpen = notInArray(tasks.status, CLOSED);
+const isOpen = (catalog: StatusCatalog) => notInArray(tasks.status, closedStatusKeys(catalog));
 const escapeLike = (value: string) => value.replace(/[\\%_]/g, (match) => `\\${match}`);
 
 /** The goal itself and its sub-goals (one level, docs/PLAN.md 2026-10-30 log): what "under this goal" means. */
@@ -108,7 +109,7 @@ export const openCommentsSql = sql<number>`(select count(*)::int from task_updat
  * Of the open comments, the ones waiting for a task made from them (2026-11-11 log): such a comment cannot be
  * resolved by hand, and resolves itself when the last open live task made from it is closed.
  */
-export const commentsWaitingSql = sql<number>`(select count(*)::int from task_updates u where u.task_id = ${tasks}.id and u.kind = 'comment' and u.resolved_at is null and exists (select 1 from tasks lt where lt.source_comment_id = u.id and (lt.proposal_status is null or lt.proposal_status = 'approved') and lt.status not in (${closedList})))`;
+export const commentsWaitingSql = (catalog: StatusCatalog) => sql<number>`(select count(*)::int from task_updates u where u.task_id = ${tasks}.id and u.kind = 'comment' and u.resolved_at is null and exists (select 1 from tasks lt where lt.source_comment_id = u.id and (lt.proposal_status is null or lt.proposal_status = 'approved') and lt.status not in (${closedList(catalog)})))`;
 
 /** The comment a task was made from, as `fromCommentJson` returns it: the task it is on carries what a permission check needs. */
 type FromCommentRow = {
@@ -117,7 +118,7 @@ type FromCommentRow = {
   author: string;
   excerpt: string;
   otherOpen: number;
-  task: { id: string; title: string; status: TaskStatus; orgId: string; createdBy: string; approverId: string | null; proposalStatus: ProposalStatus | null; assigneeIds: string[] };
+  task: { id: string; title: string; status: string; orgId: string; createdBy: string; approverId: string | null; proposalStatus: ProposalStatus | null; assigneeIds: string[] };
 };
 
 /**
@@ -125,10 +126,10 @@ type FromCommentRow = {
  * closer), and how many other live tasks made from it are still open; null for a task made any other way, or when
  * the comment is gone. Whether the viewer may read the comment's task is decided after, by `fromCommentFor`.
  */
-export const fromCommentJson = sql<FromCommentRow | null>`(
+export const fromCommentJson = (catalog: StatusCatalog) => sql<FromCommentRow | null>`(
   select json_build_object(
     'id', c.id, 'resolved', c.resolved_at is not null, 'author', coalesce(cu.name, cu.email, 'Someone'), 'excerpt', left(c.body, 280),
-    'otherOpen', (select count(*)::int from tasks o where o.source_comment_id = c.id and o.id <> ${tasks}.id and (o.proposal_status is null or o.proposal_status = 'approved') and o.status not in (${closedList})),
+    'otherOpen', (select count(*)::int from tasks o where o.source_comment_id = c.id and o.id <> ${tasks}.id and (o.proposal_status is null or o.proposal_status = 'approved') and o.status not in (${closedList(catalog)})),
     'task', json_build_object(
       'id', ct.id, 'status', ct.status, 'orgId', ct.org_id, 'createdBy', ct.created_by, 'approverId', ct.approver_id, 'proposalStatus', ct.proposal_status,
       'title', case when ct.goal_closer then coalesce(ct.title || ' · ' || (select cg.title from goals cg where cg.id = ct.goal_id), ct.title) else ct.title end,
@@ -152,7 +153,7 @@ function fromCommentFor(viewer: Viewer, row: FromCommentRow | null): TaskDetail[
     author: readable ? row.author : null,
     excerpt: readable ? row.excerpt : null,
     task: readable ? { id: row.task.id, title: row.task.title, status: row.task.status } : null,
-    canReopenTask: readable && isClosedStatus(row.task.status) && canUpdateProgress(viewer, scope),
+    canReopenTask: readable && isClosedStatusKey(viewer.statuses, row.task.status) && canUpdateProgress(viewer, scope),
   };
 }
 
@@ -169,7 +170,7 @@ export const parentTitleSql = sql<string | null>`(select p.title from tasks p wh
 export const subTasksSql = sql<number>`(select count(*)::int from tasks c where c.parent_task_id = ${tasks}.id and (c.proposal_status is null or c.proposal_status = 'approved'))`;
 
 /** Open live tasks attached to this one: a parent cannot be completed while there are any. */
-export const openSubTasksSql = sql<number>`(select count(*)::int from tasks c where c.parent_task_id = ${tasks}.id and (c.proposal_status is null or c.proposal_status = 'approved') and c.status not in (${closedList}))`;
+export const openSubTasksSql = (catalog: StatusCatalog) => sql<number>`(select count(*)::int from tasks c where c.parent_task_id = ${tasks}.id and (c.proposal_status is null or c.proposal_status = 'approved') and c.status not in (${closedList(catalog)}))`;
 
 /** The title of the task's goal, for a read that does not join goals. */
 export const goalTitleSql = sql<string | null>`(select g.title from goals g where g.id = ${tasks}.goal_id)`;
@@ -178,7 +179,7 @@ export const goalTitleSql = sql<string | null>`(select g.title from goals g wher
  * Open live tasks under the task's goal and its sub-goals, itself aside: what a goal's "Everything completed" task
  * waits for (lib/dal/goal-achievement.ts `openTasksUnderGoal` counts the same inside a transaction).
  */
-export const otherOpenGoalTasksSql = sql<number>`(select count(*)::int from tasks o where o.org_id = ${tasks}.org_id and o.id <> ${tasks}.id and (o.proposal_status is null or o.proposal_status = 'approved') and o.status not in (${closedList}) and o.goal_id in (select g.id from goals g where g.id = ${tasks}.goal_id or g.parent_goal_id = ${tasks}.goal_id))`;
+export const otherOpenGoalTasksSql = (catalog: StatusCatalog) => sql<number>`(select count(*)::int from tasks o where o.org_id = ${tasks}.org_id and o.id <> ${tasks}.id and (o.proposal_status is null or o.proposal_status = 'approved') and o.status not in (${closedList(catalog)}) and o.goal_id in (select g.id from goals g where g.id = ${tasks}.goal_id or g.parent_goal_id = ${tasks}.goal_id))`;
 
 /**
  * A task named in plain text: a goal's closer carries its goal, "Everything completed · Ship onboarding", so a feed
@@ -232,7 +233,7 @@ type ListRow = {
   id: string;
   title: string;
   description: string | null;
-  status: TaskStatus;
+  status: string;
   priority: TaskListItem["priority"];
   dueDate: string | null;
   dueTime: string | null;
@@ -307,9 +308,9 @@ export async function listItemsByIds(viewer: Viewer, ids: string[]): Promise<Map
 
 // Sort keys are written against a table alias so the keyset cursor can compare the same expressions on the
 // cursor's own row ("tasks" for the list, "cur" for the cursor). Every key sorts ascending; id breaks ties.
-function sortKeys(sort: TaskSort, table: "tasks" | "cur", today: string): SQL[] {
+function sortKeys(sort: TaskSort, table: "tasks" | "cur", today: string, catalog: StatusCatalog): SQL[] {
   const col = (name: string) => sql.raw(`"${table}"."${name}"`);
-  const open = sql`${col("status")} not in (${closedList})`;
+  const open = sql`${col("status")} not in (${closedList(catalog)})`;
   const overdue = sql`(case when ${col("due_date")} < ${today}::date and ${open} then 0 else 1 end)`;
   const due = sql`coalesce(${col("due_date")}, '9999-12-31'::date)`;
   const priority = sql`(case ${col("priority")} when 'urgent' then 0 when 'high' then 1 when 'normal' then 2 else 3 end)`;
@@ -330,7 +331,7 @@ function sortKeys(sort: TaskSort, table: "tasks" | "cur", today: string): SQL[] 
   }
 }
 
-const orderBy = (sort: TaskSort, today: string) => [...sortKeys(sort, "tasks", today).map((key) => sql`${key} asc`), asc(tasks.id)];
+const orderBy = (sort: TaskSort, today: string, catalog: StatusCatalog) => [...sortKeys(sort, "tasks", today, catalog).map((key) => sql`${key} asc`), asc(tasks.id)];
 
 const isNull = (column: AnyPgColumn) => sql`${column} is null`;
 
@@ -369,7 +370,7 @@ function filterConditions(viewer: Viewer, filters: TaskFilters, today: string, s
   if (scoped) where.push(scoped);
   if (filters.goal === "none") where.push(isNull(tasks.goalId));
   else if (filters.goal) where.push(inGoal(viewer, filters.goal));
-  if (filters.due === "overdue") where.push(sql`${tasks.dueDate} < ${today}::date`, isOpen);
+  if (filters.due === "overdue") where.push(sql`${tasks.dueDate} < ${today}::date`, isOpen(viewer.statuses));
   if (filters.due === "week") where.push(sql`${tasks.dueDate} between ${today}::date and ${today}::date + 6`);
   if (filters.due === "none") where.push(isNull(tasks.dueDate));
   where.push(...dateFilterConditions(viewer, filters));
@@ -390,11 +391,11 @@ export async function listTasks(viewer: Viewer, filters: TaskFilters, options: {
   const { today } = options;
   const where = filterConditions(viewer, filters, today);
   if (filters.status.length > 0) where.push(inArray(tasks.status, filters.status));
-  else if (!filters.closed) where.push(isOpen);
+  else if (!filters.closed) where.push(isOpen(viewer.statuses));
 
   if (options.cursor) {
-    const keys = sortKeys(filters.sort, "tasks", today);
-    const cursorKeys = sortKeys(filters.sort, "cur", today);
+    const keys = sortKeys(filters.sort, "tasks", today, viewer.statuses);
+    const cursorKeys = sortKeys(filters.sort, "cur", today, viewer.statuses);
     where.push(
       sql`(${sql.join([...keys, sql`${tasks.id}`], sql`, `)}) > (select ${sql.join([...cursorKeys, sql.raw(`"cur"."id"`)], sql`, `)} from "tasks" "cur" where "cur"."id" = ${options.cursor} and "cur"."org_id" = ${viewer.orgId})`,
     );
@@ -402,12 +403,12 @@ export async function listTasks(viewer: Viewer, filters: TaskFilters, options: {
 
   const rows = await selectList()
     .where(and(...where))
-    .orderBy(...orderBy(filters.sort, today))
+    .orderBy(...orderBy(filters.sort, today, viewer.statuses))
     .limit(limit + 1);
   const items = rows.slice(0, limit).map((row) => toListItem(row, viewer));
   const nextCursor = rows.length > limit ? items[items.length - 1].id : null;
   if (nextCursor === null) return { items, nextCursor };
-  return { items: [...items, ...(await groupMates(viewer, items, where, orderBy(filters.sort, today)))], nextCursor };
+  return { items: [...items, ...(await groupMates(viewer, items, where, orderBy(filters.sort, today, viewer.statuses)))], nextCursor };
 }
 
 /** How many tasks a page may pull forward to sit with their groups. */
@@ -441,18 +442,19 @@ async function groupMates(viewer: Viewer, items: TaskListItem[], where: SQL[], o
  * only the last RECENTLY_FINISHED_DAYS days; a status filter narrows the board to those columns.
  */
 export async function boardTasks(viewer: Viewer, filters: TaskFilters, options: { today: string }): Promise<BoardColumns> {
-  const statuses = filters.status.length > 0 ? BOARD_STATUSES.filter((status) => filters.status.includes(status)) : [...BOARD_STATUSES];
-  if (statuses.length === 0) return toBoardColumns([]);
+  const shown = boardStatuses(viewer.statuses);
+  const statuses = filters.status.length > 0 ? shown.filter((status) => filters.status.includes(status.key)) : shown;
+  if (statuses.length === 0) return toBoardColumns([], shown);
   const where = filterConditions(viewer, filters, options.today);
   where.push(
-    inArray(tasks.status, statuses),
+    inArray(tasks.status, statuses.map((status) => status.key)),
     sql`(${tasks.status} <> 'completed' or ${tasks.completedAt} > now() - make_interval(days => ${RECENTLY_FINISHED_DAYS}))`,
   );
   const rows = await selectList()
     .where(and(...where))
-    .orderBy(...orderBy(filters.sort, options.today))
+    .orderBy(...orderBy(filters.sort, options.today, viewer.statuses))
     .limit(500);
-  return toBoardColumns(rows.map((row) => toListItem(row, viewer)));
+  return toBoardColumns(rows.map((row) => toListItem(row, viewer)), shown);
 }
 
 /**
@@ -464,7 +466,7 @@ export async function localTasks(viewer: Viewer, filters: TaskFilters, today: st
   if (filters.status.length > 0 && !filters.status.includes("not_started")) return [];
   const rows = await selectList()
     .where(and(...filterConditions(viewer, filters, today, localOnly(viewer))))
-    .orderBy(...orderBy(filters.sort, today))
+    .orderBy(...orderBy(filters.sort, today, viewer.statuses))
     .limit(limit);
   return rows.map((row) => toListItem(row, viewer));
 }
@@ -488,7 +490,7 @@ export async function searchTasks(viewer: Viewer, q: string, limit = 8): Promise
   const like = `%${escapeLike(term)}%`;
   const rows = await selectList()
     .where(and(visibility(viewer), paletteScope(viewer), textMatch(like)))
-    .orderBy(sql`(${tasks.status} in (${closedList}))`, desc(tasks.updatedAt))
+    .orderBy(sql`(${tasks.status} in (${closedList(viewer.statuses)}))`, desc(tasks.updatedAt))
     .limit(limit);
   return rows.map((row) => toListItem(row, viewer));
 }
@@ -522,21 +524,22 @@ export async function attentionTasks(viewer: Viewer, today: string, limit = 50, 
         visibility(viewer),
         liveOnly,
         projectCondition(project),
-        isOpen,
+        isOpen(viewer.statuses),
         or(eq(tasks.status, "blocked"), eq(tasks.status, "awaiting_approval"), sql`${tasks.dueDate} <= ${today}::date + ${DUE_SOON_DAYS}::int`, unassigned),
       ),
     );
   const items = rows.map((row) => {
     const nobody = row.assignees.length === 0;
+    const kind = statusDef(viewer.statuses, row.status).kind;
     const reason =
       row.dueDate !== null && row.dueDate < today
         ? "Overdue"
-        : row.status === "blocked"
-          ? "Blocked"
-          : row.status === "awaiting_approval"
+        : kind === "blocked"
+          ? statusDef(viewer.statuses, row.status).label
+          : kind === "awaiting_approval"
             ? row.approverId === viewer.userId
               ? "Your approval"
-              : "Awaiting approval"
+              : statusDef(viewer.statuses, row.status).label
             : nobody
               ? "Unassigned"
               : "Due soon";
@@ -565,6 +568,7 @@ export type ApprovalStagingTask = {
   openComments: number;
   /** Of those, the ones waiting for a task made from them (2026-11-11 log). */
   commentsWaitingOnTasks: number;
+  policyChecklist: TaskPolicyItem[];
 };
 
 /**
@@ -582,6 +586,7 @@ export async function approvalStagingTasks(viewer: Viewer, project = ""): Promis
       updatedAt: tasks.updatedAt,
       latestProgress: tasks.latestProgress,
       completionSummary: tasks.completionSummary,
+      policyChecklist: tasks.policyChecklist,
       nextAction: tasks.nextAction,
       approverId: tasks.approverId,
       projectId: projects.id,
@@ -590,7 +595,7 @@ export async function approvalStagingTasks(viewer: Viewer, project = ""): Promis
       goalTitle: goals.title,
       people: assigneesJson,
       openComments: openCommentsSql,
-      commentsWaiting: commentsWaitingSql,
+      commentsWaiting: commentsWaitingSql(viewer.statuses),
       evidence: sql<{ url: string; label: string | null }[]>`coalesce((select json_agg(json_build_object('url', l.url, 'label', l.label) order by l.created_at) from task_links l where l.task_id = ${tasks}.id), '[]'::json)`,
     })
     .from(tasks)
@@ -615,6 +620,7 @@ export async function approvalStagingTasks(viewer: Viewer, project = ""): Promis
     evidence: row.evidence,
     openComments: row.openComments,
     commentsWaitingOnTasks: row.commentsWaiting,
+    policyChecklist: row.policyChecklist ?? [],
   }));
 }
 
@@ -648,7 +654,7 @@ export async function myWorkRows(viewer: Viewer, options: MyWorkOptions = {}): P
         or(visibleWork(viewer), localOnly(viewer)),
         projectCondition(options.project ?? ""),
         ...(options.dates ? dateFilterConditions(viewer, options.dates) : []),
-        or(and(assignedTo(me), or(isOpen, finished)), and(eq(tasks.approverId, me), eq(tasks.status, "awaiting_approval")), localOnly(viewer)),
+        or(and(assignedTo(me), or(isOpen(viewer.statuses), finished)), and(eq(tasks.approverId, me), eq(tasks.status, "awaiting_approval")), localOnly(viewer)),
       ),
     );
   return rows.map((row) => ({
@@ -657,13 +663,13 @@ export async function myWorkRows(viewer: Viewer, options: MyWorkOptions = {}): P
     mine: row.mine,
     sortRank: row.sortRank,
     completedAt: row.completedAt,
-    sentBack: row.status === "in_progress" && row.lastStatusKind === "sent_back",
+    sentBack: statusDef(viewer.statuses, row.status).kind === "in_progress" && row.lastStatusKind === "sent_back",
   }));
 }
 
 /** My Work's four groups (Needs attention · Continue working · Waiting on others · Recently finished). */
 export async function myWorkGroups(viewer: Viewer, today: string, options: MyWorkOptions = {}): Promise<MyWorkGroups> {
-  return groupMyWork(await myWorkRows(viewer, options), viewer.userId, today);
+  return groupMyWork(await myWorkRows(viewer, options), viewer.userId, today, viewer.statuses);
 }
 
 /**
@@ -676,13 +682,13 @@ export async function myWorkTasks(viewer: Viewer, project = ""): Promise<TaskLis
 
 // --- projects, goals, counts, workload ---------------------------------------------------------------------
 
-const groupedOrder = (today: string) => [sql`(${tasks.status} in (${closedList}))`, ...orderBy("smart", today)];
+const groupedOrder = (viewer: Viewer, today: string) => [sql`(${tasks.status} in (${closedList(viewer.statuses)}))`, ...orderBy("smart", today, viewer.statuses)];
 
 /** Every live task in a project (open first, in the smart order), for the project page to group by status. */
 export async function tasksForProject(viewer: Viewer, projectId: string): Promise<TaskListItem[]> {
   const rows = await selectList()
     .where(and(visibility(viewer), visibleWork(viewer), eq(tasks.projectId, projectId)))
-    .orderBy(...groupedOrder(todayFor(viewer)))
+    .orderBy(...groupedOrder(viewer, todayFor(viewer)))
     .limit(500);
   return rows.map((row) => toListItem(row, viewer));
 }
@@ -692,7 +698,7 @@ export async function tasksForGoal(viewer: Viewer, goalId: string): Promise<Task
   const today = todayFor(viewer);
   const rows = await selectList()
     .where(and(visibility(viewer), visibleWork(viewer), inGoal(viewer, goalId)))
-    .orderBy(sql`(${tasks.status} in (${closedList}))`, asc(tasks.goalCloser), ...orderBy("smart", today))
+    .orderBy(sql`(${tasks.status} in (${closedList(viewer.statuses)}))`, asc(tasks.goalCloser), ...orderBy("smart", today, viewer.statuses))
     .limit(500);
   return rows.map((row) => toListItem(row, viewer));
 }
@@ -702,8 +708,8 @@ export async function openTasksForGoals(viewer: Viewer, goalIds: string[]): Prom
   const out = new Map<string, TaskListItem[]>(goalIds.map((id) => [id, []]));
   if (goalIds.length === 0) return out;
   const rows = await selectList()
-    .where(and(visibility(viewer), visibleWork(viewer), isOpen, inArray(tasks.goalId, goalIds)))
-    .orderBy(asc(tasks.goalCloser), ...orderBy("smart", todayFor(viewer)))
+    .where(and(visibility(viewer), visibleWork(viewer), isOpen(viewer.statuses), inArray(tasks.goalId, goalIds)))
+    .orderBy(asc(tasks.goalCloser), ...orderBy("smart", todayFor(viewer), viewer.statuses))
     .limit(1000);
   for (const row of rows) {
     if (row.goalId === null) continue;
@@ -712,10 +718,11 @@ export async function openTasksForGoals(viewer: Viewer, goalIds: string[]): Prom
   return out;
 }
 
-type ProgressRow = { key: string; taskId: string; status: TaskStatus; dueDate: string | null };
+type ProgressRow = { key: string; taskId: string; status: string; dueDate: string | null };
 
 /** Counts each (key, task) pair once. */
-function tallyProgress(rows: ProgressRow[], keys: string[], today: string): Map<string, TaskProgress> {
+function tallyProgress(rows: ProgressRow[], keys: string[], today: string, statuses: StatusCatalog): Map<string, TaskProgress> {
+  const closed = new Set(closedStatusKeys(statuses));
   const out = new Map<string, TaskProgress>(keys.map((key) => [key, { completed: 0, total: 0, blocked: 0, overdue: 0 }]));
   const seen = new Set<string>();
   for (const row of rows) {
@@ -725,21 +732,22 @@ function tallyProgress(rows: ProgressRow[], keys: string[], today: string): Map<
     const tally = out.get(row.key);
     if (!tally) continue;
     tally.total += 1;
-    if (row.status === "completed") tally.completed += 1;
-    if (row.status === "blocked") tally.blocked += 1;
-    if (!CLOSED_STATUSES.includes(row.status) && row.dueDate !== null && row.dueDate < today) tally.overdue += 1;
+    const def = statusDef(statuses, row.status);
+    if (def.kind === "completed" || def.kind === "merged") tally.completed += 1;
+    if (def.kind === "blocked") tally.blocked += 1;
+    if (!closed.has(row.status) && row.dueDate !== null && row.dueDate < today) tally.overdue += 1;
   }
   return out;
 }
 
 /**
- * What progress is counted over: every status but the ones that close a task without completing it (rejected,
- * deferred, cancelled, merged). Such a task will never be completed, so it is in neither the done nor the total:
- * a goal with three tasks done and one cancelled is three of three, not three of four, and is not "behind pace"
- * because of it (2026-11-11 log; until then only rejected ones were left out). The reports' own pace counts the
- * same way (`countsTowardsPace` in lib/reports/data.ts).
+ * What progress is counted over: every status but the closed-without-completion ones (Rejected, Cancelled and any
+ * custom closed status). Such a task will never be completed, so it is in neither the done nor the total: a goal
+ * with three tasks done and one cancelled is three of three, not three of four, and is not "behind pace" because
+ * of it (2026-11-11 log). A merged sub-task is completed work (2026-11-24 log, the task model): it is in the total
+ * and in the done. The reports' own pace counts the same way (`countsTowardsPace` in lib/reports/data.ts).
  */
-export const countsTowardsProgress = notInArray(tasks.status, [...CLOSED_WITHOUT_COMPLETION]);
+export const countsTowardsProgress = (catalog: StatusCatalog) => notInArray(tasks.status, incompleteStatusKeys(catalog));
 
 /**
  * Progress per goal (completed / total, plus blocked and overdue), counting the live tasks linked to the goal and
@@ -758,7 +766,7 @@ export async function progressForGoals(viewer: Viewer, goalIds: string[]): Promi
   const direct = await db
     .select({ taskId: tasks.id, status: tasks.status, dueDate: tasks.dueDate, key: tasks.goalId })
     .from(tasks)
-    .where(and(visibility(viewer), liveOnly, countsTowardsProgress, inArray(tasks.goalId, allIds)));
+    .where(and(visibility(viewer), liveOnly, countsTowardsProgress(viewer.statuses), inArray(tasks.goalId, allIds)));
   const rows: ProgressRow[] = [];
   for (const row of direct) {
     if (row.key === null) continue;
@@ -766,7 +774,7 @@ export async function progressForGoals(viewer: Viewer, goalIds: string[]): Promi
     const parent = parentOf.get(row.key);
     if (parent !== undefined && goalIds.includes(parent)) rows.push({ ...row, key: parent });
   }
-  return tallyProgress(rows, goalIds, todayFor(viewer));
+  return tallyProgress(rows, goalIds, todayFor(viewer), viewer.statuses);
 }
 
 /** Progress per project, the same shape as progressForGoals: every live task in the project. */
@@ -775,11 +783,12 @@ export async function progressForProjects(viewer: Viewer, projectIds: string[]):
   const rows = await db
     .select({ key: tasks.projectId, taskId: tasks.id, status: tasks.status, dueDate: tasks.dueDate })
     .from(tasks)
-    .where(and(visibility(viewer), liveOnly, countsTowardsProgress, inArray(tasks.projectId, projectIds)));
+    .where(and(visibility(viewer), liveOnly, countsTowardsProgress(viewer.statuses), inArray(tasks.projectId, projectIds)));
   return tallyProgress(
     rows.filter((row): row is ProgressRow => row.key !== null),
     projectIds,
     todayFor(viewer),
+    viewer.statuses,
   );
 }
 
@@ -792,9 +801,9 @@ const countIf = (condition: SQL) => sql<number>`(count(*) filter (where ${condit
 export async function taskCounts(viewer: Viewer, options: { today: string; since: Date; project?: string }): Promise<TaskCounts> {
   const [row] = await db
     .select({
-      active: countIf(isOpen),
+      active: countIf(isOpen(viewer.statuses)),
       completed: countIf(and(eq(tasks.status, "completed"), gte(tasks.completedAt, options.since))!),
-      overdue: countIf(and(isOpen, sql`${tasks.dueDate} < ${options.today}::date`)!),
+      overdue: countIf(and(isOpen(viewer.statuses), sql`${tasks.dueDate} < ${options.today}::date`)!),
       blocked: countIf(eq(tasks.status, "blocked")),
       awaiting: countIf(eq(tasks.status, "awaiting_approval")),
     })
@@ -813,8 +822,8 @@ export async function workload(viewer: Viewer, project = ""): Promise<WorkloadRo
   const [workers, rows] = await Promise.all([
     listWorkers(viewer),
     selectList()
-      .where(and(visibility(viewer), liveOnly, projectCondition(project), isOpen))
-      .orderBy(...orderBy("smart", today)),
+      .where(and(visibility(viewer), liveOnly, projectCondition(project), isOpen(viewer.statuses)))
+      .orderBy(...orderBy("smart", today, viewer.statuses)),
   ]);
   const byPerson = new Map<string | null, TaskListItem[]>();
   const people = new Map<string, Person>();
@@ -829,7 +838,7 @@ export async function workload(viewer: Viewer, project = ""): Promise<WorkloadRo
   const summarise = (person: Person | null, active: TaskListItem[]): WorkloadRow => ({
     person,
     active,
-    blocked: active.filter((item) => item.status === "blocked").length,
+    blocked: active.filter((item) => statusDef(viewer.statuses, item.status).kind === "blocked").length,
     overdue: active.filter((item) => item.dueDate !== null && item.dueDate < today).length,
   });
   const out = workers.map((worker) => summarise({ id: worker.userId, name: worker.name, email: worker.email, image: worker.image }, byPerson.get(worker.userId) ?? []));
@@ -888,6 +897,7 @@ export async function recentActivity(viewer: Viewer, limit: number, since?: Date
         actor: { id: row.actorId, name: row.actorName, email: row.actorEmail, image: row.actorImage },
       },
       today,
+      viewer.statuses,
     ),
   );
 }
@@ -916,13 +926,13 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
       approvals: approvalsJson,
       needsSignOff: needsSignOffSql,
       openComments: openCommentsSql,
-      commentsWaiting: commentsWaitingSql,
+      commentsWaiting: commentsWaitingSql(viewer.statuses),
       parentTitle: parentTitleSql,
       subTasks: subTasksSql,
       groupName: groupNameSql,
       groupSize: groupSizeSql,
-      fromComment: fromCommentJson,
-      otherOpenGoalTasks: otherOpenGoalTasksSql,
+      fromComment: fromCommentJson(viewer.statuses),
+      otherOpenGoalTasks: otherOpenGoalTasksSql(viewer.statuses),
       approver: sql<Person | null>`case when ${approverUser.id} is null then null else ${personJson(approverUser)} end`,
       creator: sql<Person>`${personJson(creatorUser)}`,
       lastUpdate: sql<{ author: Person; at: string } | null>`(select json_build_object('at', u.created_at, 'author', json_build_object('id', au.id, 'name', au.name, 'email', au.email, 'image', au.image)) from task_updates u join users au on au.id = u.author_id where u.task_id = ${tasks}.id and u.kind = 'progress' order by u.created_at desc limit 1)`,
@@ -969,6 +979,7 @@ export async function getTask(viewer: Viewer, id: string): Promise<{ detail: Tas
     latestProgress: t.latestProgress,
     nextAction: t.nextAction,
     completionSummary: t.completionSummary,
+    policyChecklist: t.policyChecklist ?? [],
     openComments: row.openComments,
     commentsWaitingOnTasks: row.commentsWaiting,
     lastUpdate: row.lastUpdate ? { author: row.lastUpdate.author, at: new Date(row.lastUpdate.at).toISOString() } : null,
@@ -983,6 +994,8 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
       id: tasks.id,
       title: tasks.title,
       status: tasks.status,
+      startedAt: tasks.startedAt,
+      policyChecklist: tasks.policyChecklist,
       createdBy: tasks.createdBy,
       approverId: tasks.approverId,
       proposalStatus: tasks.proposalStatus,
@@ -993,15 +1006,15 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
       dueDate: tasks.dueDate,
       parentTaskId: tasks.parentTaskId,
       parentTitle: parentTitleSql,
-      openSubTasks: openSubTasksSql,
+      openSubTasks: openSubTasksSql(viewer.statuses),
       goalCloser: tasks.goalCloser,
       goalId: tasks.goalId,
       goalTitle: goalTitleSql,
-      otherOpenGoalTasks: otherOpenGoalTasksSql,
+      otherOpenGoalTasks: otherOpenGoalTasksSql(viewer.statuses),
       assignees: assigneesJson,
       openComments: openCommentsSql,
-      commentsWaiting: commentsWaitingSql,
-      fromCommentRow: fromCommentJson,
+      commentsWaiting: commentsWaitingSql(viewer.statuses),
+      fromCommentRow: fromCommentJson(viewer.statuses),
     })
     .from(tasks)
     .where(and(eq(tasks.id, id), eq(tasks.orgId, viewer.orgId)));
@@ -1011,7 +1024,7 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
   return {
     ...basics,
     /** Made from a comment: what closing or reopening this task does to that comment (the forms say it before the save). */
-    fromComment: from === null ? null : { resolved: from.resolved, taskTitle: from.task?.title ?? null, taskStatus: from.task?.status ?? null, otherOpen: from.otherOpen },
+    fromComment: from === null ? null : { resolved: from.resolved, taskTitle: from.task?.title ?? null, taskKind: from.task === null ? null : statusDef(viewer.statuses, from.task.status).kind, otherOpen: from.otherOpen },
     parent: row.parentTaskId && row.parentTitle !== null ? { id: row.parentTaskId, title: row.parentTitle } : null,
     /** A goal's closer: the goal it marks achieved and how many other tasks it still waits for. */
     closer: isCloser(row) ? { goalTitle: row.goalTitle, openOthers: row.otherOpenGoalTasks } : null,
@@ -1035,9 +1048,9 @@ export async function listLinks(viewer: Viewer, taskId: string): Promise<Evidenc
  * assignment, its open-comment count (the transition rules need it), its goal's title (a goal's closer is named by
  * it) and the scope its permission checks need. Null when the id is unknown or belongs to another workspace.
  */
-export async function lockTask(tx: Tx, orgId: string, id: string) {
+export async function lockTask(tx: Tx, orgId: string, id: string, catalog: StatusCatalog) {
   const [row] = await tx
-    .select({ task: tasks, openComments: openCommentsSql, commentsWaitingOnTasks: commentsWaitingSql, goalTitle: goalTitleSql })
+    .select({ task: tasks, openComments: openCommentsSql, commentsWaitingOnTasks: commentsWaitingSql(catalog), goalTitle: goalTitleSql })
     .from(tasks)
     .where(and(eq(tasks.id, id), eq(tasks.orgId, orgId)))
     .for("update", { of: tasks });
@@ -1052,7 +1065,7 @@ export async function tasksForParent(viewer: Viewer, parentId: string): Promise<
   const today = todayFor(viewer);
   const rows = await selectList()
     .where(and(visibility(viewer), visibleWork(viewer), eq(tasks.parentTaskId, parentId)))
-    .orderBy(...groupedOrder(today));
+    .orderBy(...groupedOrder(viewer, today));
   return rows.map((row) => toListItem(row, viewer));
 }
 
@@ -1064,17 +1077,17 @@ export async function tasksForGroup(viewer: Viewer, groupId: string): Promise<Ta
   const today = todayFor(viewer);
   const rows = await selectList()
     .where(and(visibility(viewer), liveOnly, eq(tasks.groupId, groupId)))
-    .orderBy(...groupedOrder(today))
+    .orderBy(...groupedOrder(viewer, today))
     .limit(200);
   return rows.map((row) => toListItem(row, viewer));
 }
 
 /** Open live tasks attached to a task, inside a transaction: a parent cannot be completed while there are any. */
-export async function openSubTasks(tx: Tx, orgId: string, parentId: string): Promise<number> {
+export async function openSubTasks(tx: Tx, orgId: string, parentId: string, catalog: StatusCatalog): Promise<number> {
   const [row] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(tasks)
-    .where(and(eq(tasks.orgId, orgId), eq(tasks.parentTaskId, parentId), liveOnly, isOpen));
+    .where(and(eq(tasks.orgId, orgId), eq(tasks.parentTaskId, parentId), liveOnly, isOpen(catalog)));
   return row?.n ?? 0;
 }
 
@@ -1085,11 +1098,11 @@ export async function subTaskIds(tx: Tx, orgId: string, parentId: string): Promi
 }
 
 /** Whether another occurrence of a repeating series is still open (so finishing one never makes two next ones). */
-export async function seriesHasOpenTask(tx: Tx, orgId: string, seriesId: string, exceptId: string): Promise<boolean> {
+export async function seriesHasOpenTask(tx: Tx, orgId: string, seriesId: string, exceptId: string, catalog: StatusCatalog): Promise<boolean> {
   const [row] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(tasks)
-    .where(and(eq(tasks.orgId, orgId), eq(tasks.seriesId, seriesId), ne(tasks.id, exceptId), isOpen));
+    .where(and(eq(tasks.orgId, orgId), eq(tasks.seriesId, seriesId), ne(tasks.id, exceptId), isOpen(catalog)));
   return (row?.n ?? 0) > 0;
 }
 

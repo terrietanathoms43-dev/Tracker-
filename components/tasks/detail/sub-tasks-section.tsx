@@ -3,6 +3,8 @@
 import { GitMerge } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useStatusCatalog } from "@/components/status-catalog";
+import { statusDef } from "@/lib/statuses";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { AttachTaskDialog } from "../attach-task-dialog";
@@ -15,7 +17,8 @@ import { TaskList } from "../task-list";
 
 export function SubTasksSection({ task, items, today, canEdit, readOnly }: { task: { id: string; projectId: string | null; goalId: string | null }; items: TaskListItem[]; today: string; canEdit: boolean; readOnly: boolean }) {
   const [attaching, setAttaching] = useState(false);
-  const open = items.filter((item) => item.status !== "completed" && item.status !== "merged" && item.status !== "cancelled" && item.status !== "rejected" && item.status !== "deferred").length;
+  const statuses = useStatusCatalog();
+  const open = items.filter((item) => !statusDef(statuses, item.status).closed).length;
   return (
     <section id="sub-tasks" aria-labelledby="sub-tasks-heading" className="scroll-mt-20 rounded-xl border bg-card" data-sub-tasks>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3 md:px-6">

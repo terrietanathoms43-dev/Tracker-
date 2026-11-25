@@ -400,7 +400,7 @@ function Review({
                     </div>
                     <Input aria-label="First next action" value={task.nextAction} maxLength={LIMITS.nextAction} placeholder="First next action (optional)" onChange={(event) => patchTask(task.key, { nextAction: event.target.value })} />
                     {task.unmatchedNames.length > 0 ? (
-                      <p className="text-[13px] text-status-awaiting-fg">
+                      <p className="text-[13px] text-status-amber-fg">
                         Also named: {task.unmatchedNames.join(", ")} — not in this workspace, so not assigned.
                       </p>
                     ) : null}

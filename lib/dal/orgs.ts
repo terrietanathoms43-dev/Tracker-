@@ -86,6 +86,15 @@ export async function leaderIds(handle: Tx | typeof db, orgId: string): Promise<
   return rows.map((row) => row.userId);
 }
 
+/** The admins of a workspace: who decides a due-date change (2026-11-24 log). */
+export async function adminIds(handle: Tx | typeof db, orgId: string): Promise<string[]> {
+  const rows = await handle
+    .select({ userId: organizationMembers.userId })
+    .from(organizationMembers)
+    .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.role, "admin")));
+  return rows.map((row) => row.userId);
+}
+
 export async function countMembers(handle: Tx | typeof db, orgId: string): Promise<number> {
   const [row] = await handle
     .select({ n: sql<number>`count(*)::int` })

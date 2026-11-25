@@ -1,10 +1,13 @@
 "use client";
 
+import { useStatusCatalog } from "@/components/status-catalog";
+
 import { GitMerge, Group } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { groupTasks } from "@/actions/task-groups";
 import { attachTask, bulkAttach, paletteSearch } from "@/actions/tasks";
 import { StatusIcon } from "@/components/status-badge";
+import { statusDef } from "@/lib/statuses";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -49,6 +52,7 @@ export function AttachTaskDialog({
   onClose: () => void;
   onDone?: () => void;
 }) {
+  const statuses = useStatusCatalog();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ q: string; items: TaskListItem[] }>({ q: "", items: [] });
   const [recent, setRecent] = useState<TaskListItem[]>([]);
@@ -129,7 +133,7 @@ export function AttachTaskDialog({
               <CommandGroup heading={term === "" ? "Recently touched" : "Tasks"}>
                 {offered.map((task) => (
                   <CommandItem key={task.id} value={task.id} disabled={pending} onSelect={() => pick(task.id)} data-attach-choice={task.id}>
-                    <StatusIcon status={task.status} />
+                    <StatusIcon status={statusDef(statuses, task.status)} />
                     <span className="truncate">{taskLabel(task)}</span>
                     {grouping && task.group !== null ? <span className="shrink-0 rounded-md border border-primary/35 px-1.5 text-[11px] text-muted-foreground">{groupLabel(task.group)} · {task.group.size}</span> : null}
                     {task.project ? <span className="ml-auto truncate text-[12px] text-muted-foreground">{task.project.name}</span> : null}

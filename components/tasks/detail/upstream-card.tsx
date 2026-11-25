@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useTransition } from "react";
 import { changeStatus } from "@/actions/tasks";
 import { StatusBadge } from "@/components/status-badge";
+import { useStatusCatalog } from "@/components/status-catalog";
+import { statusDef } from "@/lib/statuses";
 import { Button } from "@/components/ui/button";
 import type { TaskDetail, TaskRef } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
@@ -37,6 +39,7 @@ function stateLine(fromComment: NonNullable<TaskDetail["fromComment"]>, closed: 
 }
 
 export function UpstreamCard({ fromComment, closed }: { fromComment: NonNullable<TaskDetail["fromComment"]>; closed: boolean }) {
+  const statuses = useStatusCatalog();
   const { task } = fromComment;
   return (
     <aside aria-label="Where this task came from" className="rounded-xl border bg-card px-5 py-3.5 md:px-6" data-from-comment={fromComment.id}>
@@ -50,7 +53,7 @@ export function UpstreamCard({ fromComment, closed }: { fromComment: NonNullable
                 <Link href={`/tasks/${task.id}`} prefetch={false} className="min-w-0 truncate font-medium text-link underline-offset-4 hover:underline" data-from-comment-task>
                   {task.title}
                 </Link>
-                <StatusBadge status={task.status} />
+                <StatusBadge status={statusDef(statuses, task.status)} />
               </p>
               {fromComment.excerpt ? <blockquote className="mt-2 line-clamp-3 border-l-2 pl-3 text-sm break-words whitespace-pre-line text-muted-foreground">{fromComment.excerpt}</blockquote> : null}
               <p className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[13px] text-muted-foreground">

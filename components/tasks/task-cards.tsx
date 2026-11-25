@@ -1,5 +1,8 @@
 "use client";
 
+import { statusDef } from "@/lib/statuses";
+import { useStatusCatalog } from "@/components/status-catalog";
+
 import { cn } from "cn";
 import { ClipboardCheck, CornerDownRight, GitMerge, Group } from "lucide-react";
 import Link from "next/link";
@@ -32,6 +35,7 @@ export function TaskCard({
    overlay?: boolean;
    inGroup?: boolean;
 }) {
+   const statuses = useStatusCatalog();
    const [sheetOpen, setSheetOpen] = useState(false);
    const { handlers, swallowClick } = useLongPress(() => setSheetOpen(true));
    return (
@@ -57,7 +61,7 @@ export function TaskCard({
                   {readOnly || overlay ? null : <TaskMenu task={task} className="-mt-1 -mr-1 size-6" />}
                </div>
                {task.proposal === "pending" || task.proposal === "declined" ? (
-                  <span className={cn("mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium", task.proposal === "pending" ? "bg-status-awaiting-bg text-status-awaiting-fg" : "bg-status-blocked-bg text-status-blocked-fg")}>
+                  <span className={cn("mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium", task.proposal === "pending" ? "bg-status-amber-bg text-status-amber-fg" : "bg-status-red-bg text-status-red-fg")}>
                      <ClipboardCheck className="size-3" aria-hidden />
                      {task.proposal === "pending" ? "Waiting for sign-off" : "Declined"}
                   </span>
@@ -85,7 +89,7 @@ export function TaskCard({
                ) : null}
                {task.nextAction ? <p className="mt-1 line-clamp-1 text-[13px] text-muted-foreground">{task.nextAction}</p> : null}
                <div className="mt-2.5 flex items-center gap-2">
-                  <DueLabel due={task.dueDate} today={today} status={task.status} />
+                  <DueLabel due={task.dueDate} today={today} status={statusDef(statuses, task.status)} />
                   <PriorityGlyph priority={task.priority} className="relative" />
                   <span className="ml-auto" />
                   <AssigneeStack assignees={task.assignees} className="relative" />

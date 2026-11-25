@@ -83,8 +83,8 @@ async function Onboarding({ searchParams }: Pick<PageProps<"/onboarding">, "sear
   const firstName = (user.name ?? "").split(" ")[0];
   return (
     <div>
-      <div className="mb-5 grid size-11 place-items-center rounded-full bg-status-completed-bg">
-        <CheckCircle2 className="size-5 text-status-completed-fg" aria-hidden />
+      <div className="mb-5 grid size-11 place-items-center rounded-full bg-status-green-bg">
+        <CheckCircle2 className="size-5 text-status-green-fg" aria-hidden />
       </div>
       <h1 className="text-2xl font-semibold">You&apos;re set up{firstName ? `, ${firstName}` : ""}</h1>
       <p className="mt-2 text-base text-muted-foreground">

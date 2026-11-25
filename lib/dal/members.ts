@@ -2,18 +2,14 @@ import "server-only";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { organizationMembers, users } from "@/db/schema";
-import { CLOSED_STATUSES, type OrgRole } from "@/lib/constants";
+import { type OrgRole } from "@/lib/constants";
 import { canSeeMembers, type Viewer } from "@/lib/permissions";
+import { closedStatusKeys } from "@/lib/statuses";
 import type { Person } from "@/lib/tasks/types";
 import { dayKey } from "@/lib/time";
 
 // The roster behind /members: everyone in the workspace with their role and the open work assigned to them.
 // Every read filters by viewer.orgId in SQL.
-
-const closed = sql.join(
-  CLOSED_STATUSES.map((status) => sql`${status}`),
-  sql`, `,
-);
 
 /** One member as the Members page lists them: role, and the open work assigned to them. */
 export type MemberDirectoryRow = Person & {
@@ -28,6 +24,10 @@ const ROLE_RANK: Record<OrgRole, number> = { admin: 0, leader: 1, member: 2, sta
 export async function memberDirectory(viewer: Viewer): Promise<MemberDirectoryRow[]> {
   if (!canSeeMembers(viewer)) return [];
   const today = dayKey(new Date(), viewer.timezone);
+  const closed = sql.join(
+    closedStatusKeys(viewer.statuses).map((status) => sql`${status}`),
+    sql`, `,
+  );
   const openWork = (extra = sql``) =>
     sql<number>`(select count(*)::int from task_assignees ta join tasks t on t.id = ta.task_id where ta.user_id = ${users}.id and t.org_id = ${viewer.orgId} and t.status not in (${closed}) and (t.proposal_status is null or t.proposal_status = 'approved') ${extra})`;
   const rows = await db

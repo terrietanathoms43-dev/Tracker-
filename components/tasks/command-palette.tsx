@@ -1,5 +1,8 @@
 "use client";
 
+import { useStatusCatalog } from "@/components/status-catalog";
+import { statusDef } from "@/lib/statuses";
+
 import { AudioLines, BarChart3, ClipboardCheck, Clock, Columns3, FolderKanban, House, ListChecks, NotebookPen, Plus, Search, SquareCheckBig, Target, Users, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -58,6 +61,7 @@ export function rememberRecentTask(task: Recent): void {
 
 /** ⌘K / Ctrl+K: find a task by title or description, pick up a recent one, start one, or go anywhere the viewer's role reaches. */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const statuses = useStatusCatalog();
   const router = useRouter();
   const { openCreate, openUpdate, currentTaskId } = useTaskActions();
   const [query, setQuery] = useState("");
@@ -140,7 +144,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                 ))}
                 {latest.map((task) => (
                   <CommandItem key={`latest-${task.id}`} value={`latest-${task.id}`} onSelect={() => go(`/tasks/${task.id}`)}>
-                    <StatusIcon status={task.status} />
+                    <StatusIcon status={statusDef(statuses, task.status)} />
                     <span className="truncate">{taskLabel(task)}</span>
                     <span className="ml-auto text-[12px] text-muted-foreground">updated</span>
                   </CommandItem>
@@ -151,7 +155,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
               <CommandGroup heading="Tasks">
                 {tasks.map((task) => (
                   <CommandItem key={task.id} value={`task-${task.id}`} onSelect={() => go(`/tasks/${task.id}`)}>
-                    <StatusIcon status={task.status} />
+                    <StatusIcon status={statusDef(statuses, task.status)} />
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate">{taskLabel(task)}</span>
                       {task.description ? <span className="truncate text-[12px] text-muted-foreground">{task.description.slice(0, 120)}</span> : null}

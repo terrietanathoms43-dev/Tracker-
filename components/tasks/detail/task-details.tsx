@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "@/components/status-badge";
+import { statusDef, type StatusCatalog } from "@/lib/statuses";
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS } from "@/lib/constants";
 import { describeRecurrence, formatTime } from "@/lib/recurrence";
 import { nameOf } from "@/lib/tasks/people";
@@ -12,7 +13,10 @@ import { AssigneeStack } from "../assignee-stack";
 import { DueLabel } from "../due-label";
 import { ApprovalChain } from "../proposal-strip";
 import { GroupField } from "../task-group";
-import { AssigneesEditor, DescriptionEditor, DueEditor, GoalEditor, PickEditor, ProjectEditor, RecurrenceEditor, StatusEditor, TimeEditor } from "./detail-editors";
+import type { PendingDueChange } from "@/lib/dal/due-changes";
+import { AssigneesEditor, DescriptionEditor, GoalEditor, PickEditor, ProjectEditor, RecurrenceEditor, StatusEditor, TimeEditor } from "./detail-editors";
+import { DueChangeEditor, PendingDueChangeCard } from "./due-change";
+import { PolicyChecklist } from "../policy-checklist";
 
 // The task page's Details card: description and the facts that rarely change.
 
@@ -43,14 +47,22 @@ export function TaskDetails({
   abilities,
   people,
   viewerId,
+  dueChange = null,
+  viewerIsAdmin = false,
   projects,
   pinnedProjects,
   goals,
   today,
   timeZone,
   now,
+  statuses,
 }: {
   detail: TaskDetail;
+  statuses: StatusCatalog;
+  /** A due-date change waiting for an admin (2026-11-24 log), shown in the Due row with the buttons the viewer may press. */
+  dueChange?: PendingDueChange | null;
+  /** An admin decides due-date changes, and an admin's own change takes effect at once. */
+  viewerIsAdmin?: boolean;
   /** Whether the viewer may put this task in a group: an editor, on a live top-level task that is not a goal's closer. */
   canGroup?: boolean;
   abilities: TaskAbilities;
@@ -78,8 +90,9 @@ export function TaskDetails({
       </h2>
       <div className="grid gap-3 px-5 py-4 md:px-6">
         <DescriptionEditor key={detail.description ?? ""} taskId={detail.id} description={detail.description} editable={edit} />
+        <PolicyChecklist taskId={detail.id} items={detail.policyChecklist} editable={abilities.progress && detail.status !== "awaiting_approval" && !statusDef(statuses, detail.status).closed} />
         <dl className="divide-y border-t">
-          {live ? <Row label="Current status">{abilities.progress ? <StatusEditor taskId={detail.id} status={detail.status} allowReject={abilities.reject} hasParent={detail.parent !== null} /> : <StatusBadge status={detail.status} />}</Row> : null}
+          {live ? <Row label="Current status">{abilities.progress ? <StatusEditor taskId={detail.id} status={detail.status} allowReject={abilities.reject} hasParent={detail.parent !== null} /> : <StatusBadge status={statusDef(statuses, detail.status)} />}</Row> : null}
           <Row label="Assigned to">
             {edit ? (
               <AssigneesEditor key={JSON.stringify(detail.assignees)} taskId={detail.id} assignees={detail.assignees} people={people} viewerId={viewerId} />
@@ -90,19 +103,22 @@ export function TaskDetails({
             )}
           </Row>
           <Row label="Due">
-            {edit ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <DueEditor taskId={detail.id} due={detail.dueDate} />
-                {detail.dueDate ? <TimeEditor taskId={detail.id} time={detail.dueTime} /> : null}
-              </div>
-            ) : detail.dueDate ? (
-              <span>
-                <DueLabel due={detail.dueDate} today={today} status={detail.status} className="text-base" />
-                {detail.dueTime ? ` · ${formatTime(detail.dueTime)}` : ""}
-              </span>
-            ) : (
-              <span className="text-muted-foreground">No due date</span>
-            )}
+            <div className="grid gap-2">
+              {edit ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <DueChangeEditor key={detail.dueDate ?? ""} taskId={detail.id} due={detail.dueDate} today={today} immediate={viewerIsAdmin || !live} waiting={dueChange !== null} repeats={detail.recurrence !== null} />
+                  {detail.dueDate ? <TimeEditor taskId={detail.id} time={detail.dueTime} /> : null}
+                </div>
+              ) : detail.dueDate ? (
+                <span>
+                  <DueLabel due={detail.dueDate} today={today} status={statusDef(statuses, detail.status)} className="text-base" />
+                  {detail.dueTime ? ` · ${formatTime(detail.dueTime)}` : ""}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">No due date</span>
+              )}
+              {dueChange !== null ? <PendingDueChangeCard change={dueChange} today={today} canDecide={viewerIsAdmin} canWithdraw={edit || dueChange.requestedBy.id === viewerId} /> : null}
+            </div>
           </Row>
           <Row label="Repeat">
             {edit && !detail.goalCloser ? (

@@ -4,7 +4,8 @@
 // ticks it in the Local section and sends it for sign-off: it becomes a pending proposal with Lumen's chain, leaves
 // the Local section and shows as waiting; Morgan has it under Waiting for you. Then Morgan switches Lumen's sign-off
 // off and Sam's remaining local tasks offer Publish instead: one is published and is on the project page for
-// everyone. Last, Reports: a member's activity widget draws their local task; a leader's leaves it out.
+// everyone. Last, Reports: no activity widget draws a local task, not even its maker's (2026-11-24 log: unapproved
+// work is in no report until it is live).
 //
 // Usage: node scripts/test-walkthrough/15-local-tasks.mjs [--base=http://localhost:3021]
 import { closePool, finish, openBrowser, query, sleep, step, stoppedOn, tidy } from "./lib.mjs";
@@ -147,12 +148,12 @@ try {
   await jordan.goto(`/projects/${lumen.id}`, 4000);
   step("it is on the project page for everyone", await jordan.waitForNear("Not started", TITLE2, { timeout: 15_000 }));
 
-  // --- 7. Reports: a member's activity widget draws their local task; a leader's leaves it out ---------------------------------------
+  // --- 7. Reports: a local task is in nobody's activity widget, its maker's included (2026-11-24 log) -----------------------------
   const [due] = await query("select due_date::text as day from tasks where title = $1", [TITLE3]);
   await sam.goto("/reports", 4000);
-  step("a member's report names the activity widget and says local tasks are in it", (await sam.waitFor("Activity widget", 15_000)) && (await sam.has("your local tasks included")));
+  step("a member's report names the activity widget and says whose blocks it draws", (await sam.waitFor("Activity widget", 15_000)) && (await sam.has("One block for each task assigned to you")));
   step("the local task's day can be pinned", await pinDay(sam, due.day));
-  step("the day inspector lists the local task as due", (await inspector(sam)).includes(TITLE3), (await inspector(sam)).slice(0, 160));
+  step("the maker's own widget leaves the local task out: it is not live work yet", !(await inspector(sam)).includes(TITLE3), (await inspector(sam)).slice(0, 160));
   await sam.shot("15-report-activity-widget", { full: true });
   await morgan.goto("/reports?cut=leader", 4000);
   await morgan.waitFor("Activity widget", 15_000);

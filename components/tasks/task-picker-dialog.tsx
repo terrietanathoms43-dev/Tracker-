@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
 import { paletteSearch } from "@/actions/tasks";
 import { StatusIcon } from "@/components/status-badge";
+import { useStatusCatalog } from "@/components/status-catalog";
+import { statusDef } from "@/lib/statuses";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -30,6 +32,7 @@ export function TaskPickerDialog({
   onPick: (task: TaskListItem) => Promise<boolean>;
   onClose: () => void;
 }) {
+  const statuses = useStatusCatalog();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ q: string; items: TaskListItem[] }>({ q: "", items: [] });
   const [recent, setRecent] = useState<TaskListItem[]>([]);
@@ -82,7 +85,7 @@ export function TaskPickerDialog({
               <CommandGroup heading={term === "" ? "Recently touched" : "Tasks"}>
                 {offered.map((task) => (
                   <CommandItem key={task.id} value={task.id} disabled={pending} onSelect={() => pick(task)} data-task-choice={task.id}>
-                    <StatusIcon status={task.status} />
+                    <StatusIcon status={statusDef(statuses, task.status)} />
                     <span className="truncate">{taskLabel(task)}</span>
                     {task.project ? <span className="ml-auto truncate text-[12px] text-muted-foreground">{task.project.name}</span> : null}
                   </CommandItem>

@@ -9,8 +9,8 @@ export const metadata: Metadata = { title: "Check your email" };
 export default function CheckEmailPage() {
   return (
     <AuthShell>
-      <div className="mb-5 grid size-11 place-items-center rounded-full bg-status-completed-bg">
-        <MailCheck className="size-5 text-status-completed-fg" aria-hidden />
+      <div className="mb-5 grid size-11 place-items-center rounded-full bg-status-green-bg">
+        <MailCheck className="size-5 text-status-green-fg" aria-hidden />
       </div>
       <h1 className="text-2xl font-semibold">Check your email</h1>
       <p className="mt-2 text-base text-muted-foreground">
