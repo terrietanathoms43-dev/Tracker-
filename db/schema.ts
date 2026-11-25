@@ -29,6 +29,7 @@ import {
 import type { Recurrence } from "@/lib/recurrence";
 import type { DueChangeKind, DueChangeStatus } from "@/lib/tasks/due-change";
 import type { TaskPolicyItem } from "@/lib/tasks/policy-checklist";
+import type { PolicyOwnerKind, PolicyScopeKind, PolicyTemplate } from "@/lib/tasks/workflow-policies";
 
 // The whole Trackwise schema (docs/PLAN.md §4), applied with `npm run db:push`. The 2026-11-03 overhaul (the
 // rigid workspace → projects → goals → tasks funnel, proposals, repeats, goal links) was applied with
@@ -449,6 +450,45 @@ export const approvalBypass = pgTable(
   (t) => [index("approval_bypass_project_idx").on(t.projectId), index("approval_bypass_goal_idx").on(t.goalId)],
 );
 
+// --- reusable workflow policies -------------------------------------------------
+
+/** A named reusable template collection, owned by a workspace, project or goal. */
+export const workflowPolicies = pgTable(
+  "workflow_policies",
+  {
+    id: id(),
+    orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    ownerKind: text("owner_kind").$type<PolicyOwnerKind>().notNull(),
+    ownerId: text("owner_id").notNull(),
+    templates: jsonb("templates").$type<PolicyTemplate[]>().notNull().default([]),
+    createdBy: text("created_by").notNull().references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("workflow_policies_org_idx").on(t.orgId)],
+);
+
+/** Workspace, project and goal attachments are automatic; task attachments are manual.
+ * The application layer validates each scope ID against the workspace before inserting a polymorphic attachment.
+ */
+export const workflowPolicyAttachments = pgTable(
+  "workflow_policy_attachments",
+  {
+    id: id(),
+    orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    policyId: text("policy_id").notNull().references(() => workflowPolicies.id, { onDelete: "cascade" }),
+    scopeKind: text("scope_kind").$type<PolicyScopeKind>().notNull(),
+    scopeId: text("scope_id").notNull(),
+    createdBy: text("created_by").notNull().references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("workflow_policy_attachment_unique").on(t.orgId, t.policyId, t.scopeKind, t.scopeId),
+    index("workflow_policy_attachment_scope_idx").on(t.orgId, t.scopeKind, t.scopeId),
+  ],
+);
+
 // --- tasks ----------------------------------------------------------------------
 
 /**
@@ -536,6 +576,11 @@ export const tasks = pgTable(
     completionSummary: text("completion_summary"),
     /** Task-specific policy checks that must be met before the task is sent for approval. */
     policyChecklist: jsonb("policy_checklist").$type<TaskPolicyItem[]>().notNull().default([]),
+    /** Provenance for generated child tasks, retained as a snapshot even if a policy is later removed. */
+    workflowPolicyId: text("workflow_policy_id"),
+    workflowPolicyTemplateId: text("workflow_policy_template_id"),
+    workflowPolicyName: text("workflow_policy_name"),
+    workflowPolicyChecklistItemId: text("workflow_policy_checklist_item_id"),
     /** Manual importance; higher sorts first within the smart order. */
     sortRank: doublePrecision("sort_rank").notNull().default(0),
     createdAt: createdAt(),
@@ -549,6 +594,8 @@ export const tasks = pgTable(
     index("tasks_org_proposal_idx").on(t.orgId, t.proposalStatus),
     index("tasks_series_idx").on(t.seriesId),
     index("tasks_parent_idx").on(t.parentTaskId),
+    uniqueIndex("tasks_policy_child_unique").on(t.parentTaskId, t.workflowPolicyId, t.workflowPolicyTemplateId),
+    uniqueIndex("tasks_policy_checklist_item_unique").on(t.workflowPolicyChecklistItemId),
     index("tasks_group_idx").on(t.groupId),
     index("tasks_source_comment_idx").on(t.sourceCommentId),
   ],

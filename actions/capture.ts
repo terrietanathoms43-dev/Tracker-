@@ -1,5 +1,6 @@
 "use server";
 
+import { materializePolicies } from "@/lib/dal/workflow-policies";
 import { and, eq, inArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
@@ -197,6 +198,7 @@ export async function applyCapture(input: z.input<typeof captureDraftSchema>): P
           })
           .returning({ id: tasks.id });
         await applyAssignment(tx, created.id, viewer.userId, [], assignment, now);
+        await materializePolicies(tx, viewer.orgId, created.id, viewer.userId, now);
         const drafts: ActivityDraft[] = [{ kind: "created", after: { title: task.title }, note: `Captured from ${meeting}` }];
         if (!sameIds(assignment, [viewer.userId]) && assignment.length > 0) drafts.push({ kind: "assigned", after: await snapshotAssignment(tx, assignment) });
         await recordActivity(tx, { orgId: viewer.orgId, taskId: created.id, actorId: viewer.userId }, drafts, now);

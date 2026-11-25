@@ -140,6 +140,7 @@ export function planTransition(task: TaskState, to: string, input: TransitionInp
     return { ok: false, error: "Move this task to In progress before completing it." };
   }
   if (toStatus.kind === "completed") {
+    if (task.policyChecklist?.some((item) => Boolean(item.policyId)) && via !== "approve") return { ok: false, error: "Submit this policy-governed task for independent approval first." };
     const remaining = incompletePolicyCount(task.policyChecklist ?? []);
     if (remaining > 0) return { ok: false, error: incompletePoliciesMessage(remaining) };
   }

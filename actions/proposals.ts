@@ -1,5 +1,6 @@
 "use server";
 
+import { materializePolicies } from "@/lib/dal/workflow-policies";
 import { eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
@@ -75,6 +76,7 @@ export async function decideProposal(input: z.input<typeof decideSchema>): Promi
       const next = currentStep(remaining);
       if (next === null) {
         await tx.update(tasks).set({ proposalStatus: "approved", updatedAt: now }).where(eq(tasks.id, task.id));
+        await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
         drafts.push({ kind: "proposal_approved", after: { steps: steps.length } });
         notices.push({ ...base, recipients: [task.createdBy], kind: "proposal_decided", title: `Approved: ${task.title}`, body: data.note || "It is a live task now." });
         if (assignment.length > 0) notices.push({ ...base, recipients: assignment, kind: "assigned", title: `New task for you: ${task.title}`, body: task.nextAction ? `First step: ${task.nextAction}` : null });
@@ -137,6 +139,7 @@ export async function resubmitProposal(input: z.input<typeof resubmitSchema>): P
       if (chain === null) {
         // The rule that made it a proposal is gone: it is live now.
         await tx.update(tasks).set({ proposalStatus: "approved", updatedAt: now }).where(eq(tasks.id, task.id));
+        await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
         await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [{ kind: "proposal_approved", note: "No sign-off is required here any more." }], new Date(now.getTime() + 1));
         return null;
       }

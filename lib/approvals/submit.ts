@@ -1,3 +1,4 @@
+import { materializePolicies } from "@/lib/dal/workflow-policies";
 import "server-only";
 import { eq } from "drizzle-orm";
 import type { Tx } from "@/db";
@@ -28,6 +29,7 @@ export async function submitLocalTask(tx: Tx, viewer: Viewer, locked: Locked, no
   await tx.delete(taskApprovals).where(eq(taskApprovals.taskId, task.id));
   if (chain === null) {
     await tx.update(tasks).set({ proposalStatus: null, updatedAt: now }).where(eq(tasks.id, task.id));
+    await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
     await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [{ kind: "published", note: "No sign-off applies here, so it is a live task now." }], now);
     return { live: true, notices: assignedNotice(viewer, task, assignment, true) };
   }

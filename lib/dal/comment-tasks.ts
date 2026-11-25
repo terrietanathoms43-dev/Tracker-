@@ -1,4 +1,5 @@
 import "server-only";
+import { materializePolicies, syncPolicyChildren } from "@/lib/dal/workflow-policies";
 import { and, eq, ne, notInArray } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { taskUpdates, tasks } from "@/db/schema";
@@ -91,6 +92,8 @@ async function reopenCompleted(tx: Tx, viewer: Viewer, taskId: string, why: stri
   if (!plan.ok || plan.activities.length === 0) return out;
   const goal = await applyGoalRules(tx, viewer, task, target, now);
   await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
+  if (plan.patch.policyChecklist) await syncPolicyChildren(tx, viewer.orgId, task.id, plan.patch.policyChecklist, viewer.userId, now);
+  await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
   await recordActivity(
     tx,
     { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId },

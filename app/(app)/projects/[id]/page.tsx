@@ -1,3 +1,4 @@
+import { WorkflowPolicySection } from "@/components/tasks/workflow-policy-section";
 import { Archive, AudioLines, Target } from "lucide-react";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -85,6 +86,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
           </>
         }
       />
+      {manage ? <WorkflowPolicySection orgId={viewer.orgId} kind="project" id={project.id} /> : null}
       {active && canCreateTask(viewer) ? <QuickAddTask today={today} defaults={{ projectId: project.id }} /> : null}
       <div className="grid gap-8">
         <div className="grid gap-3">

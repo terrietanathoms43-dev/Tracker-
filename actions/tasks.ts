@@ -1,5 +1,6 @@
 "use server";
 
+import { attachTaskPolicies, deletePolicyChildren, materializePolicies, syncPolicyChildren } from "@/lib/dal/workflow-policies";
 import { and, eq } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { z } from "zod";
@@ -121,7 +122,7 @@ async function insertLink(tx: Tx, taskId: string, userId: string, url: string, l
 
 /** Who may move a task: finishing an approval is the approver's, closing without completing needs edit rights, the rest is progress. */
 function mayMove(viewer: Viewer, scope: TaskScope, from: TaskStatusDef, to: TaskStatusDef, via: TransitionVia): boolean {
-  if (via !== "status" || (from.kind === "awaiting_approval" && to.kind === "completed")) return canApproveTask(viewer, scope);
+  if (via !== "status" || (from.kind === "awaiting_approval" && to.kind === "completed")) return canApproveTask(viewer, scope) && (!scope.hasWorkflowPolicy || via === "send_back" || !scope.assigneeIds.includes(viewer.userId));
   if (requiresEditToEnter(to)) return canRejectTask(viewer, scope);
   return canUpdateProgress(viewer, scope);
 }
@@ -188,12 +189,13 @@ async function spawnNextOccurrence(tx: Tx, viewer: Viewer, task: LockedTask, ass
       dueTime: task.dueTime,
       recurrence: rule,
       seriesId,
-      policyChecklist: createPolicyChecklist((task.policyChecklist ?? []).map((item) => item.label)),
+      policyChecklist: createPolicyChecklist((task.policyChecklist ?? []).filter((item) => !item.policyId).map((item) => item.label)),
       createdAt: now,
       updatedAt: now,
     })
     .returning({ id: tasks.id });
   await applyAssignment(tx, created.id, viewer.userId, [], assignment, now);
+  await attachTaskPolicies(tx, viewer.orgId, created.id, [...new Set(task.policyChecklist.flatMap((item) => item.policyId && item.policySources?.some((source) => source.kind === "task") ? [item.policyId] : []))], viewer.userId, now);
   await recordActivity(
     tx,
     { orgId: viewer.orgId, taskId: created.id, actorId: viewer.userId },
@@ -259,6 +261,7 @@ async function attachUnder(tx: Tx, viewer: Viewer, child: Locked, parent: Locked
   // A sub-task goes where its parent goes, so it leaves a group of its own (2026-11-11 log).
   await leaveGroup(tx, { orgId: viewer.orgId, actorId: viewer.userId }, child.task, now, { note: "It became a sub-task, which goes where its parent goes." });
   await tx.update(tasks).set({ parentTaskId: parent.task.id, projectId: parent.task.projectId, goalId: parent.task.goalId, updatedAt: now }).where(eq(tasks.id, child.task.id));
+  if (!isClosedStatusKey(viewer.statuses, child.task.status)) await materializePolicies(tx, viewer.orgId, child.task.id, viewer.userId, now);
   await tx.update(tasks).set({ updatedAt: now }).where(eq(tasks.id, parent.task.id));
   await recordActivity(tx, { orgId: viewer.orgId, taskId: child.task.id, actorId: viewer.userId }, [{ kind: "attached", before: { parentId: child.task.parentTaskId }, after: { parentId: parent.task.id, parentTitle: parent.task.title } }], now);
   if (parent.task.goalId !== null && parent.task.goalId !== child.task.goalId && !isClosedStatusKey(viewer.statuses, child.task.status)) await reopenGoalForNewWork(tx, viewer, parent.task.goalId, now);
@@ -304,6 +307,7 @@ export async function detachTask(input: z.input<typeof detachSchema>): Promise<A
         .update(tasks)
         .set({ parentTaskId: null, ...(reopen ? { status: reopenedTo, rejectionReason: null, closedAt: null, dueDateAtClose: null } : {}), updatedAt: now })
         .where(eq(tasks.id, task.id));
+      if (!isClosedStatusKey(viewer.statuses, task.status) || reopen) await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
       const drafts: ActivityDraft[] = [{ kind: "detached", before: { parentId: task.parentTaskId, parentTitle: parent?.title ?? null }, after: { parentId: null } }];
       if (reopen) drafts.push({ kind: "reopened", before: { status: task.status }, after: { status: reopenedTo }, note: "Detached, so it is a task of its own again." });
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
@@ -341,6 +345,7 @@ const createSchema = z.object({
   nextAction: optionalText(LIMITS.nextAction),
   description: optionalText(LIMITS.taskDescription),
   policyItems: z.array(requiredText(1, 200, "Write a policy check.")).max(20).default([]),
+  policyIds: z.array(id).max(30).default([]),
 });
 
 /** What a task with neither a title nor a description hears. */
@@ -409,6 +414,7 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
       // New work under an achieved goal makes it active again (lib/dal/goal-achievement.ts); local work waits until it is live.
       const reopened = placement.goalId !== null && !local ? await reopenGoalForNewWork(tx, viewer, placement.goalId, now) : null;
       await applyAssignment(tx, created.id, viewer.userId, [], assignment, now);
+      await attachTaskPolicies(tx, viewer.orgId, created.id, data.policyIds, viewer.userId, now);
       const drafts: ActivityDraft[] = [{ kind: "created", after: { title, proposal, local, ...(source !== null ? { fromCommentId: source.comment.id, fromTaskId: source.commented.task.id } : {}) } }];
       if (parent !== null) {
         drafts.push({ kind: "attached", after: { parentId: parent.task.id, parentTitle: parent.task.title } });
@@ -570,6 +576,7 @@ export async function editTask(input: z.input<typeof editSchema>): Promise<Actio
       // makes it its maker's local task (or a proposal) again instead of letting it skip the queue.
       const reopened = moved.goalId !== null && moved.goalId !== task.goalId && isLive(task) ? await reopenGoalForNewWork(tx, viewer, moved.goalId, now) : null;
       const regate = await regateMovedTask(tx, viewer, task, moved, now);
+      if (!isClosedStatusKey(viewer.statuses, task.status)) await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
       if (regate !== null) notices.push(...regate.notices);
       const [maker] = regate !== null && regate.makerId !== viewer.userId ? await tx.select({ name: users.name }).from(users).where(eq(users.id, regate.makerId)) : [];
       return { reopened, regate, makerName: maker?.name ?? null };
@@ -614,6 +621,7 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       const via: TransitionVia = data.via === "status" && statusDef(viewer.statuses, task.status).kind === "awaiting_approval" && toDef.kind === "completed" ? "approve" : data.via;
       if (!mayMove(viewer, scope, statusDef(viewer.statuses, task.status), toDef, via)) throw new GuardError("forbidden");
       if (toDef.kind === "awaiting_approval" && data.approverId) {
+        if (scope.hasWorkflowPolicy && scope.assigneeIds.includes(data.approverId)) throw new GuardError("forbidden", "Choose an independent reviewer.");
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
       }
       const rules = await subTaskRules(tx, viewer.orgId, task, toDef, data.reason, viewer.statuses);
@@ -629,6 +637,10 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       if (goal?.achieved) notices.push(...goalAchievedNotice(viewer, goal.goal, goal.notify));
       const evidence = toDef.kind === "completed" ? await insertLink(tx, task.id, viewer.userId, data.evidenceUrl, data.evidenceLabel, now) : [];
       await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
+      if (plan.patch.policyChecklist) {
+        await syncPolicyChildren(tx, viewer.orgId, task.id, plan.patch.policyChecklist, viewer.userId, now);
+        await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
+      }
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, [...plan.activities, ...evidence], now);
       notices.push(...(await noticesFor(tx, viewer, noticeTask(task), assignment, plan.activities, data.approverId || task.approverId, data.note || null)));
       const nextDue = toDef.kind === "completed" ? await spawnNextOccurrence(tx, viewer, task, assignment, now) : null;
@@ -719,6 +731,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
           throw new GuardError("forbidden", requiresEditToEnter(toDef) ? `Only people who may edit this task can mark it ${statusWord(toDef)}.` : "Only the approver can complete a task that is waiting for approval.");
         }
         if (toDef.kind === "awaiting_approval") {
+          if (scope.hasWorkflowPolicy && after.includes(data.approverId)) throw new GuardError("forbidden", "Choose an independent reviewer.");
           await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
         }
         const rules = await subTaskRules(tx, viewer.orgId, task, toDef, data.reason, viewer.statuses);
@@ -728,6 +741,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         goal = await applyGoalRules(tx, viewer, task, target, now);
         if (goal?.achieved) notices.push(...goalAchievedNotice(viewer, goal.goal, goal.notify));
         patch = plan.patch;
+        if (plan.patch.policyChecklist) await syncPolicyChildren(tx, viewer.orgId, task.id, plan.patch.policyChecklist, viewer.userId, now);
         drafts.push(...stampMerge(plan.activities, task, rules.parentTitle));
       } else if (statusDef(viewer.statuses, task.status).kind === "blocked" && statusDef(viewer.statuses, data.status === "" ? task.status : data.status).kind === "blocked" && (data.reason !== task.blockedReason || (data.blockedBy || null) !== task.blockedBy)) {
         // Still blocked, with the reason brought up to date.
@@ -765,6 +779,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         .update(tasks)
         .set({ ...patch, latestProgress: data.progress, nextAction: data.nextAction || null, updatedAt: now })
         .where(eq(tasks.id, task.id));
+      if (patch.policyChecklist) await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, drafts, now);
       const nextDue = target !== null && statusDef(viewer.statuses, target).kind === "completed" ? await spawnNextOccurrence(tx, viewer, task, after, now) : null;
       // The comment it was made from (lib/dal/comment-tasks.ts).
@@ -783,7 +798,7 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
 
 // --- task policies ------------------------------------------------------------------------------------------------
 
-const policyCheckSchema = z.object({ taskId: id, itemId: id, checked: z.boolean() });
+const policyCheckSchema = z.object({ taskId: id, itemId: id, checked: z.boolean(), sign: z.boolean().default(false) });
 
 /** Assignees record each required policy check before the task can be sent for independent approval. */
 export async function setPolicyChecklistItem(input: z.input<typeof policyCheckSchema>): Promise<ActionResult> {
@@ -794,7 +809,7 @@ export async function setPolicyChecklistItem(input: z.input<typeof policyCheckSc
       const locked = await lockTask(tx, viewer.orgId, data.taskId, viewer.statuses);
       if (locked === null) throw new GuardError("not_found");
       const { task, scope } = locked;
-      if (!canUpdateProgress(viewer, scope)) throw new GuardError("forbidden");
+      if (!canUpdateProgress(viewer, scope) || (!scope.assigneeIds.includes(viewer.userId) && !canEditTask(viewer, scope))) throw new GuardError("forbidden");
       const policyDef = statusDef(viewer.statuses, task.status);
       if (policyDef.closed || policyDef.kind === "awaiting_approval") {
         throw new GuardError("conflict", "Policy checks are locked while this task is awaiting approval or closed.");
@@ -802,21 +817,21 @@ export async function setPolicyChecklistItem(input: z.input<typeof policyCheckSc
       const current = task.policyChecklist ?? [];
       const item = current.find((candidate) => candidate.id === data.itemId);
       if (!item) throw new GuardError("not_found", "That policy check is no longer on this task.");
-      const policyChecklist = current.map((candidate) =>
-        candidate.id === data.itemId
-          ? { ...candidate, checkedAt: data.checked ? now.toISOString() : null, checkedBy: data.checked ? viewer.userId : null }
-          : candidate,
-      );
+      if (data.sign && (!item.policyId || !item.checkedAt || !item.checkedBy)) throw new GuardError("conflict", "Tick the requirement before signing it.");
+      const policyChecklist = current.map((candidate) => candidate.id !== data.itemId ? candidate : data.sign
+        ? { ...candidate, signedAt: now.toISOString(), signedBy: viewer.userId }
+        : { ...candidate, checkedAt: data.checked ? now.toISOString() : null, checkedBy: data.checked ? viewer.userId : null, ...(candidate.policyId ? { signedAt: null, signedBy: null } : {}) });
+      await syncPolicyChildren(tx, viewer.orgId, task.id, policyChecklist, viewer.userId, now);
       await tx.update(tasks).set({ policyChecklist, updatedAt: now }).where(eq(tasks.id, task.id));
       await recordActivity(
         tx,
         { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId },
-        [{ kind: "edited", before: { policyItemId: item.id, policyChecked: item.checkedAt !== null }, after: { policyItemId: item.id, policyChecked: data.checked } }],
+        [{ kind: "edited", before: { policyItemId: item.id, policyChecked: item.checkedAt !== null }, after: { policyItemId: item.id, policyChecked: data.checked, policySigned: data.sign } }],
         now,
       );
     });
     refresh();
-    return ok(undefined, data.checked ? "Policy check marked met." : "Policy check reopened.");
+    return ok(undefined, data.sign ? "Policy requirement signed." : data.checked ? "Policy check marked met." : "Policy check reopened.");
   });
 }
 
@@ -1061,6 +1076,7 @@ export async function deleteTask(input: z.input<typeof deleteSchema>): Promise<A
       if (locked.task.goalCloser) throw new GuardError("forbidden", closerDeleteMessage(locked.task.goalTitle));
       // A group it leaves with one task is not a group any more (2026-11-11 log).
       await leaveGroup(tx, { orgId: viewer.orgId, actorId: viewer.userId }, locked.task, new Date(), { record: false });
+      await deletePolicyChildren(tx, viewer.orgId, data.taskId);
       await tx.delete(tasks).where(and(eq(tasks.id, data.taskId), eq(tasks.orgId, viewer.orgId)));
       await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/tasks/${data.taskId}`)));
       return locked.task.proposalStatus;
@@ -1133,6 +1149,7 @@ export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>):
       const via: TransitionVia = statusDef(viewer.statuses, task.status).kind === "awaiting_approval" && toDef.kind === "completed" ? "approve" : "status";
       if (!mayMove(viewer, scope, statusDef(viewer.statuses, task.status), toDef, via)) throw new GuardError("forbidden", "you can't change its status");
       if (toDef.kind === "awaiting_approval" && data.approverId) {
+        if (scope.hasWorkflowPolicy && scope.assigneeIds.includes(data.approverId)) throw new GuardError("forbidden", "Choose an independent reviewer.");
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
       }
       const rules = await subTaskRules(tx, viewer.orgId, task, toDef, data.reason, viewer.statuses);
@@ -1142,6 +1159,10 @@ export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>):
       if (plan.activities.length === 0) return [];
       const goal = await applyGoalRules(tx, viewer, task, data.status, now);
       await tx.update(tasks).set({ ...plan.patch, updatedAt: now }).where(eq(tasks.id, task.id));
+      if (plan.patch.policyChecklist) {
+        await syncPolicyChildren(tx, viewer.orgId, task.id, plan.patch.policyChecklist, viewer.userId, now);
+        await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
+      }
       await recordActivity(tx, { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId }, stampMerge(plan.activities, task, rules.parentTitle), now);
       const sent = await noticesFor(tx, viewer, noticeTask(task), assignment, plan.activities, data.approverId || task.approverId, null);
       if (toDef.kind === "completed") await spawnNextOccurrence(tx, viewer, task, assignment, now);
@@ -1208,6 +1229,7 @@ export async function bulkMove(input: z.input<typeof bulkMoveSchema>): Promise<A
       // The same two rules as a single move (editTask): an achieved goal there is active again; sign-off there re-gates it.
       if (placement.goalId !== null && placement.goalId !== task.goalId && isLive(task)) await reopenGoalForNewWork(tx, viewer, placement.goalId, now);
       const regate = await regateMovedTask(tx, viewer, task, placement, now);
+      if (!isClosedStatusKey(viewer.statuses, task.status)) await materializePolicies(tx, viewer.orgId, task.id, viewer.userId, now);
       if (regate?.became === "local") localAgain += 1;
       return regate?.notices ?? [];
     });
@@ -1282,6 +1304,7 @@ export async function bulkDelete(input: z.input<typeof bulkDeleteSchema>): Promi
       if (!canDeleteTask(viewer, scope)) throw new GuardError("forbidden", "only leaders and admins delete tasks");
       if (task.goalCloser) throw new GuardError("forbidden", "it marks its goal achieved and goes when the goal is deleted");
       await leaveGroup(tx, { orgId: viewer.orgId, actorId: viewer.userId }, task, new Date(), { record: false });
+      await deletePolicyChildren(tx, viewer.orgId, task.id);
       await tx.delete(tasks).where(and(eq(tasks.id, task.id), eq(tasks.orgId, viewer.orgId)));
       await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/tasks/${task.id}`)));
       return [];

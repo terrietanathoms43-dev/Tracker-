@@ -1,3 +1,4 @@
+import { WorkflowPolicySection } from "@/components/tasks/workflow-policy-section";
 import type { Metadata } from "next";
 import { RelativeTime } from "@/components/relative-time";
 import { AiConfigCard } from "@/components/settings/admin-ai-config";
@@ -38,6 +39,7 @@ export default async function WorkspaceSettingsPage() {
         <WorkspaceSummary name={org.name} facts={`${facts} · Only admins can change workspace settings.`} />
       )}
 
+      {admin ? <WorkflowPolicySection orgId={viewer.orgId} kind="workspace" id={viewer.orgId} /> : null}
       <MembersSection
         orgName={org.name}
         viewerId={viewer.userId}

@@ -1,3 +1,5 @@
+import { TaskPolicyControls } from "@/components/tasks/workflow-policy-controls";
+import { listWorkflowPolicies } from "@/lib/dal/workflow-policies";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { GroupSection } from "@/components/tasks/detail/group-section";
@@ -110,6 +112,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
       <div className="grid gap-5">
         {detail.fromComment !== null ? <UpstreamCard fromComment={detail.fromComment} closed={statusDef(viewer.statuses, detail.status).closed} /> : null}
         <ResumeCard statuses={viewer.statuses} detail={detail} links={links} removableLinks={removableLinks} abilities={abilities} updateContext={updateContext} localChain={localChain} timeZone={viewer.timezone} now={now} />
+        {abilities.edit && !statusDef(viewer.statuses, detail.status).closed && statusDef(viewer.statuses, detail.status).kind !== "awaiting_approval" ? <TaskPolicyControls taskId={detail.id} policies={(await listWorkflowPolicies(viewer.orgId)).map(({ id, name }) => ({ id, name }))} applied={detail.policyChecklist.flatMap((item) => item.policyId ? [item.policyId] : [])} /> : null}
         {subTasks !== null ? (
           <SubTasksSection task={{ id: detail.id, projectId: detail.project?.id ?? null, goalId: detail.goal?.id ?? null }} items={subTasks} today={today} canEdit={abilities.edit} readOnly={!abilities.progress} />
         ) : null}

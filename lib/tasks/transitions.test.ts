@@ -1,5 +1,7 @@
 // The status rules of docs/PLAN.md §5, checked without a database.
 import { describe, expect, it } from "vitest";
+import { addPolicySnapshots, resolvePolicyApplications, type WorkflowPolicy, type PolicyAttachment } from "./workflow-policies";
+import { incompletePolicyCount, resetPolicyChecklist } from "./policy-checklist";
 import { DEFAULT_STATUSES as STATUSES, statusDef } from "@/lib/statuses";
 import { closingResolvesMessage, commentWaitsMessage, fromCommentHint, reopenedBecause, reopeningMessage, resolvedByTaskNote, waitsForLabel } from "./comment-tasks";
 import { classifyDueChange } from "./due-change";
@@ -269,5 +271,54 @@ describe("the task model: state, phase, timing (2026-11-24 log)", () => {
     // A row from when Deferred was a status carries no dates, and a reopen from it still names it.
     expect(phraseHistory(row({ kind: "deferred", before: { status: "in_progress" }, after: { status: "deferred" } }), "UTC", now, STATUSES)).toMatchObject({ phrase: "deferred it", change: null });
     expect(phraseHistory(row({ kind: "reopened", before: { status: "deferred" }, after: { status: "not_started" } }), "UTC", now, STATUSES).change).toEqual({ before: "Deferred", after: "Not started" });
+  });
+});
+
+
+describe("reusable workflow policy foundation", () => {
+  const policy: WorkflowPolicy = { id: "deploy", orgId: "org", name: "Deployment", ownerKind: "workspace", ownerId: "org", templates: [{ id: "stage", label: "Push to staging" }, { id: "test", label: "Test on staging" }] };
+  const placement = { orgId: "org", projectId: "project", goalIds: ["goal"], taskId: "task" };
+  const attachments: PolicyAttachment[] = [
+    { orgId: "org", policyId: "deploy", scopeKind: "workspace", scopeId: "org" },
+    { orgId: "org", policyId: "deploy", scopeKind: "project", scopeId: "project" },
+    { orgId: "org", policyId: "deploy", scopeKind: "goal", scopeId: "goal" },
+    { orgId: "org", policyId: "deploy", scopeKind: "task", scopeId: "task" },
+    { orgId: "org", policyId: "deploy", scopeKind: "task", scopeId: "other-task" },
+    { orgId: "other", policyId: "deploy", scopeKind: "project", scopeId: "project" },
+  ];
+
+  it("combines automatic and manual attachments without duplicate policies or cross-workspace matches", () => {
+    const resolved = resolvePolicyApplications([policy], attachments, placement);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].sources.map((source) => source.kind)).toEqual(["workspace", "project", "goal", "task"]);
+    const snapshots = addPolicySnapshots([], resolved);
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots.map((item) => item.policyTemplateId)).toEqual(["stage", "test"]);
+    expect(snapshots.every((item) => item.policyId === policy.id)).toBe(true);
+    expect(addPolicySnapshots(snapshots, resolved)).toEqual(snapshots);
+    expect(resolvePolicyApplications([policy], attachments, { ...placement, orgId: "other" })).toEqual([]);
+  });
+
+  it("preserves existing task-specific checks and combines distinct policies", () => {
+    const second = { ...policy, id: "quality", name: "Quality" };
+    const manual: PolicyAttachment = { orgId: "org", policyId: second.id, scopeKind: "task", scopeId: "task" };
+    const existing = [{ id: "existing", label: "Existing check", checkedAt: null, checkedBy: null }];
+    const snapshots = addPolicySnapshots(existing, resolvePolicyApplications([policy, second], [...attachments, manual], placement));
+    expect(snapshots).toHaveLength(5);
+    expect(snapshots[0]).toEqual(existing[0]);
+  });
+
+  it("blocks approval and completion until generated checks are both ticked and signed", () => {
+    const items = addPolicySnapshots([], resolvePolicyApplications([policy], attachments, placement));
+    const checked = items.map((item) => ({ ...item, checkedBy: "worker", checkedAt: now.toISOString() }));
+    expect(incompletePolicyCount(checked)).toBe(2);
+    expect(planTransition(task({ policyChecklist: checked }), "awaiting_approval", { approverId: "reviewer" }, now, STATUSES).ok).toBe(false);
+    expect(planTransition(task({ policyChecklist: checked }), "completed", { summary: "Done" }, now, STATUSES).ok).toBe(false);
+    const signed = checked.map((item) => ({ ...item, signedBy: "worker", signedAt: now.toISOString() }));
+    expect(incompletePolicyCount(signed)).toBe(0);
+    expect(planTransition(task({ policyChecklist: signed }), "awaiting_approval", { approverId: "reviewer" }, now, STATUSES).ok).toBe(true);
+    expect(incompletePolicyCount(resetPolicyChecklist(signed))).toBe(2);
+    expect(planTransition(task({ policyChecklist: signed }), "completed", { summary: "Done" }, now, STATUSES).ok).toBe(false);
+    expect(planTransition(task({ status: "awaiting_approval", policyChecklist: signed }), "completed", { note: "Reviewed" }, now, STATUSES, "approve").ok).toBe(true);
   });
 });

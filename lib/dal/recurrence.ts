@@ -1,3 +1,4 @@
+import { materializePolicies } from "@/lib/dal/workflow-policies";
 import "server-only";
 import { and, asc, desc, eq, isNotNull, notInArray, sql } from "drizzle-orm";
 import { cache } from "react";
@@ -76,6 +77,7 @@ export async function createTaskOccurrence(tx: Tx, actorId: string, source: Sour
     })
     .returning({ id: tasks.id });
   await applyAssignment(tx, created.id, actorId, [], assignment, now);
+  await materializePolicies(tx, source.orgId, created.id, actorId, now);
   await recordActivity(tx, { orgId: source.orgId, taskId: created.id, actorId }, [{ kind: "created", after: { title: source.title, repeatOf: source.id }, note }], now);
   return created.id;
 }
@@ -125,12 +127,13 @@ export async function createGoalOccurrence(tx: Tx, actorId: string, goal: Source
     })
     .returning({ id: goals.id });
   const copies = await tx
-    .select({ id: tasks.id, title: tasks.title, description: tasks.description, priority: tasks.priority, dueDate: tasks.dueDate, dueTime: tasks.dueTime, createdBy: tasks.createdBy, goalCloser: tasks.goalCloser })
+    .select({ id: tasks.id, title: tasks.title, description: tasks.description, priority: tasks.priority, dueDate: tasks.dueDate, dueTime: tasks.dueTime, createdBy: tasks.createdBy, goalCloser: tasks.goalCloser, workflowPolicyId: tasks.workflowPolicyId })
     .from(tasks)
     // Work that was dropped does not come round again: rejected, cancelled, a duplicate merged into another task,
     // and anything in a custom closed status. Everything else comes round again, whatever its due date was moved to.
     .where(and(eq(tasks.orgId, goal.orgId), eq(tasks.goalId, goal.id), liveOnly, notInArray(tasks.status, catalog.filter(endedWithoutCompletion).map((status) => status.key))));
   for (const source of copies) {
+    if (source.workflowPolicyId) continue;
     const [task] = await tx
       .insert(tasks)
       .values({
@@ -149,6 +152,7 @@ export async function createGoalOccurrence(tx: Tx, actorId: string, goal: Source
       })
       .returning({ id: tasks.id });
     await applyAssignment(tx, task.id, actorId, [], await assignmentOf(tx, source.id), now);
+    await materializePolicies(tx, goal.orgId, task.id, actorId, now);
     await recordActivity(tx, { orgId: goal.orgId, taskId: task.id, actorId }, [{ kind: "created", after: { title: source.title, copiedFrom: source.id }, note: `Copied into the next occurrence of the goal “${goal.title}”.` }], now);
   }
   if (!copies.some((source) => source.goalCloser)) await createGoalCloser(tx, { id: created.id, orgId: goal.orgId, projectId: goal.projectId, ownerId: goal.ownerId, targetDate }, actorId, now);

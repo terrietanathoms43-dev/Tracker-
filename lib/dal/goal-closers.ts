@@ -1,4 +1,5 @@
 import "server-only";
+import { syncPolicyChildren, deletePolicyChildren, materializePolicies } from "@/lib/dal/workflow-policies";
 import { and, asc, eq } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { notifications, tasks } from "@/db/schema";
@@ -47,6 +48,7 @@ export async function createGoalCloser(
   const owner = goal.ownerId ? await findMembership(tx, goal.orgId, goal.ownerId) : null;
   const assignment = goal.ownerId !== null && owner !== null && owner.role !== "stakeholder" ? [goal.ownerId] : [];
   await applyAssignment(tx, created.id, actorId, [], assignment, now);
+  await materializePolicies(tx, goal.orgId, created.id, actorId, now);
   await recordActivity(tx, { orgId: goal.orgId, taskId: created.id, actorId }, [{ kind: "created", after: { title: CLOSER_TITLE, goalCloser: true }, note }], now);
   return created.id;
 }
@@ -63,6 +65,7 @@ function closersOf(tx: Tx, orgId: string, goalId: string, catalog: StatusCatalog
       approverId: tasks.approverId,
       blockedReason: tasks.blockedReason,
       parentTaskId: tasks.parentTaskId,
+      policyChecklist: tasks.policyChecklist,
       sourceCommentId: tasks.sourceCommentId,
       proposalStatus: tasks.proposalStatus,
       openComments: openCommentsSql,
@@ -102,6 +105,8 @@ export async function reopenGoalCloser(tx: Tx, actorId: string, goal: CloserGoal
       .update(tasks)
       .set({ ...plan.patch, updatedAt: now })
       .where(eq(tasks.id, closer.id));
+    if (plan.patch.policyChecklist) await syncPolicyChildren(tx, goal.orgId, closer.id, plan.patch.policyChecklist, actorId, now);
+    await materializePolicies(tx, goal.orgId, closer.id, actorId, now);
     const note = `Open again with its goal: “${goal.title}” is active again.`;
     await recordActivity(tx, { orgId: goal.orgId, taskId: closer.id, actorId }, plan.activities.map((activity) => (activity.kind === "reopened" ? { ...activity, note } : activity)), now);
     changed.push({ id: closer.id, title: closer.title, status: closer.status, sourceCommentId: closer.sourceCommentId, proposalStatus: closer.proposalStatus, to: reopenTarget(catalog) });
@@ -132,6 +137,8 @@ export async function completeGoalCloser(tx: Tx, actorId: string, goal: CloserGo
 
 /** A deleted goal takes its closer with it: the task means nothing without the goal. Returns how many went. */
 export async function deleteGoalClosers(tx: Tx, orgId: string, goalId: string): Promise<number> {
+  const parents = await tx.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.orgId, orgId), eq(tasks.goalId, goalId), eq(tasks.goalCloser, true)));
+  for (const parent of parents) await deletePolicyChildren(tx, orgId, parent.id);
   const gone = await tx
     .delete(tasks)
     .where(and(eq(tasks.orgId, orgId), eq(tasks.goalId, goalId), eq(tasks.goalCloser, true)))

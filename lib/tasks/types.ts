@@ -79,6 +79,7 @@ export type GoalOption = { id: string; title: string; projectId: string; signOff
 
 /** What the New task form needs: who you are, who can own work, and what it can belong to. */
 export type TaskFormOptions = {
+  workflowPolicies?: { id: string; name: string }[];
   viewerId: string;
   people: Person[];
   /** `signOff`: a task the viewer adds to the project starts local (its sign-off is on and they don't skip the queue). */
