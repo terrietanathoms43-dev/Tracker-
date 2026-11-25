@@ -988,6 +988,7 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
       id: tasks.id,
       title: tasks.title,
       status: tasks.status,
+      startedAt: tasks.startedAt,
       policyChecklist: tasks.policyChecklist,
       createdBy: tasks.createdBy,
       approverId: tasks.approverId,
