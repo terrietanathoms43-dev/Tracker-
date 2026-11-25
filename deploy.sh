@@ -5,8 +5,9 @@
 #
 # The checkout's branch decides the environment: `main` is production (pm2 app `tracker`, port 3015,
 # ecosystem.config.js) and `staging` is staging (`tracker-staging`, port 3016, ecosystem.staging.config.js).
-# Pull (fast-forward only: a server checkout never has commits of its own), install, apply additive staging schema
-# changes, build, then (re)start under pm2. Production schema changes are pushed separately before a release.
+# Pull (fast-forward only: a server checkout never has commits of its own), install, build, then (re)start under
+# pm2. Schema changes are applied deliberately, not on every deploy: run `npm run db:push` yourself, in this
+# directory, when a release changes db/schema.ts.
 # POSIX only (`set -eu`, no `pipefail`): the VPS runs this with `sh`, which is dash there, and dash refuses
 # bash-only options. There are no pipes in this script. `-e` matters: a failed build must not restart pm2.
 set -eu
@@ -27,11 +28,6 @@ git pull --ff-only origin "$BRANCH"
 
 echo "==> Installing dependencies (npm ci)"
 npm ci
-
-if [ "$BRANCH" = "staging" ]; then
-  echo "==> Applying additive staging schema changes (npm run db:push)"
-  npm run db:push
-fi
 
 echo "==> Building app"
 npm run build
