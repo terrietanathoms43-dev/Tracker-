@@ -83,6 +83,8 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           title: detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title,
           status: detail.status,
           assigneeIds: scope.assigneeIds,
+          policyChecklist: detail.policyChecklist,
+          startedAt: detail.startedAt,
           nextAction: detail.nextAction,
           blockedReason: detail.blockedReason,
           blockedBy: detail.blockedBy,

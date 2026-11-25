@@ -29,6 +29,7 @@ import {
 } from "@/lib/constants";
 import type { Recurrence } from "@/lib/recurrence";
 import type { DueChangeKind, DueChangeStatus } from "@/lib/tasks/due-change";
+import type { TaskPolicyItem } from "@/lib/tasks/policy-checklist";
 
 // The whole Trackwise schema (docs/PLAN.md §4), applied with `npm run db:push`. The 2026-11-03 overhaul (the
 // rigid workspace → projects → goals → tasks funnel, proposals, repeats, goal links) was applied with
@@ -504,6 +505,8 @@ export const tasks = pgTable(
     latestProgress: text("latest_progress"),
     nextAction: text("next_action"),
     completionSummary: text("completion_summary"),
+    /** Task-specific policy checks that must be met before the task is sent for approval. */
+    policyChecklist: jsonb("policy_checklist").$type<TaskPolicyItem[]>().notNull().default([]),
     /** Manual importance; higher sorts first within the smart order. */
     sortRank: doublePrecision("sort_rank").notNull().default(0),
     createdAt: createdAt(),

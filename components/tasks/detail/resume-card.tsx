@@ -5,6 +5,7 @@ import { RelativeTime } from "@/components/relative-time";
 import { StatusIcon } from "@/components/status-badge";
 import { CLOSED_WITH_REASON, isClosedStatus, TASK_STATUS_LABELS } from "@/lib/constants";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
+import { incompletePolicyCount } from "@/lib/tasks/policy-checklist";
 import { nameOf } from "@/lib/tasks/people";
 import type { EvidenceLink, TaskAbilities, TaskDetail, UpdateContext } from "@/lib/tasks/types";
 import { EvidenceChips } from "../evidence-chips";
@@ -51,7 +52,7 @@ function StatusStrip({ detail, abilities, localChain, timeZone, now }: { detail:
           <span className="font-medium">Awaiting approval</span>
           {detail.approver ? ` from ${nameOf(detail.approver)}` : ""}
         </p>
-        {abilities.approve ? <ApprovalActions taskId={detail.id} openComments={detail.openComments} commentsWaitingOnTasks={detail.commentsWaitingOnTasks} /> : null}
+        {abilities.approve ? <ApprovalActions taskId={detail.id} openComments={detail.openComments} commentsWaitingOnTasks={detail.commentsWaitingOnTasks} incompletePolicies={incompletePolicyCount(detail.policyChecklist)} /> : null}
       </div>
     );
   }

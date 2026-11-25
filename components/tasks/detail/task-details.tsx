@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "@/components/status-badge";
-import { TASK_PRIORITIES, TASK_PRIORITY_LABELS } from "@/lib/constants";
+import { isClosedStatus, TASK_PRIORITIES, TASK_PRIORITY_LABELS } from "@/lib/constants";
 import { describeRecurrence, formatTime } from "@/lib/recurrence";
 import { nameOf } from "@/lib/tasks/people";
 import type { GoalOption, Person, TaskAbilities, TaskDetail } from "@/lib/tasks/types";
@@ -15,6 +15,7 @@ import { GroupField } from "../task-group";
 import type { PendingDueChange } from "@/lib/dal/due-changes";
 import { AssigneesEditor, DescriptionEditor, GoalEditor, PickEditor, ProjectEditor, RecurrenceEditor, StatusEditor, TimeEditor } from "./detail-editors";
 import { DueChangeEditor, PendingDueChangeCard } from "./due-change";
+import { PolicyChecklist } from "../policy-checklist";
 
 // The task page's Details card: description and the facts that rarely change.
 
@@ -86,6 +87,7 @@ export function TaskDetails({
       </h2>
       <div className="grid gap-3 px-5 py-4 md:px-6">
         <DescriptionEditor key={detail.description ?? ""} taskId={detail.id} description={detail.description} editable={edit} />
+        <PolicyChecklist taskId={detail.id} items={detail.policyChecklist} editable={abilities.progress && detail.status !== "awaiting_approval" && !isClosedStatus(detail.status)} />
         <dl className="divide-y border-t">
           {live ? <Row label="Current status">{abilities.progress ? <StatusEditor taskId={detail.id} status={detail.status} allowReject={abilities.reject} hasParent={detail.parent !== null} /> : <StatusBadge status={detail.status} />}</Row> : null}
           <Row label="Assigned to">

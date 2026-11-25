@@ -52,6 +52,7 @@ import { closerDeleteMessage, closerLabel, closerRepeatMessage, closerStaysMessa
 import { commentWaitsMessage } from "@/lib/tasks/comment-tasks";
 import { parseFilters } from "@/lib/tasks/filters";
 import { asksReason, MERGE_NEEDS_PARENT, planTransition, REASON_PROMPTS, SUMMARY_REQUIRED, type ActivityDraft, type TransitionInput, type TransitionVia } from "@/lib/tasks/transitions";
+import { createPolicyChecklist } from "@/lib/tasks/policy-checklist";
 import type { HistoryPage, TaskFormOptions, TaskListItem, TaskPage, UpdateContext } from "@/lib/tasks/types";
 import { dayKey, formatDay } from "@/lib/time";
 import { requireViewer, requireViewerContext } from "@/lib/viewer";
@@ -185,6 +186,7 @@ async function spawnNextOccurrence(tx: Tx, viewer: Viewer, task: LockedTask, ass
       dueTime: task.dueTime,
       recurrence: rule,
       seriesId,
+      policyChecklist: createPolicyChecklist((task.policyChecklist ?? []).map((item) => item.label)),
       createdAt: now,
       updatedAt: now,
     })
@@ -335,6 +337,7 @@ const createSchema = z.object({
   recurrence: recurrenceInput,
   nextAction: optionalText(LIMITS.nextAction),
   description: optionalText(LIMITS.taskDescription),
+  policyItems: z.array(requiredText(1, 200, "Write a policy check.")).max(20).default([]),
 });
 
 /** What a task with neither a title nor a description hears. */
@@ -393,6 +396,7 @@ export async function createTask(input: z.input<typeof createSchema>): Promise<A
           dueDate: data.dueDate || null,
           dueTime: data.dueTime || null,
           recurrence: data.recurrence,
+          policyChecklist: createPolicyChecklist(data.policyItems),
           proposalStatus: local ? "local" : proposal ? "pending" : null,
           createdAt: now,
           updatedAt: now,
@@ -613,6 +617,10 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       // Completing a task that waits for approval is approving it, whichever control asked.
       const via: TransitionVia = data.via === "status" && task.status === "awaiting_approval" && data.status === "completed" ? "approve" : data.via;
       if (!mayMove(viewer, scope, task.status, data.status, via)) throw new GuardError("forbidden");
+      if (data.status === "completed" && task.status !== "completed" && via !== "approve") {
+        throw new GuardError("conflict", "Send this task for approval before completing it.");
+      }
+      if (via === "approve" && assignment.includes(viewer.userId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
       if (data.status === "awaiting_approval" && data.approverId) {
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
         if (assignment.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
@@ -709,6 +717,10 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         if (!mayMove(viewer, scope, task.status, target, via)) {
           throw new GuardError("forbidden", target === "rejected" || target === "cancelled" ? `Only people who may edit this task can ${target === "rejected" ? "reject" : "cancel"} it.` : "Only the approver can complete a task that is waiting for approval.");
         }
+        if (target === "completed" && task.status !== "completed" && via !== "approve") {
+          throw new GuardError("conflict", "Send this task for approval before completing it.");
+        }
+        if (via === "approve" && assignment.includes(viewer.userId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
         if (target === "awaiting_approval") {
           await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
           if (after.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
@@ -770,6 +782,44 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
     refresh();
     const today = dayKey(now, viewer.timezone);
     return ok(undefined, withNextDue("Update saved.", outcome.nextDue, today) + describeGoalOutcome(outcome.goal, today, formatDay) + describeLinked(outcome.linked));
+  });
+}
+
+// --- task policies ------------------------------------------------------------------------------------------------
+
+const policyCheckSchema = z.object({ taskId: id, itemId: id, checked: z.boolean() });
+
+/** Assignees record each required policy check before the task can be sent for independent approval. */
+export async function setPolicyChecklistItem(input: z.input<typeof policyCheckSchema>): Promise<ActionResult> {
+  return runAction("tasks.policy_check", policyCheckSchema, input, async (data) => {
+    const viewer = await requireViewer();
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      const locked = await lockTask(tx, viewer.orgId, data.taskId);
+      if (locked === null) throw new GuardError("not_found");
+      const { task, scope } = locked;
+      if (!canUpdateProgress(viewer, scope)) throw new GuardError("forbidden");
+      if (isClosedStatus(task.status) || task.status === "awaiting_approval") {
+        throw new GuardError("conflict", "Policy checks are locked while this task is awaiting approval or closed.");
+      }
+      const current = task.policyChecklist ?? [];
+      const item = current.find((candidate) => candidate.id === data.itemId);
+      if (!item) throw new GuardError("not_found", "That policy check is no longer on this task.");
+      const policyChecklist = current.map((candidate) =>
+        candidate.id === data.itemId
+          ? { ...candidate, checkedAt: data.checked ? now.toISOString() : null, checkedBy: data.checked ? viewer.userId : null }
+          : candidate,
+      );
+      await tx.update(tasks).set({ policyChecklist, updatedAt: now }).where(eq(tasks.id, task.id));
+      await recordActivity(
+        tx,
+        { orgId: viewer.orgId, taskId: task.id, actorId: viewer.userId },
+        [{ kind: "edited", before: { policyItemId: item.id, policyChecked: item.checkedAt !== null }, after: { policyItemId: item.id, policyChecked: data.checked } }],
+        now,
+      );
+    });
+    refresh();
+    return ok(undefined, data.checked ? "Policy check marked met." : "Policy check reopened.");
   });
 }
 
@@ -972,6 +1022,8 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
         title: task.closer ? closerLabel(task.title, task.closer.goalTitle) : task.title,
         status: task.status,
         assigneeIds: task.assigneeIds,
+        policyChecklist: task.policyChecklist,
+        startedAt: task.startedAt?.toISOString() ?? null,
         nextAction: task.nextAction,
         blockedReason: task.blockedReason,
         blockedBy: task.blockedBy,

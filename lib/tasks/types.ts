@@ -1,6 +1,7 @@
 import type { ApprovalDecision, OrgRole, ProposalStatus, TaskActivityKind, TaskPriority, TaskStatus } from "@/lib/constants";
 import type { Recurrence } from "@/lib/recurrence";
 import type { FromCommentContext } from "./comment-tasks";
+import type { TaskPolicyItem } from "./policy-checklist";
 
 // Shapes that cross from server to client: plain JSON only (instants as ISO strings, calendar days as
 // "YYYY-MM-DD"), so a server component can hand them straight to a client component.
@@ -174,6 +175,7 @@ export type TaskDetail = {
   latestProgress: string | null;
   nextAction: string | null;
   completionSummary: string | null;
+  policyChecklist: TaskPolicyItem[];
   /** Comments nobody has marked resolved yet; while there are any, the task can't be completed. */
   openComments: number;
   /** Of those, the ones waiting for a task made from them: they resolve themselves when that task is closed. */
@@ -192,6 +194,8 @@ export type UpdateContext = {
     title: string;
     status: TaskStatus;
     assigneeIds: string[];
+    policyChecklist: TaskPolicyItem[];
+    startedAt: string | null;
     nextAction: string | null;
     blockedReason: string | null;
     blockedBy: string | null;
