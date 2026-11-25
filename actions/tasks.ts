@@ -617,6 +617,9 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       // Completing a task that waits for approval is approving it, whichever control asked.
       const via: TransitionVia = data.via === "status" && task.status === "awaiting_approval" && data.status === "completed" ? "approve" : data.via;
       if (!mayMove(viewer, scope, task.status, data.status, via)) throw new GuardError("forbidden");
+      if (data.status === "completed" && task.status !== "completed" && via !== "approve") {
+        throw new GuardError("conflict", "Send this task for approval before completing it.");
+      }
       if (via === "approve" && assignment.includes(viewer.userId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
       if (data.status === "awaiting_approval" && data.approverId) {
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
@@ -713,6 +716,9 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         const via: TransitionVia = task.status === "awaiting_approval" && target === "completed" ? "approve" : "status";
         if (!mayMove(viewer, scope, task.status, target, via)) {
           throw new GuardError("forbidden", target === "rejected" || target === "cancelled" ? `Only people who may edit this task can ${target === "rejected" ? "reject" : "cancel"} it.` : "Only the approver can complete a task that is waiting for approval.");
+        }
+        if (target === "completed" && task.status !== "completed" && via !== "approve") {
+          throw new GuardError("conflict", "Send this task for approval before completing it.");
         }
         if (via === "approve" && assignment.includes(viewer.userId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
         if (target === "awaiting_approval") {

@@ -117,7 +117,6 @@ export function planTransition(task: TaskState, to: TaskStatus, input: Transitio
     const remaining = incompletePolicyCount(task.policyChecklist ?? []);
     if (remaining > 0) return { ok: false, error: incompletePoliciesMessage(remaining) };
   }
-  if (to === "completed" && via !== "approve") return { ok: false, error: "Send this task for approval before completing it." };
   if (to === "completed") {
     const remaining = incompletePolicyCount(task.policyChecklist ?? []);
     if (remaining > 0) return { ok: false, error: incompletePoliciesMessage(remaining) };
