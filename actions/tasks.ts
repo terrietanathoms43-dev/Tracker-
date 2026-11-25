@@ -1016,6 +1016,8 @@ export async function getUpdateContext(input: { taskId: string }): Promise<Actio
         title: task.closer ? closerLabel(task.title, task.closer.goalTitle) : task.title,
         status: task.status,
         assigneeIds: task.assigneeIds,
+        policyChecklist: task.policyChecklist,
+        startedAt: task.startedAt?.toISOString() ?? null,
         nextAction: task.nextAction,
         blockedReason: task.blockedReason,
         blockedBy: task.blockedBy,
