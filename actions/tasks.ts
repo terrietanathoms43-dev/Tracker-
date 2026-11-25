@@ -602,7 +602,6 @@ const STATUS_TOASTS: Partial<Record<TaskStatus, string>> = {
   cancelled: "Task cancelled.",
 };
 
-const APPROVER_IS_ASSIGNEE = "Choose someone other than the people assigned to approve it.";
 
 /** The status menu, the small transition dialogs, Approve / Send back and Mark unblocked all land here. */
 export async function changeStatus(input: z.input<typeof statusSchema>): Promise<ActionResult> {
@@ -617,13 +616,8 @@ export async function changeStatus(input: z.input<typeof statusSchema>): Promise
       // Completing a task that waits for approval is approving it, whichever control asked.
       const via: TransitionVia = data.via === "status" && task.status === "awaiting_approval" && data.status === "completed" ? "approve" : data.via;
       if (!mayMove(viewer, scope, task.status, data.status, via)) throw new GuardError("forbidden");
-      if (data.status === "completed" && task.status !== "completed" && via !== "approve") {
-        throw new GuardError("conflict", "Send this task for approval before completing it.");
-      }
-      if (via === "approve" && assignment.includes(viewer.userId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
       if (data.status === "awaiting_approval" && data.approverId) {
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
-        if (assignment.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
       }
       const rules = await subTaskRules(tx, viewer.orgId, task, data.status, data.reason);
       if (!rules.ok) return { error: rules.error };
@@ -717,13 +711,8 @@ export async function updateProgress(input: z.input<typeof progressSchema>): Pro
         if (!mayMove(viewer, scope, task.status, target, via)) {
           throw new GuardError("forbidden", target === "rejected" || target === "cancelled" ? `Only people who may edit this task can ${target === "rejected" ? "reject" : "cancel"} it.` : "Only the approver can complete a task that is waiting for approval.");
         }
-        if (target === "completed" && task.status !== "completed" && via !== "approve") {
-          throw new GuardError("conflict", "Send this task for approval before completing it.");
-        }
-        if (via === "approve" && assignment.includes(viewer.userId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
         if (target === "awaiting_approval") {
           await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
-          if (after.includes(data.approverId)) throw new GuardError("forbidden", APPROVER_IS_ASSIGNEE);
         }
         const rules = await subTaskRules(tx, viewer.orgId, task, target, data.reason);
         if (!rules.ok) return { error: rules.error };
@@ -1135,7 +1124,6 @@ export async function bulkChangeStatus(input: z.input<typeof bulkStatusSchema>):
       if (!mayMove(viewer, scope, task.status, data.status, via)) throw new GuardError("forbidden", "you can't change its status");
       if (data.status === "awaiting_approval" && data.approverId) {
         await requireWorker(tx, viewer.orgId, data.approverId, "The approver must be a member of this workspace.");
-        if (assignment.includes(data.approverId)) throw new GuardError("forbidden", "the approver is assigned to it");
       }
       const rules = await subTaskRules(tx, viewer.orgId, task, data.status, data.reason);
       if (!rules.ok) throw new GuardError("conflict", rules.error);

@@ -117,6 +117,9 @@ export function planTransition(task: TaskState, to: TaskStatus, input: Transitio
     const remaining = incompletePolicyCount(task.policyChecklist ?? []);
     if (remaining > 0) return { ok: false, error: incompletePoliciesMessage(remaining) };
   }
+  if (to === "completed" && task.startedAt === null) {
+    return { ok: false, error: "Move this task to In progress before completing it." };
+  }
   if (to === "completed") {
     const remaining = incompletePolicyCount(task.policyChecklist ?? []);
     if (remaining > 0) return { ok: false, error: incompletePoliciesMessage(remaining) };

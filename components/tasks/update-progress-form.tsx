@@ -81,9 +81,8 @@ export function UpdateProgressForm({
   const heldByGoal = completing && task.closer !== null && task.closer.openOthers > 0;
   const missingPolicies = incompletePolicyCount(task.policyChecklist);
   const heldByPolicies = (effective === "awaiting_approval" || completing) && missingPolicies > 0;
-  const heldByStart = effective === "awaiting_approval" && task.startedAt === null;
-  const heldByStage = completing && task.status !== "awaiting_approval";
-  const held = heldByComments || heldBySubTasks || heldByGoal || heldByPolicies || heldByStart || heldByStage;
+  const heldByStart = (effective === "awaiting_approval" || completing) && task.startedAt === null;
+  const held = heldByComments || heldBySubTasks || heldByGoal || heldByPolicies || heldByStart;
   const summaryMissing = completing && !held && summary.trim() === "";
   // Made from a comment (2026-11-11 log): what closing or reopening it does to that comment, said before the save.
   const reopening = isClosedStatus(task.status) && !isClosedStatus(effective);
@@ -211,9 +210,8 @@ export function UpdateProgressForm({
             </NativeSelect>
           </div>
           {error("status")}
-          {heldByStart ? <p className="rounded-md border bg-muted/60 px-3 py-2 text-[12px] text-muted-foreground" role="status">Move this task to In progress before sending it for approval.</p> : null}
+          {heldByStart ? <p className="rounded-md border bg-muted/60 px-3 py-2 text-[12px] text-muted-foreground" role="status">Move this task to In progress before {effective === "completed" ? "completing it" : "sending it for approval"}.</p> : null}
           {heldByPolicies ? <p className="rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[12px] text-status-awaiting-fg" role="status">{incompletePoliciesMessage(missingPolicies)}</p> : null}
-          {heldByStage ? <p className="rounded-md border bg-muted/60 px-3 py-2 text-[12px] text-muted-foreground" role="status">Send this task for approval before completing it.</p> : null}
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor={field("handover")} className="text-[13px] text-muted-foreground">

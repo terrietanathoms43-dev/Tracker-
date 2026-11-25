@@ -57,9 +57,8 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
    const heldByGoal = status === "completed" && task.closer !== null && task.closer.openOthers > 0;
    const missingPolicies = incompletePolicyCount(task.policyChecklist);
    const heldByPolicies = (status === "awaiting_approval" || status === "completed") && missingPolicies > 0;
-   const heldByStart = status === "awaiting_approval" && task.startedAt === null;
-   const heldByStage = status === "completed" && task.status !== "awaiting_approval";
-   const held = heldByComments || heldBySubTasks || heldByGoal || heldByPolicies || heldByStart || heldByStage;
+   const heldByStart = (status === "awaiting_approval" || status === "completed") && task.startedAt === null;
+   const held = heldByComments || heldBySubTasks || heldByGoal || heldByPolicies || heldByStart;
    const merging = status === "merged";
    const closing = status === "rejected" || status === "cancelled";
    // Made from a comment (2026-11-11 log): closing it in any way resolves that comment, said before the save.
@@ -138,16 +137,13 @@ export function TransitionForm({ context, status, onDone }: { context: UpdateCon
                />
             </Field>
          ) : null}
-         {heldByStart ? <p className="rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" role="status">Move this task to In progress before sending it for approval.</p> : null}
+         {heldByStart ? <p className="rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" role="status">Move this task to In progress before {status === "completed" ? "completing it" : "sending it for approval"}.</p> : null}
          {heldByPolicies ? <p className="rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">{incompletePoliciesMessage(missingPolicies)}</p> : null}
-         {heldByStage ? <p className="rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" role="status">Send this task for approval before completing it.</p> : null}
          {status === "awaiting_approval" ? (
             <Field id="transition-approver" label="Who approves it?" error={errors.approverId?.[0]}>
                <NativeSelect id="transition-approver" value={approverId} onChange={(event) => setApproverId(event.target.value)}>
                   <option value="">Choose an approver…</option>
-                  {people
-                     .filter((person) => !task.assigneeIds.includes(person.id))
-                     .map((person) => (
+                  {people.map((person) => (
                         <option key={person.id} value={person.id}>
                            {nameOf(person)}
                            {roleSuffix(person.role)}
