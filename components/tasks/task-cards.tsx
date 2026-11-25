@@ -1,11 +1,15 @@
 "use client";
 
+import { statusDef } from "@/lib/statuses";
+import { useStatusCatalog } from "@/components/status-catalog";
+
 import { cn } from "cn";
-import { ClipboardCheck, CornerDownRight, GitMerge } from "lucide-react";
+import { ClipboardCheck, CornerDownRight, GitMerge, Group } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { KanbanItem, KanbanItemHandle } from "@/components/kanban";
 import { PriorityGlyph } from "@/components/priority-glyph";
+import { groupLabel } from "@/lib/tasks/groups";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { AssigneeStack } from "./assignee-stack";
@@ -16,18 +20,22 @@ import { useLongPress } from "./use-long-press";
 
 // A compact task card for a board column: title, next action, due, priority and assignee, with a "⋯"
 // menu and the long-press action sheet. The whole card is the drag handle — 10px of movement starts a
-// drag, less stays a click — so the stretched title link still opens the task.
+// drag, less stays a click — so the stretched title link still opens the task. A card in a group (2026-11-11 log)
+// names it, unless the column has already drawn the group's border round it (`inGroup`).
 export function TaskCard({
    task,
    today,
    readOnly = false,
    overlay = false,
+   inGroup = false,
 }: {
    task: TaskListItem;
    today: string;
    readOnly?: boolean;
    overlay?: boolean;
+   inGroup?: boolean;
 }) {
+   const statuses = useStatusCatalog();
    const [sheetOpen, setSheetOpen] = useState(false);
    const { handlers, swallowClick } = useLongPress(() => setSheetOpen(true));
    return (
@@ -53,7 +61,7 @@ export function TaskCard({
                   {readOnly || overlay ? null : <TaskMenu task={task} className="-mt-1 -mr-1 size-6" />}
                </div>
                {task.proposal === "pending" || task.proposal === "declined" ? (
-                  <span className={cn("mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium", task.proposal === "pending" ? "bg-status-awaiting-bg text-status-awaiting-fg" : "bg-status-blocked-bg text-status-blocked-fg")}>
+                  <span className={cn("mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium", task.proposal === "pending" ? "bg-status-amber-bg text-status-amber-fg" : "bg-status-red-bg text-status-red-fg")}>
                      <ClipboardCheck className="size-3" aria-hidden />
                      {task.proposal === "pending" ? "Waiting for sign-off" : "Declined"}
                   </span>
@@ -65,6 +73,14 @@ export function TaskCard({
                      <span className="truncate">Part of {task.parent.title}</span>
                   </p>
                ) : null}
+               {task.group !== null && !inGroup ? (
+                  <p className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground" data-group-chip={task.group.id}>
+                     <Group className="size-3 shrink-0 text-primary" aria-hidden />
+                     <span className="truncate">
+                        {groupLabel(task.group)} · {task.group.size}
+                     </span>
+                  </p>
+               ) : null}
                {task.subTasks > 0 ? (
                   <p className="mt-1 flex items-center gap-1 text-[12px] text-muted-foreground" data-sub-tasks-chip>
                      <GitMerge className="size-3 shrink-0" aria-hidden />
@@ -73,7 +89,7 @@ export function TaskCard({
                ) : null}
                {task.nextAction ? <p className="mt-1 line-clamp-1 text-[13px] text-muted-foreground">{task.nextAction}</p> : null}
                <div className="mt-2.5 flex items-center gap-2">
-                  <DueLabel due={task.dueDate} today={today} status={task.status} />
+                  <DueLabel due={task.dueDate} today={today} status={statusDef(statuses, task.status)} />
                   <PriorityGlyph priority={task.priority} className="relative" />
                   <span className="ml-auto" />
                   <AssigneeStack assignees={task.assignees} className="relative" />

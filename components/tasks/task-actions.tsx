@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { TaskStatus } from "@/lib/constants";
 import type { CreateDefaults } from "@/lib/tasks/types";
 import { CommandPalette, rememberRecentTask } from "./command-palette";
 import { CreateTaskDialog, TransitionDialog, UpdateProgressDialog } from "./task-dialogs";
@@ -16,13 +15,13 @@ import { prefetchTaskFormOptions } from "./use-task-form-options";
 /** Fired on the task page to scroll to and focus its inline Update progress form. */
 export const FOCUS_UPDATE_EVENT = "trackwise:focus-update";
 
-/** The quick-add bar's title field carries this attribute, so N can find it. */
+/** The quick-add bar's text box carries this attribute, so N can find it. */
 export const QUICK_ADD_ATTRIBUTE = "data-quick-add";
 
-/** Focuses the page's quick-add bar; false when the page has none. */
+/** Focuses the page's quick-add bar; false when the page has none (a page the router keeps hidden doesn't count). */
 function focusQuickAdd(): boolean {
-  const input = document.querySelector<HTMLInputElement>(`[${QUICK_ADD_ATTRIBUTE}]`);
-  if (input === null) return false;
+  const input = [...document.querySelectorAll<HTMLElement>(`[${QUICK_ADD_ATTRIBUTE}]`)].find((box) => box.checkVisibility?.() ?? box.offsetParent !== null);
+  if (input === undefined) return false;
   input.scrollIntoView({ block: "nearest" });
   input.focus();
   return true;
@@ -32,7 +31,7 @@ export type TaskActions = {
   /** `onCreated` runs once the dialog has created the task (the quick-add bar clears itself then). */
   openCreate: (defaults?: CreateDefaults, onCreated?: (id: string) => void) => void;
   openUpdate: (taskId: string) => void;
-  openTransition: (taskId: string, status: TaskStatus) => void;
+  openTransition: (taskId: string, status: string) => void;
   openPalette: () => void;
   /** The task whose page is open and which the viewer may update (registered by <CurrentTask>). */
   currentTaskId: string | null;
@@ -67,7 +66,7 @@ export function TaskActionsProvider({ children }: { children: ReactNode }) {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [create, setCreate] = useState<{ open: boolean; defaults: CreateDefaults; onCreated?: (id: string) => void }>({ open: false, defaults: {} });
   const [updateTaskId, setUpdateTaskId] = useState<string | null>(null);
-  const [transition, setTransition] = useState<{ taskId: string; status: TaskStatus } | null>(null);
+  const [transition, setTransition] = useState<{ taskId: string; status: string } | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   // The New task dialog's pickers are fetched once the page is idle, so the first N opens a ready form.

@@ -34,9 +34,9 @@ export function ApprovalChain({ steps, currentId, className }: { steps: Approval
             <span
               className={cn(
                 "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[12px] font-medium",
-                step.decision === "approved" && "border-status-completed-dot/40 bg-status-completed-bg text-status-completed-fg",
-                step.decision === "declined" && "border-status-blocked-dot/40 bg-status-blocked-bg text-status-blocked-fg",
-                step.decision === null && current && "border-status-awaiting-dot/50 bg-status-awaiting-bg text-status-awaiting-fg",
+                step.decision === "approved" && "border-status-green-dot/40 bg-status-green-bg text-status-green-fg",
+                step.decision === "declined" && "border-status-red-dot/40 bg-status-red-bg text-status-red-fg",
+                step.decision === null && current && "border-status-amber-dot/50 bg-status-amber-bg text-status-amber-fg",
                 step.decision === null && !current && "text-muted-foreground",
               )}
             >
@@ -152,7 +152,7 @@ export function ProposalStrip({
   const declined = ordered.find((step) => step.decision === "declined") ?? null;
   if (status === "declined") {
     return (
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-2 border-b border-status-blocked-dot/30 bg-status-blocked-bg px-5 py-3 text-status-blocked-fg md:px-6" data-proposal-strip="declined">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2 border-b border-status-red-dot/30 bg-status-red-bg px-5 py-3 text-status-red-fg md:px-6" data-proposal-strip="declined">
         <X className="mt-0.5 size-4 shrink-0" aria-hidden />
         <div className="min-w-0 flex-1 basis-48 text-base">
           <p>
@@ -167,7 +167,7 @@ export function ProposalStrip({
     );
   }
   return (
-    <div className="grid gap-2 border-b border-status-awaiting-dot/30 bg-status-awaiting-bg px-5 py-3 text-status-awaiting-fg md:px-6" data-proposal-strip="pending">
+    <div className="grid gap-2 border-b border-status-amber-dot/30 bg-status-amber-bg px-5 py-3 text-status-amber-fg md:px-6" data-proposal-strip="pending">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <ClipboardCheck className="size-4 shrink-0" aria-hidden />
         <p className="min-w-0 flex-1 basis-48 text-base">

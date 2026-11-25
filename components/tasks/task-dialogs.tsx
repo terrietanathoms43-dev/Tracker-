@@ -2,10 +2,11 @@
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { TaskStatus } from "@/lib/constants";
+import { useStatusCatalog } from "@/components/status-catalog";
+import { statusDef, transitionTitle } from "@/lib/statuses";
 import type { CreateDefaults } from "@/lib/tasks/types";
 import { CreateTaskForm } from "./create-task-form";
-import { TRANSITION_TITLES, TransitionForm } from "./transition-form";
+import { TransitionForm } from "./transition-form";
 import { UpdateProgressForm } from "./update-progress-form";
 import { useUpdateContext } from "./use-update-context";
 
@@ -37,7 +38,7 @@ export function CreateTaskDialog({
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>New task</DialogTitle>
-          <DialogDescription className="sr-only">Only the title is required.</DialogDescription>
+          <DialogDescription className="sr-only">Say what needs doing; everything else is optional.</DialogDescription>
         </DialogHeader>
         {open ? <CreateTaskForm
             defaults={defaults}
@@ -75,13 +76,14 @@ export function UpdateProgressDialog({ taskId, onClose }: { taskId: string | nul
   );
 }
 
-export function TransitionDialog({ target, onClose }: { target: { taskId: string; status: TaskStatus } | null; onClose: () => void }) {
+export function TransitionDialog({ target, onClose }: { target: { taskId: string; status: string } | null; onClose: () => void }) {
   const state = useUpdateContext(target?.taskId ?? null);
+  const statuses = useStatusCatalog();
   return (
     <Dialog open={target !== null} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto overflow-x-hidden sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{target ? (TRANSITION_TITLES[target.status] ?? "Change status") : "Change status"}</DialogTitle>
+          <DialogTitle>{target ? transitionTitle(statusDef(statuses, target.status)) : "Change status"}</DialogTitle>
           <DialogDescription className="line-clamp-2 wrap-anywhere">{state?.context?.task.title ?? " "}</DialogDescription>
         </DialogHeader>
         {target === null || state === null ? (

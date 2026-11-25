@@ -1,6 +1,6 @@
 "use client";
 
-import { Flag, Link2, MessageSquareWarning, Repeat } from "lucide-react";
+import { Flag, Link2, MessageSquareText, MessageSquareWarning, Repeat } from "lucide-react";
 import { useState, useTransition, type RefObject } from "react";
 import { updateProgress } from "@/actions/tasks";
 import { CharacterCounter } from "@/components/character-counter";
@@ -10,9 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CLOSED_WITHOUT_COMPLETION, TASK_STATUS_LABELS, TASK_STATUSES, type TaskStatus } from "@/lib/constants";
+import { activeStatuses, backToWorkTarget, isClosedWithoutCompletion, requiresEditToEnter, statusDef, statusWord } from "@/lib/statuses";
 import { LIMITS } from "@/lib/limits";
+import { incompletePolicyCount, incompletePoliciesMessage } from "@/lib/tasks/policy-checklist";
 import { closerHeldMessage, closerReadyMessage } from "@/lib/tasks/closer";
+import { closingResolvesMessage, reopeningMessage } from "@/lib/tasks/comment-tasks";
 import { nameOf, roleSuffix } from "@/lib/tasks/people";
 import { openCommentsMessage } from "@/lib/tasks/transitions";
 import type { UpdateContext } from "@/lib/tasks/types";
@@ -20,10 +22,10 @@ import { toastResult } from "@/lib/toast-result";
 
 // Update progress: the form behind the product's signature action. One Status control, with the same statuses
 // every list, board and report uses (docs/PLAN.md, 2026-11-03 log): picking Blocked asks what blocks it,
-// Awaiting approval asks who approves, Completed needs its summary (2026-11-07 log), Rejected, Deferred and
+// Awaiting approval asks who approves, Completed needs its summary (2026-11-07 log), Rejected and
 // Cancelled each ask why.
 
-type Choice = "" | TaskStatus;
+type Choice = "" | string;
 
 /**
  * The signature form (docs/BRIEF.md §6): latest progress and next action, then the optional evidence, handover and
@@ -41,12 +43,12 @@ export function UpdateProgressForm({
   autoFocus?: boolean;
   progressRef?: RefObject<HTMLTextAreaElement | null>;
 }) {
-  const { task, people, abilities } = context;
+  const { task, people, abilities, statuses } = context;
   const [progress, setProgress] = useState("");
   const [nextAction, setNextAction] = useState("");
-  const [status, setStatus] = useState<Choice>(task.status === "not_started" ? "in_progress" : "");
-  const [reason, setReason] = useState(task.status === "blocked" ? (task.blockedReason ?? "") : "");
-  const [blockedBy, setBlockedBy] = useState(task.status === "blocked" ? (task.blockedBy ?? "") : "");
+  const [status, setStatus] = useState<Choice>(task.status === "not_started" ? backToWorkTarget(statuses) : "");
+  const [reason, setReason] = useState(statusDef(statuses, task.status).kind === "blocked" ? (task.blockedReason ?? "") : "");
+  const [blockedBy, setBlockedBy] = useState(statusDef(statuses, task.status).kind === "blocked" ? (task.blockedBy ?? "") : "");
   const [showEvidence, setShowEvidence] = useState(false);
   const [evidenceUrl, setEvidenceUrl] = useState("");
   const [evidenceLabel, setEvidenceLabel] = useState("");
@@ -66,29 +68,38 @@ export function UpdateProgressForm({
       : current.length === 1
         ? `Keep with ${nameOf(current[0])}`
         : `Keep with ${current.map((person) => nameOf(person)).join(", ")}`;
-  const effective: TaskStatus = status === "" ? task.status : status;
-  const completing = effective === "completed" && task.status !== "completed";
-  const merging = effective === "merged" && task.status !== "merged";
-  /** Closing without completing: rejected, deferred or cancelled, each with its reason (a merge names its parent by itself). */
-  const closingWithReason = CLOSED_WITHOUT_COMPLETION.includes(effective) && effective !== "merged" && task.status !== effective;
+  const currentDef = statusDef(statuses, task.status);
+  const effectiveKey = status === "" ? task.status : status;
+  const effective = statusDef(statuses, effectiveKey);
+  const completing = effective.kind === "completed" && currentDef.kind !== "completed";
+  const merging = effective.kind === "merged" && currentDef.kind !== "merged";
+  /** Closing without completing: rejected, cancelled or a workspace's own closed status, each with its reason (a merge names its parent by itself). */
+  const closingWithReason = isClosedWithoutCompletion(effective) && effective.kind !== "merged" && task.status !== effectiveKey;
   const closing = completing || closingWithReason || merging;
   // The same rules the server applies (lib/tasks/transitions.ts, sub-tasks), shown before the save instead of after it.
   const heldByComments = completing && task.openComments > 0;
   const heldBySubTasks = completing && task.openSubTasks > 0;
   // A goal's "Everything completed" task is its last step (2026-11-09 log): it waits for every other task under the goal.
   const heldByGoal = completing && task.closer !== null && task.closer.openOthers > 0;
-  const held = heldByComments || heldBySubTasks || heldByGoal;
+  const missingPolicies = incompletePolicyCount(task.policyChecklist);
+  const heldByPolicies = (effective.kind === "awaiting_approval" || completing) && missingPolicies > 0;
+  const heldByStart = (effective.kind === "awaiting_approval" || completing) && task.startedAt === null;
+  const held = heldByComments || heldBySubTasks || heldByGoal || heldByPolicies || heldByStart;
   const summaryMissing = completing && !held && summary.trim() === "";
+  // Made from a comment (2026-11-11 log): what closing or reopening it does to that comment, said before the save.
+  const reopening = currentDef.closed && !effective.closed;
+  const linkedComment =
+    task.fromComment === null ? null : closing && !held && !currentDef.closed ? closingResolvesMessage(task.fromComment) : reopening ? reopeningMessage(task.fromComment) : null;
   // The statuses this person may move the task to: completing a task that waits for approval is approving it;
   // rejecting and cancelling are edit rights; only a sub-task can be merged.
-  const choices = TASK_STATUSES.filter((each) => {
-    if (each === "rejected" || each === "cancelled") return abilities.reject;
-    if (each === "completed" && task.status === "awaiting_approval") return abilities.approve;
-    if (each === "merged") return task.parent !== null;
+  const choices = activeStatuses(statuses).filter((each) => {
+    if (requiresEditToEnter(each)) return abilities.reject;
+    if (each.kind === "completed" && currentDef.kind === "awaiting_approval") return abilities.approve;
+    if (each.kind === "merged") return task.parent !== null;
     return true;
   });
   // A blocked task that stays blocked may still get its reason brought up to date.
-  const blockedFields = effective === "blocked";
+  const blockedFields = effective.kind === "blocked";
 
   function submit() {
     startTransition(async () => {
@@ -102,7 +113,7 @@ export function UpdateProgressForm({
         evidenceUrl: showEvidence ? evidenceUrl.trim() : "",
         evidenceLabel: showEvidence ? evidenceLabel : "",
         handOverTo,
-        approverId: status === "awaiting_approval" ? approverId : "",
+        approverId: status !== "" && statusDef(statuses, status).kind === "awaiting_approval" ? approverId : "",
         summary: completing ? summary : "",
       });
       if (!result.ok) {
@@ -190,17 +201,19 @@ export function UpdateProgressForm({
           <div className="flex items-center gap-2">
             <StatusIcon status={effective} />
             <NativeSelect id={field("status")} value={status} className="min-w-0 flex-1" onChange={(event) => setStatus(event.target.value as Choice)} aria-invalid={errors.status ? true : undefined}>
-              <option value="">Keep as {TASK_STATUS_LABELS[task.status].toLowerCase()}</option>
+              <option value="">Keep as {statusWord(currentDef)}</option>
               {choices
-                .filter((each) => each !== task.status)
+                .filter((each) => each.key !== task.status)
                 .map((each) => (
-                  <option key={each} value={each}>
-                    {TASK_STATUS_LABELS[each]}
+                  <option key={each.key} value={each.key}>
+                    {each.label}
                   </option>
                 ))}
             </NativeSelect>
           </div>
           {error("status")}
+          {heldByStart ? <p className="rounded-md border bg-muted/60 px-3 py-2 text-[12px] text-muted-foreground" role="status">Move this task to In progress before {effective.kind === "completed" ? "completing it" : "sending it for approval"}.</p> : null}
+          {heldByPolicies ? <p className="rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[12px] text-status-awaiting-fg" role="status">{incompletePoliciesMessage(missingPolicies)}</p> : null}
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor={field("handover")} className="text-[13px] text-muted-foreground">
@@ -220,7 +233,7 @@ export function UpdateProgressForm({
       </div>
 
       {blockedFields ? (
-        <div className="grid items-start gap-3 rounded-md border border-status-blocked-dot/30 bg-status-blocked-bg/60 p-3 sm:grid-cols-2">
+        <div className="grid items-start gap-3 rounded-md border border-status-red-dot/30 bg-status-red-bg/60 p-3 sm:grid-cols-2">
           <div className="grid gap-1.5">
             <Input
               aria-label="What's blocking it?"
@@ -255,8 +268,8 @@ export function UpdateProgressForm({
       {closingWithReason ? (
         <div className="grid gap-1.5">
           <Textarea
-            aria-label={`Why is it ${TASK_STATUS_LABELS[effective].toLowerCase()}?`}
-            placeholder={`Why is it ${TASK_STATUS_LABELS[effective].toLowerCase()}? Kept in the task's history.`}
+            aria-label={`Why is it ${statusWord(effective)}?`}
+            placeholder={`Why is it ${statusWord(effective)}? Kept in the task's history.`}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             rows={2}
@@ -270,7 +283,7 @@ export function UpdateProgressForm({
         </div>
       ) : null}
 
-      {status === "awaiting_approval" ? (
+      {status !== "" && statusDef(statuses, status).kind === "awaiting_approval" ? (
         <div className="grid gap-1.5">
           <Label htmlFor={field("approver")} className="text-[13px] text-muted-foreground">
             Who approves it?
@@ -291,13 +304,22 @@ export function UpdateProgressForm({
       ) : null}
 
       {heldByComments ? (
-        <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+        <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status">
           <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <span>{openCommentsMessage(task.openComments)} Resolve them under Comments and history, or keep the task open for now.</span>
+          <span>
+            {openCommentsMessage(task.openComments, task.commentsWaitingOnTasks)}{" "}
+            {task.commentsWaitingOnTasks > 0 ? `${task.openComments === 1 ? "It is" : "They are"} under Comments and history; keep the task open for now.` : "Resolve them under Comments and history, or keep the task open for now."}
+          </span>
+        </p>
+      ) : null}
+      {linkedComment !== null ? (
+        <p className="flex items-start gap-2 rounded-md border bg-muted/60 px-3 py-2 text-[13px] text-muted-foreground" role="status" data-closes-comment>
+          <MessageSquareText className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>{linkedComment}</span>
         </p>
       ) : null}
       {heldBySubTasks && !heldByComments ? (
-        <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status">
+        <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status">
           <MessageSquareWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>
             Finish the {task.openSubTasks} open {task.openSubTasks === 1 ? "sub-task" : "sub-tasks"} first, or merge them: this task waits for them.
@@ -305,7 +327,7 @@ export function UpdateProgressForm({
         </p>
       ) : null}
       {heldByGoal && !heldByComments && !heldBySubTasks && task.closer ? (
-        <p className="flex items-start gap-2 rounded-md border border-status-awaiting-dot/30 bg-status-awaiting-bg px-3 py-2 text-[13px] text-status-awaiting-fg" role="status" data-closer-hold>
+        <p className="flex items-start gap-2 rounded-md border border-status-amber-dot/30 bg-status-amber-bg px-3 py-2 text-[13px] text-status-amber-fg" role="status" data-closer-hold>
           <Flag className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>{closerHeldMessage(task.closer.openOthers, task.closer.goalTitle)}</span>
         </p>

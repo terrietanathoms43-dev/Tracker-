@@ -3,7 +3,7 @@ import { and, eq, ne, notInArray, sql } from "drizzle-orm";
 import type { Tx } from "@/db";
 import { goals, tasks } from "@/db/schema";
 import { GuardError } from "@/lib/action-result";
-import { CLOSED_STATUSES, isClosedStatus, type TaskStatus } from "@/lib/constants";
+import { closedStatusKeys, isClosedStatusKey, statusDef, type StatusCatalog } from "@/lib/statuses";
 import { reopenGoalCloser } from "@/lib/dal/goal-closers";
 import { createGoalOccurrence, type NextGoal } from "@/lib/dal/recurrence";
 import { liveOnly } from "@/lib/dal/tasks";
@@ -30,7 +30,7 @@ const plural = (n: number, word: string) => `${n} ${n === 1 ? word : `${word}s`}
  * one task out (the one being completed); `exceptOwnCloser` leaves out the goal's own closer (the goal page's Mark
  * completed completes that one itself).
  */
-export async function openTasksUnderGoal(tx: Tx, orgId: string, goalId: string, exceptId: string | null = null, exceptOwnCloser = false): Promise<number> {
+export async function openTasksUnderGoal(tx: Tx, orgId: string, goalId: string, catalog: StatusCatalog, exceptId: string | null = null, exceptOwnCloser = false): Promise<number> {
   const [row] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(tasks)
@@ -38,7 +38,7 @@ export async function openTasksUnderGoal(tx: Tx, orgId: string, goalId: string, 
       and(
         eq(tasks.orgId, orgId),
         liveOnly,
-        notInArray(tasks.status, [...CLOSED_STATUSES]),
+        notInArray(tasks.status, closedStatusKeys(catalog)),
         exceptId === null ? undefined : ne(tasks.id, exceptId),
         exceptOwnCloser ? sql`not (${tasks.goalCloser} and ${tasks.goalId} = ${goalId})` : undefined,
         sql`${tasks.goalId} in (select g.id from goals g where g.id = ${goalId} or g.parent_goal_id = ${goalId})`,
@@ -110,7 +110,7 @@ async function achieve(tx: Tx, viewer: Viewer, goal: LockedGoal, now: Date): Pro
   await tx.update(goals).set({ status: "completed", completedAt: now, completedBy: viewer.userId, updatedAt: now }).where(eq(goals.id, goal.id));
   const today = dayKey(now, viewer.timezone);
   const targetDate = goal.recurrence && !(await hasLaterOccurrence(tx, goal)) ? nextAfterFinishing(goal.recurrence, goal.targetDate, goal.targetDate, today) : null;
-  const next = targetDate ? await createGoalOccurrence(tx, viewer.userId, { ...goal, recurrence: goal.recurrence ?? null }, targetDate, now) : null;
+  const next = targetDate ? await createGoalOccurrence(tx, viewer.userId, { ...goal, recurrence: goal.recurrence ?? null }, targetDate, now, viewer.statuses) : null;
   const notify = [...new Set([goal.ownerId, goal.createdBy])].filter((userId): userId is string => userId !== null);
   return { goal: { id: goal.id, title: goal.title }, achieved: true, reopened: false, next, notify };
 }
@@ -121,7 +121,9 @@ async function achieve(tx: Tx, viewer: Viewer, goal: LockedGoal, now: Date): Pro
  */
 async function reopen(tx: Tx, viewer: Viewer, goal: LockedGoal, now: Date, exceptTaskId: string | null): Promise<GoalOutcome> {
   await tx.update(goals).set({ status: "active", completedAt: null, completedBy: null, updatedAt: now }).where(eq(goals.id, goal.id));
-  await reopenGoalCloser(tx, viewer.userId, goal, now, exceptTaskId);
+  // The closers this reopens are not handed to syncLinkedWork (lib/dal/comment-tasks.ts), which imports this module:
+  // a closer is never made from a comment (only createTask sets that link, and it never makes a closer).
+  await reopenGoalCloser(tx, viewer.userId, goal, now, exceptTaskId, viewer.statuses);
   return { goal: { id: goal.id, title: goal.title }, achieved: false, reopened: true, next: null, notify: [] };
 }
 
@@ -133,22 +135,22 @@ async function reopen(tx: Tx, viewer: Viewer, goal: LockedGoal, now: Date, excep
  * goal (and an achieved parent) active again. Null when the task has no goal or nothing changes. Call it before the
  * task row itself is updated: it counts the other tasks.
  */
-export async function applyGoalRules(tx: Tx, viewer: Viewer, task: { id: string; goalId: string | null; status: TaskStatus; goalCloser: boolean }, to: TaskStatus, now: Date): Promise<GoalOutcome | null> {
+export async function applyGoalRules(tx: Tx, viewer: Viewer, task: { id: string; goalId: string | null; status: string; goalCloser: boolean }, to: string, now: Date): Promise<GoalOutcome | null> {
   if (task.goalId === null) return null;
-  const completing = to === "completed" && task.status !== "completed";
-  const opening = !isClosedStatus(to) && isClosedStatus(task.status);
+  const completing = statusDef(viewer.statuses, to).kind === "completed" && statusDef(viewer.statuses, task.status).kind !== "completed";
+  const opening = !isClosedStatusKey(viewer.statuses, to) && isClosedStatusKey(viewer.statuses, task.status);
   if (!completing && !opening) return null;
   const goal = await lockGoal(tx, viewer.orgId, task.goalId);
   if (goal === null) return null;
   if (completing) {
-    const others = goal.status === "active" || task.goalCloser ? await openTasksUnderGoal(tx, viewer.orgId, goal.id, task.id) : null;
+    const others = goal.status === "active" || task.goalCloser ? await openTasksUnderGoal(tx, viewer.orgId, goal.id, viewer.statuses, task.id) : null;
     // The closer is the goal's last step: it waits for everything else under the goal.
     if (task.goalCloser && others !== null && others > 0) throw new GuardError("conflict", closerHeldMessage(others, goal.title));
     const outcome = goal.status === "active" && others === 0 ? await achieve(tx, viewer, goal, now) : null;
     // A sub-goal achieved may have been the last open thing under its parent.
     if (goal.parentGoalId !== null) {
       const parent = await lockGoal(tx, viewer.orgId, goal.parentGoalId);
-      if (parent !== null && parent.status === "active" && (await openTasksUnderGoal(tx, viewer.orgId, parent.id, task.id)) === 0) {
+      if (parent !== null && parent.status === "active" && (await openTasksUnderGoal(tx, viewer.orgId, parent.id, viewer.statuses, task.id)) === 0) {
         const above = await achieve(tx, viewer, parent, now);
         return outcome ?? above;
       }
@@ -179,8 +181,8 @@ export async function reopenGoalForNewWork(tx: Tx, viewer: Viewer, goalId: strin
 }
 
 /** The goal page's own Mark completed: refused while any task under the goal is open, its own closer aside (it is completed with the goal). */
-export async function assertNoOpenTasks(tx: Tx, orgId: string, goal: { id: string; title: string }): Promise<void> {
-  const open = await openTasksUnderGoal(tx, orgId, goal.id, null, true);
+export async function assertNoOpenTasks(tx: Tx, orgId: string, goal: { id: string; title: string }, catalog: StatusCatalog): Promise<void> {
+  const open = await openTasksUnderGoal(tx, orgId, goal.id, catalog, null, true);
   if (open > 0) throw new GuardError("conflict", openTasksMessage(open, goal.title));
 }
 

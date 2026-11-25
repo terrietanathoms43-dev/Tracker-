@@ -36,18 +36,21 @@ try {
   const jordan = (browsers.jordan = await openBrowser({ role: "member", width: 1280, height: 900 }));
   await jordan.goto("/home?view=list", 4000);
   await jordan.press("n", 800);
-  step("N jumps to the add bar", (await jordan.evaluate(`document.activeElement?.id === "quick-add-title"`)) === true);
-  await jordan.type("#quick-add-title", `${TITLE} !high @tomorrow`);
+  step("N jumps to the add bar", (await jordan.evaluate(`document.activeElement?.id === "quick-add-text"`)) === true);
+  await jordan.type("#quick-add-text", `${TITLE} !high @tomorrow`);
   const picked = await jordan.evaluate(
-    `[...document.querySelector("#quick-add-title").form.querySelectorAll("[aria-checked=true], [aria-pressed=true]")].map((e) => e.textContent.trim()).join(",")`,
+    `[...document.querySelector("#quick-add-text").form.querySelectorAll("[aria-checked=true], [aria-pressed=true]")].map((e) => e.textContent.trim()).join(",")`,
   );
   step("the bar reads !high and @tomorrow into its buttons", picked === "High,Tomorrow", String(picked));
   await jordan.click("More options", { exact: true, wait: 1200 });
-  step("More options opens the dialog with the title, shortcuts taken out", (await jordan.evaluate(`document.querySelector("#task-title")?.value ?? null`)) === TITLE);
+  step(
+    "More options opens the dialog with what was typed as the description, shortcuts taken out, and the title it will get",
+    (await jordan.evaluate(`document.querySelector("#task-description")?.value ?? null`)) === TITLE && (await jordan.evaluate(`document.querySelector("#task-title")?.placeholder ?? null`)) === TITLE,
+  );
   await jordan.type("#task-next", "Draft the rotation runbook");
   await jordan.click("Create task", { exact: true, wait: 2500 });
   step("creating shows the toast", await jordan.waitFor("Task created."));
-  step("the add bar is empty again", (await jordan.evaluate(`document.querySelector("#quick-add-title")?.value`)) === "");
+  step("the add bar is empty again", (await jordan.evaluate(`document.querySelector("#quick-add-text")?.value`)) === "");
   const [created] = await query(
     `select t.id, t.status, t.next_action, t.priority, t.due_date::text as due,
        (select array_agg(ta.user_id) from task_assignees ta where ta.task_id = t.id) as assignees

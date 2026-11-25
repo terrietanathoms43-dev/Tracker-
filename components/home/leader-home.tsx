@@ -7,6 +7,7 @@ import { Panel, PanelEmpty } from "@/components/dashboard/panel";
 import { WorkloadCompact } from "@/components/dashboard/workload";
 import type { FeedEntry, GoalProgress } from "@/lib/dal/dashboard";
 import type { ApprovalStagingTask } from "@/lib/dal/tasks";
+import type { StatusCatalog } from "@/lib/statuses";
 import { tasksHref } from "@/lib/tasks/filters";
 import type { TaskCounts, TaskListItem, WorkloadRow } from "@/lib/tasks/types";
 import { LocalPanel } from "./local-panel";
@@ -38,6 +39,7 @@ export function LeaderHome({
   today,
   now,
   timeZone,
+  statuses,
 }: {
   data: LeaderHomeData;
   days: number;
@@ -48,11 +50,12 @@ export function LeaderHome({
   today: string;
   now: Date;
   timeZone: string;
+  statuses: StatusCatalog;
 }) {
   return (
     <div className="grid gap-6">
       {data.proposals > 0 ? <ProposalsBanner count={data.proposals} /> : null}
-      <CountTiles counts={data.counts} days={days} />
+      <CountTiles counts={data.counts} days={days} statuses={statuses} />
 
       {/* Supervisor Approval Staging Area: Eliminates hallucination before sign-off */}
       <ApprovalStaging tasks={data.staging} />

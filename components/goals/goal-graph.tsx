@@ -115,7 +115,7 @@ export function GoalGraph({ goals, links, today, showProject, canEdit = false }:
               data-goal-node={goal.id}
               className={cn(
                 "absolute flex flex-col gap-1 rounded-lg border bg-card p-3 text-left shadow-xs transition-colors outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring",
-                late && "border-status-blocked-dot/60 bg-status-blocked-bg/40",
+                late && "border-status-red-dot/60 bg-status-red-bg/40",
                 goal.status === "completed" && "opacity-70",
                 target && "ring-2 ring-primary",
                 drag !== null && "cursor-crosshair",
@@ -141,7 +141,7 @@ export function GoalGraph({ goals, links, today, showProject, canEdit = false }:
               </span>
               <span className="mt-auto flex items-center gap-2 text-[12px] text-muted-foreground tabular-nums">
                 <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden>
-                  <span className={cn("block h-full rounded-full", late ? "bg-status-blocked-dot" : "bg-highlight")} style={{ width: `${pct}%` }} />
+                  <span className={cn("block h-full rounded-full", late ? "bg-status-red-dot" : "bg-highlight")} style={{ width: `${pct}%` }} />
                 </span>
                 {goal.progress.completed}/{goal.progress.total}
               </span>

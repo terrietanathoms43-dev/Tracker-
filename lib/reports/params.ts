@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { OrgRole } from "@/lib/constants";
-import { lastDays, type ReportRange } from "./range";
+import { lastDays, SCOPE_CADENCES, type ReportRange, type ScopeCadence } from "./range";
 
-// The report's state lives in the URL (`/reports?from&to&cut&project`, `/reports/export?from&to&table&project`).
+// The report's state lives in the URL (`/reports?from&to&cut&project`, `/reports/export?from&to&table&project`;
+// the Active scope's daily read is `/reports?cadence&cut=scope`, with no dates, 2026-11-12 log).
 // These functions are the only translation between the address and what lib/reports/data.ts is asked for.
 
 export const DEFAULT_RANGE_DAYS = 30;
@@ -79,6 +80,18 @@ export function parseReportRange(raw: Raw, today: string): ReportRange {
   return start <= end ? { from: start, to: end } : { from: end, to: start };
 }
 
+const cadenceSchema = z.enum(SCOPE_CADENCES);
+
+/**
+ * The Active scope's daily cadence in the address (`cadence=daily|weekdays`), or null. Only that view has one: its
+ * range is then worked out from today (lib/reports/range.ts `cadenceRange`), whatever dates the address also holds.
+ */
+export function parseReportCadence(raw: Raw, cut: ReportCut): ScopeCadence | null {
+  if (cut !== "scope") return null;
+  const parsed = cadenceSchema.safeParse(one(raw, "cadence"));
+  return parsed.success ? parsed.data : null;
+}
+
 /** The project in the address: an id, "none", or "" for everything. Anything else is ignored, never queried. */
 export function parseReportProject(raw: Raw): ReportProject {
   const value = one(raw, "project");
@@ -102,17 +115,25 @@ export function parseReportCut(raw: Raw, fallback: ReportCut, allowed: readonly 
 }
 
 /**
- * The address of the report page or one of its CSV exports. Both ends are always written, so a link is stable;
- * the page keeps its view (`cut`) and its project across range changes.
+ * The address of the report page or one of its CSV exports. Both ends of a range are always written, so a link is
+ * stable; the page keeps its view (`cut`) and its project across range changes. A `cadence` is written instead of
+ * the dates (the page works them out from today), and a null range with no cadence writes neither: the view opens
+ * on its default.
  */
 export function reportHref(
   base: "/reports" | "/reports/export",
-  range: ReportRange,
-  extra: { table?: ReportTable; cut?: ReportCut; project?: ReportProject } = {},
+  range: ReportRange | null,
+  extra: { table?: ReportTable; cut?: ReportCut; project?: ReportProject; cadence?: ScopeCadence | null } = {},
 ): string {
-  const params = new URLSearchParams({ from: range.from, to: range.to });
+  const params = new URLSearchParams();
+  if (extra.cadence) params.set("cadence", extra.cadence);
+  else if (range !== null) {
+    params.set("from", range.from);
+    params.set("to", range.to);
+  }
   if (extra.table) params.set("table", extra.table);
   if (extra.cut) params.set("cut", extra.cut);
   if (extra.project) params.set("project", extra.project);
-  return `${base}?${params.toString()}`;
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
 }

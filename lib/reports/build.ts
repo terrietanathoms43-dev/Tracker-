@@ -1,5 +1,6 @@
 import "server-only";
 import { GuardError } from "@/lib/action-result";
+import { statusDef } from "@/lib/statuses";
 import { activeGoalProgress, type GoalProgress } from "@/lib/dal/dashboard";
 import { canSeeReports, type Viewer } from "@/lib/permissions";
 import { contributionsTable, deliveredTable, openTable, scopeTable, toCsv } from "./csv";
@@ -23,7 +24,7 @@ import {
   type PendingDecisions,
   type ReportProjectOption,
   type ReportTask,
-  type TimelineDay,
+  type Timeline,
 } from "./data";
 import type { Pace } from "./pace";
 import type { ReportProject, ReportTable } from "./params";
@@ -77,7 +78,8 @@ export type Report = {
   goals: GoalProgress[];
   /** Tasks under each goal completed in the range, by goal id. */
   goalsDeliveredInRange: Record<string, number>;
-  timeline: TimelineDay[];
+  /** The Activity widget: each live task's one block by day, and the activity line (lib/reports/data.ts). */
+  timeline: Timeline;
   healthBoard: HealthBoard;
   blockedDuration: BlockedDurationStats;
   decisions: PendingDecisions;
@@ -90,9 +92,10 @@ function assertCanSeeReports(viewer: Viewer): void {
 
 /**
  * Everything /reports prints for a range and a project. Blocked and overdue are as of `today`, whatever the range.
- * `includeLocal` (the My work view) draws the viewer's own local tasks in the activity widget; nothing else counts them.
+ * Every view reads the same live tasks of the project (or of all of them): the My work view narrows what it lists
+ * to the viewer afterwards, never what is counted here.
  */
-export async function buildReport(viewer: Viewer, range: ReportRange, today: string, project: ReportProject, options: { includeLocal?: boolean } = {}): Promise<Report> {
+export async function buildReport(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<Report> {
   assertCanSeeReports(viewer);
   // Two waves rather than one: the sections fan out into twenty-odd queries, and a pool of ten against a database
   // that may be waking up should not have them all racing for a connection at once.
@@ -108,7 +111,7 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
   const [contributions, healthBoard, timeline, decisions, stalled, pace] = await Promise.all([
     contributionCounts(viewer, range, today, project),
     projectAndGoalHealth(viewer, today, project),
-    reportTimeline(viewer, range, today, project, { includeLocal: options.includeLocal === true }),
+    reportTimeline(viewer, range, today, project),
     pendingDecisions(viewer, project),
     stalledTasks(viewer, project),
     reportPace(viewer, today, project),
@@ -125,7 +128,7 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
     summary: {
       delivered: delivered.length,
       openDueInRange: open.filter(dueInRange).length,
-      blocked: blockedOverdue.filter((task) => task.status === "blocked").length,
+      blocked: blockedOverdue.filter((task) => statusDef(viewer.statuses, task.status).kind === "blocked").length,
       overdue: blockedOverdue.filter((task) => task.dueDate !== null && task.dueDate < today).length,
       progressUpdates,
       // "All clear" has to mean it: every verdict short of on track counts, not just the worst two.
@@ -162,7 +165,7 @@ export async function buildActiveScope(viewer: Viewer, range: ReportRange, today
     viewer,
     rows.map((row) => row.id),
   );
-  return { scope: { project, chosen }, active: groupActiveScope(rows, range, today), items };
+  return { scope: { project, chosen }, active: groupActiveScope(rows, range, today, viewer.statuses), items };
 }
 
 /** One of the report's tables as a CSV file, reading only the rows that table needs. */
@@ -172,10 +175,10 @@ export async function buildCsv(viewer: Viewer, table: ReportTable, range: Report
     case "delivered":
       return toCsv(deliveredTable(await deliveredTasks(viewer, range, project)));
     case "open":
-      return toCsv(openTable(await openCommitments(viewer, range, today, project), today));
+      return toCsv(openTable(await openCommitments(viewer, range, today, project), today, viewer.statuses));
     case "contributions":
-      return toCsv(contributionsTable(await contributionCounts(viewer, range, today, project)));
+      return toCsv(contributionsTable(await contributionCounts(viewer, range, today, project), viewer.statuses));
     case "scope":
-      return toCsv(scopeTable(groupActiveScope(await activeScopeTasks(viewer, range, project), range, today)));
+      return toCsv(scopeTable(groupActiveScope(await activeScopeTasks(viewer, range, project), range, today, viewer.statuses), viewer.statuses));
   }
 }

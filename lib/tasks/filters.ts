@@ -1,4 +1,5 @@
-import { CLOSED_STATUSES, TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUSES, type TaskPriority, type TaskStatus } from "@/lib/constants";
+import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
+import type { StatusCatalog, TaskStatusDef } from "@/lib/statuses";
 import { LIMITS } from "@/lib/limits";
 import { formatDay } from "@/lib/time";
 import { nameOf } from "./people";
@@ -45,7 +46,8 @@ export type TaskView = (typeof TASK_VIEWS)[number];
 export type TaskFilters = {
   /** Searches titles and descriptions. */
   q: string;
-  status: TaskStatus[];
+  /** Status keys (built-in or custom). */
+  status: string[];
   /** "" anyone · "me" · "none" (unassigned) · a user id */
   assignee: string;
   priority: TaskPriority | "";
@@ -97,8 +99,8 @@ const dayLike = (value: string) => (/^\d{4}-\d{2}-\d{2}$/.test(value) && !Number
 export function parseFilters(raw: Raw, project = ""): TaskFilters {
   const statuses = one(raw, "status")
     .split(",")
-    .map((value) => pick(value, TASK_STATUSES))
-    .filter((value): value is TaskStatus => value !== "");
+    .map((value) => value.trim())
+    .filter((value) => /^[a-z0-9_]{1,64}$/.test(value));
   const dateField = pick(one(raw, "dateField"), DATE_FIELDS);
   let from = dayLike(one(raw, "from"));
   let to = dayLike(one(raw, "to"));
@@ -160,9 +162,9 @@ export function isFiltered(filters: TaskFilters): boolean {
  * Which statuses the list shows when no status filter is set: the open ones, plus the closed ones when "Show
  * closed" is on. The board's columns always include Completed (its last 14 days), so it is passed its own set.
  */
-export function visibleStatuses(filters: TaskFilters, offered: readonly TaskStatus[]): TaskStatus[] {
-  if (filters.status.length > 0) return filters.status.filter((status) => offered.includes(status));
-  return offered.filter((status) => filters.closed || !CLOSED_STATUSES.includes(status) || offered.length < TASK_STATUSES.length);
+export function visibleStatuses(filters: TaskFilters, offered: TaskStatusDef[], catalog: StatusCatalog): TaskStatusDef[] {
+  if (filters.status.length > 0) return offered.filter((status) => filters.status.includes(status.key));
+  return offered.filter((status) => !status.closed || filters.closed || offered.length < catalog.length);
 }
 
 // --- what is on, in words ------------------------------------------------------------------------------------

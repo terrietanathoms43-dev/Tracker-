@@ -1,5 +1,8 @@
 "use client";
 
+import { useStatusCatalog } from "@/components/status-catalog";
+import { reopenTarget, statusDef } from "@/lib/statuses";
+
 import { cn } from "cn";
 import { Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -60,6 +63,7 @@ function WithdrawButton({ item }: { item: ProposalListItem }) {
 }
 
 export function ProposalRow({ item, today, now, timeZone, showProposer = true }: { item: ProposalListItem; today: string; now: Date; timeZone: string; showProposer?: boolean }) {
+  const statuses = useStatusCatalog();
   const where = [item.project?.name, item.goal?.title].filter(Boolean).join(" › ") || "Standalone task";
   const declinedStep = item.steps.find((step) => step.decision === "declined");
   return (
@@ -74,9 +78,9 @@ export function ProposalRow({ item, today, now, timeZone, showProposer = true }:
             <span
               className={cn(
                 "rounded-md px-1.5 py-0.5 text-[11px] font-medium",
-                item.status === "pending" && "bg-status-awaiting-bg text-status-awaiting-fg",
-                item.status === "approved" && "bg-status-completed-bg text-status-completed-fg",
-                item.status === "declined" && "bg-status-blocked-bg text-status-blocked-fg",
+                item.status === "pending" && "bg-status-amber-bg text-status-amber-fg",
+                item.status === "approved" && "bg-status-green-bg text-status-green-fg",
+                item.status === "declined" && "bg-status-red-bg text-status-red-fg",
               )}
             >
               {PROPOSAL_STATUS_LABELS[item.status]}
@@ -94,7 +98,7 @@ export function ProposalRow({ item, today, now, timeZone, showProposer = true }:
             {item.dueDate ? (
               <>
                 <span aria-hidden>·</span>
-                <DueLabel due={item.dueDate} today={today} status="not_started" />
+                <DueLabel due={item.dueDate} today={today} status={statusDef(statuses, reopenTarget(statuses))} />
               </>
             ) : null}
             <span aria-hidden>·</span>
@@ -102,7 +106,7 @@ export function ProposalRow({ item, today, now, timeZone, showProposer = true }:
           </p>
           {item.description ? <p className="mt-1.5 line-clamp-2 max-w-prose text-[13px] text-muted-foreground">{item.description}</p> : null}
           {item.status === "declined" && declinedStep?.note ? (
-            <p className="mt-1.5 text-[13px] text-status-blocked-fg">
+            <p className="mt-1.5 text-[13px] text-status-red-fg">
               Declined{declinedStep.decidedBy ? ` by ${nameOf(declinedStep.decidedBy)}` : ""}: {declinedStep.note}
             </p>
           ) : null}

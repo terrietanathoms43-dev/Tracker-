@@ -10,10 +10,10 @@ import { formatDay } from "@/lib/time";
 // decision is what the eye lands on. Each verdict ships with an icon and a word, never a colour alone.
 
 const TONE: Record<HealthStatus, { icon: LucideIcon; badge: string; bar: string }> = {
-  delayed: { icon: CalendarX2, badge: "border-status-blocked-dot/30 bg-status-blocked-bg text-status-blocked-fg", bar: "bg-status-blocked-dot" },
-  at_risk: { icon: AlertTriangle, badge: "border-status-blocked-dot/30 bg-status-blocked-bg text-status-blocked-fg", bar: "bg-status-blocked-dot" },
-  needs_attention: { icon: Clock, badge: "border-status-awaiting-dot/30 bg-status-awaiting-bg text-status-awaiting-fg", bar: "bg-status-awaiting-dot" },
-  on_track: { icon: CheckCircle2, badge: "border-status-completed-dot/30 bg-status-completed-bg text-status-completed-fg", bar: "bg-status-completed-dot" },
+  delayed: { icon: CalendarX2, badge: "border-status-red-dot/30 bg-status-red-bg text-status-red-fg", bar: "bg-status-red-dot" },
+  at_risk: { icon: AlertTriangle, badge: "border-status-red-dot/30 bg-status-red-bg text-status-red-fg", bar: "bg-status-red-dot" },
+  needs_attention: { icon: Clock, badge: "border-status-amber-dot/30 bg-status-amber-bg text-status-amber-fg", bar: "bg-status-amber-dot" },
+  on_track: { icon: CheckCircle2, badge: "border-status-green-dot/30 bg-status-green-bg text-status-green-fg", bar: "bg-status-green-dot" },
 };
 
 export function HealthBadge({ health, className }: { health: HealthStatus; className?: string }) {
@@ -48,10 +48,10 @@ function HealthRow({ row, today }: { row: Row; today: string }) {
           <span>
             {row.completed} of {row.total} tasks done
           </span>
-          {row.blocked > 0 ? <span className="font-medium text-status-blocked-fg">{row.blocked} blocked</span> : null}
-          {row.overdue > 0 ? <span className="font-medium text-status-awaiting-fg">{row.overdue} overdue</span> : null}
+          {row.blocked > 0 ? <span className="font-medium text-status-red-fg">{row.blocked} blocked</span> : null}
+          {row.overdue > 0 ? <span className="font-medium text-status-amber-fg">{row.overdue} overdue</span> : null}
           {row.targetDate ? (
-            <span className={cn(late && "font-medium text-status-blocked-fg")}>
+            <span className={cn(late && "font-medium text-status-red-fg")}>
               {late ? "Target passed" : "Target"} {formatDay(row.targetDate, today)}
             </span>
           ) : null}
@@ -83,7 +83,7 @@ function HealthList({ rows, today, empty }: { rows: Row[]; today: string; empty:
       {fold ? (
         <details className="group border-t">
           <summary className="flex cursor-pointer items-center gap-2 px-4 py-2.5 text-[13px] text-muted-foreground select-none hover:text-foreground">
-            <CheckCircle2 className="size-3.5 text-status-completed-dot" aria-hidden />
+            <CheckCircle2 className="size-3.5 text-status-green-dot" aria-hidden />
             <span className="group-open:hidden">Show {fine.length} on track</span>
             <span className="hidden group-open:inline">Hide {fine.length} on track</span>
           </summary>
@@ -113,7 +113,7 @@ export function HealthBoard({ data, today }: { data: HealthBoardData; today: str
             Delayed: target date passed with work open · At risk: blocked, or a fifth overdue · Needs attention: some work overdue, or behind the pace its target needs
           </p>
         </div>
-        <span className={cn("rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums", problems > 0 ? "bg-status-blocked-bg text-status-blocked-fg" : "bg-status-completed-bg text-status-completed-fg")}>
+        <span className={cn("rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums", problems > 0 ? "bg-status-red-bg text-status-red-fg" : "bg-status-green-bg text-status-green-fg")}>
           {problems > 0 ? `${problems} off track` : "All on track"}
         </span>
       </div>

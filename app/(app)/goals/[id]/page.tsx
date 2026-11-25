@@ -141,7 +141,7 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
         />
         <SelectionProvider enabled={!isStakeholder(viewer)} canDelete={isLeader(viewer)}>
           <CloserHome goalId={goal.id}>
-            <PlanningTasks items={tasks} today={today} readOnly={isStakeholder(viewer)} empty={active ? "No tasks serve this goal yet. Add one above." : "No tasks served this goal."} />
+            <PlanningTasks items={tasks} today={today} statuses={viewer.statuses} readOnly={isStakeholder(viewer)} empty={active ? "No tasks serve this goal yet. Add one above." : "No tasks served this goal."} />
           </CloserHome>
         </SelectionProvider>
       </div>

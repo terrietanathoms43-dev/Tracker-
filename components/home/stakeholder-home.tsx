@@ -10,6 +10,7 @@ import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { Panel } from "@/components/dashboard/panel";
 import type { ProposalListItem } from "@/lib/dal/approvals";
 import type { GoalProgress } from "@/lib/dal/dashboard";
+import type { StatusCatalog } from "@/lib/statuses";
 import type { GoalRef } from "@/lib/dal/goals";
 import type { ReportSummary } from "@/lib/reports/build";
 import type { ScopedProject } from "@/lib/project-scope-server";
@@ -32,6 +33,7 @@ export function StakeholderHome({
   today,
   timeZone,
   scope,
+  statuses,
 }: {
   title: string;
   description: string;
@@ -43,6 +45,7 @@ export function StakeholderHome({
   now: Date;
   today: string;
   timeZone: string;
+  statuses: StatusCatalog;
   scope: ScopedProject | null;
 }) {
   const waiting = proposals.filter((item) => item.status === "pending");
@@ -65,7 +68,7 @@ export function StakeholderHome({
               Open the full report
             </Link>
           </div>
-          <ReportVerdict summary={summary} project={scope?.id ?? ""} anchorBase="/reports" />
+          <ReportVerdict summary={summary} project={scope?.id ?? ""} statuses={statuses} anchorBase="/reports" />
         </section>
         <Panel title="Goals" href="/goals" hrefLabel="All goals">
           <GoalProgressList goals={goals} today={today} empty="No active goals yet. When a leader adds one, you'll see here how far along it is." />

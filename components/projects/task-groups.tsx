@@ -2,17 +2,17 @@ import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { TaskList } from "@/components/tasks/task-list";
 import { TaskSection } from "@/components/tasks/task-section";
-import { CLOSED_STATUSES, TASK_STATUS_LABELS, type TaskStatus } from "@/lib/constants";
+import { statusDef, type StatusCatalog } from "@/lib/statuses";
 import type { TaskListItem } from "@/lib/tasks/types";
 
 // The Tasks section of a project or goal page: open work first, finished work folded away underneath.
 
-/** Open statuses in the order work moves (the board's order), so a project page reads left to right like the board. */
-const OPEN_STATUSES: TaskStatus[] = ["not_started", "in_progress", "awaiting_approval", "blocked"];
+/** Open statuses in the workspace's configured order, so a project page reads like the board; an archived one only while tasks still have it. */
+const openStatuses = (statuses: StatusCatalog, open: TaskListItem[]) => statuses.filter((status) => !status.closed && (!status.archived || open.some((task) => task.status === status.key)));
 
-const isClosed = (task: TaskListItem) => CLOSED_STATUSES.includes(task.status);
+const isClosed = (statuses: StatusCatalog, task: TaskListItem) => statusDef(statuses, task.status).closed;
 
-/** Closed tasks (completed, rejected, deferred, cancelled) behind a native disclosure: there for the record, out of the way of open work. */
+/** Closed tasks (completed, merged, rejected, cancelled) behind a native disclosure: there for the record, out of the way of open work. */
 export function ClosedTasks({ items, today, readOnly = false }: { items: TaskListItem[]; today: string; readOnly?: boolean }) {
   if (items.length === 0) return null;
   return (
@@ -37,12 +37,14 @@ export function ClosedTasks({ items, today, readOnly = false }: { items: TaskLis
 export function PlanningTasks({
   items,
   today,
+  statuses,
   groupByStatus = false,
   action,
   empty,
   readOnly = false,
 }: {
   items: TaskListItem[];
+  statuses: StatusCatalog;
   today: string;
   groupByStatus?: boolean;
   action?: ReactNode;
@@ -50,8 +52,8 @@ export function PlanningTasks({
   /** A stakeholder reads the rows without their menus. */
   readOnly?: boolean;
 }) {
-  const open = items.filter((task) => !isClosed(task));
-  const closed = items.filter(isClosed);
+  const open = items.filter((task) => !isClosed(statuses, task));
+  const closed = items.filter((task) => isClosed(statuses, task));
   return (
     <section aria-labelledby="tasks-heading" className="min-w-0">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -68,8 +70,8 @@ export function PlanningTasks({
           {open.length === 0 ? (
             <p className="rounded-lg border border-dashed bg-card px-4 py-4 text-base text-muted-foreground">Nothing open right now.</p>
           ) : groupByStatus ? (
-            OPEN_STATUSES.map((status) => (
-              <TaskSection key={status} title={TASK_STATUS_LABELS[status]} items={open.filter((task) => task.status === status)} today={today} reasonless readOnly={readOnly} />
+            openStatuses(statuses, open).map((status) => (
+              <TaskSection key={status.key} title={status.label} items={open.filter((task) => task.status === status.key)} today={today} reasonless readOnly={readOnly} />
             ))
           ) : (
             <TaskSection title="Open" id="open-tasks" items={open} today={today} reasonless readOnly={readOnly} />

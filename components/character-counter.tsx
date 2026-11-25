@@ -16,7 +16,7 @@ export function CharacterCounter({ value, max, className }: { value: string; max
       aria-live="polite"
       className={cn(
         "shrink-0 text-[12px] tabular-nums",
-        left <= 0 ? "text-destructive" : left <= max * 0.1 ? "text-status-awaiting-fg" : "text-muted-foreground",
+        left <= 0 ? "text-destructive" : left <= max * 0.1 ? "text-status-amber-fg" : "text-muted-foreground",
         !show && "sr-only",
         className,
       )}

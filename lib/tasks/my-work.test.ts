@@ -1,5 +1,6 @@
 // My Work grouping (PLAN §5): every task in exactly one group, in the smart order, with its reason.
 import { describe, expect, it } from "vitest";
+import { DEFAULT_STATUSES } from "@/lib/statuses";
 import { groupMyWork, resumeOrder, type MyWorkRow } from "./my-work";
 import type { TaskListItem } from "./types";
 
@@ -27,6 +28,8 @@ function row(partial: Partial<TaskListItem> & Partial<Omit<MyWorkRow, "item">> =
       goal: null,
       parent: null,
       subTasks: 0,
+      group: null,
+      fromComment: false,
       proposal: null,
       needsSignOff: false,
       goalCloser: false,
@@ -56,7 +59,7 @@ describe("groupMyWork", () => {
       row({ title: "sent back", sentBack: true }),
       row({ title: "done", status: "completed", completedAt: new Date("2026-10-14T10:00:00Z") }),
     ];
-    const groups = groupMyWork(rows, ME, TODAY);
+    const groups = groupMyWork(rows, ME, TODAY, DEFAULT_STATUSES);
     expect(titles(groups.attention)).toEqual(["overdue", "soon", "sent back", "to approve"]);
     expect(titles(groups.waiting)).toEqual(["awaiting mine", "blocked"]);
     expect(titles(groups.continueWorking)).toEqual(["plain"]);
@@ -77,6 +80,7 @@ describe("groupMyWork", () => {
       ],
       ME,
       TODAY,
+      DEFAULT_STATUSES,
     );
     expect(groups.attention.map((item) => item.reason)).toEqual(["Overdue", "Due soon", "Blocked", "Due soon", "Sent back", "Your approval"]);
   });
@@ -92,18 +96,19 @@ describe("groupMyWork", () => {
       ],
       ME,
       TODAY,
+      DEFAULT_STATUSES,
     );
     expect(titles(groups.continueWorking)).toEqual(["due next week", "urgent, no date", "ranked up", "normal, no date, new", "normal, no date, old"]);
   });
 
   it("leaves my task that waits for someone else's approval in waiting, even when it is due", () => {
-    const groups = groupMyWork([row({ status: "awaiting_approval", approverId: "morgan", dueDate: "2026-10-14" })], ME, TODAY);
+    const groups = groupMyWork([row({ status: "awaiting_approval", approverId: "morgan", dueDate: "2026-10-14" })], ME, TODAY, DEFAULT_STATUSES);
     expect(groups.attention).toHaveLength(0);
     expect(groups.waiting).toHaveLength(1);
   });
 
   it("keeps a blocked task that is due now in needs attention, and one without a date in waiting", () => {
-    const groups = groupMyWork([row({ status: "blocked", dueDate: "2026-10-16" }), row({ status: "blocked" }), row({ status: "blocked", dueDate: "2026-11-30" })], ME, TODAY);
+    const groups = groupMyWork([row({ status: "blocked", dueDate: "2026-10-16" }), row({ status: "blocked" }), row({ status: "blocked", dueDate: "2026-11-30" })], ME, TODAY, DEFAULT_STATUSES);
     expect(groups.attention).toHaveLength(1);
     expect(groups.waiting).toHaveLength(2);
   });
@@ -118,6 +123,7 @@ describe("groupMyWork", () => {
       ],
       ME,
       TODAY,
+      DEFAULT_STATUSES,
     );
     expect(titles(groups.finished)).toEqual(["newer", "older"]);
     expect(groups.continueWorking).toHaveLength(0);
@@ -125,21 +131,21 @@ describe("groupMyWork", () => {
   });
 
   it("offers what can be picked up: attention first, then continue working", () => {
-    const groups = groupMyWork([row({ title: "plain" }), row({ title: "late", dueDate: "2026-10-01" }), row({ title: "blocked", status: "blocked" })], ME, TODAY);
+    const groups = groupMyWork([row({ title: "plain" }), row({ title: "late", dueDate: "2026-10-01" }), row({ title: "blocked", status: "blocked" })], ME, TODAY, DEFAULT_STATUSES);
     expect(titles(resumeOrder(groups))).toEqual(["late", "plain"]);
   });
 });
 
 describe("local tasks (2026-11-06 log)", () => {
   it("go to the Local group whoever they are assigned to, never to Needs attention", () => {
-    const groups = groupMyWork([row({ proposal: "local", dueDate: "2026-10-01", mine: true }), row({ proposal: "local", mine: false }), row({ status: "in_progress" })], ME, TODAY);
+    const groups = groupMyWork([row({ proposal: "local", dueDate: "2026-10-01", mine: true }), row({ proposal: "local", mine: false }), row({ status: "in_progress" })], ME, TODAY, DEFAULT_STATUSES);
     expect(groups.local).toHaveLength(2);
     expect(groups.attention).toEqual([]);
     expect(groups.continueWorking).toHaveLength(1);
   });
 
   it("stay out of Pick up where you left off", () => {
-    const groups = groupMyWork([row({ proposal: "local" }), row({ status: "in_progress" })], ME, TODAY);
+    const groups = groupMyWork([row({ proposal: "local" }), row({ status: "in_progress" })], ME, TODAY, DEFAULT_STATUSES);
     expect(resumeOrder(groups).map((item) => item.proposal)).toEqual([null]);
   });
 });

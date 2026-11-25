@@ -12,7 +12,7 @@ export function gradeShare(value: number, max: number): number {
 /** The CSS colour for a share: red at 0, green at 1, mixed in oklch between the status tokens. */
 export function gradeColor(share: number): string {
   const percent = Math.round(Math.max(0, Math.min(1, share)) * 100);
-  return `color-mix(in oklch, var(--status-blocked-fg), var(--status-completed-fg) ${percent}%)`;
+  return `color-mix(in oklch, var(--status-red-fg), var(--status-green-fg) ${percent}%)`;
 }
 
 export type SortDirection = "asc" | "desc";

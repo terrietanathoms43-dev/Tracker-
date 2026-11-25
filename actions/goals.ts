@@ -8,18 +8,20 @@ import { optionalText, requiredText } from "@/lib/sanitize";
 import { db, type Tx } from "@/db";
 import { goalLinks, goals, notifications, projects, tasks } from "@/db/schema";
 import { ERR, fail, GuardError, ok, runAction, type ActionResult } from "@/lib/action-result";
-import { CLOSED_STATUSES, GOAL_STATUSES, type GoalStatus } from "@/lib/constants";
+import { GOAL_STATUSES, type GoalStatus } from "@/lib/constants";
 import { saveApprovalSettings } from "@/lib/dal/approvals";
 import { recordActivity } from "@/lib/dal/activity";
 import { findGoal, goalsById, linkEdgesForCycleCheck, lockGoal, ownerError, subGoalDeadlines } from "@/lib/dal/goals";
 import { assertNoOpenTasks, goalAchievedNotice } from "@/lib/dal/goal-achievement";
-import { completeGoalCloser, createGoalCloser, deleteGoalClosers, reopenGoalCloser } from "@/lib/dal/goal-closers";
+import { syncLinkedWork } from "@/lib/dal/comment-tasks";
+import { completeGoalCloser, createGoalCloser, deleteGoalClosers, reopenGoalCloser, type ChangedCloser } from "@/lib/dal/goal-closers";
+import { closedStatusKeys, type StatusCatalog } from "@/lib/statuses";
 import { findProject } from "@/lib/dal/projects";
 import { createGoalOccurrence, type NextGoal } from "@/lib/dal/recurrence";
 import { parentDeadlineProblem, subGoalDeadlineProblem } from "@/lib/goals/deadlines";
 import { wouldCycle } from "@/lib/goals/graph";
 import { log } from "@/lib/log";
-import { dispatch } from "@/lib/notify";
+import { dispatch, type Notice } from "@/lib/notify";
 import { canCompleteGoal, canCreatePlanning, canDeleteGoal, canLinkGoals, canManageApprovals, canManagePlanning } from "@/lib/permissions";
 import { nextAfterFinishing, normalizeRecurrence, type Recurrence } from "@/lib/recurrence";
 import { dayKey, formatDay } from "@/lib/time";
@@ -195,7 +197,7 @@ export async function updateGoal(input: z.input<typeof updateSchema>): Promise<A
               eq(tasks.orgId, viewer.orgId),
               eq(tasks.goalId, goal.id),
               eq(tasks.goalCloser, true),
-              notInArray(tasks.status, [...CLOSED_STATUSES]),
+              notInArray(tasks.status, closedStatusKeys(viewer.statuses)),
               goal.targetDate === null ? isNull(tasks.dueDate) : eq(tasks.dueDate, goal.targetDate),
             ),
           )
@@ -227,7 +229,7 @@ const statusSchema = z.object({ goalId: id, status: z.enum(GOAL_STATUSES) });
  * project, owner, criteria and rule, target on the next scheduled day, with fresh copies of its tasks. Only the
  * latest occurrence makes one; a missed series is caught up when a work screen loads.
  */
-async function spawnNextGoal(tx: Tx, viewerId: string, orgId: string, goal: NonNullable<Awaited<ReturnType<typeof lockGoal>>>, today: string, now: Date): Promise<NextGoal | null> {
+async function spawnNextGoal(tx: Tx, viewerId: string, orgId: string, goal: NonNullable<Awaited<ReturnType<typeof lockGoal>>>, today: string, now: Date, statuses: StatusCatalog): Promise<NextGoal | null> {
   const rule: Recurrence | null = goal.recurrence ?? null;
   if (rule === null) return null;
   const seriesId = goal.seriesId ?? goal.id;
@@ -238,7 +240,7 @@ async function spawnNextGoal(tx: Tx, viewerId: string, orgId: string, goal: NonN
   if ((later?.n ?? 0) > 0) return null;
   const targetDate = nextAfterFinishing(rule, goal.targetDate, goal.targetDate, today);
   if (targetDate === null) return null;
-  return createGoalOccurrence(tx, viewerId, { ...goal, orgId, recurrence: rule }, targetDate, now);
+  return createGoalOccurrence(tx, viewerId, { ...goal, orgId, recurrence: rule }, targetDate, now, statuses);
 }
 
 /**
@@ -252,6 +254,7 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
     const viewer = await requireViewer();
     const now = new Date();
     const today = dayKey(now, viewer.timezone);
+    const notices: Notice[] = [];
     const outcome = await db.transaction(async (tx) => {
       const goal = await lockGoal(tx, viewer.orgId, data.goalId);
       if (goal === null) throw new GuardError("not_found");
@@ -261,11 +264,15 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
       }
       if (goal.status === data.status) return { from: goal.status, next: null, achieved: null };
       const closerGoal = { ...goal, orgId: viewer.orgId };
+      // Every status change syncs the comment a task was made from (lib/dal/comment-tasks.ts); a closer has none.
+      const sync = async (changed: ChangedCloser[]) => {
+        for (const closer of changed) notices.push(...(await syncLinkedWork(tx, viewer, closer, closer.to, now)).notices);
+      };
       // A goal is achieved when its tasks are done (lib/dal/goal-achievement.ts): the button is a shortcut, not a way
       // round that. What it does stand in for is the goal's last step, so the closer is completed with the goal.
       if (data.status === "completed") {
-        await assertNoOpenTasks(tx, viewer.orgId, goal);
-        await completeGoalCloser(tx, viewer.userId, closerGoal, now);
+        await assertNoOpenTasks(tx, viewer.orgId, goal, viewer.statuses);
+        await sync(await completeGoalCloser(tx, viewer.userId, closerGoal, now, viewer.statuses));
       }
       await tx
         .update(goals)
@@ -277,13 +284,13 @@ export async function setGoalStatus(input: z.input<typeof statusSchema>): Promis
         })
         .where(eq(goals.id, goal.id));
       // A goal that is no longer completed has its last step open again.
-      if (goal.status === "completed") await reopenGoalCloser(tx, viewer.userId, closerGoal, now);
-      const next = data.status === "completed" ? await spawnNextGoal(tx, viewer.userId, viewer.orgId, goal, today, now) : null;
+      if (goal.status === "completed") await sync(await reopenGoalCloser(tx, viewer.userId, closerGoal, now, null, viewer.statuses));
+      const next = data.status === "completed" ? await spawnNextGoal(tx, viewer.userId, viewer.orgId, goal, today, now, viewer.statuses) : null;
       return { from: goal.status, next, achieved: data.status === "completed" ? { title: goal.title, people: [goal.ownerId, goal.createdBy] } : null };
     });
     log.info("goals.status_changed", { orgId: viewer.orgId, goalId: data.goalId, from: outcome.from, to: data.status, next: outcome.next?.id ?? null, by: viewer.userId });
     // The goal's owner and maker hear that it was achieved, as they do when its last task achieves it.
-    if (outcome.achieved) await dispatch(goalAchievedNotice(viewer, { id: data.goalId, title: outcome.achieved.title }, outcome.achieved.people));
+    await dispatch([...notices, ...(outcome.achieved ? goalAchievedNotice(viewer, { id: data.goalId, title: outcome.achieved.title }, outcome.achieved.people) : [])]);
     refresh();
     const next = outcome.next;
     const message = next
@@ -309,10 +316,13 @@ export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<A
     if (!canDeleteGoal(viewer)) throw new GuardError("forbidden", "Only leaders and admins can delete a goal.");
     const now = new Date();
     const detach = async (tx: Tx, goal: { id: string; title: string }) => {
+      // The generated closing task belongs to the goal, not to the project's orphaned work.
+      // Keep this in the same helper for parent goals and deleted sub-goals alike.
+      await deleteGoalClosers(tx, viewer.orgId, goal.id);
       const detached = await tx
         .update(tasks)
         .set({ goalId: null, updatedAt: now })
-        .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id)))
+        .where(and(eq(tasks.orgId, viewer.orgId), eq(tasks.goalId, goal.id), eq(tasks.goalCloser, false)))
         .returning({ id: tasks.id });
       for (const task of detached) {
         await recordActivity(
@@ -331,12 +341,10 @@ export async function deleteGoal(input: z.input<typeof deleteSchema>): Promise<A
         .select({ id: goals.id, title: goals.title })
         .from(goals)
         .where(and(eq(goals.orgId, viewer.orgId), eq(goals.parentGoalId, goal.id)));
-      await deleteGoalClosers(tx, viewer.orgId, goal.id);
       let detachedTasks = await detach(tx, goal);
       let subGoalsDeleted = 0;
       if (data.deleteSubGoals) {
         for (const sub of subGoals) {
-          await deleteGoalClosers(tx, viewer.orgId, sub.id);
           detachedTasks += await detach(tx, sub);
           await tx.delete(goals).where(eq(goals.id, sub.id));
           await tx.delete(notifications).where(and(eq(notifications.orgId, viewer.orgId), eq(notifications.href, `/goals/${sub.id}`)));

@@ -1,11 +1,12 @@
 "use client";
 
 import { cn } from "cn";
-import { ExternalLink, FolderPlus, GitMerge, Goal, MoreHorizontal, NotebookPen, Send, Trash2, Unlink, Upload, UserPlus } from "lucide-react";
+import { ExternalLink, FolderPlus, GitMerge, Goal, Group, MoreHorizontal, NotebookPen, Send, Trash2, Ungroup, Unlink, Upload, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 import { sendLocalTask } from "@/actions/proposals";
+import { ungroupTask } from "@/actions/task-groups";
 import { deleteTask, detachTask, editTask, getTaskFormOptions, setAssignees } from "@/actions/tasks";
 import { GoalPicker } from "@/components/goals/goal-picker";
 import { ProjectPicker } from "@/components/projects/project-picker";
@@ -33,8 +34,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { TASK_STATUS_LABELS, TASK_STATUSES } from "@/lib/constants";
+import { useStatusCatalog } from "@/components/status-catalog";
 import { idsOf } from "@/lib/tasks/assignees";
+import { menuStatuses, statusDef } from "@/lib/statuses";
 import type { TaskFormOptions, TaskListItem } from "@/lib/tasks/types";
 import { toastResult } from "@/lib/toast-result";
 import { AssigneePicker } from "./assignee-picker";
@@ -45,6 +47,9 @@ import { useTaskActions } from "./task-actions";
 // The two or three things people do from a list without opening the task (apex-ux §6): Update progress,
 // Change status, and the field edits below. A "⋯" menu with a pointer, a bottom sheet after a long press on touch.
 // A proposal or a local task has no progress or status to change; a local task's first item sends it on instead.
+// Two ways of tying tasks together sit here, and they are different things (docs/PLAN.md, 2026-11-11 log):
+// "Group with…" puts this task and another on the same level, shown together inside one border in every list
+// ("Remove from group" undoes it); "Attach to a task…" makes this one a sub-task of the other, parent and child.
 
 /** A task that is work: progress and status changes apply. A proposal or a local task has neither yet. */
 const isLive = (task: TaskListItem) => task.proposal === null || task.proposal === "approved";
@@ -52,7 +57,10 @@ const isLive = (task: TaskListItem) => task.proposal === null || task.proposal =
 /** The one thing a local task offers: "Send for sign-off" or "Publish" (lib/tasks/types.ts needsSignOff). */
 const sendLabel = (task: TaskListItem) => (task.needsSignOff ? "Send for sign-off" : "Publish");
 
-type MenuDialog = "assign" | "goal" | "project" | "parent" | "delete" | null;
+type MenuDialog = "assign" | "goal" | "project" | "parent" | "group" | "delete" | null;
+
+/** A task that may be in a group: live, top-level, and not a goal's closer (lib/tasks/groups.ts GROUP_REFUSALS). */
+const groupable = (task: TaskListItem) => isLive(task) && task.parent === null && !task.goalCloser;
 
 function useMenuDialog() {
   const [dialog, setDialog] = useState<MenuDialog>(null);
@@ -178,6 +186,7 @@ function MenuDialogs({ task, dialog, onClose }: { task: TaskListItem; dialog: Me
   if (dialog === "assign") return <AssignDialog task={task} onClose={onClose} />;
   if (dialog === "goal" || dialog === "project") return <AttachDialog task={task} kind={dialog} onClose={onClose} />;
   if (dialog === "parent") return <AttachTaskDialog taskIds={[task.id]} title={task.title} onClose={onClose} />;
+  if (dialog === "group") return <AttachTaskDialog mode="group" intoOwnGroup={task.group !== null} taskIds={[task.id]} title={task.title} onClose={onClose} />;
   if (dialog === "delete") return <DeleteDialog task={task} onClose={onClose} />;
   return null;
 }
@@ -192,13 +201,16 @@ const ATTACH_ITEMS: { key: MenuDialog & string; label: string; icon: typeof User
 
 /** The "⋯" menu for a row or a board card. */
 export function TaskMenu({ task, className }: { task: TaskListItem; className?: string }) {
+  const statuses = useStatusCatalog();
   const { openUpdate } = useTaskActions();
   const { change } = useChangeStatus(task.id);
   const [options, setOptions] = useState<TaskFormOptions | null>(null);
   const [, startTransition] = useTransition();
   const [deleting, setDeleting] = useState(false);
   const [attaching, setAttaching] = useState(false);
+  const [grouping, setGrouping] = useState(false);
   const detach = () => startTransition(async () => void toastResult(await detachTask({ taskId: task.id })));
+  const ungroup = () => startTransition(async () => void toastResult(await ungroupTask({ taskId: task.id })));
 
   // The New-task form's pickers feed the sub-menus; fetched once, the first time the menu opens.
   const loadOptions = (open: boolean) => {
@@ -244,7 +256,7 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
               </DropdownMenuItem>
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className="gap-2">
-                  <StatusIcon status={task.status} />
+                  <StatusIcon status={statusDef(statuses, task.status)} />
                   Change status
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-48">
@@ -277,6 +289,20 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
               )}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
+          {groupable(task) ? (
+            <>
+              <DropdownMenuItem onSelect={() => setGrouping(true)} data-menu-group-with>
+                <Group />
+                {task.group !== null ? "Add a task to its group…" : "Group with…"}
+              </DropdownMenuItem>
+              {task.group !== null ? (
+                <DropdownMenuItem onSelect={ungroup} data-menu-ungroup>
+                  <Ungroup />
+                  Remove from group
+                </DropdownMenuItem>
+              ) : null}
+            </>
+          ) : null}
           {task.parent !== null ? (
             <DropdownMenuItem onSelect={detach} data-menu-detach>
               <Unlink />
@@ -346,6 +372,7 @@ export function TaskMenu({ task, className }: { task: TaskListItem; className?: 
       </DropdownMenu>
       {deleting ? <DeleteDialog task={task} onClose={() => setDeleting(false)} /> : null}
       {attaching ? <AttachTaskDialog taskIds={[task.id]} title={task.title} onClose={() => setAttaching(false)} /> : null}
+      {grouping ? <AttachTaskDialog mode="group" intoOwnGroup={task.group !== null} taskIds={[task.id]} title={task.title} onClose={() => setGrouping(false)} /> : null}
     </>
   );
 }
@@ -365,6 +392,7 @@ function SheetButton({ children, onClick, disabled }: { children: ReactNode; onC
 
 /** The same actions as TaskMenu, as a bottom sheet with 44px targets, for touch screens. */
 export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly = false }: { task: TaskListItem; open: boolean; onOpenChange: (open: boolean) => void; readOnly?: boolean }) {
+  const statuses = useStatusCatalog();
   const router = useRouter();
   const { openUpdate } = useTaskActions();
   const { change } = useChangeStatus(task.id);
@@ -381,7 +409,7 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
         <SheetContent side="bottom" className="rounded-t-xl pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           <SheetHeader>
             <SheetTitle className="truncate pr-6">{task.title}</SheetTitle>
-            <SheetDescription>{task.proposal === "local" ? "Local task: only you can see it" : TASK_STATUS_LABELS[task.status]}</SheetDescription>
+            <SheetDescription>{task.proposal === "local" ? "Local task: only you can see it" : statusDef(statuses, task.status).label}</SheetDescription>
           </SheetHeader>
           <div className="grid gap-1 px-4">
             {!readOnly && task.proposal === "local" ? (
@@ -408,6 +436,18 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
                     {label}
                   </SheetButton>
                 ))}
+                {groupable(task) ? (
+                  <SheetButton onClick={then(() => open("group"))}>
+                    <Group className="size-4 text-muted-foreground" />
+                    {task.group !== null ? "Add a task to its group…" : "Group with…"}
+                  </SheetButton>
+                ) : null}
+                {groupable(task) && task.group !== null ? (
+                  <SheetButton onClick={then(() => startTransition(async () => void toastResult(await ungroupTask({ taskId: task.id }))))}>
+                    <Ungroup className="size-4 text-muted-foreground" />
+                    Remove from group
+                  </SheetButton>
+                ) : null}
                 {task.parent !== null ? (
                   <SheetButton onClick={then(() => startTransition(async () => void toastResult(await detachTask({ taskId: task.id }))))}>
                     <Unlink className="size-4 text-muted-foreground" />
@@ -424,10 +464,10 @@ export function TaskActionSheet({ task, open: sheetOpen, onOpenChange, readOnly 
                   <>
                     <p className="px-3 pt-3 pb-1 text-[13px] text-muted-foreground">Change status</p>
                     <div className="grid grid-cols-2 gap-1">
-                      {TASK_STATUSES.filter((status) => status !== "merged" || task.parent !== null).map((status) => (
-                        <SheetButton key={status} disabled={status === task.status} onClick={then(() => change(task.status, status))}>
+                      {menuStatuses(statuses, task.status).filter((status) => status.kind !== "merged" || task.parent !== null).map((status) => (
+                        <SheetButton key={status.key} disabled={status.key === task.status} onClick={then(() => change(task.status, status))}>
                           <StatusIcon status={status} />
-                          {TASK_STATUS_LABELS[status]}
+                          {status.label}
                         </SheetButton>
                       ))}
                     </div>

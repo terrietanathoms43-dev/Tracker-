@@ -47,7 +47,7 @@ export async function decideProposal(input: z.input<typeof decideSchema>): Promi
     const now = new Date();
     const notices: Notice[] = [];
     const outcome = await db.transaction(async (tx): Promise<{ error: string } | { live: boolean }> => {
-      const locked = await lockTask(tx, viewer.orgId, data.taskId);
+      const locked = await lockTask(tx, viewer.orgId, data.taskId, viewer.statuses);
       if (locked === null) throw new GuardError("not_found");
       const { task, assignment } = locked;
       if (task.proposalStatus !== "pending") return { error: "This proposal isn't waiting for sign-off any more." };
@@ -106,7 +106,7 @@ export async function sendLocalTask(input: z.input<typeof sendSchema>): Promise<
     const viewer = await requireViewer();
     const now = new Date();
     const outcome = await db.transaction(async (tx) => {
-      const locked = await lockTask(tx, viewer.orgId, data.taskId);
+      const locked = await lockTask(tx, viewer.orgId, data.taskId, viewer.statuses);
       if (locked === null) throw new GuardError("not_found");
       return submitLocalTask(tx, viewer, locked, now);
     });
@@ -126,7 +126,7 @@ export async function resubmitProposal(input: z.input<typeof resubmitSchema>): P
     const now = new Date();
     const notices: Notice[] = [];
     const outcome = await db.transaction(async (tx): Promise<string | null> => {
-      const locked = await lockTask(tx, viewer.orgId, data.taskId);
+      const locked = await lockTask(tx, viewer.orgId, data.taskId, viewer.statuses);
       if (locked === null) throw new GuardError("not_found");
       const { task, scope } = locked;
       if (!isOpenProposal(task) || task.proposalStatus !== "declined") return "Only a declined proposal can be sent again.";

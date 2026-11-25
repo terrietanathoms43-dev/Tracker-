@@ -1,15 +1,18 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronDown, ClipboardCheck, CornerDownRight, GitMerge, Lock, Repeat, XCircle } from "lucide-react";
+import { ChevronDown, ClipboardCheck, CornerDownRight, GitMerge, Lock, MessageSquareText, Repeat, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { PriorityGlyph } from "@/components/priority-glyph";
 import { StatusIcon } from "@/components/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useStatusCatalog } from "@/components/status-catalog";
 import { PROPOSAL_STATUS_LABELS } from "@/lib/constants";
+import { endedWithoutCompletion, statusDef } from "@/lib/statuses";
 import { describeAssignees } from "@/lib/tasks/assignees";
 import { taskLabel } from "@/lib/tasks/closer";
+import { groupLabel } from "@/lib/tasks/groups";
 import { describeSubTasks } from "@/lib/tasks/sub-tasks";
 import type { TaskListItem } from "@/lib/tasks/types";
 import { formatTime } from "@/lib/recurrence";
@@ -20,6 +23,7 @@ import { DueLabel } from "./due-label";
 import { ReasonChip } from "./reason-chip";
 import { useTaskSelection } from "./selection";
 import { SendLocalButton } from "./send-local";
+import { GroupChip } from "./task-group";
 import { TaskActionSheet, TaskMenu } from "./task-menu";
 import { useLongPress } from "./use-long-press";
 
@@ -47,6 +51,9 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
  * A sub-task drawn under its parent (2026-11-08 log) is `nested`: indented with a corner mark; one drawn away from
  * its parent carries a "Part of" link instead, and a parent a count of its sub-tasks. A goal's "Everything
  * completed" task (2026-11-09 log) carries a chip naming the goal it marks achieved, right beside its title.
+ * A task in a group (2026-11-11 log) is drawn inside the group's border by the list (`inGroup`); where the rest of
+ * its group is not on the page it carries a chip naming the group instead. A task made from a comment carries a
+ * "From a comment" chip (2026-11-11 log): closing it resolves that comment.
  */
 export function TaskRow({
   task,
@@ -54,6 +61,7 @@ export function TaskRow({
   showReason = true,
   readOnly = false,
   nested = false,
+  inGroup = false,
   badge,
   note,
   trailing,
@@ -64,16 +72,18 @@ export function TaskRow({
   showReason?: boolean;
   readOnly?: boolean;
   nested?: boolean;
+  inGroup?: boolean;
   badge?: ReactNode;
   note?: ReactNode;
   trailing?: ReactNode;
   attributes?: Record<string, string>;
 }) {
+  const statuses = useStatusCatalog();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const { handlers, swallowClick } = useLongPress(() => setSheetOpen(true));
   const { openTransition } = useTaskActions();
-  const canOpenCompletion = !readOnly && (task.proposal === null || task.proposal === "approved") && (task.status === "not_started" || task.status === "in_progress");
+  const canOpenCompletion = !readOnly && (task.proposal === null || task.proposal === "approved") && (statusDef(statuses, task.status).kind === "open" || statusDef(statuses, task.status).kind === "in_progress");
   // Ticking rows (docs/PLAN.md, 2026-11-04 log): only where the page put a selection around its lists.
   const selection = useTaskSelection();
   const selectable = selection !== null && !readOnly;
@@ -85,13 +95,13 @@ export function TaskRow({
   const reason = showReason && task.reason !== "Overdue" ? task.reason : undefined;
   const detailsId = `task-${task.id}-details`;
   const where = [task.project?.name, task.goal?.title].filter(Boolean).join(" › ");
-  const closedWithoutCompleting = task.status === "rejected" || task.status === "cancelled" || task.status === "merged";
+  const closedWithoutCompleting = endedWithoutCompletion(statusDef(statuses, task.status));
   // What a screen reader hears for the row's controls: a goal's closer with its goal, never the bare title.
   const label = taskLabel(task);
 
   return (
     <li
-      className={cn("group relative", selected && "bg-sidebar-accent/50", task.proposal === "pending" && "bg-status-awaiting-bg/40", task.proposal === "declined" && "bg-status-blocked-bg/30", local && "bg-muted/40")}
+      className={cn("group relative", selected && "bg-sidebar-accent/50", task.proposal === "pending" && "bg-status-amber-bg/40", task.proposal === "declined" && "bg-status-red-bg/30", local && "bg-muted/40")}
       {...handlers}
       data-task-row={task.id}
       data-expanded={open || undefined}
@@ -99,6 +109,7 @@ export function TaskRow({
       data-proposal={task.proposal ?? undefined}
       data-nested={nested || undefined}
       data-parent={task.parent?.id}
+      data-group={task.group?.id}
       {...attributes}
     >
       <div
@@ -116,9 +127,9 @@ export function TaskRow({
         ) : null}
         {nested ? <CornerDownRight className="-ml-1 size-3.5 shrink-0 text-muted-foreground" aria-label="Sub-task of the task above" role="img" /> : null}
         {task.proposal === "pending" ? (
-          <ClipboardCheck className="size-4 shrink-0 text-status-awaiting-fg" aria-label="Waiting for sign-off" role="img" />
+          <ClipboardCheck className="size-4 shrink-0 text-status-amber-fg" aria-label="Waiting for sign-off" role="img" />
         ) : task.proposal === "declined" ? (
-          <XCircle className="size-4 shrink-0 text-status-blocked-fg" aria-label="Declined" role="img" />
+          <XCircle className="size-4 shrink-0 text-status-red-fg" aria-label="Declined" role="img" />
         ) : local ? (
           <Lock className="size-4 shrink-0 text-muted-foreground" aria-label="Local: only you can see it" role="img" />
         ) : canOpenCompletion ? (
@@ -133,10 +144,10 @@ export function TaskRow({
             }}
             className="relative grid size-4 shrink-0 place-items-center rounded-full outline-none after:absolute after:-inset-2 after:rounded-full after:content-[''] hover:opacity-70 focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <StatusIcon status={task.status} />
+            <StatusIcon status={statusDef(statuses, task.status)} />
           </button>
         ) : (
-          <StatusIcon status={task.status} />
+          <StatusIcon status={statusDef(statuses, task.status)} />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5 md:flex-row md:items-baseline md:gap-3">
           <Link
@@ -161,6 +172,13 @@ export function TaskRow({
               <span className="truncate">Part of {task.parent.title}</span>
             </Link>
           ) : null}
+          {task.group !== null && !inGroup ? <GroupChip taskId={task.id} group={task.group} onClick={swallowClick} /> : null}
+          {task.fromComment ? (
+            <span className="inline-flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium text-muted-foreground" title="Made from a comment: the comment resolves itself when this task is closed" data-from-comment-chip>
+              <MessageSquareText className="size-3" aria-hidden />
+              <span className="sr-only sm:not-sr-only">From a comment</span>
+            </span>
+          ) : null}
           {badge}
           {task.nextAction || reason || task.proposal === "pending" || task.proposal === "declined" || local ? (
             <span className="flex min-w-0 items-center gap-1.5">
@@ -171,12 +189,12 @@ export function TaskRow({
                   Local
                 </span>
               ) : task.proposal === "pending" ? (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-awaiting-bg px-1.5 py-0.5 text-[11px] font-medium text-status-awaiting-fg" data-proposal-chip>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-amber-bg px-1.5 py-0.5 text-[11px] font-medium text-status-amber-fg" data-proposal-chip>
                   <ClipboardCheck className="size-3" aria-hidden />
                   Waiting for sign-off
                 </span>
               ) : task.proposal === "declined" ? (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-blocked-bg px-1.5 py-0.5 text-[11px] font-medium text-status-blocked-fg" data-proposal-chip>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-status-red-bg px-1.5 py-0.5 text-[11px] font-medium text-status-red-fg" data-proposal-chip>
                   <XCircle className="size-3" aria-hidden />
                   Declined
                 </span>
@@ -187,7 +205,7 @@ export function TaskRow({
         </div>
         {reason ? <ReasonChip reason={reason} className="relative hidden sm:inline-flex" /> : null}
         {task.repeats ? <Repeat className="hidden size-3.5 shrink-0 text-muted-foreground sm:block" aria-label={task.repeats} role="img" /> : null}
-        <DueLabel due={task.dueDate} today={today} status={task.status} className="relative shrink-0" />
+        <DueLabel due={task.dueDate} today={today} status={statusDef(statuses, task.status)} className="relative shrink-0" />
         {trailing}
         <PriorityGlyph priority={task.priority} className="relative" />
         <AssigneeStack assignees={task.assignees} className="relative" />
@@ -224,11 +242,20 @@ export function TaskRow({
                 </span>
               ) : null}
               {where || (task.parent === null ? "Standalone task" : null)}
+              {task.group !== null ? (
+                <span className="block text-muted-foreground">
+                  Grouped:{" "}
+                  <Link href={`/tasks/${task.id}#group`} prefetch={false} className="text-link underline-offset-4 hover:underline">
+                    {groupLabel(task.group)}
+                  </Link>{" "}
+                  ({task.group.size} tasks)
+                </span>
+              ) : null}
             </Fact>
             <Fact label="Due">
               {task.dueDate ? (
                 <>
-                  <DueLabel due={task.dueDate} today={today} status={task.status} />
+                  <DueLabel due={task.dueDate} today={today} status={statusDef(statuses, task.status)} />
                   {task.dueTime ? ` · ${formatTime(task.dueTime)}` : ""}
                 </>
               ) : (

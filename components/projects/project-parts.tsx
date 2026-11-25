@@ -16,7 +16,7 @@ export function ProjectStatusBadge({ status, className }: { status: ProjectStatu
   const completed = status === "completed";
   const Icon = completed ? CheckCircle2 : Archive;
   return (
-    <span className={cn(BADGE, completed ? "bg-status-completed-bg text-status-completed-fg" : "bg-status-rejected-bg text-status-rejected-fg", className)}>
+    <span className={cn(BADGE, completed ? "bg-status-green-bg text-status-green-fg" : "bg-status-stone-bg text-status-stone-fg", className)}>
       <Icon className="size-3.5" aria-hidden />
       {PROJECT_STATUS_LABELS[status]}
     </span>
@@ -36,7 +36,7 @@ export function GoalCount({ count, className }: { count: number; className?: str
 /** A small badge on projects whose new tasks wait for sign-off. */
 export function ApprovalBadge({ className }: { className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-md bg-status-awaiting-bg px-1.5 py-0.5 text-[12px] font-medium text-status-awaiting-fg", className)}>
+    <span className={cn("inline-flex items-center gap-1 rounded-md bg-status-amber-bg px-1.5 py-0.5 text-[12px] font-medium text-status-amber-fg", className)}>
       <ShieldCheck className="size-3" aria-hidden />
       Sign-off
     </span>

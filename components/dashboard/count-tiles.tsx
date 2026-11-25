@@ -1,5 +1,6 @@
 import { cn } from "cn";
 import Link from "next/link";
+import { keyOfKind, labelOfKind, type StatusCatalog } from "@/lib/statuses";
 import { tasksHref } from "@/lib/tasks/filters";
 import type { TaskCounts } from "@/lib/tasks/types";
 
@@ -11,13 +12,13 @@ type Tile = { key: keyof TaskCounts; label: string; href: string; problem: boole
  * Active · Completed in the period · Overdue · Blocked · Awaiting approval. Facts, never ratings: overdue and
  * blocked are tinted only when they are above zero, with the status tokens, and nothing else is coloured.
  */
-export function CountTiles({ counts, days }: { counts: TaskCounts; days: number }) {
+export function CountTiles({ counts, days, statuses }: { counts: TaskCounts; days: number; statuses: StatusCatalog }) {
   const tiles: Tile[] = [
     { key: "active", label: "Active", href: tasksHref({}), problem: false },
-    { key: "completed", label: `Completed · ${days} days`, href: tasksHref({ status: ["completed"], sort: "updated" }), problem: false },
+    { key: "completed", label: `${labelOfKind(statuses, "completed")} · ${days} days`, href: tasksHref({ status: [keyOfKind(statuses, "completed") ?? "completed"], sort: "updated" }), problem: false },
     { key: "overdue", label: "Overdue", href: tasksHref({ due: "overdue" }), problem: true },
-    { key: "blocked", label: "Blocked", href: tasksHref({ status: ["blocked"] }), problem: true },
-    { key: "awaiting", label: "Awaiting approval", href: tasksHref({ status: ["awaiting_approval"] }), problem: false },
+    { key: "blocked", label: labelOfKind(statuses, "blocked"), href: tasksHref({ status: [keyOfKind(statuses, "blocked") ?? "blocked"] }), problem: true },
+    { key: "awaiting", label: labelOfKind(statuses, "awaiting_approval"), href: tasksHref({ status: [keyOfKind(statuses, "awaiting_approval") ?? "awaiting_approval"] }), problem: false },
   ];
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Work in numbers">
@@ -31,11 +32,11 @@ export function CountTiles({ counts, days }: { counts: TaskCounts; days: number 
               href={href}
               className={cn(
                 "block rounded-lg border px-4 py-3 transition-colors",
-                tinted ? "border-status-blocked-dot/30 bg-status-blocked-bg hover:bg-status-blocked-bg/70" : "bg-card hover:bg-accent/60",
+                tinted ? "border-status-red-dot/30 bg-status-red-bg hover:bg-status-red-bg/70" : "bg-card hover:bg-accent/60",
               )}
             >
-              <p className={cn("truncate text-[13px]", tinted ? "text-status-blocked-fg" : "text-muted-foreground")}>{label}</p>
-              <p className={cn("mt-1 text-2xl font-semibold tabular-nums", tinted && "text-status-blocked-fg")}>{value}</p>
+              <p className={cn("truncate text-[13px]", tinted ? "text-status-red-fg" : "text-muted-foreground")}>{label}</p>
+              <p className={cn("mt-1 text-2xl font-semibold tabular-nums", tinted && "text-status-red-fg")}>{value}</p>
             </Link>
           </li>
         );

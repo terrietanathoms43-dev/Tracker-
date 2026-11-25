@@ -45,12 +45,48 @@ export function presetRange(preset: RangePreset, today: string): ReportRange {
   }
 }
 
-/** Which preset a range is on `today`, if any (the controls highlight it). The first match wins. */
-export function matchingPreset(range: ReportRange, today: string): RangePreset | null {
-  return RANGE_PRESETS.find((preset) => {
+/**
+ * Which preset a range is on `today`, if any (the controls highlight it). The first match wins; `among` keeps it to
+ * the presets a view offers, so a range another view's preset made reads as Custom there.
+ */
+export function matchingPreset(range: ReportRange, today: string, among: readonly RangePreset[] = RANGE_PRESETS): RangePreset | null {
+  return among.find((preset) => {
     const candidate = presetRange(preset, today);
     return candidate.from === range.from && candidate.to === range.to;
   }) ?? null;
+}
+
+// --- the Active scope's daily cadences ---------------------------------------------------------------------------
+
+/**
+ * The Active scope read every day (docs/PLAN.md, 2026-11-12 log): "daily" is since yesterday; "weekdays" is since
+ * the last working day, so on a Monday (and over the weekend) the scope reads from Friday. The address carries the
+ * cadence, not dates, so a bookmark rolls forward with the days.
+ */
+export const SCOPE_CADENCES = ["daily", "weekdays"] as const;
+export type ScopeCadence = (typeof SCOPE_CADENCES)[number];
+
+export const CADENCE_LABELS: Record<ScopeCadence, string> = {
+  daily: "Every day",
+  weekdays: "Weekdays",
+};
+
+/**
+ * The spans the Active scope offers beside Daily. Half a year or a year of closed work is a dump, not a scope, so
+ * those two are left to Custom's Since there; the other views keep all five.
+ */
+export const SCOPE_PRESETS = ["week", "month", "quarter"] as const satisfies readonly RangePreset[];
+
+/** The last working day (Monday to Friday) before `day`: the Friday, for a Saturday, a Sunday and a Monday. */
+export function previousWorkingDay(day: string): string {
+  let previous = shiftDay(day, -1);
+  while ([0, 6].includes(new Date(`${previous}T00:00:00Z`).getUTCDay())) previous = shiftDay(previous, -1);
+  return previous;
+}
+
+/** The range a cadence means on `today`: from yesterday, or from the last working day, up to today. */
+export function cadenceRange(cadence: ScopeCadence, today: string): ReportRange {
+  return { from: cadence === "weekdays" ? previousWorkingDay(today) : shiftDay(today, -1), to: today };
 }
 
 /** How many calendar days a range covers, both ends included. */

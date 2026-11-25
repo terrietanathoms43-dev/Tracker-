@@ -4,9 +4,11 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Panel, PanelEmpty } from "@/components/dashboard/panel";
 import { ProposalList } from "@/components/proposals/proposal-list";
+import { PendingDueChangeCard } from "@/components/tasks/detail/due-change";
 import { QuickAddTask } from "@/components/tasks/quick-add-task";
 import { listProposals } from "@/lib/dal/approvals";
-import { isStakeholder } from "@/lib/permissions";
+import { pendingDueChanges } from "@/lib/dal/due-changes";
+import { isAdmin, isStakeholder } from "@/lib/permissions";
 import { scopedProject } from "@/lib/project-scope-server";
 import { groupProposals } from "@/lib/proposals/sections";
 import { dayKey } from "@/lib/time";
@@ -14,7 +16,9 @@ import { requireViewer } from "@/lib/viewer";
 
 // /proposals (docs/PLAN.md, 2026-11-03 log): tasks that wait for sign-off before they are live. What waits for
 // me, what waits for someone else, what I proposed, and what was decided lately. Narrowed to the navigation's
-// project when one is chosen. A stakeholder sees their own proposals only, and proposes from here.
+// project when one is chosen. A stakeholder sees their own proposals only, and proposes from here. Due-date changes
+// that wait for an admin are decisions of the same kind (2026-11-24 log): an admin sees every one here, first, with
+// Approve and Decline; everyone else sees the ones they asked for.
 
 export const metadata: Metadata = { title: "Proposals" };
 
@@ -23,7 +27,18 @@ export default async function ProposalsPage() {
   const scope = await scopedProject(viewer);
   const now = new Date();
   const today = dayKey(now, viewer.timezone);
-  const items = await listProposals(viewer, { project: scope?.id ?? "" });
+  const [items, dueChanges] = await Promise.all([listProposals(viewer, { project: scope?.id ?? "" }), pendingDueChanges(viewer, scope?.id ?? "")]);
+  const admin = isAdmin(viewer);
+  const dueChangePanel =
+    dueChanges.length > 0 ? (
+      <Panel title={admin ? "Date changes waiting for an admin" : "Your date changes waiting for an admin"} count={dueChanges.length} highlight={admin}>
+        <div className="grid gap-2 p-3" data-due-changes>
+          {dueChanges.map((change) => (
+            <PendingDueChangeCard key={change.id} change={change} today={today} canDecide={admin} canWithdraw={change.requestedBy.id === viewer.userId} withTask />
+          ))}
+        </div>
+      </Panel>
+    ) : null;
   const sections = groupProposals(items);
   const stakeholder = isStakeholder(viewer);
   const clock = { today, now, timeZone: viewer.timezone };
@@ -39,7 +54,8 @@ export default async function ProposalsPage() {
         }
       />
       {stakeholder ? <QuickAddTask today={today} defaults={scope && scope.status === "active" ? { projectId: scope.id } : {}} /> : null}
-      {items.length === 0 ? (
+      {dueChangePanel !== null && items.length === 0 ? <div className="mb-6">{dueChangePanel}</div> : null}
+      {items.length === 0 && dueChangePanel !== null ? null : items.length === 0 ? (
         <EmptyState
           icon={ClipboardCheck}
           title={stakeholder ? "You haven't proposed anything yet" : "Nothing waits for sign-off"}
@@ -51,6 +67,7 @@ export default async function ProposalsPage() {
         />
       ) : (
         <div className="grid gap-6">
+          {dueChangePanel}
           {!stakeholder ? (
             <Panel title="Waiting for you" count={sections.waitingForMe.length} highlight>
               {sections.waitingForMe.length === 0 ? <PanelEmpty>Nothing waits for your signature right now.</PanelEmpty> : <ProposalList items={sections.waitingForMe} {...clock} />}

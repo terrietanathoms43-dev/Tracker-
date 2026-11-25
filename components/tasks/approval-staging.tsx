@@ -5,13 +5,16 @@ import Link from "next/link";
 import { Check, ExternalLink, MessageSquareWarning, ShieldCheck, Undo2 } from "lucide-react";
 import { changeStatus } from "@/actions/tasks";
 import { Field } from "@/components/field";
+import { useStatusCatalog } from "@/components/status-catalog";
 import { PriorityGlyph } from "@/components/priority-glyph";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import type { ApprovalStagingTask } from "@/lib/dal/tasks";
 import { LIMITS } from "@/lib/limits";
+import { backToWorkTarget } from "@/lib/statuses";
 import { describeAssignees } from "@/lib/tasks/assignees";
+import { incompletePolicyCount, incompletePoliciesMessage } from "@/lib/tasks/policy-checklist";
 import { openCommentsMessage } from "@/lib/tasks/transitions";
 import { toastResult } from "@/lib/toast-result";
 
@@ -22,6 +25,7 @@ export function ApprovalStaging({ tasks }: { tasks: ApprovalStagingTask[] }) {
   const [selectedTask, setSelectedTask] = useState<ApprovalStagingTask | null>(null);
   const [sendBackNote, setSendBackNote] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const statuses = useStatusCatalog();
   const [, startTransition] = useTransition();
 
   const handleApprove = (taskId: string) => {
@@ -40,7 +44,7 @@ export function ApprovalStaging({ tasks }: { tasks: ApprovalStagingTask[] }) {
       const ok = toastResult(
         await changeStatus({
           taskId,
-          status: "in_progress",
+          status: backToWorkTarget(statuses),
           via: "send_back",
           note: sendBackNote.trim(),
         }),
@@ -56,7 +60,7 @@ export function ApprovalStaging({ tasks }: { tasks: ApprovalStagingTask[] }) {
   if (tasks.length === 0) {
     return (
       <div className="flex items-center gap-3 rounded-lg border bg-card p-4 text-[13px] text-muted-foreground">
-        <ShieldCheck className="size-5 shrink-0 text-status-completed-dot" aria-hidden />
+        <ShieldCheck className="size-5 shrink-0 text-status-green-dot" aria-hidden />
         <div>
           <span className="font-medium text-foreground">Nothing is waiting for approval.</span> Tasks sent for sign-off show up here with their evidence.
         </div>
@@ -68,9 +72,9 @@ export function ApprovalStaging({ tasks }: { tasks: ApprovalStagingTask[] }) {
     <div className="rounded-lg border bg-card">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="size-4 text-status-awaiting-dot" aria-hidden />
+          <ShieldCheck className="size-4 text-status-amber-dot" aria-hidden />
           <h3 className="text-sm font-semibold tracking-tight">Waiting for approval</h3>
-          <span className="rounded-md bg-status-awaiting-bg px-2 py-0.5 text-xs font-semibold text-status-awaiting-fg tabular-nums">{tasks.length}</span>
+          <span className="rounded-md bg-status-amber-bg px-2 py-0.5 text-xs font-semibold text-status-amber-fg tabular-nums">{tasks.length}</span>
         </div>
         <p className="text-[12px] text-muted-foreground">Read the evidence before signing off</p>
       </div>
@@ -79,6 +83,7 @@ export function ApprovalStaging({ tasks }: { tasks: ApprovalStagingTask[] }) {
         {tasks.map((task) => {
           const isPending = pendingId === task.id;
           const held = task.openComments > 0;
+          const missingPolicies = incompletePolicyCount(task.policyChecklist);
 
           return (
             <div key={task.id} className="p-4 transition-colors hover:bg-muted/20">
@@ -133,10 +138,23 @@ export function ApprovalStaging({ tasks }: { tasks: ApprovalStagingTask[] }) {
                     )}
                   </div>
 
+                  {task.policyChecklist.length > 0 ? (
+                    <div className="mt-2.5 rounded-md border bg-background p-3 text-[12px]" aria-label="Required policy checks">
+                      <div className="mb-1 font-semibold">Policy checks · {task.policyChecklist.length - missingPolicies} of {task.policyChecklist.length} met</div>
+                      <ul className="grid gap-1">
+                        {task.policyChecklist.map((item) => <li key={item.id} className={item.checkedAt ? "text-muted-foreground" : "font-medium text-status-awaiting-fg"}>{item.checkedAt ? "✓" : "○"} {item.label}</li>)}
+                      </ul>
+                    </div>
+                  ) : null}
                   {held ? (
-                    <Link href={`/tasks/${task.id}#history-heading`} className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] font-medium text-status-awaiting-fg underline-offset-4 hover:underline">
+                    <Link href={`/tasks/${task.id}#history-heading`} className="mt-2.5 inline-flex items-center gap-1.5 text-[13px] font-medium text-status-amber-fg underline-offset-4 hover:underline">
                       <MessageSquareWarning className="size-4" aria-hidden />
-                      {openCommentsMessage(task.openComments)}
+                      {openCommentsMessage(task.openComments, task.commentsWaitingOnTasks)}
+                    </Link>
+                  ) : null}
+                  {missingPolicies > 0 ? (
+                    <Link href={`/tasks/${task.id}`} className="mt-2.5 block text-[13px] font-medium text-status-awaiting-fg underline-offset-4 hover:underline">
+                      {incompletePoliciesMessage(missingPolicies)}
                     </Link>
                   ) : null}
                 </div>
@@ -154,7 +172,7 @@ export function ApprovalStaging({ tasks }: { tasks: ApprovalStagingTask[] }) {
                     <Undo2 className="size-3.5" aria-hidden />
                     Send back
                   </Button>
-                  <Button size="sm" disabled={isPending || held} title={held ? openCommentsMessage(task.openComments) : undefined} onClick={() => handleApprove(task.id)}>
+                  <Button size="sm" disabled={isPending || held || missingPolicies > 0} title={held ? openCommentsMessage(task.openComments, task.commentsWaitingOnTasks) : missingPolicies > 0 ? incompletePoliciesMessage(missingPolicies) : undefined} onClick={() => handleApprove(task.id)}>
                     <Check className="size-3.5" aria-hidden />
                     {isPending ? "Approving…" : "Approve"}
                   </Button>

@@ -16,8 +16,8 @@ function Work({ row }: { row: MemberDirectoryRow }) {
   return (
     <span className="flex flex-wrap justify-end gap-x-2 text-[13px] tabular-nums">
       <span className="font-medium">{row.work.active} open</span>
-      {row.work.blocked > 0 ? <span className="font-medium text-status-blocked-fg">{row.work.blocked} blocked</span> : null}
-      {row.work.overdue > 0 ? <span className="font-medium text-status-blocked-fg">{row.work.overdue} overdue</span> : null}
+      {row.work.blocked > 0 ? <span className="font-medium text-status-red-fg">{row.work.blocked} blocked</span> : null}
+      {row.work.overdue > 0 ? <span className="font-medium text-status-red-fg">{row.work.overdue} overdue</span> : null}
     </span>
   );
 }
