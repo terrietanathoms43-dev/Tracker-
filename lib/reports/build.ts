@@ -24,7 +24,7 @@ import {
   type PendingDecisions,
   type ReportProjectOption,
   type ReportTask,
-  type TimelineDay,
+  type Timeline,
 } from "./data";
 import type { Pace } from "./pace";
 import type { ReportProject, ReportTable } from "./params";
@@ -78,7 +78,8 @@ export type Report = {
   goals: GoalProgress[];
   /** Tasks under each goal completed in the range, by goal id. */
   goalsDeliveredInRange: Record<string, number>;
-  timeline: TimelineDay[];
+  /** The Activity widget: each live task's one block by day, and the activity line (lib/reports/data.ts). */
+  timeline: Timeline;
   healthBoard: HealthBoard;
   blockedDuration: BlockedDurationStats;
   decisions: PendingDecisions;
@@ -91,9 +92,10 @@ function assertCanSeeReports(viewer: Viewer): void {
 
 /**
  * Everything /reports prints for a range and a project. Blocked and overdue are as of `today`, whatever the range.
- * `includeLocal` (the My work view) draws the viewer's own local tasks in the activity widget; nothing else counts them.
+ * Every view reads the same live tasks of the project (or of all of them): the My work view narrows what it lists
+ * to the viewer afterwards, never what is counted here.
  */
-export async function buildReport(viewer: Viewer, range: ReportRange, today: string, project: ReportProject, options: { includeLocal?: boolean } = {}): Promise<Report> {
+export async function buildReport(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<Report> {
   assertCanSeeReports(viewer);
   // Two waves rather than one: the sections fan out into twenty-odd queries, and a pool of ten against a database
   // that may be waking up should not have them all racing for a connection at once.
@@ -109,7 +111,7 @@ export async function buildReport(viewer: Viewer, range: ReportRange, today: str
   const [contributions, healthBoard, timeline, decisions, stalled, pace] = await Promise.all([
     contributionCounts(viewer, range, today, project),
     projectAndGoalHealth(viewer, today, project),
-    reportTimeline(viewer, range, today, project, { includeLocal: options.includeLocal === true }),
+    reportTimeline(viewer, range, today, project),
     pendingDecisions(viewer, project),
     stalledTasks(viewer, project),
     reportPace(viewer, today, project),

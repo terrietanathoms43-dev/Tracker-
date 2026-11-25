@@ -28,28 +28,57 @@ jobs:
       - run: npm run test:unit
       - run: npm run build
 
-  # A push to main or staging that passes the checks above is deployed by running deploy.sh on the VPS over SSH
-  # (docs/RUNBOOK.md): main in the production checkout, staging in the staging checkout. The job runs in the
-  # GitHub environment named after the branch (`production` or `staging`), so VPS_APP_DIR, the checkout's
-  # directory, is that environment's secret; VPS_HOST, VPS_USER, VPS_SSH_KEY and VPS_HOST_KEY are repository
-  # secrets the two share unless an environment overrides one. A pull request only runs the checks. Schema
-  # changes stay a deliberate step on the server.
+  # Staging deploys itself: a push to staging that passes the checks above runs deploy.sh in the server's
+  # staging checkout over SSH (docs/RUNBOOK.md, "Staging"). Production does not: a push to main only runs the
+  # checks, and main reaches production when someone runs the "Deploy production" workflow
+  # (deploy-production.yml, which repeats the checks and these three steps: change them together).
+  #
+  # The job asks the server for one word, `staging`. The deploy key can run nothing but the server's deploy
+  # gate, which knows the directories, puts node on PATH, lets one deploy run at a time and runs that
+  # checkout's deploy.sh. Four secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY and VPS_HOST_KEY, as repository secrets
+  # or on the `staging` and `production` environments. Schema changes stay a deliberate step (docs/RUNBOOK.md).
   deploy:
-    name: Deploy ${{ github.ref_name }}
+    name: Deploy staging
     needs: checks
-    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'staging')
+    if: github.event_name == 'push' && github.ref_name == 'staging'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    # Long enough to wait for a production deploy to finish first, then build.
+    timeout-minutes: 30
+    environment: staging
     concurrency:
-      group: deploy-${{ github.ref_name }}
+      group: deploy-staging
       cancel-in-progress: false
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_HOST_KEY: ${{ secrets.VPS_HOST_KEY }}
     steps:
+      - name: Check the deploy secrets are set
+        run: |
+          missing=""
+          for name in VPS_HOST VPS_USER VPS_SSH_KEY VPS_HOST_KEY; do
+            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Not set:$missing. Add under Settings > Secrets and variables > Actions (docs/RUNBOOK.md, Staging)."
+            exit 1
+          fi
       - name: Install the deploy key and trust the server
+        # `tr` drops the carriage returns a secret pasted from Windows can carry; ssh refuses a key that has them.
+        # VPS_HOST_KEY is a known_hosts line ("<address> ssh-ed25519 AAAA…"); the bare key without its address
+        # is given the address here.
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          printf '%s\n' "${{ secrets.VPS_HOST_KEY }}" >> ~/.ssh/known_hosts
+          case "$VPS_HOST_KEY" in
+            ssh-* | ecdsa-*) VPS_HOST_KEY="$VPS_HOST $VPS_HOST_KEY" ;;
+          esac
+          printf '%s\n' "$VPS_HOST_KEY" | tr -d '\r' >> ~/.ssh/known_hosts
       - name: Pull, build and restart under pm2
-        run: ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "cd '${{ secrets.VPS_APP_DIR }}' && ./deploy.sh"
+        # Exit 255 here is SSH itself: "Permission denied" is VPS_SSH_KEY, "Host key verification failed" is
+        # VPS_HOST_KEY. Any other failure is deploy.sh's own output above it.
+        run: >-
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes
+          -o ServerAliveInterval=30 "$VPS_USER@$VPS_HOST" staging

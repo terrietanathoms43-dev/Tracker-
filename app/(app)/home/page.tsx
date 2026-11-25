@@ -55,6 +55,6 @@ export default async function HomePage(props: PageProps<"/home">) {
 
   if (active === "home") return <HomeView viewer={viewer} user={user} org={org} tabsConfig={config} scope={scope} />;
   if (active === "projects") return <ProjectsView viewer={viewer} showAll={raw.all === "1"} tabsConfig={config} />;
-  if (active === "draft") return <DraftView viewer={viewer} user={user} tabsConfig={config} scope={scope} />;
+  if (active === "draft") return <DraftView viewer={viewer} user={user} tabsConfig={config} scope={scope} draftId={typeof raw.draft === "string" ? raw.draft.slice(0, 64) : ""} />;
   return <TasksView viewer={viewer} filters={parseFilters(raw, scope?.id ?? "")} view={active} tabsConfig={config} scope={scope} />;
 }

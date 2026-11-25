@@ -65,7 +65,7 @@ export function contributionsTable(rows: ContributionRow[], catalog: StatusCatal
 /** What a scope row says in one column: the blocker (and who unblocks it), why it was closed without completing, the completion summary, or the next action. */
 const scopeDetail = (task: ReportTask, catalog: StatusCatalog): string | null => {
   const status = catalog.find((each) => each.key === task.status);
-  if (status?.kind === "completed") return task.completionSummary;
+  if (status?.kind === "completed" || status?.kind === "merged") return task.completionSummary;
   if (status !== undefined && isClosedWithoutCompletion(status)) return task.rejectionReason;
   if (status?.kind === "blocked") return [task.blockedReason, task.blockedBy ? `Waiting on ${task.blockedBy}` : null].filter((part) => part !== null).join(" · ") || null;
   return task.nextAction;

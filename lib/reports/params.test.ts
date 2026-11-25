@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultReportCut, parseReportCut, parseReportProject, parseReportRange, reportCutsFor, reportHref } from "./params";
+import { defaultReportCut, parseReportCadence, parseReportCut, parseReportProject, parseReportRange, reportCutsFor, reportHref } from "./params";
 
 describe("parseReportProject", () => {
   it("takes an id or none, and drops anything else", () => {
@@ -55,5 +55,26 @@ describe("the views by role", () => {
     expect(parseReportCut({ cut: "scope" }, "exec", reportCutsFor("stakeholder"))).toBe("scope");
     expect(parseReportCut({ cut: "nonsense" }, "exec")).toBe("exec");
     expect(parseReportCut({}, "leader")).toBe("leader");
+  });
+});
+
+describe("the Active scope's cadence in the address", () => {
+  it("is read on the Active scope only, and only when it is one of the two", () => {
+    expect(parseReportCadence({ cadence: "weekdays" }, "scope")).toBe("weekdays");
+    expect(parseReportCadence({ cadence: "daily" }, "scope")).toBe("daily");
+    expect(parseReportCadence({ cadence: "hourly" }, "scope")).toBeNull();
+    expect(parseReportCadence({}, "scope")).toBeNull();
+    expect(parseReportCadence({ cadence: "daily" }, "exec")).toBeNull();
+  });
+
+  it("is written in place of the dates, so the link is right tomorrow too", () => {
+    expect(reportHref("/reports", null, { cut: "scope", cadence: "weekdays", project: "p1" })).toBe("/reports?cadence=weekdays&cut=scope&project=p1");
+    expect(reportHref("/reports", { from: "2026-11-11", to: "2026-11-12" }, { cut: "scope", cadence: "daily" })).toBe("/reports?cadence=daily&cut=scope");
+  });
+
+  it("a link with neither dates nor a cadence opens the view on its default", () => {
+    expect(reportHref("/reports", null, { cut: "exec" })).toBe("/reports?cut=exec");
+    expect(reportHref("/reports", null)).toBe("/reports");
+    expect(parseReportRange({}, "2026-11-12")).toEqual({ from: "2026-10-14", to: "2026-11-12" });
   });
 });

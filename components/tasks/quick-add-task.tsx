@@ -4,7 +4,7 @@ import { cn } from "cn";
 import { AudioLines, CalendarDays, ChevronDown, ChevronUp, Plus, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useMemo, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 import { createTask } from "@/actions/tasks";
 import { CharacterCounter } from "@/components/character-counter";
@@ -15,16 +15,23 @@ import { TASK_PRIORITY_LABELS, type TaskPriority } from "@/lib/constants";
 import { LIMITS } from "@/lib/limits";
 import { nameOf } from "@/lib/tasks/people";
 import { activeToken, mentionTargets, parseQuickAdd, removeTokens, suggest, type QuickAddParse, type QuickAddToken } from "@/lib/tasks/quick-add";
+import { titleCoversText, titleFromText } from "@/lib/tasks/title-from";
 import type { CreateDefaults, TaskFormOptions } from "@/lib/tasks/types";
 import { addDays } from "@/lib/time";
 import { AssigneePicker } from "./assignee-picker";
 import { QUICK_ADD_ATTRIBUTE, useTaskActions } from "./task-actions";
 import { loadTaskFormOptions, useTaskFormOptions } from "./use-task-form-options";
 
-// The always-open add bar at the top of Home, My Work, Tasks and the project and goal pages: type a title, press
-// Enter. Priority, due date, project and assignees sit in an options row under the title (open by default; "Hide
-// options" folds it away and the choice is remembered in this browser) or are typed into the title
-// (lib/tasks/quick-add.ts); "More options" carries everything over to the full New task dialog.
+// The always-open add bar at the top of Home, My Work, Tasks and the project and goal pages: say what needs doing,
+// press Enter. What is typed is the task's description, and its title is taken from the start of it
+// (lib/tasks/title-from.ts, docs/PLAN.md 2026-11-11 log): the box grows with the text, Shift+Enter starts a new
+// line, and once the text is longer than a title the bar shows the title the task will get. Priority, due date,
+// project and assignees sit in an options row under the box (open by default; "Hide options" folds it away and the
+// choice is remembered in this browser) or are typed into the text (lib/tasks/quick-add.ts); "More options"
+// carries everything over to the full New task dialog.
+
+/** The box stops growing here and scrolls instead (px). */
+const MAX_BOX_HEIGHT = 240;
 
 /** Where the folded / unfolded state of the options row is kept, per browser. */
 const OPTIONS_KEY = "trackwise.quickAdd.options";
@@ -99,13 +106,13 @@ function namesOf(ids: string[], options: TaskFormOptions | null): string[] {
 
 /**
  * The quick-add bar. Untouched, a task is yours, normal priority, no due date, in the page's project or goal.
- * Typed shortcuts win over the buttons; pressing a button takes the matching shortcut out of the title.
+ * Typed shortcuts win over the buttons; pressing a button takes the matching shortcut out of the text.
  */
 export function QuickAddTask({ today, defaults = {}, className }: { today: string; defaults?: CreateDefaults; className?: string }) {
   const router = useRouter();
   const { openCreate } = useTaskActions();
   const { options } = useTaskFormOptions();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const listId = useId();
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
@@ -140,8 +147,21 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
     writeOptionsOpen(next);
   }
 
+  // The box is as tall as its text, up to a point: one line when empty, then it grows, then it scrolls. A page kept
+  // hidden by the router measures nothing (scrollHeight 0), so it keeps the height it had and is measured again
+  // when it is shown.
+  useLayoutEffect(() => {
+    const box = inputRef.current;
+    if (box === null) return;
+    box.style.height = "auto";
+    if (box.scrollHeight > 0) box.style.height = `${Math.min(box.scrollHeight, MAX_BOX_HEIGHT)}px`;
+  }, [text]);
+
   const targets = useMemo(() => (options ? mentionTargets(options.people) : []), [options]);
   const parsed = parseQuickAdd(text, targets);
+  /** The title the task will get: shown once the text says more than a title can. */
+  const title = titleFromText(parsed.text);
+  const previewTitle = parsed.text !== "" && !titleCoversText(parsed.text);
   const tomorrow = addDays(today, 1);
   const effectivePriority = parsed.priority ?? priority;
   const effectiveDue = parsed.due === "today" ? today : parsed.due === "tomorrow" ? tomorrow : due;
@@ -195,7 +215,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
     setGoalId(defaults.goalId ?? "");
   }
 
-  /** The people a task goes to: whoever the title mentions, else whoever was picked, else the creator. */
+  /** The people a task goes to: whoever the text mentions, else whoever was picked, else the creator. */
   function assigneesOf(read: QuickAddParse, ready: TaskFormOptions | null): string[] {
     if (read.people.length > 0) return read.people;
     if (picked !== null) return picked;
@@ -203,13 +223,14 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
   }
 
   function submit() {
-    if (parsed.title === "" || pending) return;
+    if (title === "" || pending) return;
     startTransition(async () => {
       // Mentions can only be read once the people are known: an Enter that beats them waits and reads again.
       const ready = options ?? (await loadTaskFormOptions()).options;
       const read = options ? parsed : parseQuickAdd(text, ready ? mentionTargets(ready.people) : []);
+      // What was typed is the description; the server names the task from it (the same rule as the preview here).
       const result = await createTask({
-        title: read.title,
+        description: read.text,
         assigneeIds: assigneesOf(read, ready),
         projectId,
         goalId,
@@ -236,7 +257,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
         ...defaults,
         projectId,
         goalId,
-        title: parsed.title,
+        description: parsed.text,
         priority: effectivePriority,
         dueDate: effectiveDue,
         ...(explicitAssignees ? { assigneeIds: effectiveAssignees } : {}),
@@ -275,17 +296,19 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
       }}
     >
       <div className="relative">
-        <label htmlFor="quick-add-title" className="sr-only">
-          New task
+        <label htmlFor="quick-add-text" className="sr-only">
+          New task: describe it
         </label>
-        <input
+        <textarea
           ref={inputRef}
-          id="quick-add-title"
+          id="quick-add-text"
           {...{ [QUICK_ADD_ATTRIBUTE]: "" }}
           value={text}
-          maxLength={LIMITS.quickAddTitle}
+          rows={1}
+          maxLength={LIMITS.taskDescription}
           autoComplete="off"
-          placeholder={proposes ? "Propose a task and press Enter" : "Add a task and press Enter"}
+          enterKeyHint="done"
+          placeholder={proposes ? "Describe a task to propose and press Enter" : "Describe a task and press Enter"}
           role="combobox"
           aria-expanded={listOpen}
           aria-controls={listId}
@@ -293,7 +316,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
           aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
           aria-invalid={error ? true : undefined}
           aria-describedby="quick-add-hint"
-          className="h-11 w-full bg-transparent px-1 text-lg outline-none placeholder:text-muted-foreground md:text-xl"
+          className="block min-h-11 w-full resize-none bg-transparent px-1 py-2 text-lg leading-snug outline-none placeholder:text-muted-foreground md:text-xl"
           onChange={(event) => edit(event.target.value, event.target.selectionStart ?? event.target.value.length)}
           onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
           onBlur={() => setDismissed(true)}
@@ -321,6 +344,12 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
             if (event.key === "Escape" && text !== "") {
               event.preventDefault();
               reset();
+              return;
+            }
+            // Enter adds the task; Shift+Enter is a new line in its description.
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              submit();
             }
           }}
         />
@@ -353,6 +382,14 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
           </ul>
         ) : null}
       </div>
+
+      {previewTitle ? (
+        <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5 px-1 text-[13px] text-muted-foreground" data-quick-add-title aria-live="polite">
+          <span>Title:</span>
+          <span className="min-w-0 font-medium break-words text-foreground">{title}</span>
+          <span>· everything you typed is kept as the description.</span>
+        </p>
+      ) : null}
 
       {optionsOpen ? (
         <div id="quick-add-options" className="mt-3 flex flex-wrap items-center gap-2">
@@ -472,7 +509,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
           ) : !optionsOpen && folded.length > 0 ? (
             <span>
               Set: <span className="font-medium text-foreground">{folded.join(" · ")}</span>
-              {parsed.unmatched.length > 0 ? ` · ${parsed.unmatched.join(", ")} ${parsed.unmatched.length === 1 ? "stays" : "stay"} in the title.` : "."}
+              {parsed.unmatched.length > 0 ? ` · ${parsed.unmatched.join(", ")} ${parsed.unmatched.length === 1 ? "stays" : "stay"} in the text.` : "."}
             </span>
           ) : names.length > 0 || parsed.unmatched.length > 0 ? (
             <>
@@ -483,7 +520,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
               ) : null}
               {parsed.unmatched.length > 0 ? (
                 <span>
-                  {parsed.unmatched.join(", ")} {parsed.unmatched.length === 1 ? "doesn't" : "don't"} name one person, so {parsed.unmatched.length === 1 ? "it stays" : "they stay"} in the title.
+                  {parsed.unmatched.join(", ")} {parsed.unmatched.length === 1 ? "doesn't" : "don't"} name one person, so {parsed.unmatched.length === 1 ? "it stays" : "they stay"} in the text.
                 </span>
               ) : null}
             </>
@@ -493,20 +530,20 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
             <span data-local-hint>Sign-off is on here: the task stays local, seen by you alone, until you send it for sign-off from your Local section.</span>
           ) : (
             <>
-              <span>Shortcuts in the title:</span>
+              <span>Shortcuts:</span>
               {SHORTCUT_HINTS.map((hint) => (
                 <code key={hint} className={chip}>
                   {hint}
                 </code>
               ))}
               <span className="hidden sm:inline">
-                . Press <kbd className={chip}>N</kbd> anywhere to jump here.
+                . <kbd className={chip}>Shift</kbd>+<kbd className={chip}>Enter</kbd> for a new line; <kbd className={chip}>N</kbd> anywhere jumps here.
               </span>
             </>
           )}
         </p>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <CharacterCounter value={text} max={LIMITS.quickAddTitle} />
+          <CharacterCounter value={text} max={LIMITS.taskDescription} />
           <Button type="button" variant="ghost" aria-expanded={optionsOpen} aria-controls="quick-add-options" onClick={() => toggleOptions(!optionsOpen)} className="text-muted-foreground">
             {optionsOpen ? <ChevronUp aria-hidden /> : <ChevronDown aria-hidden />}
             {optionsOpen ? "Hide options" : "Options"}
@@ -523,7 +560,7 @@ export function QuickAddTask({ today, defaults = {}, className }: { today: strin
             <SlidersHorizontal aria-hidden />
             More options
           </Button>
-          <Button type="submit" disabled={pending || parsed.title === ""} className="ml-auto sm:ml-0">
+          <Button type="submit" disabled={pending || title === ""} className="ml-auto sm:ml-0">
             <Plus aria-hidden />
             {pending ? (proposes ? "Proposing…" : "Adding…") : proposes ? "Propose task" : local ? "Add local task" : "Add task"}
           </Button>

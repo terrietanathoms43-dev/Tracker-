@@ -68,7 +68,6 @@ const BUILTIN_KINDS: Record<TaskStatus, StatusKind> = {
   in_progress: "in_progress",
   awaiting_approval: "awaiting_approval",
   blocked: "blocked",
-  deferred: "closed",
   rejected: "closed",
   cancelled: "closed",
   merged: "merged",
@@ -80,7 +79,6 @@ const BUILTIN_ICONS: Record<TaskStatus, string> = {
   in_progress: "circle-dot",
   awaiting_approval: "clock",
   blocked: "octagon-alert",
-  deferred: "circle-pause",
   rejected: "x-circle",
   cancelled: "ban",
   merged: "git-merge",
@@ -92,7 +90,6 @@ const BUILTIN_TONES: Record<TaskStatus, StatusTone> = {
   in_progress: "blue",
   awaiting_approval: "amber",
   blocked: "red",
-  deferred: "orange",
   rejected: "rose",
   cancelled: "stone",
   merged: "violet",
@@ -201,6 +198,12 @@ export const menuStatuses = (catalog: StatusCatalog, current: string): TaskStatu
 
 /** The keys of closed statuses, for SQL fragments that used to inline CLOSED_STATUSES. */
 export const closedStatusKeys = (catalog: StatusCatalog): string[] => catalog.filter((status) => status.closed).map((status) => status.key);
+
+/** Closed-as-done keys (Completed and Merged — a duplicate folded into its parent is completed work), the workspace's COMPLETED_STATUSES. */
+export const doneStatusKeys = (catalog: StatusCatalog): string[] => catalog.filter((status) => status.kind === "completed" || status.kind === "merged").map((status) => status.key);
+
+/** Closed-but-not-done keys (kind "closed": Rejected, Cancelled and every custom closed status), the workspace's INCOMPLETE_STATUSES. */
+export const incompleteStatusKeys = (catalog: StatusCatalog): string[] => catalog.filter((status) => status.kind === "closed").map((status) => status.key);
 
 /** Closed without completing: asks a reason, keeps it in rejection_reason, can be reopened. */
 export const isClosedWithoutCompletion = (status: TaskStatusDef): boolean => status.kind === "closed" || status.kind === "merged";

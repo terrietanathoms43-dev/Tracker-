@@ -80,6 +80,19 @@
    --status-rose-fg: oklch(0.5 0.19 348);
    --status-rose-dot: oklch(0.57 0.2 345);
 
+   /* The Activity widget's blocks (components/reports/range-chart.tsx, docs/PLAN.md 2026-11-24 log): one base colour
+      per kind of block, and four brightness steps for the timing, 1 the lightest (most time left, or closed early)
+      to 4 the darkest (overdue). The chart writes oklch(var(--block-l-N) <chroma> <hue>); `ink` is the colour of a
+      mark drawn inside a block of that step. */
+   --block-l-1: 0.76;
+   --block-l-2: 0.64;
+   --block-l-3: 0.52;
+   --block-l-4: 0.4;
+   --block-ink-1: oklch(0.25 0.02 260);
+   --block-ink-2: oklch(0.2 0.02 260);
+   --block-ink-3: oklch(1 0 0);
+   --block-ink-4: oklch(1 0 0);
+
    --priority-urgent: oklch(0.56 0.21 25);
    --priority-high: oklch(0.63 0.17 50);
    --priority-low: oklch(0.6 0 0);
@@ -146,6 +159,16 @@
    --status-rose-bg: oklch(0.28 0.07 345);
    --status-rose-fg: oklch(0.82 0.11 345);
    --status-rose-dot: oklch(0.68 0.18 345);
+
+   /* The same four steps on the dark card: lighter is still earlier, and the darkest step stays clear of the surface. */
+   --block-l-1: 0.86;
+   --block-l-2: 0.74;
+   --block-l-3: 0.62;
+   --block-l-4: 0.5;
+   --block-ink-1: oklch(0.22 0.02 260);
+   --block-ink-2: oklch(0.2 0.02 260);
+   --block-ink-3: oklch(0.16 0.02 260);
+   --block-ink-4: oklch(1 0 0);
 
    --priority-urgent: oklch(0.7 0.18 25);
    --priority-high: oklch(0.76 0.14 55);

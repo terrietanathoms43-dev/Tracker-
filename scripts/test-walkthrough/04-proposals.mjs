@@ -23,8 +23,8 @@ try {
   // --- 1. Taylor (stakeholder) proposes from the add bar on the Proposals page ----------------------------------
   const taylor = (browsers.taylor = await openBrowser({ role: "stakeholder", width: 390, height: 844 }));
   await taylor.goto("/proposals", 4000);
-  step("a stakeholder lands on Proposals with an add bar that says Propose", (await taylor.waitFor("What you've proposed")) && (await taylor.evaluate(`document.querySelector("#quick-add-title")?.placeholder`)) === "Propose a task and press Enter");
-  await taylor.type("#quick-add-title", TITLE);
+  step("a stakeholder lands on Proposals with an add bar that says Propose", (await taylor.waitFor("What you've proposed")) && (await taylor.evaluate(`document.querySelector("#quick-add-text")?.placeholder`)) === "Propose a task and press Enter");
+  await taylor.type("#quick-add-text", TITLE);
   await taylor.click("Propose task", { exact: true, wait: 2500 });
   step("proposing shows the toast", await taylor.waitFor("Proposed. It goes live once it is signed off."));
   step("the proposal shows as waiting for sign-off", await taylor.waitForNear(TITLE, "Waiting for sign-off"));
@@ -89,7 +89,7 @@ try {
   const sam = (browsers.sam = await openBrowser({ role: "member2", width: 1280, height: 900 }));
   await sam.goto(`/projects/${lumen.id}`, 4000);
   step("the project page shows that new tasks need sign-off", (await sam.waitFor("Lumen Health")) && (await sam.has("Sign-off")));
-  await sam.type("#quick-add-title", LUMEN_TITLE);
+  await sam.type("#quick-add-text", LUMEN_TITLE);
   await sam.click("Add local task", { exact: true, wait: 2500 });
   step("a member's task in an approve-only project starts local, theirs alone", await sam.waitFor("Saved as a local task"));
   const [lumenTask] = await query("select id, proposal_status from tasks where title = $1", [LUMEN_TITLE]);
@@ -115,7 +115,7 @@ try {
 
   // --- 7. Jordan skips Lumen's queue ----------------------------------------------------------------------------
   await jordan.goto(`/projects/${lumen.id}`, 4000);
-  await jordan.type("#quick-add-title", BYPASS_TITLE);
+  await jordan.type("#quick-add-text", BYPASS_TITLE);
   await jordan.click("Add task", { exact: true, wait: 2500 });
   step("someone on the bypass list makes a live task at once", await jordan.waitFor("Task created."));
   const [bypassed] = await query("select proposal_status from tasks where title = $1", [BYPASS_TITLE]);

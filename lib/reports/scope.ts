@@ -4,11 +4,12 @@ import type { ReportRange } from "./range";
 
 // The active reporting scope (docs/PLAN.md, 2026-11-06 and 2026-11-07 logs): "what this cycle was to work on". Every
 // task still open, plus every task closed on or after the Since day (the range's first day: the day of the last
-// report), whether it was completed or closed without completing (rejected, deferred, cancelled). Grouped by status
-// with the problems first, the closed-without-completing groups next and the completed work last. Pure, so the
-// grouping and the counts are unit-tested; lib/reports/data.ts (`activeScopeTasks`) fetches the rows.
+// report), whether it was completed (or merged into its parent, which is how a duplicate sub-task is completed) or
+// closed without completing (rejected, cancelled). Grouped by status with the problems first, the
+// closed-without-completing groups next and the completed work last. Pure, so the grouping and the counts are
+// unit-tested; lib/reports/data.ts (`activeScopeTasks`) fetches the rows.
 
-/** The groups' order in the view: stuck, waiting on someone, moving, other open work, parked/dropped, then done. */
+/** The groups' order in the view: stuck, waiting on someone, moving, other open work, parked/dropped, then done (merged, completed). */
 const groupRank = (status: TaskStatusDef): number => {
   switch (status.kind) {
     case "blocked":
@@ -18,6 +19,7 @@ const groupRank = (status: TaskStatusDef): number => {
     case "in_progress":
       return 2;
     case "completed":
+    case "merged":
       return 5;
     default:
       return status.closed ? 4 : 3;
@@ -40,7 +42,7 @@ export type ActiveScope = {
   /** Open (not closed) and past its due date today. */
   overdue: number;
   blocked: number;
-  /** Completed on or after the Since day. */
+  /** Completed (or merged) on or after the Since day. */
   completed: number;
   /** Created on or after the Since day: the work the cycle added, whatever its status now. */
   added: number;
@@ -67,7 +69,7 @@ export function groupActiveScope(tasks: ReportTask[], range: ReportRange, today:
     }))
     .sort((a, b) => groupRank(statusDef(catalog, a.status)) - groupRank(statusDef(catalog, b.status)));
   const inScope = groups.flatMap((group) => group.tasks);
-  const notCompleted = inScope.filter((task) => statusDef(catalog, task.status).kind !== "completed");
+  const notCompleted = inScope.filter((task) => !["completed", "merged"].includes(statusDef(catalog, task.status).kind));
   return {
     range,
     groups: groups.filter((group) => group.tasks.length > 0),

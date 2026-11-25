@@ -127,6 +127,8 @@ export async function createGoalOccurrence(tx: Tx, actorId: string, goal: Source
   const copies = await tx
     .select({ id: tasks.id, title: tasks.title, description: tasks.description, priority: tasks.priority, dueDate: tasks.dueDate, dueTime: tasks.dueTime, createdBy: tasks.createdBy, goalCloser: tasks.goalCloser })
     .from(tasks)
+    // Work that was dropped does not come round again: rejected, cancelled, a duplicate merged into another task,
+    // and anything in a custom closed status. Everything else comes round again, whatever its due date was moved to.
     .where(and(eq(tasks.orgId, goal.orgId), eq(tasks.goalId, goal.id), liveOnly, notInArray(tasks.status, catalog.filter(endedWithoutCompletion).map((status) => status.key))));
   for (const source of copies) {
     const [task] = await tx

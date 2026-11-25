@@ -20,8 +20,9 @@ import { closedStatusNames, statusDef } from "@/lib/statuses";
 import { scopedProject } from "@/lib/project-scope-server";
 import { catchUpRecurrences } from "@/lib/dal/recurrence";
 import { buildActiveScope, buildReport } from "@/lib/reports/build";
-import { defaultReportCut, parseReportCut, parseReportRange, reportCutsFor } from "@/lib/reports/params";
-import { addDays, dayKey, formatAbsolute, formatDay } from "@/lib/time";
+import { defaultReportCut, parseReportCadence, parseReportCut, parseReportRange, reportCutsFor } from "@/lib/reports/params";
+import { cadenceRange } from "@/lib/reports/range";
+import { addDays, dayKey, formatAbsolute, formatDay, weekdayName } from "@/lib/time";
 import { requireViewerContext } from "@/lib/viewer";
 
 // /reports: a date range, the navigation's project (or all of them) and the facts (docs/PLAN.md §8, 2026-11-01 and
@@ -38,7 +39,6 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const now = new Date();
   const today = dayKey(now, viewer.timezone);
   const [searchParams, scope] = await Promise.all([props.searchParams, scopedProject(viewer)]);
-  const range = parseReportRange(searchParams, today);
   const project = scope?.id ?? "";
 
   // Views: every role has the Active scope beside its own; otherwise a leader or admin may switch, a member only
@@ -48,6 +48,10 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const cut = parseReportCut(searchParams, defaultReportCut(viewer.orgRole), cuts);
   // The Active scope is about one day (the day of the last report), not a span: the controls show a single Since.
   const since = cut === "scope";
+  // Its daily read (2026-11-12 log): the address names a cadence and the Since day is worked out from today, so the
+  // same link is right tomorrow. Every other address carries its dates.
+  const cadence = parseReportCadence(searchParams, cut);
+  const range = cadence !== null ? cadenceRange(cadence, today) : parseReportRange(searchParams, today);
 
   const scopeLabel = scope ? scope.name : "All projects";
   const stakeholder = isStakeholder(viewer);
@@ -56,13 +60,13 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
     <>
       <PageHeader
         title="Reports"
-        description={`${org.name} · ${scopeLabel} · ${since ? `since ${formatDay(range.from, today)}` : `${formatDay(range.from, today)} – ${formatDay(range.to, today)}`}`}
+        description={`${org.name} · ${scopeLabel} · ${since ? `since ${cadence !== null ? `${weekdayName(range.from)}, ` : ""}${formatDay(range.from, today)}` : `${formatDay(range.from, today)} – ${formatDay(range.to, today)}`}`}
         action={<PrintButton />}
       />
 
       <div className="mb-6 grid gap-4">
-        <ReportCutTabs current={cut} cuts={cuts} range={range} project={project} />
-        <ReportControls range={range} today={today} cut={cut} project={project} since={since} />
+        <ReportCutTabs current={cut} cuts={cuts} range={range} project={project} cadence={cadence} />
+        <ReportControls range={range} today={today} cut={cut} project={project} since={since} cadence={cadence} />
       </div>
     </>
   );
@@ -84,8 +88,9 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
     );
   }
 
-  // The My work view's activity widget draws the viewer's own local tasks too; the other views never do (2026-11-06 log).
-  const report = await buildReport(viewer, range, today, project, { includeLocal: cut === "member" });
+  // Every view reads the same report, the project's live tasks (2026-11-24 log: local tasks and proposals are in none
+  // of it); the My work view narrows what it lists and which blocks it draws to the viewer's own.
+  const report = await buildReport(viewer, range, today, project);
 
   const goalNotes = Object.fromEntries(
     Object.entries(report.goalsDeliveredInRange).map(([goalId, n]) => [goalId, `${n} completed in this range`]),
@@ -99,8 +104,6 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
   const myBlocked = report.blockedOverdue.filter((t) => isMine(t) && statusDef(viewer.statuses, t.status).kind === "blocked");
   // "Am I on schedule?": what is already late, and what falls due in the next week.
   const myOverdue = myOpen.filter((t) => t.dueDate !== null && t.dueDate < today);
-  /** Overdue work due before the chart's first day: it has no column, so the chart says it in words. */
-  const overdueBefore = (tasks: typeof report.blockedOverdue) => tasks.filter((t) => t.dueDate !== null && t.dueDate < report.window.from).length;
   const weekEnd = addDays(today, 7);
   const myDueSoon = myOpen.filter((t) => t.dueDate !== null && t.dueDate >= today && t.dueDate <= weekEnd);
   const tile = (label: string, value: number, note: string, problem = false) => (
@@ -127,7 +130,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
               {tile("Delivered", myDelivered.length, "in selected range")}
             </div>
 
-            <RangeChart timeline={report.timeline} today={today} showMyWork title="Activity widget" description="Your activity, deliveries and what's due next, your local tasks included." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue.filter(isMine))} />
+            <RangeChart timeline={report.timeline} today={today} showMyWork title="Activity widget" description="One block for each task assigned to you. The activity line and the pace are the whole project's, not only yours." pace={report.pace} />
 
             <Panel title="My delivered" count={myDelivered.length}>
               <DeliveredList tasks={myDelivered} today={today} />
@@ -148,7 +151,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
           <>
             <ReportTiles summary={report.summary} project={project} statuses={viewer.statuses} />
 
-            <RangeChart timeline={report.timeline} today={today} title="Activity widget" description="Activity, completions, blockers and what's due next on the main board." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
+            <RangeChart timeline={report.timeline} today={today} title="Activity widget" description="One block for each task: closed work on the day it closed, open work on its due date, overdue and undated work on today." pace={report.pace} />
 
             {report.blockedDuration.currentlyBlocked > 0 ? (
               <div className="flex items-center gap-3 rounded-lg border border-status-amber-dot/30 bg-status-amber-bg p-4">
@@ -189,7 +192,7 @@ export default async function ReportsPage(props: PageProps<"/reports">) {
         {cut === "exec" ? (
           <>
             <ReportVerdict summary={report.summary} project={project} statuses={viewer.statuses} />
-            <RangeChart timeline={report.timeline} today={today} title="Activity widget" description="Daily activity, completions, blockers and what's due next on the main board." pace={report.pace} overdueEarlier={overdueBefore(report.blockedOverdue)} />
+            <RangeChart timeline={report.timeline} today={today} title="Activity widget" description="One block for each task: closed work on the day it closed, open work on its due date, overdue and undated work on today." pace={report.pace} />
             <DecisionsPanel decisions={report.decisions} now={now} today={today} timeZone={viewer.timezone} />
             <HealthBoard data={report.healthBoard} today={today} />
             <div id="stalled" className="min-w-0 scroll-mt-20">

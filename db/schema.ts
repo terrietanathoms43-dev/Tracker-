@@ -27,6 +27,8 @@ import {
   TASK_UPDATE_KINDS,
 } from "@/lib/constants";
 import type { Recurrence } from "@/lib/recurrence";
+import type { DueChangeKind, DueChangeStatus } from "@/lib/tasks/due-change";
+import type { TaskPolicyItem } from "@/lib/tasks/policy-checklist";
 
 // The whole Trackwise schema (docs/PLAN.md §4), applied with `npm run db:push`. The 2026-11-03 overhaul (the
 // rigid workspace → projects → goals → tasks funnel, proposals, repeats, goal links) was applied with
@@ -362,7 +364,11 @@ export const projectPins = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.projectId] }), index("project_pins_user_org_idx").on(t.userId, t.orgId)],
 );
 
-/** A person's running notes in a workspace: the Draft tab and the floating notepad (2026-11-04 log). */
+/**
+ * The one running note per person per workspace of 2026-11-04. **Legacy since 2026-11-11**: drafts are a list now
+ * (`draft_notes` below). The table stays because real rows exist (additive changes only); a person's old note is
+ * carried into `draft_notes` the first time they open their drafts and this row is emptied (lib/dal/drafts.ts).
+ */
 export const drafts = pgTable(
   "drafts",
   {
@@ -376,6 +382,33 @@ export const drafts = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.orgId] })],
+);
+
+/**
+ * A person's drafts in a workspace (docs/PLAN.md, 2026-11-11 log): the Draft tab's list and the floating notepad.
+ * Any number of notes, each with a title of its own, each of which may be attached to one task so the working
+ * notes travel with the work. A draft is its author's alone wherever it shows, attached or not: the task page
+ * lists a task's drafts to their author only.
+ */
+export const draftNotes = pgTable(
+  "draft_notes",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** May be empty: the list then names the draft by its first line (lib/drafts.ts). */
+    title: text("title").notNull().default(""),
+    body: text("body").notNull().default(""),
+    /** The task the draft is attached to, in the same workspace; a deleted task just lets go of it. */
+    taskId: text("task_id").references((): AnyPgColumn => tasks.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("draft_notes_owner_idx").on(t.userId, t.orgId, t.updatedAt.desc()), index("draft_notes_task_idx").on(t.taskId)],
 );
 
 /**
@@ -418,6 +451,29 @@ export const approvalBypass = pgTable(
 
 // --- tasks ----------------------------------------------------------------------
 
+/**
+ * Tasks grouped together (docs/PLAN.md, 2026-11-11 log): equals, not parent and child. A task is in at most one
+ * group (`tasks.group_id`), and every list draws the members it shows side by side inside one border. A group of
+ * fewer than two live tasks is not drawn and is removed the next time its membership changes.
+ */
+export const taskGroups = pgTable(
+  "task_groups",
+  {
+    id: id(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** Optional: what the tasks have in common ("Login revamp"). Without one the lists say "Group". */
+    name: text("name"),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("task_groups_org_idx").on(t.orgId)],
+);
+
 export const tasks = pgTable(
   "tasks",
   {
@@ -430,6 +486,14 @@ export const tasks = pgTable(
     goalId: text("goal_id").references(() => goals.id, { onDelete: "set null" }),
     /** Sub-tasks (2026-11-08 log): the task this one is attached to, one level deep; a child lives where its parent lives. */
     parentTaskId: text("parent_task_id").references((): AnyPgColumn => tasks.id, { onDelete: "set null" }),
+    /** The group it is in (2026-11-11 log): equals drawn together in every list. A sub-task goes with its parent instead. */
+    groupId: text("group_id").references(() => taskGroups.id, { onDelete: "set null" }),
+    /**
+     * The comment this task was made from ("Make a task", 2026-11-11 log): a link only, not a sub-task. The comment
+     * stays open while a live task made from it is open and resolves itself when the last one is closed; reopening
+     * the task opens it again. Copies (a repeat's next occurrence, a repeating goal's tasks) never carry it.
+     */
+    sourceCommentId: text("source_comment_id").references((): AnyPgColumn => taskUpdates.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     description: text("description"),
     createdBy: text("created_by")
@@ -439,6 +503,7 @@ export const tasks = pgTable(
     priority: taskPriorityEnum("priority").notNull().default("normal"),
     /** A status key: a built-in TaskStatus, or a workspace's custom `custom_*` key (task_statuses). */
     status: text("status").notNull().default("not_started"),
+    /** Changed only through an approved due-date change (task_due_changes, 2026-11-24 log) once the task exists. */
     dueDate: day("due_date"),
     /** "HH:MM" in the workspace's day, when a time matters ("every day at 8:00 AM"). */
     dueTime: text("due_time"),
@@ -452,15 +517,25 @@ export const tasks = pgTable(
     proposalStatus: proposalStatusEnum("proposal_status"),
     startedAt: tstz("started_at"),
     completedAt: tstz("completed_at"),
+    /**
+     * The closure snapshot (2026-11-24 log): when the task was closed (completed, merged, rejected or cancelled) and
+     * the due date it had at that moment (null = closed without one). Both are written by the closing transition and
+     * cleared by a reopen; a due date changed while the task stays closed never touches them, so the Activity widget
+     * keeps saying whether it was closed early, on time or late.
+     */
+    closedAt: tstz("closed_at"),
+    dueDateAtClose: day("due_date_at_close"),
     blockedReason: text("blocked_reason"),
     /** Who or what could unblock it (free text). */
     blockedBy: text("blocked_by"),
-    /** Why it was closed without being completed: rejected, deferred or cancelled (2026-11-07 log). */
+    /** Why it was closed without a completion summary: rejected or cancelled, or the parent a merged sub-task went into. */
     rejectionReason: text("rejection_reason"),
     /** Denormalised from the newest progress update so lists never join history. */
     latestProgress: text("latest_progress"),
     nextAction: text("next_action"),
     completionSummary: text("completion_summary"),
+    /** Task-specific policy checks that must be met before the task is sent for approval. */
+    policyChecklist: jsonb("policy_checklist").$type<TaskPolicyItem[]>().notNull().default([]),
     /** Manual importance; higher sorts first within the smart order. */
     sortRank: doublePrecision("sort_rank").notNull().default(0),
     createdAt: createdAt(),
@@ -474,6 +549,8 @@ export const tasks = pgTable(
     index("tasks_org_proposal_idx").on(t.orgId, t.proposalStatus),
     index("tasks_series_idx").on(t.seriesId),
     index("tasks_parent_idx").on(t.parentTaskId),
+    index("tasks_group_idx").on(t.groupId),
+    index("tasks_source_comment_idx").on(t.sourceCommentId),
   ],
 );
 
@@ -584,6 +661,39 @@ export const taskActivity = pgTable(
   (t) => [index("task_activity_task_idx").on(t.taskId, t.createdAt.desc()), index("task_activity_org_idx").on(t.orgId, t.createdAt.desc())],
 );
 
+/**
+ * A due-date change someone asked for (2026-11-24 log): every change to an existing task's due date carries a reason
+ * and takes effect only when an admin approves it (an admin's own change is approved as it is made). `kind` is what
+ * the change does (lib/tasks/due-change.ts: scheduled, deferred, brought forward, removed, changed); `from_date` is
+ * the due date the request was made against, and a request whose task has moved on since is refused. One request
+ * per task waits at a time.
+ */
+export const taskDueChanges = pgTable(
+  "task_due_changes",
+  {
+    id: id(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    requestedBy: text("requested_by")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind").$type<DueChangeKind>().notNull(),
+    fromDate: day("from_date"),
+    toDate: day("to_date"),
+    reason: text("reason").notNull(),
+    status: text("status").$type<DueChangeStatus>().notNull().default("pending"),
+    decidedBy: text("decided_by").references(() => users.id, { onDelete: "set null" }),
+    decidedAt: tstz("decided_at"),
+    decisionNote: text("decision_note"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("task_due_changes_task_idx").on(t.taskId, t.status), index("task_due_changes_org_idx").on(t.orgId, t.status)],
+);
+
 // --- notifications ----------------------------------------------------------------
 
 export const notifications = pgTable(
@@ -632,9 +742,11 @@ export type GoalLink = typeof goalLinks.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type ApprovalStep = typeof approvalSteps.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
+export type TaskGroup = typeof taskGroups.$inferSelect;
 export type TaskApproval = typeof taskApprovals.$inferSelect;
 export type TaskUpdate = typeof taskUpdates.$inferSelect;
 export type TaskLink = typeof taskLinks.$inferSelect;
 export type TaskActivity = typeof taskActivity.$inferSelect;
+export type TaskDueChange = typeof taskDueChanges.$inferSelect;
 export type NotificationRow = typeof notifications.$inferSelect;
 export type NotificationPreferences = typeof notificationPreferences.$inferSelect;

@@ -27,28 +27,26 @@ export const ORG_ROLE_DESCRIPTIONS: Record<OrgRole, string> = {
 // --- tasks --------------------------------------------------------------------
 
 /**
- * The one set of task statuses, used everywhere: lists, the board, every form, the reports. Deferred and Cancelled
- * (2026-11-07 log) close a task without completing it, like Rejected: each asks for a reason, none is ever overdue.
+ * The one set of task statuses, used everywhere: lists, the board, every form, the reports. Each maps onto the task
+ * model (lib/tasks/model.ts, docs/PLAN.md 2026-11-24 log): a task is Open (not started or in progress) or Closed
+ * (completed or incomplete). Blocked and Awaiting approval are conditions of open work; Merged is how a sub-task is
+ * completed; Rejected and Cancelled close a task without completing it. Deferred was a status from 2026-11-07 to
+ * 2026-11-24: it is now a due date moved later (lib/tasks/due-change.ts), never a state.
  */
-export const TASK_STATUSES = [
-  "not_started",
-  "in_progress",
-  "awaiting_approval",
-  "blocked",
-  "deferred",
-  "rejected",
-  "cancelled",
-  "merged",
-  "completed",
-] as const;
+export const TASK_STATUSES = ["not_started", "in_progress", "awaiting_approval", "blocked", "rejected", "cancelled", "merged", "completed"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+/**
+ * The database's enum, in the order it was made: Postgres cannot drop an enum value, so `deferred` stays there. No
+ * task holds it once `npm run db:migrate-task-model` has run (docs/RUNBOOK.md); the app never offers or writes it.
+ */
+export const TASK_STATUS_DB_VALUES = ["not_started", "in_progress", "awaiting_approval", "blocked", "deferred", "rejected", "cancelled", "merged", "completed"] as const;
 
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   not_started: "Not started",
   in_progress: "In progress",
   awaiting_approval: "Awaiting approval",
   blocked: "Blocked",
-  deferred: "Deferred",
   rejected: "Rejected",
   cancelled: "Cancelled",
   merged: "Merged",
@@ -56,13 +54,22 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
 };
 
 /** The closed statuses: hidden from lists unless "Show closed" is on, never overdue, never on the board but Completed. */
-export const CLOSED_STATUSES: readonly TaskStatus[] = ["completed", "rejected", "deferred", "cancelled", "merged"];
+export const CLOSED_STATUSES: readonly TaskStatus[] = ["completed", "rejected", "cancelled", "merged"];
 
 /**
- * Closed without being completed: each asks for a reason (kept in `tasks.rejection_reason`) and can be reopened.
- * Merged (sub-tasks, 2026-11-08 log) is only possible on a task attached to a parent: a duplicate folded into it.
+ * Closed and counted as done (2026-11-24 log): Completed, and Merged, which is how a sub-task that duplicates its
+ * parent is completed. Progress, pace and the Activity widget count both.
  */
-export const CLOSED_WITHOUT_COMPLETION: readonly TaskStatus[] = ["rejected", "deferred", "cancelled", "merged"];
+export const COMPLETED_STATUSES: readonly TaskStatus[] = ["completed", "merged"];
+
+/** Closed without being completed: such a task will never be done, so it is in neither the done nor the total of any progress count. */
+export const INCOMPLETE_STATUSES: readonly TaskStatus[] = ["rejected", "cancelled"];
+
+/**
+ * Closed with a reason instead of a completion summary (kept in `tasks.rejection_reason`); each can be reopened.
+ * Merged (sub-tasks, 2026-11-08 log) is only possible on a task attached to a parent, and names it.
+ */
+export const CLOSED_WITH_REASON: readonly TaskStatus[] = ["rejected", "cancelled", "merged"];
 
 export const isClosedStatus = (status: TaskStatus): boolean => CLOSED_STATUSES.includes(status);
 
@@ -112,6 +119,15 @@ export const TASK_ACTIVITY_KINDS = [
   "published",
   "attached",
   "detached",
+  "grouped",
+  "ungrouped",
+  // Due-date changes (2026-11-24 log): asked for with a reason, decided by an admin, labelled by what they did.
+  // `deferred` (above) is the label of a deadline moved later to a future date; `due_changed` any other change.
+  "due_change_requested",
+  "due_change_declined",
+  "scheduled",
+  "brought_forward",
+  "due_removed",
 ] as const;
 export type TaskActivityKind = (typeof TASK_ACTIVITY_KINDS)[number];
 
@@ -169,6 +185,11 @@ export const NOTIFICATION_KINDS = [
   "commented",
   "comment_resolved",
   "goal_achieved",
+  /** A completed task is in progress again: a comment on it opened again when the task made from it was reopened (2026-11-11 log). */
+  "reopened",
+  /** A due-date change waits for an admin (2026-11-24 log), and what the admin decided, told to whoever asked. */
+  "due_change_requested",
+  "due_change_decided",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 

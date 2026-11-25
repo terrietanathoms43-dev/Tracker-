@@ -140,12 +140,16 @@ async function claimOrg(tx: Tx, seed: OrgSeed, createdBy: string): Promise<strin
 /** Everything inside a workspace, but not the workspace row itself. */
 async function wipeOrgContents(tx: Tx, orgId: string): Promise<void> {
   await tx.delete(notifications).where(eq(notifications.orgId, orgId));
-  // The Draft tab's notes are a person's own, but a walkthrough that typed some must not meet them on the next run.
+  // The Draft tab's drafts are a person's own, but a walkthrough that typed some must not meet them on the next run
+  // (the list of 2026-11-11, and the one-note table it replaced).
+  await tx.delete(schema.draftNotes).where(eq(schema.draftNotes.orgId, orgId));
   await tx.delete(schema.drafts).where(eq(schema.drafts.orgId, orgId));
   await tx.delete(taskActivity).where(eq(taskActivity.orgId, orgId));
   // Tasks take their updates, links, assignments and sign-off chains with them; goals take their links and chains;
   // projects take their goals and chains (cascades).
   await tx.delete(tasks).where(eq(tasks.orgId, orgId));
+  // Groups of tasks hold nothing once their tasks are gone (2026-11-11 log).
+  await tx.delete(schema.taskGroups).where(eq(schema.taskGroups.orgId, orgId));
   await tx.delete(goals).where(eq(goals.orgId, orgId));
   await tx.delete(projects).where(eq(projects.orgId, orgId));
   await tx.delete(invitations).where(eq(invitations.orgId, orgId));
@@ -388,6 +392,9 @@ function taskRows(spec: SeedTask, taskId: string, ctx: TaskContext): { task: Tas
     proposalStatus: spec.proposal?.status ?? null,
     startedAt,
     completedAt: spec.completed ? at(spec.completed.daysAgo, 1) : null,
+    // The closure snapshot (2026-11-24 log): when it closed and the due date it had then, as a closing transition writes it.
+    closedAt: spec.completed ? at(spec.completed.daysAgo, 1) : spec.rejection ? at(spec.rejection.daysAgo, 1) : null,
+    dueDateAtClose: (spec.completed || spec.rejection) && spec.dueInDays !== null ? due(spec.dueInDays) : null,
     blockedReason: spec.blocked?.reason ?? null,
     blockedBy: spec.blocked?.by ?? null,
     rejectionReason: spec.rejection?.reason ?? null,

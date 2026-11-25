@@ -99,6 +99,12 @@ export function formatDay(day: string, today: string): string {
   }).format(new Date(Date.UTC(year, month - 1, date)));
 }
 
+/** The weekday of a calendar day, short: "Fri". */
+export function weekdayName(day: string): string {
+  const [year, month, date] = day.split("-").map(Number);
+  return new Intl.DateTimeFormat("en", { timeZone: "UTC", weekday: "short" }).format(new Date(Date.UTC(year, month - 1, date)));
+}
+
 /** "Good morning" / "Good afternoon" / "Good evening" by the hour in the viewer's timezone. */
 export function greetingFor(timeZone: string, now: Date = new Date()): string {
   const hour = Number(new Intl.DateTimeFormat("en", { timeZone, hour: "numeric", hourCycle: "h23" }).format(now));

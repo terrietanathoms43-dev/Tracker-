@@ -25,10 +25,10 @@ const at = new Date("2026-11-01T00:00:00Z");
 const DEFAULT_CATALOG = resolveStatuses([]);
 
 describe("resolveStatuses", () => {
-  it("is the nine defaults with no rows", () => {
+  it("is the eight defaults with no rows", () => {
     const catalog = resolveStatuses([]);
-    expect(catalog.map((status) => status.key)).toEqual(["not_started", "in_progress", "awaiting_approval", "blocked", "deferred", "rejected", "cancelled", "merged", "completed"]);
-    expect(closedStatusKeys(catalog).sort()).toEqual(["cancelled", "completed", "deferred", "merged", "rejected"]);
+    expect(catalog.map((status) => status.key)).toEqual(["not_started", "in_progress", "awaiting_approval", "blocked", "rejected", "cancelled", "merged", "completed"]);
+    expect(closedStatusKeys(catalog).sort()).toEqual(["cancelled", "completed", "merged", "rejected"]);
   });
 
   it("keeps a renamed built-in's behaviour", () => {
@@ -44,14 +44,14 @@ describe("resolveStatuses", () => {
     expect(statusDef(catalog, "completed").closed).toBe(true);
     expect(statusDef(catalog, "merged").closed).toBe(true);
     for (const key of ["not_started", "in_progress", "blocked", "awaiting_approval", "completed", "merged"]) expect(closedLocked(statusDef(catalog, key))).toBe(true);
-    for (const key of ["deferred", "rejected", "cancelled"]) expect(closedLocked(statusDef(catalog, key))).toBe(false);
+    for (const key of ["rejected", "cancelled"]) expect(closedLocked(statusDef(catalog, key))).toBe(false);
   });
 
   it("makes a reopened Deferred, Rejected or Cancelled plain open work: no reason, no edit right", () => {
     const rejected = statusDef(resolveStatuses([row("rejected", { label: "Rejected", closed: false })]), "rejected");
     expect(rejected).toMatchObject({ kind: "open", closed: false });
     expect(requiresEditToEnter(rejected)).toBe(false);
-    const plan = planTransition({ status: "in_progress", startedAt: at, approverId: null, blockedReason: null, openComments: 0, parentTaskId: null }, "rejected", {}, at, resolveStatuses([row("rejected", { closed: false })]));
+    const plan = planTransition({ status: "in_progress", dueDate: null, startedAt: at, approverId: null, blockedReason: null, openComments: 0, parentTaskId: null }, "rejected", {}, at, resolveStatuses([row("rejected", { closed: false })]));
     expect(plan.ok).toBe(true);
   });
 
@@ -87,7 +87,7 @@ describe("the words a status is named by", () => {
   it("lowercases a built-in inside a sentence, never a workspace's own name", () => {
     expect(statusWord(statusDef(catalog, "in_progress"))).toBe("in progress");
     expect(statusWord(statusDef(catalog, "custom_aaaa0001"))).toBe("QA gate");
-    expect(closedStatusNames(catalog)).toBe("deferred, rejected, cancelled, Done deal or QA gate");
+    expect(closedStatusNames(catalog)).toBe("rejected, cancelled, Done deal or QA gate");
   });
 
   it("asks a renamed closed status the generic question", () => {

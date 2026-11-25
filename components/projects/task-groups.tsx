@@ -12,7 +12,7 @@ const openStatuses = (statuses: StatusCatalog, open: TaskListItem[]) => statuses
 
 const isClosed = (statuses: StatusCatalog, task: TaskListItem) => statusDef(statuses, task.status).closed;
 
-/** Closed tasks (completed, rejected, deferred, cancelled) behind a native disclosure: there for the record, out of the way of open work. */
+/** Closed tasks (completed, merged, rejected, cancelled) behind a native disclosure: there for the record, out of the way of open work. */
 export function ClosedTasks({ items, today, readOnly = false }: { items: TaskListItem[]; today: string; readOnly?: boolean }) {
   if (items.length === 0) return null;
   return (

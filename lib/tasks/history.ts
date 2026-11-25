@@ -2,6 +2,7 @@ import { TASK_PRIORITY_LABELS, type TaskActivityKind, type TaskPriority } from "
 import { factoryWorded, statusLabel, statusOf, type StatusCatalog } from "@/lib/statuses";
 import { calendarDaysBetween, dayKey, formatAbsolute, formatDay } from "@/lib/time";
 import { joinNames, listNames, type AssignmentSnapshot } from "./assignees";
+import { DUE_CHANGE_LABELS, type DueChangeKind } from "./due-change";
 import type { ActivityFeedItem, HistoryItem } from "./types";
 
 // Task events in plain words: one function for a task's own history, one for the Home and Members feeds.
@@ -22,6 +23,8 @@ export type HistoryRow = {
   /** Comments: when it was marked resolved, and by whom. */
   resolved_at: Date | string | null;
   resolved_by_name: string | null;
+  /** Comments: the live tasks made from it, oldest first (null when there are none, and on every other row). */
+  linked?: { id: string; title: string; status: string }[] | null;
   actor_id: string;
   actor_name: string | null;
   actor_email: string | null;
@@ -32,15 +35,19 @@ export type HistoryRow = {
 };
 
 const text = (value: unknown) => (typeof value === "string" && value !== "" ? value : null);
-const storedLabel = (statuses: StatusCatalog, value: unknown) => (typeof value === "string" && value !== "" ? statusLabel(statuses, value) : null);
+const storedLabel = (statuses: StatusCatalog, value: unknown) => {
+  if (typeof value !== "string" || value === "") return null;
+  // Deferred was a status until 2026-11-24: history rows from then still name it.
+  if (value === "deferred") return "Deferred";
+  return statusLabel(statuses, value);
+};
 
-type NamedKind = "blocked" | "rejected" | "deferred" | "cancelled" | "completed";
+type NamedKind = "blocked" | "rejected" | "cancelled" | "completed";
 
 /** The verbs for the statuses with their own history kinds, while each keeps its factory name. */
 const NAMED_VERBS: Record<NamedKind, { phrase: string; verb: string }> = {
   blocked: { phrase: "marked it blocked", verb: "flagged a blocker on" },
   rejected: { phrase: "rejected it", verb: "rejected" },
-  deferred: { phrase: "deferred it", verb: "deferred" },
   cancelled: { phrase: "cancelled it", verb: "cancelled" },
   completed: { phrase: "completed it", verb: "completed" },
 };
@@ -55,6 +62,13 @@ function namedPhrase(statuses: StatusCatalog, kind: NamedKind, after: Record<str
 }
 const priorityLabel = (value: unknown) => (typeof value === "string" && value in TASK_PRIORITY_LABELS ? TASK_PRIORITY_LABELS[value as TaskPriority] : null);
 const dayOrNone = (value: unknown, today: string) => (typeof value === "string" && value !== "" ? formatDay(value, today) : "No date");
+
+/** The dates of a due-date change row, before → after. */
+const dueChange = (before: Record<string, unknown>, after: Record<string, unknown>, today: string) => ({ before: dayOrNone(before.dueDate, today), after: dayOrNone(after.dueDate, today) });
+/** "approved a date change: " in front of what the change did, on the row an admin wrote for someone else's request. */
+const approvedPrefix = (after: Record<string, unknown>) => (after.approved === true ? "approved a date change: " : "");
+/** " (Deferred)": what a requested or declined change would have been. */
+const dueChangeName = (kind: unknown) => (typeof kind === "string" && kind in DUE_CHANGE_LABELS ? ` (${DUE_CHANGE_LABELS[kind as DueChangeKind].toLowerCase()})` : "");
 
 /** The names on one side of an assignment row written since assignment became a set; null for a legacy row. */
 function assignmentNames(side: Record<string, unknown>): string[] | null {
@@ -101,7 +115,7 @@ function activityPhrase(row: HistoryRow, today: string, statuses: StatusCatalog)
   const after = row.after ?? {};
   switch (row.kind) {
     case "created":
-      return { phrase: after.local === true ? "created it as a local task" : after.proposal === true ? "proposed the task" : "created the task", change: null };
+      return { phrase: after.local === true ? "created it as a local task" : after.proposal === true ? "proposed the task" : text(after.fromCommentId) ? "made the task from a comment" : "created the task", change: null };
     case "edited":
       return editedPhrase(before, after);
     case "status_changed":
@@ -112,8 +126,20 @@ function activityPhrase(row: HistoryRow, today: string, statuses: StatusCatalog)
       const to = assignmentNames(after);
       return { phrase: `handed it over to ${to ? joinNames(to) || "someone" : (row.after_assignee ?? "someone")}`, change: null };
     }
+    // Due-date changes (2026-11-24 log): named for what they do, with the reason as the row's note. A row an admin
+    // wrote for someone else's request says it was approved.
     case "due_changed":
-      return { phrase: "changed the due date", change: { before: dayOrNone(before.dueDate, today), after: dayOrNone(after.dueDate, today) } };
+      return { phrase: `${approvedPrefix(after)}changed the due date`, change: dueChange(before, after, today) };
+    case "scheduled":
+      return { phrase: `${approvedPrefix(after)}scheduled it`, change: dueChange(before, after, today) };
+    case "brought_forward":
+      return { phrase: `${approvedPrefix(after)}brought the deadline forward`, change: dueChange(before, after, today) };
+    case "due_removed":
+      return { phrase: `${approvedPrefix(after)}removed the due date`, change: dueChange(before, after, today) };
+    case "due_change_requested":
+      return { phrase: `asked for a date change${dueChangeName(after.change)}`, change: dueChange(before, after, today) };
+    case "due_change_declined":
+      return { phrase: after.withdrawn === true ? "withdrew the date change" : `declined the date change${dueChangeName(after.change)}`, change: dueChange(before, after, today) };
     case "priority_changed":
       return { phrase: "changed the priority", change: { before: priorityLabel(before.priority), after: priorityLabel(after.priority) } };
     case "blocked": {
@@ -129,7 +155,10 @@ function activityPhrase(row: HistoryRow, today: string, statuses: StatusCatalog)
     case "sent_back":
       return { phrase: "sent it back", change: null };
     case "rejected":
+      return { phrase: namedPhrase(statuses, row.kind, after), change: null };
+    // A deadline moved later to a future date. Until 2026-11-24 Deferred was a status: those rows carry no dates.
     case "deferred":
+      return { phrase: `${approvedPrefix(after)}deferred it`, change: "dueDate" in after ? dueChange(before, after, today) : null };
     case "cancelled":
       return { phrase: namedPhrase(statuses, row.kind, after), change: null };
     case "merged":
@@ -138,14 +167,24 @@ function activityPhrase(row: HistoryRow, today: string, statuses: StatusCatalog)
       return { phrase: text(after.parentTitle) ? `attached it to ${text(after.parentTitle)}` : "attached it to a task", change: null };
     case "detached":
       return { phrase: text(before.parentTitle) ? `detached it from ${text(before.parentTitle)}` : "detached it from its parent", change: null };
+    case "grouped": {
+      const name = text(after.groupName);
+      const mates = Array.isArray(after.with) ? after.with.filter((title): title is string => typeof title === "string" && title !== "") : [];
+      const more = typeof after.size === "number" ? Math.max(0, after.size - 1 - mates.length) : 0;
+      const withWhom = mates.length > 0 ? ` with ${joinNames(more > 0 ? [...mates, `${more} more`] : mates)}` : "";
+      return { phrase: name ? `put it in the group ${name}${withWhom}` : `grouped it${withWhom}`, change: null };
+    }
+    case "ungrouped":
+      return { phrase: text(before.groupName) ? `took it out of the group ${text(before.groupName)}` : "took it out of its group", change: null };
     case "completed":
       return { phrase: namedPhrase(statuses, "completed", after), change: null };
     case "reopened":
       return { phrase: "reopened it", change: { before: storedLabel(statuses, before.status), after: storedLabel(statuses, after.status) } };
+    // A comment resolved or opened again by the task made from it (2026-11-11 log): the note names that task.
     case "comment_resolved":
-      return { phrase: "resolved a comment", change: null };
+      return { phrase: text(after.byTaskId) ? "resolved a comment by closing the task made from it" : "resolved a comment", change: null };
     case "comment_reopened":
-      return { phrase: "reopened a comment", change: null };
+      return { phrase: text(after.byTaskId) ? "opened a comment again by reopening the task made from it" : "reopened a comment", change: null };
     case "link_added":
       return { phrase: `added evidence: ${text(after.label) ?? text(after.url) ?? "a link"}`, change: null };
     case "link_removed":
@@ -193,6 +232,7 @@ export function phraseHistory(row: HistoryRow, timeZone: string, now: Date, stat
     nextAction: row.next_action,
     blocker: row.blocker,
     resolved: row.type === "comment" && row.resolved_at ? { by: row.resolved_by_name ?? "someone", at: new Date(row.resolved_at).toISOString() } : null,
+    tasks: row.type === "comment" ? (row.linked ?? []) : [],
     at: at.toISOString(),
     day,
     dayLabel,

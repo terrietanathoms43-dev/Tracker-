@@ -1,21 +1,30 @@
 import type { TaskActivityKind } from "@/lib/constants";
 import { factoryWorded, isClosedWithoutCompletion, statusOf, type StatusCatalog, type TaskStatusDef } from "@/lib/statuses";
+import { incompletePolicyCount, incompletePoliciesMessage, resetPolicyChecklist, type TaskPolicyItem } from "@/lib/tasks/policy-checklist";
 
 // Status rules (docs/PLAN.md §5, apex-ux flow D) as one pure function: given the task's current state, the
 // workspace's statuses and the status asked for, the column changes and the activity rows to write. Every
 // action that changes a status goes through it, so a row menu, the Update progress form and the approver's
 // buttons never diverge. Behaviour is decided by the status's *kind* (lib/statuses.ts), not its key: a
-// renamed Completed still completes, and a workspace's custom closed status behaves like Rejected.
+// renamed Completed still completes, and a workspace's custom closed status behaves like Rejected. Closing a
+// task also writes its closure snapshot: when it closed and the due date it had then (2026-11-24 log); a reopen
+// clears it.
 
 export type TaskState = {
   status: string;
+  /** The due date now: a closing transition keeps it as the date the task was closed against. */
+  dueDate: string | null;
   startedAt: Date | null;
   approverId: string | null;
   blockedReason: string | null;
   /** Comments nobody has resolved yet. While there are any, the task cannot be completed (2026-10-30 log). */
   openComments: number;
+  /** Of those, the ones waiting for a task made from them (2026-11-11 log): the refusal says so. */
+  commentsWaitingOnTasks?: number;
   /** The task it is attached to (sub-tasks, 2026-11-08 log): only such a task can be merged. */
   parentTaskId: string | null;
+  /** Required task-specific policy checks, completed by the assignee before approval. */
+  policyChecklist?: TaskPolicyItem[];
 };
 
 export type TransitionInput = {
@@ -38,11 +47,15 @@ export type TaskPatch = {
   status?: string;
   startedAt?: Date;
   completedAt?: Date | null;
+  /** The closure snapshot: set by any closing move, cleared by a reopen. */
+  closedAt?: Date | null;
+  dueDateAtClose?: string | null;
   completionSummary?: string | null;
   blockedReason?: string | null;
   blockedBy?: string | null;
   rejectionReason?: string | null;
   approverId?: string | null;
+  policyChecklist?: TaskPolicyItem[];
 };
 
 /** One task_activity row before it has an id, an actor or a time. */
@@ -60,9 +73,17 @@ const clean = (value: string | null | undefined) => {
   return trimmed === "" ? null : trimmed;
 };
 
-/** Why a task with open comments can't be completed: the same words on the server and under the forms' Completed option. */
-export function openCommentsMessage(count: number): string {
-  return `Resolve the ${count} open ${count === 1 ? "comment" : "comments"} before completing this task.`;
+/**
+ * Why a task with open comments can't be completed: the same words on the server and under the forms' Completed
+ * option. `waiting` of them have a task made from them still open (2026-11-11 log): those are not resolved by hand,
+ * they resolve themselves when that task is closed.
+ */
+export function openCommentsMessage(count: number, waiting = 0): string {
+  const base = `Resolve the ${count} open ${count === 1 ? "comment" : "comments"} before completing this task.`;
+  if (waiting <= 0) return base;
+  if (count === 1) return `${base} It waits for the task made from it: closing that task resolves it.`;
+  const which = waiting >= count ? "Each waits" : waiting === 1 ? "One of them waits" : `${waiting} of them wait`;
+  return `${base} ${which} for a task made from the comment: closing that task resolves it.`;
 }
 
 /** What the forms and the server say when Completed is chosen without its summary. */
@@ -74,7 +95,6 @@ export const APPROVAL_NOTE_REQUIRED = "Add a sign-off note: what you checked, or
 export const REASON_PROMPTS: Record<string, string> = {
   blocked: "Say what is blocking it.",
   rejected: "Give a reason for rejecting it.",
-  deferred: "Say why it is deferred, and until when if you know.",
   cancelled: "Give a reason for cancelling it.",
   merged: "Say which task it was merged into.",
 };
@@ -111,7 +131,19 @@ export function planTransition(task: TaskState, to: string, input: TransitionInp
   const fromStatus = statusOf(statuses, from);
   if (via !== "status" && fromStatus?.kind !== "awaiting_approval") return { ok: false, error: "This task isn't waiting for approval." };
   if (from === to && toStatus.kind !== "awaiting_approval") return { ok: true, patch: {}, activities: [] };
-  if (toStatus.kind === "completed" && task.openComments > 0) return { ok: false, error: openCommentsMessage(task.openComments) };
+  if (toStatus.kind === "awaiting_approval") {
+    if (task.startedAt === null) return { ok: false, error: "Move this task to In progress before sending it for approval." };
+    const remaining = incompletePolicyCount(task.policyChecklist ?? []);
+    if (remaining > 0) return { ok: false, error: incompletePoliciesMessage(remaining) };
+  }
+  if (toStatus.kind === "completed" && task.startedAt === null) {
+    return { ok: false, error: "Move this task to In progress before completing it." };
+  }
+  if (toStatus.kind === "completed") {
+    const remaining = incompletePolicyCount(task.policyChecklist ?? []);
+    if (remaining > 0) return { ok: false, error: incompletePoliciesMessage(remaining) };
+  }
+  if (toStatus.kind === "completed" && task.openComments > 0) return { ok: false, error: openCommentsMessage(task.openComments, task.commentsWaitingOnTasks ?? 0) };
 
   if (toStatus.kind === "merged" && task.parentTaskId === null) return { ok: false, error: MERGE_NEEDS_PARENT };
   const reason = clean(input.reason);
@@ -135,11 +167,22 @@ export function planTransition(task: TaskState, to: string, input: TransitionInp
     patch.completionSummary = null;
     activities.push({ kind: "reopened", before: { status: from }, after: { status: to } });
   }
+  if (fromStatus?.closed === true && !toStatus.closed) patch.policyChecklist = resetPolicyChecklist(task.policyChecklist ?? []);
+  if (fromStatus?.kind === "awaiting_approval" && via === "send_back") patch.policyChecklist = resetPolicyChecklist(task.policyChecklist ?? []);
   if (fromStatus !== undefined && isClosedWithoutCompletion(fromStatus)) {
     patch.rejectionReason = null;
     if (!(isClosedWithoutCompletion(toStatus) || toStatus.kind === "completed")) activities.push({ kind: "reopened", before: { status: from }, after: { status: to } });
   }
   if (toStatus.kind === "in_progress" && task.startedAt === null) patch.startedAt = now;
+  // The closure snapshot: a task that closes (or changes the way it is closed) is closed now, against the due date
+  // it has now; one that is opened again has none.
+  if (toStatus.closed) {
+    patch.closedAt = now;
+    patch.dueDateAtClose = task.dueDate;
+  } else if (fromStatus?.closed === true) {
+    patch.closedAt = null;
+    patch.dueDateAtClose = null;
+  }
 
   switch (toStatus.kind) {
     case "blocked":

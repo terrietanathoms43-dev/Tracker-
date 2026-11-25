@@ -66,10 +66,12 @@ try {
     // --- 4. the chart: one segment per task, future days, today in view, a sticky inspector -----------------------------
     // Every completion is only drawn once every day is on show (the default view may be zoomed in on a small screen).
     await avery.click("Fit every day of the window", { wait: 600 });
-    const segments = await avery.evaluate(`document.querySelectorAll('[data-segment="completed"]').length`);
-    step("the chart draws one segment per completed task", segments === completedInWindow, `${segments} segments for ${completedInWindow} completions`);
+    const segments = await avery.evaluate(`document.querySelectorAll('[data-block="completed"]').length`);
+    step("the chart draws one block per completed task", segments === completedInWindow, `${segments} blocks for ${completedInWindow} completions`);
     step("the chart has days ahead of today", (await avery.evaluate(`document.querySelectorAll('g[data-future]').length`)) >= 14);
-    step("a due task ahead is drawn outlined", (await avery.evaluate(`document.querySelectorAll('[data-segment="due"]').length`)) > 0);
+    // The task model (2026-11-24 log): open work sits on its due date, so the days ahead hold blocks, and none of them is closed work.
+    step("open work due ahead is drawn on its due date", (await avery.evaluate(`document.querySelectorAll('g[data-future] [data-block]').length`)) > 0);
+    step("nothing closed is drawn ahead of today", (await avery.evaluate(`document.querySelectorAll('g[data-future] [data-block="completed"], g[data-future] [data-block="merged"], g[data-future] [data-block="rejected"], g[data-future] [data-block="cancelled"]').length`)) === 0);
     const todayVisible = await avery.evaluate(`(() => {
       const frame = document.querySelector('[data-testid="range-chart-frame"]');
       const column = frame?.querySelector('g[data-day="${today}"] rect');
@@ -87,7 +89,7 @@ try {
     step("the chart fills its card with no scrollbar", fills === true, String(fills));
     step("the activity line is drawn on an axis of events per day", (await avery.evaluate(`document.querySelector('[data-testid="activity-line"]') !== null && document.querySelectorAll('[data-axis-tick]').length === 3`)) === true);
     step("today is marked with a strong line", (await avery.evaluate(`document.querySelector('[data-today-line]') !== null`)) === true);
-    const blockHeights = await avery.evaluate(`[...document.querySelectorAll('rect[data-segment="completed"]')].map((r) => Math.round(Number(r.getAttribute("height"))))`);
+    const blockHeights = await avery.evaluate(`[...document.querySelectorAll('rect[data-block="completed"]')].map((r) => Math.round(Number(r.getAttribute("height"))))`);
     step("every task block has the same height, whatever the axis", Array.isArray(blockHeights) && (blockHeights.length === 0 || new Set(blockHeights).size === 1), JSON.stringify(blockHeights.slice(0, 6)));
     const before = await avery.evaluate(`document.querySelectorAll('g[data-day]').length`);
     await avery.click("Zoom in: fewer days", { wait: 600 });
@@ -174,8 +176,8 @@ try {
     })()`);
     step("on a phone the chart fits the width with today in view", phoneFit === true, String(phoneFit));
     await jordan.click("Fit every day of the window", { wait: 600 });
-    const mineDrawn = await jordan.evaluate(`document.querySelectorAll('[data-segment="completed"]').length`);
-    step("fitted to the window, the chart draws only their own completions", mineDrawn === mine, `${mineDrawn} segments for ${mine}`);
+    const mineDrawn = await jordan.evaluate(`document.querySelectorAll('[data-block="completed"]').length`);
+    step("fitted to the window, the chart draws only their own completions", mineDrawn === mine, `${mineDrawn} blocks for ${mine}`);
     await jordan.shot("10-member-phone-dark", { full: true });
     step("no console errors on the phone", jordan.problems.length === 0, JSON.stringify(jordan.problems.slice(0, 2)));
   }

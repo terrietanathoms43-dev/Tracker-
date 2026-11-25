@@ -4,11 +4,12 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { goals, projects, taskActivity, taskAssignees, tasks, taskUpdates } from "@/db/schema";
 import { type ProjectStatus, type TaskPriority } from "@/lib/constants";
-import { closedStatusKeys, closedWithoutCompletionKeys, type StatusCatalog } from "@/lib/statuses";
+import { closedStatusKeys, doneStatusKeys, incompleteStatusKeys, statusDef, type StatusCatalog } from "@/lib/statuses";
 import { pendingProposals, type ProposalListItem } from "@/lib/dal/approvals";
 import { listWorkers } from "@/lib/dal/orgs";
-import { approvalStagingTasks, assigneesJson, liveOnly, localOnly, progressForGoals, progressForProjects, taskLabelSql, type ApprovalStagingTask } from "@/lib/dal/tasks";
+import { approvalStagingTasks, assigneesJson, liveOnly, progressForGoals, progressForProjects, taskLabelSql, type ApprovalStagingTask } from "@/lib/dal/tasks";
 import type { Viewer } from "@/lib/permissions";
+import { blockDayOf, blockKindOf, daysLeft, openBandOf, phaseOf, shadeOf, timingOf, type BlockKind, type LifeState, type OpenBand, type Shade, type TaskPhase, type Timing } from "@/lib/tasks/model";
 import type { Assignees } from "@/lib/tasks/types";
 import { calendarDaysBetween, dayKey } from "@/lib/time";
 import { healthOf, sortByHealth, type HealthStatus } from "./health";
@@ -20,10 +21,10 @@ import { daysOf, shiftDay, timelineWindow, type ReportRange } from "./range";
 // report prints is a count of these rows: nothing is estimated, weighted or ranked. Callers check access first
 // (lib/reports/build.ts). A report is about live tasks only (proposals still waiting are not work yet; a local task
 // is nobody's but its maker's) and may be about one project (`project`: an id, or "" for the whole workspace, the
-// navigation's scope); every section narrows the same way, so its numbers always agree. The one exception is the
-// activity widget on the My work view, which also draws the viewer's own local tasks (2026-11-06 log). The Active
-// scope view's list (`activeScopeTasks`) takes every task not completed whatever the range, and only the range's
-// first day bounds the completed ones.
+// navigation's scope); every section narrows the same way, so its numbers always agree, the Activity widget and
+// its activity line included (2026-11-24 log: until then the My work view also drew the viewer's local tasks and the
+// line counted proposals). The Active scope view's list (`activeScopeTasks`) takes every task not completed whatever
+// the range, and only the range's first day bounds the completed ones.
 
 /** A task as a report prints it. `completedDay` is the calendar day it was completed on, in the viewer's timezone. */
 export type ReportTask = {
@@ -34,7 +35,7 @@ export type ReportTask = {
   assignees: Assignees;
   dueDate: string | null;
   completedDay: string | null;
-  /** The day it was closed, in the viewer's timezone: completed, or rejected / deferred / cancelled (from the history row that closed it). */
+  /** The day it was closed, in the viewer's timezone: completed, merged, rejected or cancelled (the closure snapshot on the task row). */
   closedDay: string | null;
   /** The calendar day it was created on, in the viewer's timezone: the Active scope view marks what a cycle added. */
   createdDay: string;
@@ -81,15 +82,38 @@ export type TimelineGoalMarker = {
 };
 
 /**
- * What a task did on a day: it was completed, a blocker was raised on it, it was due and is still open (overdue,
- * drawn loud), or (today and later) it falls due.
+ * A task's one block on the Activity widget (2026-11-24 log; the task model, lib/tasks/model.ts). Every live task has
+ * exactly one, placed by where it is in its life: a closed task on the day it closed, for good; an open task on its
+ * due date, or on Today when it has none or the date has passed (it is carried along until it is closed). `kind`
+ * picks the base colour and the mark, `shade` how dark it is drawn (the timing), and the two flags the marks drawn
+ * over it. Nothing here is a second copy of a task: status, deadline and closure share the block.
  */
-export type TimelineTaskKind = "completed" | "blocked" | "overdue" | "due";
-
-export type TimelineTaskSummary = {
+export type TimelineBlock = {
   id: string;
   title: string;
-  kind: TimelineTaskKind;
+  kind: BlockKind;
+  state: LifeState;
+  phase: TaskPhase;
+  /** Open: today against the due date. Closed: the closing day against the due date it had then. */
+  timing: Timing;
+  /** Open with a due date: how close the deadline is. Null for undated and closed work. */
+  band: OpenBand | null;
+  shade: Shade;
+  /** Open: it has no due date now. Closed: it was closed without one (kept whatever is set afterwards). */
+  undated: boolean;
+  /** Open and blocked: the phase and the timing stay, the blocked mark is drawn over them. */
+  blocked: boolean;
+  /** Open: the due date now. Closed: the due date it was closed against. */
+  dueDate: string | null;
+  /**
+   * The task has no due date now: the day panel warns while this is so. For closed work it can differ from
+   * `undated`, which is history: a date added after closing clears the warning and never the block's mark.
+   */
+  noDueDateNow: boolean;
+  /** Open with a due date: calendar days to it (0 today, negative once passed). */
+  daysLeft: number | null;
+  /** Closed: the day it closed, in the viewer's timezone. */
+  closedDay: string | null;
   /** Assigned to the viewer (the My work view draws only these). */
   isMine: boolean;
   project: string | null;
@@ -97,24 +121,24 @@ export type TimelineTaskSummary = {
 
 export type TimelineDay = {
   date: string;
-  completed: number;
-  myCompleted: number;
-  blockedRaised: number;
-  /** Open tasks that were due that day and still are: the chart's loudest mark. */
-  overdue: number;
-  myOverdue: number;
-  /** Open tasks falling due that day (today and later). */
-  due: number;
-  myDue: number;
+  /** The blocks on this day, in the order the column stacks them: closed work first, then open work, most pressing first. */
+  blocks: TimelineBlock[];
   goalDeadlines: TimelineGoalMarker[];
-  /** Every task behind the counts, in the order the bar stacks them: completed, blocked, overdue, then due. */
-  tasks: TimelineTaskSummary[];
   /** Everything that happened to a task that day (every history row: created, edited, status, comments, links…). */
   activity: number;
   /** After today: the look-ahead, drawn lighter. */
   future: boolean;
   /** Inside the report's range (the look-ahead and any gap up to today are not). */
   inRange: boolean;
+};
+
+/** Open tasks whose block falls on a day the chart does not draw: counted, so the widget can say so in words. */
+export type TimelineOutside = { all: number; mine: number };
+
+export type Timeline = {
+  days: TimelineDay[];
+  /** Open work due after the last day drawn, and open work placed before the first (only when Today itself is off the chart). */
+  outside: { before: TimelineOutside; after: TimelineOutside };
 };
 
 export type { HealthStatus };
@@ -174,17 +198,20 @@ export type ReportProjectOption = {
 // --- helpers ------------------------------------------------------------------------------------------------
 
 const isOpen = (catalog: StatusCatalog) => notInArray(tasks.status, closedStatusKeys(catalog));
-/** Counts for the pace: everything but what was closed without being completed (rejected, deferred, cancelled). */
-const countsTowardsPace = (catalog: StatusCatalog) => notInArray(tasks.status, closedWithoutCompletionKeys(catalog));
+/** Counts for the pace: everything but the closed-without-completion statuses (rejected, cancelled and custom closed ones). A merged sub-task is done work. */
+const countsTowardsPace = (catalog: StatusCatalog) => notInArray(tasks.status, incompleteStatusKeys(catalog));
+/** Done work: Completed and Merged. */
+const isDone = (catalog: StatusCatalog) => inArray(tasks.status, doneStatusKeys(catalog));
+/** `'completed', 'rejected', …` — the workspace's closed keys for raw fragments. */
+const closedList = (catalog: StatusCatalog) => sql.join(closedStatusKeys(catalog).map((status) => sql`${status}`), sql`, `);
 /**
- * When a task was closed: completed_at for a completed task; for one closed without completing, the time of the
- * history row that moved it into its status (its latest, so a task closed, reopened and closed again counts from
- * the last time). Every transition records `after.status`, built-in kinds and a custom status's status_changed alike.
+ * When a task was closed: the closure snapshot on its row (2026-11-24 log). A row closed before the snapshot existed
+ * and not yet backfilled (`npm run db:migrate-task-model`) falls back to its completion time, then to the history row
+ * that put it in the status it is in.
  */
-const closedAtSql = (catalog: StatusCatalog) => sql<Date | null>`(case
-  when ${tasks.status} = 'completed' then ${tasks.completedAt}
-  when ${inArray(tasks.status, closedWithoutCompletionKeys(catalog))} then (select max(a.created_at) from task_activity a where a.task_id = ${tasks}.id and a.after->>'status' = ${tasks.status})
-  else null end)`;
+const closedAtSql = (catalog: StatusCatalog) => sql<Date | null>`(case when ${tasks.status} in (${closedList(catalog)}) then coalesce(${tasks.closedAt}, ${tasks.completedAt}, (select max(a.created_at) from task_activity a where a.task_id = ${tasks}.id and a.after->>'status' = ${tasks.status})) else null end)`;
+/** The due date a closed task was closed against: the snapshot, or (not yet backfilled) the date it has now. */
+const dueAtCloseSql = sql<string | null>`(case when ${tasks.closedAt} is null then ${tasks.dueDate} else ${tasks.dueDateAtClose} end)::text`;
 
 /** The tasks the report is about: everything, or one project's (an undefined condition is dropped by `and`). */
 function projectCondition(project: ReportProject): SQL | undefined {
@@ -192,11 +219,8 @@ function projectCondition(project: ReportProject): SQL | undefined {
   return eq(tasks.projectId, project);
 }
 
-/** Whether the viewer is on the task (or it is their own local task), in SQL. */
-const mineSql = (viewer: Viewer) => sql<boolean>`(exists (select 1 from task_assignees ta where ta.task_id = ${tasks}.id and ta.user_id = ${viewer.userId}) or ${localOnly(viewer)})`;
-
-/** Not a local task: the activity axis counts every task on the main board, proposals included, never local ones. */
-const notLocal = sql`${tasks.proposalStatus} is distinct from 'local'`;
+/** Whether the viewer is assigned to the task, in SQL. */
+const mineSql = (viewer: Viewer) => sql<boolean>`exists (select 1 from task_assignees ta where ta.task_id = ${tasks}.id and ta.user_id = ${viewer.userId})`;
 
 /**
  * `column` falls on a calendar day from `range.from` to `range.to` (both included) in `timeZone`. Written as two
@@ -292,7 +316,7 @@ export function stalledTasks(viewer: Viewer, project: ReportProject): Promise<Re
 /**
  * The active reporting scope (docs/PLAN.md, 2026-11-06 and 2026-11-07 logs): what the cycle was to work on. Every
  * live task still open, whatever its dates, plus every task closed on or after the range's first day (the day of
- * the last report): completed, or rejected, deferred or cancelled then; the range's end plays no part. Soonest due
+ * the last report): completed, merged, rejected or cancelled then; the range's end plays no part. Soonest due
  * first; lib/reports/scope.ts regroups the rows by status.
  */
 export function activeScopeTasks(viewer: Viewer, range: ReportRange, project: ReportProject): Promise<ReportTask[]> {
@@ -300,7 +324,7 @@ export function activeScopeTasks(viewer: Viewer, range: ReportRange, project: Re
 }
 
 /**
- * Is the work as a whole on pace? The scope's tasks (rejected ones aside) done against the share a straight line
+ * Is the work as a whole on pace? The scope's tasks (rejected and cancelled ones aside; a merged sub-task is done) done against the share a straight line
  * from the start to the target date expects by today (lib/reports/pace.ts). For one project the line runs from
  * its creation to its target date (or, without one, its latest goal's); for the whole workspace, from the oldest
  * task to the latest top-level goal's target date.
@@ -311,7 +335,7 @@ export async function reportPace(viewer: Viewer, today: string, project: ReportP
     db
       .select({
         total: sql<number>`count(*) filter (where ${countsTowardsPace(viewer.statuses)})::int`,
-        done: sql<number>`count(*) filter (where ${tasks.status} = 'completed')::int`,
+        done: sql<number>`count(*) filter (where ${isDone(viewer.statuses)})::int`,
         first: sql<Date | null>`min(${tasks.createdAt})`,
       })
       .from(tasks)
@@ -432,13 +456,13 @@ function goalMarkerCondition(project: ReportProject): SQL | undefined {
 }
 
 /**
- * One entry per calendar day of the chart's window (lib/reports/range.ts: the range, then two weeks past today):
- * what was completed, which blockers were raised, what was due and is still open (overdue), what falls due from
- * today on, and the goal deadlines with each goal's health, with the tasks behind each count so a bar can be split
- * into them. `activity` is every history row of every task in scope that day: the chart's y axis. With
- * `includeLocal` (the My work view) the viewer's own local tasks count too; otherwise local tasks are left out.
+ * The Activity widget's data (2026-11-24 log): one entry per calendar day of the chart's window (lib/reports/range.ts:
+ * the range, then two weeks past today), holding each live task's one block on the day the task model puts it
+ * (lib/tasks/model.ts `blockDayOf`), the goal deadlines with each goal's health, and `activity`, every history row
+ * of every live task in scope that day: the chart's y axis. Open work is read as it stands now; closed work from its
+ * closure snapshot, so a closed block never moves or changes shade. Proposals and local tasks are in none of it.
  */
-export async function reportTimeline(viewer: Viewer, range: ReportRange, today: string, project: ReportProject, options: { includeLocal?: boolean } = {}): Promise<TimelineDay[]> {
+export async function reportTimeline(viewer: Viewer, range: ReportRange, today: string, project: ReportProject): Promise<Timeline> {
   const window = timelineWindow(range, today);
   const past: ReportRange = {
     from: window.from,
@@ -446,10 +470,9 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
   };
   const scoped = projectCondition(project);
   const mine = mineSql(viewer);
-  const taskScope = options.includeLocal ? or(liveOnly, localOnly(viewer)) : liveOnly;
-  const activityScope = options.includeLocal ? or(notLocal, localOnly(viewer)) : notLocal;
+  const closedDaySql = sql<string>`to_char(${closedAtSql(viewer.statuses)} at time zone ${viewer.timezone}, 'YYYY-MM-DD')`;
 
-  const [goalRows, completedRows, blockerRows, dueRows, activityRows] = await Promise.all([
+  const [goalRows, openRows, closedRows, activityRows] = await Promise.all([
     db
       .select({
         id: goals.id,
@@ -460,45 +483,40 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       .from(goals)
       .where(and(eq(goals.orgId, viewer.orgId), eq(goals.status, "active"), isNotNull(goals.targetDate), goalMarkerCondition(project)))
       .orderBy(asc(goals.title)),
+    // Every open task in scope, as it stands now: where its block goes is worked out below, from its due date and today.
     db
       .select({
         id: tasks.id,
         title: taskLabelSql,
-        completedAt: tasks.completedAt,
+        status: tasks.status,
+        dueDate: tasks.dueDate,
+        startedAt: tasks.startedAt,
         projectName: projects.name,
         isMine: mine,
       })
       .from(tasks)
       .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(tasks.orgId, viewer.orgId), taskScope, scoped, eq(tasks.status, "completed"), isNotNull(tasks.completedAt), withinDays(tasks.completedAt, past, viewer.timezone)))
-      .orderBy(asc(tasks.completedAt)),
-    db
-      .select({
-        day: sql<string>`to_char(${taskActivity.createdAt} at time zone ${viewer.timezone}, 'YYYY-MM-DD')`,
-        taskId: taskActivity.taskId,
-        taskTitle: taskLabelSql,
-        projectName: projects.name,
-        isMine: mine,
-      })
-      .from(taskActivity)
-      .innerJoin(tasks, eq(tasks.id, taskActivity.taskId))
-      .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(taskActivity.orgId, viewer.orgId), taskScope, scoped, eq(taskActivity.kind, "blocked"), withinDays(taskActivity.createdAt, past, viewer.timezone)))
-      .orderBy(asc(taskActivity.createdAt)),
-    // Every open task due anywhere in the window: before today it is overdue, from today on it is due.
+      .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, scoped, isOpen(viewer.statuses)))
+      .orderBy(sql`${tasks.dueDate} asc nulls last`, asc(tasks.title))
+      .limit(5000),
+    // Every task closed on a day the chart draws, with the due date it was closed against.
     db
       .select({
         id: tasks.id,
         title: taskLabelSql,
+        status: tasks.status,
+        closedDay: closedDaySql,
+        dueDateAtClose: dueAtCloseSql,
         dueDate: tasks.dueDate,
         projectName: projects.name,
         isMine: mine,
       })
       .from(tasks)
       .leftJoin(projects, eq(projects.id, tasks.projectId))
-      .where(and(eq(tasks.orgId, viewer.orgId), taskScope, scoped, isOpen(viewer.statuses), dueWithin(window)))
-      .orderBy(asc(tasks.dueDate), asc(tasks.title)),
-    // The y axis: every history row of every task in scope, by day (completed +1, comment +1, edit +1, …).
+      .where(and(eq(tasks.orgId, viewer.orgId), liveOnly, scoped, inArray(tasks.status, closedStatusKeys(viewer.statuses)), isNotNull(closedAtSql(viewer.statuses)), withinDays(closedAtSql(viewer.statuses), past, viewer.timezone)))
+      .orderBy(asc(closedAtSql(viewer.statuses)), asc(tasks.title))
+      .limit(5000),
+    // The y axis: every history row of every live task in scope, by day (completed +1, comment +1, edit +1, …).
     db
       .select({
         day: sql<string>`to_char(${taskActivity.createdAt} at time zone ${viewer.timezone}, 'YYYY-MM-DD')`,
@@ -506,7 +524,7 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
       })
       .from(taskActivity)
       .innerJoin(tasks, eq(tasks.id, taskActivity.taskId))
-      .where(and(eq(taskActivity.orgId, viewer.orgId), activityScope, scoped, withinDays(taskActivity.createdAt, past, viewer.timezone)))
+      .where(and(eq(taskActivity.orgId, viewer.orgId), liveOnly, scoped, withinDays(taskActivity.createdAt, past, viewer.timezone)))
       .groupBy(sql`1`),
   ]);
   const goalProgress = await progressForGoals(
@@ -515,39 +533,63 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
   );
   const activityByDay = new Map(activityRows.map((row) => [row.day, row.n]));
 
-  const byDay = new Map<string, TimelineTaskSummary[]>();
-  const add = (day: string, task: TimelineTaskSummary) => {
+  const byDay = new Map<string, TimelineBlock[]>();
+  const outside: Timeline["outside"] = { before: { all: 0, mine: 0 }, after: { all: 0, mine: 0 } };
+  const place = (day: string, block: TimelineBlock) => {
+    if (day < window.from || day > window.to) {
+      const side = day < window.from ? outside.before : outside.after;
+      side.all += 1;
+      if (block.isMine) side.mine += 1;
+      return;
+    }
     const list = byDay.get(day) ?? [];
-    list.push(task);
+    list.push(block);
     byDay.set(day, list);
   };
-  for (const row of completedRows) {
-    if (row.completedAt)
-      add(dayKey(row.completedAt, viewer.timezone), {
-        id: row.id,
-        title: row.title,
-        kind: "completed",
-        isMine: row.isMine,
-        project: row.projectName,
-      });
-  }
-  for (const row of blockerRows)
-    add(row.day, {
-      id: row.taskId,
-      title: row.taskTitle,
-      kind: "blocked",
+  for (const row of openRows) {
+    const started = row.startedAt !== null;
+    const timing = timingOf(row.dueDate, today);
+    const left = row.dueDate === null ? null : daysLeft(row.dueDate, today);
+    const band = left === null ? null : openBandOf(left);
+    place(blockDayOf({ state: "open", dueDate: row.dueDate, closedDay: null }, today), {
+      id: row.id,
+      title: row.title,
+      kind: blockKindOf(statusDef(viewer.statuses, row.status), started),
+      state: "open",
+      phase: phaseOf(statusDef(viewer.statuses, row.status), started),
+      timing,
+      band,
+      shade: shadeOf("open", timing, band),
+      undated: row.dueDate === null,
+      blocked: row.status === "blocked",
+      dueDate: row.dueDate,
+      noDueDateNow: row.dueDate === null,
+      daysLeft: left,
+      closedDay: null,
       isMine: row.isMine,
       project: row.projectName,
     });
-  for (const row of dueRows) {
-    if (row.dueDate)
-      add(row.dueDate, {
-        id: row.id,
-        title: row.title,
-        kind: row.dueDate < today ? "overdue" : "due",
-        isMine: row.isMine,
-        project: row.projectName,
-      });
+  }
+  for (const row of closedRows) {
+    const timing = timingOf(row.dueDateAtClose, row.closedDay);
+    place(row.closedDay, {
+      id: row.id,
+      title: row.title,
+      kind: blockKindOf(statusDef(viewer.statuses, row.status), true),
+      state: "closed",
+      phase: phaseOf(statusDef(viewer.statuses, row.status), true),
+      timing,
+      band: null,
+      shade: shadeOf("closed", timing, null),
+      undated: row.dueDateAtClose === null,
+      blocked: false,
+      dueDate: row.dueDateAtClose,
+      noDueDateNow: row.dueDate === null,
+      daysLeft: null,
+      closedDay: row.closedDay,
+      isMine: row.isMine,
+      project: row.projectName,
+    });
   }
 
   const goalsByDay = new Map<string, TimelineGoalMarker[]>();
@@ -580,31 +622,20 @@ export async function reportTimeline(viewer: Viewer, range: ReportRange, today: 
     goalsByDay.set(goal.targetDate, list);
   }
 
-  const ORDER: Record<TimelineTaskKind, number> = {
-    completed: 0,
-    blocked: 1,
-    overdue: 2,
-    due: 3,
-  };
-  return daysOf(window).map((date) => {
-    const dayTasks = (byDay.get(date) ?? []).sort((a, b) => ORDER[a.kind] - ORDER[b.kind]);
-    const count = (kind: TimelineTaskKind, onlyMine = false) => dayTasks.filter((task) => task.kind === kind && (!onlyMine || task.isMine)).length;
-    return {
-      date,
-      completed: count("completed"),
-      myCompleted: count("completed", true),
-      blockedRaised: count("blocked"),
-      overdue: count("overdue"),
-      myOverdue: count("overdue", true),
-      due: count("due"),
-      myDue: count("due", true),
-      goalDeadlines: goalsByDay.get(date) ?? [],
-      tasks: dayTasks,
-      activity: activityByDay.get(date) ?? 0,
-      future: date > today,
-      inRange: date >= range.from && date <= range.to,
-    };
-  });
+  // A column stacks from the axis up: what was closed that day (completed, merged, rejected, cancelled), then the
+  // open work, the most pressing nearest the axis (overdue, at risk, warm, healthy) and the undated on top.
+  const CLOSED_ORDER: Record<BlockKind, number> = { completed: 0, merged: 1, rejected: 2, cancelled: 3, not_started: 9, in_progress: 9, awaiting_approval: 9 };
+  const rank = (block: TimelineBlock) => (block.state === "closed" ? CLOSED_ORDER[block.kind] : block.undated ? 20 : 10 + (4 - block.shade));
+  const byRank = (a: TimelineBlock, b: TimelineBlock) => rank(a) - rank(b) || (a.daysLeft ?? 0) - (b.daysLeft ?? 0) || a.title.localeCompare(b.title);
+  const days = daysOf(window).map((date) => ({
+    date,
+    blocks: (byDay.get(date) ?? []).sort(byRank),
+    goalDeadlines: goalsByDay.get(date) ?? [],
+    activity: activityByDay.get(date) ?? 0,
+    future: date > today,
+    inRange: date >= range.from && date <= range.to,
+  }));
+  return { days, outside };
 }
 
 // --- blocked duration, health, decisions ---------------------------------------------------------------------------

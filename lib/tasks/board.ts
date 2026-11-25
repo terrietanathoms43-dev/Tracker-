@@ -1,4 +1,5 @@
 import type { StatusCatalog, TaskStatusDef } from "@/lib/statuses";
+import { clusterGroups } from "./groups";
 import type { TaskListItem } from "./types";
 
 // The board's columns (docs/PLAN.md §5): the workspace's open statuses, left to right in their configured
@@ -13,11 +14,15 @@ export function boardStatuses(catalog: StatusCatalog): TaskStatusDef[] {
 
 export type BoardColumns = Record<string, TaskListItem[]>;
 
-/** Splits already-sorted tasks into the board's columns, keeping their order. */
+/**
+ * Splits already-sorted tasks into the board's columns, keeping their order, except that the tasks of one group
+ * (2026-11-11 log) stand next to one another in a column, where the first of them stood.
+ */
 export function toBoardColumns(items: TaskListItem[], statuses: TaskStatusDef[]): BoardColumns {
   const columns: BoardColumns = Object.fromEntries(statuses.map((status) => [status.key, []]));
   for (const item of items) {
     if (item.status in columns) columns[item.status].push(item);
   }
+  for (const status of statuses) columns[status.key] = clusterGroups(columns[status.key]);
   return columns;
 }
