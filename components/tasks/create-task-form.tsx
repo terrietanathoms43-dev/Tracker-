@@ -50,6 +50,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
   const [nextAction, setNextAction] = useState("");
   const [description, setDescription] = useState(defaults.description ?? "");
   const [policyText, setPolicyText] = useState("");
+  const [policyIds, setPolicyIds] = useState<string[]>([]);
   const [errors, setErrors] = useState<Errors>({});
   const [pending, startTransition] = useTransition();
 
@@ -78,7 +79,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
       const ready = options ?? (await loadTaskFormOptions()).options;
       const assigneeIds = assignment ?? me(ready);
       const policyItems = policyText.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
-      const result = await createTask({ title, assigneeIds, projectId, goalId, parentId: defaults.parentId ?? "", sourceCommentId: fromComment?.id ?? "", priority, dueDate, dueTime, recurrence, nextAction, description, policyItems });
+      const result = await createTask({ title, assigneeIds, projectId, goalId, parentId: defaults.parentId ?? "", sourceCommentId: fromComment?.id ?? "", priority, dueDate, dueTime, recurrence, nextAction, description, policyItems, policyIds });
       if (!result.ok) {
         setErrors(result.fieldErrors ?? { description: [result.error] });
         return;
@@ -209,6 +210,7 @@ export function CreateTaskForm({ defaults = {}, onDone, onCancel }: { defaults?:
       <Field id="task-next" label="First next action" hint="Optional: the very next step, so whoever picks it up knows where to start." count={{ value: nextAction, max: LIMITS.nextAction }}>
         <Input id="task-next" value={nextAction} onChange={(event) => setNextAction(event.target.value)} placeholder="e.g. Reproduce it on staging" maxLength={LIMITS.nextAction} />
       </Field>
+      {(options?.workflowPolicies ?? []).length > 0 ? <fieldset className="grid gap-2 rounded-md border p-3"><legend className="text-sm font-medium">Additional reusable policies</legend>{options?.workflowPolicies?.map((policy) => <label key={policy.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={policyIds.includes(policy.id)} onChange={(event) => setPolicyIds((old) => event.target.checked ? [...old, policy.id] : old.filter((id) => id !== policy.id))} />{policy.name}</label>)}</fieldset> : null}
       {!subTask ? (
         <div className="grid gap-2">
           <Field id="task-policy-checklist" label="Policy checks" hint="Optional. Add one requirement per line. Every check must be met before the task can be sent for approval." error={error("policyItems")}>

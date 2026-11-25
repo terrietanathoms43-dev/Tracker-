@@ -13,10 +13,10 @@ export function PolicyChecklist({ taskId, items, editable }: { taskId: string; i
   if (items.length === 0) return null;
   const remaining = incompletePolicyCount(items);
 
-  function toggle(item: TaskPolicyItem) {
+  function toggle(item: TaskPolicyItem, sign = false) {
     setPendingId(item.id);
     startTransition(async () => {
-      toastResult(await setPolicyChecklistItem({ taskId, itemId: item.id, checked: item.checkedAt === null }));
+      toastResult(await setPolicyChecklistItem({ taskId, itemId: item.id, checked: sign || item.checkedAt === null, sign }));
       setPendingId(null);
     });
   }
@@ -44,14 +44,15 @@ export function PolicyChecklist({ taskId, items, editable }: { taskId: string; i
                 onClick={() => toggle(item)}
               >
                 {checked ? <Check className="size-4 shrink-0 text-status-completed-dot" aria-hidden /> : <Circle className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
-                <span className={checked ? "flex-1 text-muted-foreground line-through" : "flex-1"}>{item.label}</span>
+                <span className={checked ? "min-w-0 flex-1 text-muted-foreground line-through" : "min-w-0 flex-1"}>{item.label}{item.policyName ? <span className="block text-xs text-muted-foreground">{item.policyName} · {item.policySources?.map((source) => source.kind).join(", ")}</span> : null}</span>
                 {checked ? <span className="shrink-0 text-[11px] text-muted-foreground">Met</span> : null}
               </Button>
+              {item.policyId && checked ? <div className="ml-8 flex flex-wrap items-center gap-2">{item.signedAt && item.signedBy ? <span className="text-xs text-muted-foreground">Signed {new Date(item.signedAt).toLocaleString()}</span> : <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => toggle(item, true)}>Sign requirement</Button>}</div> : null}
             </li>
           );
         })}
       </ul>
-      {editable ? <p className="mt-2 text-[12px] text-muted-foreground">Mark each requirement met before sending this task for approval.</p> : null}
+      {editable ? <p className="mt-2 text-[12px] text-muted-foreground">Tick and sign every required policy item before sending this task for approval.</p> : null}
       {!editable && remaining > 0 ? <p className="mt-2 text-[12px] text-status-awaiting-fg">Approval is held until every policy check is met.</p> : null}
     </section>
   );

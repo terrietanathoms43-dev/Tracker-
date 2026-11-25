@@ -1,3 +1,4 @@
+import { listWorkflowPolicies } from "@/lib/dal/workflow-policies";
 import "server-only";
 import { and, asc, desc, eq, gte, ilike, inArray, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
@@ -907,12 +908,14 @@ export async function recentActivity(viewer: Viewer, limit: number, since?: Date
 type PersonColumns = { id: AnyPgColumn; name: AnyPgColumn; email: AnyPgColumn; image: AnyPgColumn };
 const personJson = (table: PersonColumns) => sql`json_build_object('id', ${table.id}, 'name', ${table.name}, 'email', ${table.email}, 'image', ${table.image})`;
 
-const scopeOf = (task: { orgId: string; createdBy: string; approverId: string | null; proposalStatus: ProposalStatus | null }, assignees: Person[] | string[]): TaskScope => ({
+const scopeOf = (task: { orgId: string; createdBy: string; approverId: string | null; proposalStatus: ProposalStatus | null; workflowPolicyId?: string | null; policyChecklist?: TaskPolicyItem[] }, assignees: Person[] | string[]): TaskScope => ({
   orgId: task.orgId,
   assigneeIds: assignees.map((each) => (typeof each === "string" ? each : each.id)),
   createdBy: task.createdBy,
   approverId: task.approverId,
   proposalStatus: task.proposalStatus,
+  generatedPolicyChild: Boolean(task.workflowPolicyId),
+  hasWorkflowPolicy: task.policyChecklist?.some((item) => Boolean(item.policyId)) ?? false,
 });
 
 /** One task with everything its page shows, plus the scope its permission checks need (null when not found). */
@@ -996,6 +999,7 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
       status: tasks.status,
       startedAt: tasks.startedAt,
       policyChecklist: tasks.policyChecklist,
+      workflowPolicyId: tasks.workflowPolicyId,
       createdBy: tasks.createdBy,
       approverId: tasks.approverId,
       proposalStatus: tasks.proposalStatus,
@@ -1029,7 +1033,7 @@ export async function getTaskBasics(viewer: Viewer, id: string) {
     /** A goal's closer: the goal it marks achieved and how many other tasks it still waits for. */
     closer: isCloser(row) ? { goalTitle: row.goalTitle, openOthers: row.otherOpenGoalTasks } : null,
     assigneeIds: assignees.map((person) => person.id),
-    scope: scopeOf({ orgId: viewer.orgId, createdBy: row.createdBy, approverId: row.approverId, proposalStatus: row.proposalStatus }, assignees),
+    scope: scopeOf({ orgId: viewer.orgId, createdBy: row.createdBy, approverId: row.approverId, proposalStatus: row.proposalStatus, workflowPolicyId: row.workflowPolicyId, policyChecklist: row.policyChecklist }, assignees),
   };
 }
 
@@ -1153,5 +1157,6 @@ export async function taskFormOptions(viewer: Viewer): Promise<TaskFormOptions> 
     pinnedProjects,
     canCapture: false,
     proposesOnly: isStakeholder(viewer),
+    workflowPolicies: (await listWorkflowPolicies(viewer.orgId)).map(({ id, name }) => ({ id, name })),
   };
 }

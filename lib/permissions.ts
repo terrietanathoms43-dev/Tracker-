@@ -39,6 +39,8 @@ type OrgScoped = { orgId: string };
 export type TaskScope = OrgScoped & {
   /** The people assigned. */
   assigneeIds: string[];
+  generatedPolicyChild?: boolean;
+  hasWorkflowPolicy?: boolean;
   createdBy: string;
   approverId?: string | null;
   /** Null for a task that was live from the start; pending / declined proposals are not yet work. */
@@ -85,7 +87,7 @@ export const canCreateTask = (viewer: Viewer) => viewer.orgId.length > 0;
  * proposal of their own that is still open.
  */
 export function canEditTask(viewer: Viewer, task: TaskScope): boolean {
-  if (!inOrg(viewer, task)) return false;
+  if (!inOrg(viewer, task) || task.generatedPolicyChild) return false;
   if (isLocal(task)) return task.createdBy === viewer.userId;
   if (isStakeholder(viewer)) return task.createdBy === viewer.userId && isOpenProposal(task);
   return isLeader(viewer) || isAssigned(viewer, task) || task.createdBy === viewer.userId;
@@ -93,7 +95,7 @@ export function canEditTask(viewer: Viewer, task: TaskScope): boolean {
 
 /** Progress, comments and status changes: any worker in the workspace, once the task is live. */
 export function canUpdateProgress(viewer: Viewer, task: TaskScope): boolean {
-  return inOrg(viewer, task) && isWorker(viewer) && isLive(task);
+  return !task.generatedPolicyChild && inOrg(viewer, task) && isWorker(viewer) && isLive(task);
 }
 
 /** Marking a comment resolved (or open again): anyone who may work on the task. */
@@ -101,7 +103,7 @@ export const canResolveComment = canUpdateProgress;
 
 /** Approve or send back: the named approver, or any leader. */
 export function canApproveTask(viewer: Viewer, task: TaskScope): boolean {
-  if (!inOrg(viewer, task) || isStakeholder(viewer) || !isLive(task)) return false;
+  if (!inOrg(viewer, task) || task.generatedPolicyChild || isStakeholder(viewer) || !isLive(task)) return false;
   return (task.approverId != null && task.approverId === viewer.userId) || isLeader(viewer);
 }
 
@@ -111,7 +113,8 @@ export function canRejectTask(viewer: Viewer, task: TaskScope): boolean {
 }
 
 /** Deleting destroys the task and its history: leaders and admins; a proposer may withdraw their own open proposal; a local task is its maker's to delete; the toggle lets anyone delete a task they created. */
-export function canDeleteTask(viewer: Viewer, task?: Pick<TaskScope, "createdBy" | "proposalStatus">): boolean {
+export function canDeleteTask(viewer: Viewer, task?: Pick<TaskScope, "createdBy" | "proposalStatus" | "generatedPolicyChild">): boolean {
+  if (task?.generatedPolicyChild) return false;
   if (task !== undefined && isLocal(task)) return task.createdBy === viewer.userId;
   if (isLeader(viewer)) return true;
   if (task === undefined || task.createdBy !== viewer.userId) return false;

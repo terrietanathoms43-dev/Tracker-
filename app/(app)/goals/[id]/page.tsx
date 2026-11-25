@@ -1,3 +1,4 @@
+import { WorkflowPolicySection } from "@/components/tasks/workflow-policy-section";
 import { GitBranch } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -117,6 +118,7 @@ export default async function GoalPage(props: PageProps<"/goals/[id]">) {
         }
       />
       {late && goal.targetDate ? <GoalPastTargetStrip targetDate={goal.targetDate} today={today} actions={statusActions} /> : null}
+      {manage ? <WorkflowPolicySection orgId={viewer.orgId} kind="goal" id={goal.id} /> : null}
       {active && canCreateTask(viewer) ? <QuickAddTask today={today} defaults={{ projectId: goal.project.id, goalId: goal.id }} /> : null}
       <div className="grid gap-8">
         <PlanningSummary successCriteria={goal.successCriteria} description={goal.description} progress={goal.progress} />
