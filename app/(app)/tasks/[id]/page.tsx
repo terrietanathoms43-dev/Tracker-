@@ -109,7 +109,9 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
     <div className="mx-auto max-w-3xl">
       <CurrentTask id={detail.id} title={detail.goalCloser ? closerLabel(detail.title, detail.goal?.title) : detail.title} actionable={abilities.progress} />
       <TaskHeader detail={detail} abilities={abilities} today={today} />
-      <div className="grid gap-5">
+      {/* One column, never wider than the page gives it (grid-cols-1 is minmax(0, 1fr)): what a card cannot wrap, a
+          sub-task row's "Part of …" chip say, is cut off inside the card instead of widening every card on the page. */}
+      <div className="grid grid-cols-1 gap-5">
         {detail.fromComment !== null ? <UpstreamCard fromComment={detail.fromComment} closed={statusDef(viewer.statuses, detail.status).closed} /> : null}
         <ResumeCard statuses={viewer.statuses} detail={detail} links={links} removableLinks={removableLinks} abilities={abilities} updateContext={updateContext} localChain={localChain} timeZone={viewer.timezone} now={now} />
         {abilities.edit && !statusDef(viewer.statuses, detail.status).closed && statusDef(viewer.statuses, detail.status).kind !== "awaiting_approval" ? <TaskPolicyControls taskId={detail.id} policies={(await listWorkflowPolicies(viewer.orgId)).map(({ id, name }) => ({ id, name }))} applied={detail.policyChecklist.flatMap((item) => item.policyId ? [item.policyId] : [])} /> : null}
